@@ -1035,13 +1035,12 @@ with tab10:
 
     st.markdown("---")
 
-    # =========================
+# =========================
 # CONSUMO
 # =========================
 
 st.subheader("🚬 Consumo de Sustancias")
 
-# Validación de columna
 if "tipo_consumo" in df.columns:
 
     fig_consumo = px.histogram(
@@ -1069,100 +1068,107 @@ else:
     st.warning("No existe la columna 'tipo_consumo' en el dataset")
 
 st.markdown("---")
-    # =========================
-    # VULNERABILIDAD
-    # =========================
 
-    st.subheader("⚠️ Vulnerabilidad Social")
+# =========================
+# VULNERABILIDAD
+# =========================
 
-    fig_riesgo = px.histogram(df, x="nivel_riesgo", color="nivel_riesgo")
-    st.plotly_chart(fig_riesgo, use_container_width=True)
+st.subheader("⚠️ Vulnerabilidad Social")
 
-    if "semáforo" in df.columns:
-        fig_semaforo = px.pie(df, names="semáforo", title="Clasificación por semáforo")
-        st.plotly_chart(fig_semaforo, use_container_width=True)
+fig_riesgo = px.histogram(
+    df,
+    x="nivel_riesgo",
+    color="nivel_riesgo",
+    title="Distribución de nivel de riesgo"
+)
 
-    st.markdown("---")
+st.plotly_chart(fig_riesgo, use_container_width=True)
 
-    # =========================
-    # TERRITORIO
-    # =========================
-
-    st.subheader("🌎 Análisis Territorial")
-
-    fig_territorio = px.histogram(
+if "semáforo" in df.columns:
+    fig_semaforo = px.pie(
         df,
-        x="comuna_o_corregimiento_de_residencia",
-        color="comuna_o_corregimiento_de_residencia",
-        title="Distribución territorial"
+        names="semáforo",
+        title="Clasificación por semáforo"
     )
-    st.plotly_chart(fig_territorio, use_container_width=True)
+    st.plotly_chart(fig_semaforo, use_container_width=True)
 
-    st.markdown("---")
+st.markdown("---")
+# =========================
+# KPIs BASE
+# =========================
 
+total = len(df)
+score = round(df["score_vulnerabilidad"].mean(), 2)
+criticos = len(df[df["nivel_riesgo"] == "Crítico"])
+edad_promedio = round(df["edad"].mean(), 1)
+
+# EGRESADOS
+df_egresados = pd.read_sql("""
+    SELECT *
+    FROM personas_caracterizacion
+    WHERE estado_caso = 'EGRESADO'
+""", engine)
+
+total_egresados = len(df_egresados)
+tasa_egreso = round((total_egresados / total) * 100, 2) if total > 0 else 0
+# =========================
+# IMPACTO
+# =========================
+
+st.subheader("🏆 Impacto Institucional")
+
+col1, col2 = st.columns(2)
+
+col1.metric("Egresados", total_egresados)
+col2.metric("Tasa de Egreso", f"{tasa_egreso}%")
+
+st.markdown("---")
+
+   st.subheader("📋 Hallazgos Institucionales")
+
+hallazgos = []
+
+if criticos > total * 0.25:
+    hallazgos.append("Alta concentración de riesgo crítico.")
+
+if score > 7:
+    hallazgos.append("Vulnerabilidad promedio elevada.")
+
+if tasa_egreso < 10:
+    hallazgos.append("Baja tasa de egreso institucional.")
+
+if edad_promedio > 50:
+    hallazgos.append("Envejecimiento progresivo de la población.")
+
+if len(hallazgos) == 0:
+    st.success("No se identifican alertas relevantes.")
+else:
+    for h in hallazgos:
+        st.warning(h)
+
+st.markdown("---")
     # =========================
-    # IMPACTO
-    # =========================
+# CONCLUSIÓN
+# =========================
 
-    st.subheader("🏆 Impacto Institucional")
+st.subheader("📝 Conclusión Ejecutiva")
 
-    col1, col2 = st.columns(2)
+st.info(f"""
+El Observatorio Social registra actualmente {total} personas.
 
-    col1.metric("Egresados", total_egresados)
-    col2.metric("Tasa de Egreso", f"{tasa_egreso}%")
+Edad promedio: {edad_promedio} años.
 
-    st.markdown("---")
+Vulnerabilidad promedio: {score}.
 
-    # =========================
-    # HALLAZGOS
-    # =========================
+Casos críticos: {criticos}.
 
-    st.subheader("📋 Hallazgos Institucionales")
+Egresados: {total_egresados} ({tasa_egreso}%).
 
-    hallazgos = []
+Se recomienda fortalecer intervención social,
+salud mental y seguimiento post-egreso.
+""")
 
-    if criticos > total * 0.25:
-        hallazgos.append("Alta concentración de riesgo crítico.")
-
-    if score > 7:
-        hallazgos.append("Vulnerabilidad promedio elevada.")
-
-    if tasa_egreso < 10:
-        hallazgos.append("Baja tasa de egreso institucional.")
-
-    if edad_promedio > 50:
-        hallazgos.append("Envejecimiento progresivo de la población.")
-
-    if len(hallazgos) == 0:
-        st.success("No se identifican alertas relevantes.")
-    else:
-        for h in hallazgos:
-            st.warning(h)
-
-    st.markdown("---")
-
-    # =========================
-    # CONCLUSIÓN
-    # =========================
-
-    st.subheader("📝 Conclusión Ejecutiva")
-
-    st.info(f"""
-    El Observatorio Social registra actualmente {total} personas.
-
-    Edad promedio: {edad_promedio} años.
-
-    Vulnerabilidad promedio: {score}.
-
-    Casos críticos: {criticos}.
-
-    Egresados: {total_egresados} ({tasa_egreso}%).
-
-    Se recomienda fortalecer intervención social,
-    salud mental y seguimiento post-egreso.
-    """)
-    st.markdown("---")
-
+st.markdown("---")
 st.subheader("📄 Informe Ejecutivo")
 
 if st.button("📥 Generar Informe Ejecutivo PDF", key="pdf_ejecutivo"):
