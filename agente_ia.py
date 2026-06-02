@@ -877,7 +877,7 @@ if "sexo_nacer" in df_impacto.columns:
     # ==========================
 
     if "orientacion_lgbti" in df_impacto.columns:
-
+    
         fig_lgbti = px.histogram(
             df_impacto,
             x="orientacion_lgbti",
