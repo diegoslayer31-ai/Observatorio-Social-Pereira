@@ -592,14 +592,15 @@ with tab5:
 
     st.subheader("📍 Barrio o vereda")
 
-    barrio_df = df["barrio_o_vereda_de_residencia"].value_counts().reset_index()
+if "barrio_vereda" in df.columns:
 
+    barrio_df = df["barrio_vereda"].value_counts().reset_index()
     barrio_df.columns = ["barrio", "cantidad"]
 
-    fig = px.bar(barrio_df, x="barrio", y="cantidad", color="cantidad")
+    st.dataframe(barrio_df)
 
-    st.plotly_chart(fig, use_container_width=True)
-
+else:
+    st.warning("No existe la columna 'barrio_vereda' en la base de datos")
 # =========================
 # TAB EDUCACIÓN
 # =========================
