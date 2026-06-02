@@ -631,6 +631,9 @@ else:
 # TAB SEMÁFORO SOCIAL
 # =========================
 
+# =========================
+# TAB SEMÁFORO SOCIAL
+# =========================
 with tab7:
 
     st.subheader("👥 Semáforo social")
@@ -645,9 +648,15 @@ with tab7:
     )
 
     # =========================
-    # COLUMNAS SEGURAS (SOLO LAS QUE EXISTEN REALMENTE)
+    # NORMALIZAR SEMÁFORO
     # =========================
-    columnas_finales = [
+    if "semáforo" not in df.columns and "semaforo" in df.columns:
+        df["semáforo"] = df["semaforo"]
+
+    # =========================
+    # MAPEO REAL DE COLUMNAS (SEGÚN TU DATASET)
+    # =========================
+    columnas = [
         "semáforo",
         "score_vulnerabilidad",
         "nombre_completo",
@@ -658,16 +667,28 @@ with tab7:
         "barrio_vereda"
     ]
 
-    columnas_finales = [c for c in columnas_finales if c in df.columns]
+    # =========================
+    # FILTRAR SOLO LAS QUE EXISTEN
+    # =========================
+    columnas_existentes = [c for c in columnas if c in df.columns]
 
     # =========================
-    # DATAFRAME
+    # VALIDACIÓN SEGURA
     # =========================
-    st.dataframe(
-        df[columnas_finales]
-        .sort_values(by="score_vulnerabilidad", ascending=False),
-        use_container_width=True
-    )
+    if columnas_existentes:
+
+        st.dataframe(
+            df[columnas_existentes]
+            .sort_values(
+                by="score_vulnerabilidad",
+                ascending=False
+            ),
+            use_container_width=True
+        )
+
+    else:
+        st.warning("No se encontraron columnas para el semáforo social")
+        st.write("Columnas disponibles:", df.columns.tolist())
 
     # =========================
     # INTERPRETACIÓN
