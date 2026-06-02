@@ -247,16 +247,14 @@ df["v_consumo"] = df["tipo_de_consumo"].apply(peso_consumo)
 # =========================
 st.header("📊 Indicadores Clave")
 
-# 🔥 DF limpio para evitar duplicados o basura de carga
+# 🔥 DF limpio (evita duplicados y problemas de recarga)
 df_kpi = df.copy()
-
-# elimina duplicados reales
 df_kpi = df_kpi.drop_duplicates()
+df_kpi = df_kpi.reset_index(drop=True)
 
-# opcional: elimina filas completamente vacías
-df_kpi = df_kpi.dropna(how="all")
-
-
+# =========================
+# COLUMNAS KPI
+# =========================
 col1, col2, col3 = st.columns(3)
 
 col1.metric(
@@ -274,44 +272,27 @@ col3.metric(
     len(df_kpi[df_kpi["nivel_riesgo"] == "Crítico"])
 )
 
-# 👇 segundo bloque separado (NO reutilizar col1)
+# =========================
+# SEGUNDA FILA KPI
+# =========================
 col4, col5, col6 = st.columns(3)
 
 col4.metric(
     "Total registros",
     df_kpi.shape[0]
 )
-# CONSUMO SPA
-if "tipo_de_consumo" in df.columns:
-    consumo = len(
-        df[
-            (df["tipo_de_consumo"].notna())
-            & (df["tipo_de_consumo"] != "No")
-            & (df["tipo_de_consumo"] != "NO")
-        ]
-    )
-    pct = round((consumo / len(df)) * 100, 1) if len(df) > 0 else 0
-    col2.metric("Consumo SPA", f"{pct}%")
 
-# SALUD MENTAL
-if "enfermedad_mental" in df.columns:
-    mental = len(
-        df[(df["enfermedad_mental"] != "No") & (df["enfermedad_mental"].notna())]
-    )
-    pct = round((mental / len(df)) * 100, 1) if len(df) > 0 else 0
-    col3.metric("Salud mental", f"{pct}%")
+col5.metric(
+    "Consumo SPA",
+    f"{round(df_kpi['consumo_spa'].mean() * 100, 1)}%"
+    if "consumo_spa" in df_kpi.columns else "N/A"
+)
 
-# DISCAPACIDAD
-if "personas_con_discapacidad" in df.columns:
-    discapacidad = len(df[df["personas_con_discapacidad"].isin(["SI", "Sí", "Si"])])
-    pct = round((discapacidad / len(df)) * 100, 1) if len(df) > 0 else 0
-    col4.metric("Discapacidad", f"{pct}%")
-
-# MIGRACIÓN
-if "experiencia_migratoria" in df.columns:
-    migracion = len(df[df["experiencia_migratoria"].notna()])
-    pct = round((migracion / len(df)) * 100, 1) if len(df) > 0 else 0
-    col5.metric("Migración", f"{pct}%")
+col6.metric(
+    "Salud mental",
+    f"{round(df_kpi['salud_mental'].mean() * 100, 1)}%"
+    if "salud_mental" in df_kpi.columns else "N/A"
+)
 # KPIs
 # =========================
 # TABS PRINCIPALES
