@@ -2,7 +2,8 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 from sqlalchemy import create_engine, text
-from ollama import Client
+#from ollama import Client
+
 from reportlab.platypus import (
     SimpleDocTemplate,
     Paragraph,
@@ -15,16 +16,22 @@ from reportlab.lib.styles import getSampleStyleSheet
 # =========================
 # CONFIG
 # =========================
-st.set_page_config(page_title="Observatorio Social IA", layout="wide")
+st.set_page_config(
+    page_title="Observatorio Social IA",
+    layout="wide"
+)
+
 # =========================
 # OLLAMA
 # =========================
-client = Client(host="http://localhost:11434")
+#client = Client(host="http://localhost:11434")
 
 # =========================
-# POSTGRESQL
+# POSTGRESQL / SUPABASE
 # =========================
-engine = create_engine("postgresql://postgres:3105@localhost:5432/caracterizacion_db")
+engine = create_engine(
+    st.secrets["DATABASE_URL"]
+)
 # =========================
 # TÍTULO
 # =========================
@@ -33,11 +40,11 @@ st.title("🧠 Observatorio Social Habitante de Calle Pereira 2026")
 # =========================
 # CARGAR DATOS
 # =========================
-df = pd.read_sql("SELECT * FROM habitante_calle", engine)
+df = pd.read_sql("SELECT * FROM habitante_de_calle", engine)
 # =========================
 # CARGAR DATOS
 # =========================
-df = pd.read_sql("SELECT * FROM habitante_calle", engine)
+df = pd.read_sql("SELECT * FROM habitante_de_calle", engine)
 
 # =========================
 # LIMPIEZA / FEATURES
@@ -351,44 +358,16 @@ with tab1:
             use_container_width=True
         )
     # =========================
-    # GRUPOS ETARIOS
-    # =========================
+# GRUPOS ETARIOS (VERSIÓN CORRECTA)
+# =========================
 
-    def clasificar_edad(x):
+df["edad"] = pd.to_numeric(df["edad"], errors="coerce")
 
-        if x < 18:
-            return "Adolescencia"
-
-        elif x <= 28:
-            return "Juventud"
-
-        elif x <= 59:
-            return "Edad productiva"
-
-        else:
-            return "Adulto mayor"
-
-    df["grupo_etario"] = df["edad"].apply(clasificar_edad)
-
-    etario_df = (
-        df["grupo_etario"]
-        .value_counts()
-        .reset_index()
-    )
-
-    etario_df.columns = ["grupo", "cantidad"]
-
-    fig_etario = px.pie(
-        etario_df,
-        names="grupo",
-        values="cantidad",
-        title="Grupos etarios"
-    )
-
-    st.plotly_chart(
-        fig_etario,
-        use_container_width=True
-    )
+df["grupo_etario"] = pd.cut(
+    df["edad"],
+    bins=[0, 17, 28, 59, 120],
+    labels=["Adolescencia", "Joven", "Adulto", "Adulto mayor"]
+)
 
     # =========================
     # ADULTOS MAYORES CRÍTICOS
@@ -719,171 +698,12 @@ with tab8:
 
     st.subheader("🤖 Agente IA")
 
-    pregunta = st.text_input("Haz una pregunta sobre la población")
+    st.warning("""
+    El módulo de Inteligencia Artificial se encuentra
+    temporalmente deshabilitado en la versión web.
 
-columnas = ", ".join(df.columns.tolist())
-
-contexto = f"""
-
-Eres un asistente inteligente para análisis social.
-
-Tu tarea es convertir preguntas humanas en SQL PostgreSQL.
-
-La tabla disponible es:
-
-habitante_calle
-
-Columnas disponibles:
-
-{columnas}
-
-INTERPRETACIONES IMPORTANTES:
-
-- "hombres" = sexo_al_nacer = 'Masculino'
-- "mujeres" = sexo_al_nacer = 'Femenino'
-
-- "heroína" o "heroina" = tipo_de_consumo ILIKE '%hero%'
-- "bazuco" = tipo_de_consumo ILIKE '%bazuco%'
-- "alcohol" = tipo_de_consumo ILIKE '%alcohol%'
-- "marihuana" = tipo_de_consumo ILIKE '%marihuana%'
-- "cocaína" o "cocaina" = tipo_de_consumo ILIKE '%coca%'
-- "policonsumo" = tipo_de_consumo ILIKE '%policonsumo%'
-
-- "discapacidad" = personas_con_discapacidad
-- "salud mental" = enfermedad_mental
-- "migración" = indicador_migracion
-- "barrio" = barrio_o_vereda_de_residencia
-- "educación" = nivel_educativo_que_tiene_o_cursa
-- "etnia" = grupos_etnicos_afro_indigena
-
-EJEMPLOS:
-
-Pregunta:
-¿Cuántos consumen heroína?
-
-SQL:
-SELECT COUNT(*)
-FROM habitante_calle
-WHERE tipo_de_consumo ILIKE '%hero%'
-LIMIT 100
-
-Pregunta:
-¿Cuántas mujeres hay?
-
-SQL:
-SELECT COUNT(*)
-FROM habitante_calle
-WHERE sexo_al_nacer = 'Femenino'
-LIMIT 100
-
-Pregunta:
-¿Cuántos tienen discapacidad?
-
-SQL:
-SELECT COUNT(*)
-FROM habitante_calle
-WHERE personas_con_discapacidad IN ('SI','Sí','Si')
-LIMIT 100
-
-REGLAS:
-
-- SOLO usa la tabla habitante_calle
-- NUNCA inventes columnas
-- NUNCA inventes tablas
-- SOLO responde SQL PostgreSQL
-- NO expliques nada
-- NO uses markdown
-- NO uses ```sql
-- SIEMPRE usa LIMIT 100
-
-"""
-if pregunta:
-
-    respuesta = client.chat(
-        model="llama3",
-        messages=[
-            {"role": "system", "content": contexto},
-            {"role": "user", "content": pregunta},
-        ],
-    )
-
-    # SQL generado por IA
-    sql = respuesta["message"]["content"]
-
-    # Limpiar SQL
-    sql = sql.replace("```sql", "")
-    sql = sql.replace("```", "")
-    sql = sql.strip()
-    sql = sql.rstrip(";")
-
-    # Agregar LIMIT
-    if "limit" not in sql.lower():
-        sql += " LIMIT 100"
-
-    # Seguridad
-    if any(x in sql.lower() for x in ["drop", "delete", "update", "insert"]):
-
-        st.error("❌ Consulta no permitida")
-
-    else:
-
-        try:
-
-            with engine.connect() as conn:
-
-                result = conn.execute(text(sql))
-
-                rows = result.mappings().all()
-
-            resultado_df = pd.DataFrame(rows)
-
-            # Mostrar tabla
-            st.dataframe(resultado_df, use_container_width=True)
-
-            # Respuesta amigable
-            if len(resultado_df.columns) == 1 and len(resultado_df) > 0:
-
-                valor = resultado_df.iloc[0, 0]
-
-                pregunta_lower = pregunta.lower()
-
-                if "mujer" in pregunta_lower:
-
-                    st.success(f"👩 Hay {valor} mujeres registradas.")
-
-                elif "hombre" in pregunta_lower:
-
-                    st.success(f"👨 Hay {valor} hombres registrados.")
-
-                elif "discapacidad" in pregunta_lower:
-
-                    st.success(
-                        f"♿ Se identificaron {valor} personas con discapacidad."
-                    )
-
-                elif "consumo" in pregunta_lower:
-
-                    st.success(
-                        f"💊 Se encontraron {valor} registros relacionados con consumo."
-                    )
-
-                elif "salud mental" in pregunta_lower:
-
-                    st.success(f"🧠 Hay {valor} casos relacionados con salud mental.")
-
-                else:
-
-                    st.success(f"✅ Resultado encontrado: {valor}")
-
-            else:
-
-                st.success(f"✅ Se encontraron {len(resultado_df)} registros")
-
-        except Exception as e:
-
-            st.error(str(e))
-            # =========================
-
+    Esta funcionalidad requiere un servidor Ollama local.
+    """)
 with tab9:
 
     st.title("🏆 Egresos e Impacto")
