@@ -247,20 +247,32 @@ df["v_consumo"] = df["tipo_de_consumo"].apply(peso_consumo)
 # =========================
 st.header("📊 Indicadores Clave")
 
-# limpieza directa del df (sin df_kpi)
-df = df.drop_duplicates().reset_index(drop=True)
+# Asegúrate de usar SOLO un dataframe base
+df_kpi = df.copy()
 
 col1, col2, col3 = st.columns(3)
-
-col1.metric("Score promedio", round(df["score_vulnerabilidad"].mean(), 2))
-
-col2.metric("Índice promedio", round(df["indice_vulnerabilidad"].mean(), 2))
-
-col3.metric("Casos críticos", len(df[df["nivel_riesgo"] == "Crítico"]))
-
 col4, col5, col6 = st.columns(3)
 
-col4.metric("Total registros", df.shape[0])
+col1.metric(
+    "Score promedio",
+    round(df_kpi["score_vulnerabilidad"].mean(), 2)
+)
+
+col2.metric(
+    "Índice promedio",
+    round(df_kpi["indice_vulnerabilidad"].mean(), 2)
+)
+
+col3.metric(
+    "Casos críticos",
+    len(df_kpi[df_kpi["nivel_riesgo"] == "Crítico"])
+)
+
+col4.metric(
+    "Total registros",
+    len(df_kpi)
+)
+
 col5.metric(
     "Consumo SPA",
     f"{round(df_kpi['consumo_spa'].mean() * 100, 1)}%"
