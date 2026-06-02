@@ -280,18 +280,6 @@ col4.metric(
     "Total registros",
     len(df_kpi)
 )
-
-col5.metric(
-    "Consumo SPA",
-    f"{round(df_kpi['consumo_spa'].mean() * 100, 1)}%"
-    if "consumo_spa" in df_kpi.columns else "N/A"
-)
-
-col6.metric(
-    "Salud mental",
-    f"{round(df_kpi['salud_mental'].mean() * 100, 1)}%"
-    if "salud_mental" in df_kpi.columns else "N/A"
-)
 # KPIs
 # =========================
 # TABS PRINCIPALES
