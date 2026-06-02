@@ -45,6 +45,7 @@ df = pd.read_sql("SELECT * FROM habitante_de_calle", engine)
 # CARGAR DATOS
 # =========================
 df = pd.read_sql("SELECT * FROM habitante_de_calle", engine)
+df = df.drop_duplicates()
 
 # =========================
 # LIMPIEZA / FEATURES
@@ -246,14 +247,40 @@ df["v_consumo"] = df["tipo_de_consumo"].apply(peso_consumo)
 # =========================
 st.header("📊 Indicadores Clave")
 
+# 🔥 DF limpio para evitar duplicados o basura de carga
+df_kpi = df.copy()
+
+# elimina duplicados reales
+df_kpi = df_kpi.drop_duplicates()
+
+# opcional: elimina filas completamente vacías
+df_kpi = df_kpi.dropna(how="all")
+
+
 col1, col2, col3 = st.columns(3)
+
+col1.metric(
+    "Score promedio",
+    round(df_kpi["score_vulnerabilidad"].mean(), 2)
+)
+
+col2.metric(
+    "Índice promedio",
+    round(df_kpi["indice_vulnerabilidad"].mean(), 2)
+)
+
+col3.metric(
+    "Casos críticos",
+    len(df_kpi[df_kpi["nivel_riesgo"] == "Crítico"])
+)
+
+# 👇 segundo bloque separado (NO reutilizar col1)
 col4, col5, col6 = st.columns(3)
-col1.metric("Score promedio", round(df["score_vulnerabilidad"].mean(), 2))
 
-col2.metric("Índice promedio", round(df["indice_vulnerabilidad"].mean(), 2))
-
-col3.metric("Casos críticos", len(df[df["nivel_riesgo"] == "Crítico"]))
-col1.metric("Total registros", len(df))
+col4.metric(
+    "Total registros",
+    df_kpi.shape[0]
+)
 # CONSUMO SPA
 if "tipo_de_consumo" in df.columns:
     consumo = len(
@@ -331,12 +358,11 @@ with tab1:
 
         st.plotly_chart(fig1, use_container_width=True)
 
-        # Interpretación
         sexo_mayor = sexo_df.iloc[0]
 
         st.info(
-            f"La mayoría de la población corresponde a personas de sexo "
-            f"{sexo_mayor['sexo']} con {sexo_mayor['cantidad']} registros."
+            f"La mayoría de la población corresponde a personas de sexo {sexo_mayor['sexo']}, "
+            f"con {sexo_mayor['cantidad']} registros."
         )
 
     # =========================
@@ -355,29 +381,29 @@ with tab1:
 
         st.plotly_chart(fig3, use_container_width=True)
 
-        # =========================
-        # GRUPOS ETARIOS
-        # =========================
-        df["grupo_etario"] = pd.cut(
-            df["edad"],
-            bins=[0, 17, 28, 59, 120],
-            labels=["Adolescencia", "Joven", "Adulto", "Adulto mayor"]
-        )
+    # =========================
+    # GRUPOS ETARIOS
+    # =========================
+    df["grupo_etario"] = pd.cut(
+        df["edad"],
+        bins=[0, 17, 28, 59, 120],
+        labels=["Adolescencia", "Joven", "Adulto", "Adulto mayor"]
+    )
 
-        etario_df = (
-            df["grupo_etario"]
-            .value_counts()
-            .reset_index()
-        )
+    etario_df = (
+        df["grupo_etario"]
+        .value_counts()
+        .reset_index()
+    )
 
-        etario_df.columns = ["grupo", "cantidad"]
+    etario_df.columns = ["grupo", "cantidad"]
 
-        grupo_top = etario_df.iloc[0]
+    grupo_top = etario_df.iloc[0]
 
-        st.info(
-            f"El grupo etario predominante es {grupo_top['grupo']} "
-            f"con {grupo_top['cantidad']} registros."
-        )
+    st.info(
+        f"El grupo etario predominante es {grupo_top['grupo']} "
+        f"con {grupo_top['cantidad']} registros."
+    )
 
     # =========================
     # ADULTOS MAYORES CRÍTICOS
@@ -390,7 +416,15 @@ with tab1:
     )
 
     st.error(
-        f"👴 Se identifican {adultos_criticos} adultos mayores en condición crítica o alta vulnerabilidad."
+        f"👴 Se identifican {adultos_criticos} adultos mayores en condición crítica o de alta vulnerabilidad."
+    )
+
+    adultos_mayores = len(
+        df[df["grupo_etario"] == "Adulto mayor"]
+    )
+
+    st.warning(
+        f"Se identifican {adultos_mayores} personas adultas mayores en situación de calle."
     )
 
     # =========================
@@ -405,15 +439,6 @@ with tab1:
 
     st.warning(
         f"🧑 Se identifican {jovenes_criticos} jóvenes con niveles altos de vulnerabilidad social."
-    )
-
-    # =========================
-    # TOTAL ADULTOS MAYORES
-    # =========================
-    adultos_mayores = len(df[df["grupo_etario"] == "Adulto mayor"])
-
-    st.warning(
-        f"Se identifican {adultos_mayores} personas adultas mayores en situación de calle."
     )
 
     # =========================
@@ -433,11 +458,9 @@ with tab1:
     # =========================
     st.subheader("📚 Educación vs Vulnerabilidad")
 
-    edu = (
-        df.groupby("nivel_educativo_que_tiene_o_cursa")["score_vulnerabilidad"]
-        .mean()
-        .reset_index()
-    )
+    edu = df.groupby(
+        "nivel_educativo_que_tiene_o_cursa"
+    )["score_vulnerabilidad"].mean().reset_index()
 
     fig = px.bar(
         edu,
