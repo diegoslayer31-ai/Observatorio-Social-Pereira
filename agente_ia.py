@@ -377,11 +377,17 @@ with tab1:
 
     df["grupo_etario"] = df["edad"].apply(clasificar_edad)
 
-    etario_df = (
-        df["grupo_etario"]
-        .value_counts()
-        .reset_index()
-    )
+   import pandas as pd
+
+# 1. Convertir edad a número (OBLIGATORIO)
+df["edad"] = pd.to_numeric(df["edad"], errors="coerce")
+
+# 2. Crear grupos etarios (REEMPLAZA la función + apply)
+df["grupo_etario"] = pd.cut(
+    df["edad"],
+    bins=[0, 17, 28, 59, 120],
+    labels=["Adolescencia", "Joven", "Adulto", "Adulto mayor"]
+)
 
     etario_df.columns = ["grupo", "cantidad"]
 
