@@ -46,7 +46,15 @@ df = pd.read_sql("SELECT * FROM habitante_de_calle", engine)
 # =========================
 df = pd.read_sql("SELECT * FROM habitante_de_calle", engine)
 df = df.drop_duplicates()
-
+# 🔥 LIMPIEZA DE COLUMNAS (OBLIGATORIO)
+df.columns = (
+    df.columns
+    .str.strip()
+    .str.lower()
+    .str.replace("\n", " ")
+    .str.replace("  ", " ")
+    .str.replace(" ", "_")
+)
 # =========================
 # LIMPIEZA / FEATURES
 # =========================
