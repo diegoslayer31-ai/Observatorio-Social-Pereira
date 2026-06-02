@@ -41,9 +41,6 @@ st.title("🧠 Observatorio Social Habitante de Calle Pereira 2026")
 # CARGAR DATOS
 # =========================
 df = pd.read_sql("SELECT * FROM habitante_de_calle", engine)
-# 👇 AQUÍ LO PEGAS
-st.write("SHAPE DEL DF:", df.shape)
-st.write(df.head())
 # =========================
 # CARGAR DATOS
 # =========================
