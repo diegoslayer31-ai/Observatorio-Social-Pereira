@@ -74,7 +74,7 @@ def generar_resumen(df):
     alto = len(df[df["nivel_riesgo"] == "Alto"])
     medio = len(df[df["nivel_riesgo"] == "Medio"])
 
-    consumo_top = df["tipo_de_consumo"].value_counts().idxmax()
+    consumo_top = df["tipo_consumo"].value_counts().idxmax()
     etnia_top = df["grupos_etnicos_afro_indigena"].value_counts().idxmax()
 
     return {
@@ -124,7 +124,7 @@ def peso_consumo(x):
 # APLICAR PESO
 # =========================
 
-df["v_consumo"] = df["tipo_de_consumo"].fillna("no").astype(str).apply(peso_consumo)
+df["v_consumo"] = df["tipo_consumo"].fillna("no").astype(str).apply(peso_consumo)
 # =========================
 # LIMPIAR SEXO
 # =========================
@@ -200,7 +200,7 @@ if "comuna_o_corregimiento_de_residencia" in df.columns:
 # ÍNDICE DE VULNERABILIDAD
 # =========================
 
-df["v_consumo"] = df["tipo_de_consumo"].notna().astype(int)
+df["v_consumo"] = df["tipo_consumo"].notna().astype(int)
 df["v_salud"] = (df["enfermedad_mental"] != "No").astype(int)
 df["v_discapacidad"] = (
     df["personas_con_discapacidad"].isin(["SI", "Sí", "Si"]).astype(int)
@@ -251,7 +251,7 @@ Escala:
 
 👉 A mayor score, mayor prioridad de intervención.
 """)
-df["v_consumo"] = df["tipo_de_consumo"].apply(peso_consumo)
+df["v_consumo"] = df["tipo_consumo"].apply(peso_consumo)
 # =========================
 # KPIs
 # =========================
@@ -430,7 +430,7 @@ with tab1:
 
     tabla = pd.crosstab(
         df["grupos_etnicos_afro_indigena"],
-        df["tipo_de_consumo"]
+        df["tipo_consumo"]
     )
 
     st.dataframe(tabla)
@@ -516,7 +516,7 @@ with tab3:
     st.subheader("💊 Tipos de consumo")
 
     consumo_df = (
-        df["tipo_de_consumo"]
+        df["tipo_consumo"]
         .value_counts()
         .reset_index()
     )
