@@ -630,38 +630,63 @@ else:
 # =========================
 # TAB SEMÁFORO SOCIAL
 # =========================
+
 with tab7:
 
     st.subheader("👥 Semáforo social")
 
+    # =========================
+    # NOMBRE COMPLETO
+    # =========================
     df["nombre_completo"] = (
-        df["nombres"].astype(str)
+        df["nombres"].astype(str).str.strip()
         + " "
-        + df["apellidos"].astype(str)
+        + df["apellidos"].astype(str).str.strip()
     )
 
-    st.dataframe(
+    # =========================
+    # NORMALIZAR SEMÁFORO (por si viene sin tilde)
+    # =========================
+    if "semáforo" not in df.columns and "semaforo" in df.columns:
+        df["semáforo"] = df["semaforo"]
 
-        df[[
-            "semáforo",
-            "score_vulnerabilidad",
-            "nombre_completo",
-            "sexo_al_nacer",
-            "edad",
-            "tipo_de_consumo",
-            "nivel_educativo_que_tiene_o_cursa",
-            "barrio_o_vereda_de_residencia"
-        ]]
+    # =========================
+    # COLUMNAS REALES DEL DATASET
+    # =========================
+    columnas = {
+        "semáforo": "semáforo",
+        "score_vulnerabilidad": "score_vulnerabilidad",
+        "nombre_completo": "nombre_completo",
+        "sexo_al_nacer": "sexo_al_nacer",
+        "edad": "edad",
+        "tipo_consumo": "tipo_consumo",
+        "nivel_educativo": "nivel_educativo",
+        "barrio_vereda": "barrio_vereda"
+    }
 
-        .sort_values(
-            by="score_vulnerabilidad",
-            ascending=False
-        ),
+    columnas_existentes = [c for c in columnas.values() if c in df.columns]
 
-        use_container_width=True
-    )
+    # =========================
+    # DATAFRAME SEGURO
+    # =========================
+    if len(columnas_existentes) > 0:
 
+        st.dataframe(
+            df[columnas_existentes]
+            .sort_values(
+                by="score_vulnerabilidad",
+                ascending=False
+            ),
+            use_container_width=True
+        )
+
+    else:
+        st.warning("No se encontraron columnas para el semáforo social")
+        st.write("Columnas disponibles:", df.columns.tolist())
+
+    # =========================
     # INTERPRETACIÓN
+    # =========================
     st.info(
         "El semáforo social prioriza personas con mayor acumulación de riesgos."
     )
