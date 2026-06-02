@@ -1018,8 +1018,8 @@ with tab10:
 
     fig_orientacion = px.histogram(
         df,
-        x="orientacion_sexual_comunidad_lgtbi",
-        color="orientacion_sexual_comunidad_lgtbi",
+        x="orientacion_sexual_lgtbi",
+        color="orientacion_sexual_lgtbi",
         title="Orientación sexual"
     )
     st.plotly_chart(fig_orientacion, use_container_width=True)
