@@ -426,13 +426,18 @@ with tab1:
     # =========================
     st.subheader("💊 Etnia vs Consumo")
 
+# Validación básica para evitar KeyError
+if "grupos_etnicos" in df.columns and "tipo_consumo" in df.columns:
+
     tabla = pd.crosstab(
-        df["grupos_etnicos_afro_indigena"],
+        df["grupos_etnicos"],
         df["tipo_consumo"]
     )
 
     st.dataframe(tabla)
 
+else:
+    st.warning("No se encontraron las columnas 'grupos_etnicos' o 'tipo_consumo' en el dataset.")
     # =========================
     # EDUCACIÓN VS VULNERABILIDAD
     # =========================
