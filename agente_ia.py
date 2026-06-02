@@ -314,7 +314,12 @@ with tab1:
     # =========================
     if "sexo_al_nacer" in df.columns:
 
-        sexo_df = df["sexo_al_nacer"].value_counts().reset_index()
+        sexo_df = (
+            df["sexo_al_nacer"]
+            .value_counts()
+            .reset_index()
+        )
+
         sexo_df.columns = ["sexo", "cantidad"]
 
         fig1 = px.pie(
@@ -326,11 +331,12 @@ with tab1:
 
         st.plotly_chart(fig1, use_container_width=True)
 
+        # Interpretación
         sexo_mayor = sexo_df.iloc[0]
 
         st.info(
-            f"La mayoría de la población corresponde a personas de sexo {sexo_mayor['sexo']} "
-            f"con {sexo_mayor['cantidad']} registros."
+            f"La mayoría de la población corresponde a personas de sexo "
+            f"{sexo_mayor['sexo']} con {sexo_mayor['cantidad']} registros."
         )
 
     # =========================
@@ -349,24 +355,33 @@ with tab1:
 
         st.plotly_chart(fig3, use_container_width=True)
 
-    # =========================
-    # GRUPOS ETARIOS
-    # =========================
+        # =========================
+        # GRUPOS ETARIOS
+        # =========================
+        df["grupo_etario"] = pd.cut(
+            df["edad"],
+            bins=[0, 17, 28, 59, 120],
+            labels=["Adolescencia", "Joven", "Adulto", "Adulto mayor"]
+        )
 
-    df["grupo_etario"] = pd.cut(
-        df["edad"],
-        bins=[0, 17, 28, 59, 120],
-        labels=["Adolescencia", "Joven", "Adulto", "Adulto mayor"]
-    )
+        etario_df = (
+            df["grupo_etario"]
+            .value_counts()
+            .reset_index()
+        )
 
-    # resumen etario (esto lo estabas usando sin definirlo)
-    etario_df = df["grupo_etario"].value_counts().reset_index()
-    etario_df.columns = ["grupo", "cantidad"]
+        etario_df.columns = ["grupo", "cantidad"]
+
+        grupo_top = etario_df.iloc[0]
+
+        st.info(
+            f"El grupo etario predominante es {grupo_top['grupo']} "
+            f"con {grupo_top['cantidad']} registros."
+        )
 
     # =========================
     # ADULTOS MAYORES CRÍTICOS
     # =========================
-
     adultos_criticos = len(
         df[
             (df["grupo_etario"] == "Adulto mayor") &
@@ -375,13 +390,12 @@ with tab1:
     )
 
     st.error(
-        f"👴 Adultos mayores en alta vulnerabilidad: {adultos_criticos}"
+        f"👴 Se identifican {adultos_criticos} adultos mayores en condición crítica o alta vulnerabilidad."
     )
 
     # =========================
     # JÓVENES CRÍTICOS
     # =========================
-
     jovenes_criticos = len(
         df[
             (df["grupo_etario"] == "Joven") &
@@ -390,70 +404,62 @@ with tab1:
     )
 
     st.warning(
-        f"🧑 Jóvenes en alta vulnerabilidad: {jovenes_criticos}"
+        f"🧑 Se identifican {jovenes_criticos} jóvenes con niveles altos de vulnerabilidad social."
     )
 
     # =========================
-    # GRUPO ETARIO PREDOMINANTE
+    # TOTAL ADULTOS MAYORES
     # =========================
-
-    grupo_top = etario_df.iloc[0]
-
-    st.info(
-        f"Grupo etario predominante: {grupo_top['grupo']} "
-        f"con {grupo_top['cantidad']} registros."
-    )
-
     adultos_mayores = len(df[df["grupo_etario"] == "Adulto mayor"])
 
     st.warning(
-        f"Total adultos mayores: {adultos_mayores}"
+        f"Se identifican {adultos_mayores} personas adultas mayores en situación de calle."
     )
 
     # =========================
     # ETNIA VS CONSUMO
     # =========================
-
     st.subheader("💊 Etnia vs Consumo")
 
-    if "grupos_etnicos_afro_indigena" in df.columns and "tipo_de_consumo" in df.columns:
+    tabla = pd.crosstab(
+        df["grupos_etnicos_afro_indigena"],
+        df["tipo_de_consumo"]
+    )
 
-        tabla = pd.crosstab(
-            df["grupos_etnicos_afro_indigena"],
-            df["tipo_de_consumo"]
-        )
-
-        st.dataframe(tabla)
+    st.dataframe(tabla)
 
     # =========================
     # EDUCACIÓN VS VULNERABILIDAD
     # =========================
-
     st.subheader("📚 Educación vs Vulnerabilidad")
 
-    if "nivel_educativo_que_tiene_o_cursa" in df.columns:
+    edu = (
+        df.groupby("nivel_educativo_que_tiene_o_cursa")["score_vulnerabilidad"]
+        .mean()
+        .reset_index()
+    )
 
-        edu = df.groupby(
-            "nivel_educativo_que_tiene_o_cursa"
-        )["score_vulnerabilidad"].mean().reset_index()
+    fig = px.bar(
+        edu,
+        x="nivel_educativo_que_tiene_o_cursa",
+        y="score_vulnerabilidad",
+        color="score_vulnerabilidad",
+        color_continuous_scale="Reds"
+    )
 
-        fig = px.bar(
-            edu,
-            x="nivel_educativo_que_tiene_o_cursa",
-            y="score_vulnerabilidad",
-            color="score_vulnerabilidad",
-            color_continuous_scale="Reds"
-        )
-
-        st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, use_container_width=True)
 
     # =========================
     # GRUPOS ÉTNICOS
     # =========================
-
     if "grupos_etnicos_afro_indigena" in df.columns:
 
-        etnia_df = df["grupos_etnicos_afro_indigena"].value_counts().reset_index()
+        etnia_df = (
+            df["grupos_etnicos_afro_indigena"]
+            .value_counts()
+            .reset_index()
+        )
+
         etnia_df.columns = ["etnia", "cantidad"]
 
         fig2 = px.bar(
