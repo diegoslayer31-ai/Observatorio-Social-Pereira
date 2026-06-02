@@ -608,26 +608,27 @@ with tab6:
 
     st.subheader("📚 Nivel educativo")
 
+if "nivel_educativo" in df.columns:
+
     edu = (
-        df["nivel_educativo_que_tiene_o_cursa"]
+        df["nivel_educativo"]
         .value_counts()
         .reset_index()
     )
 
-    edu.columns = ["nivel", "cantidad"]
+    edu.columns = ["nivel_educativo", "cantidad"]
 
     fig = px.bar(
         edu,
-        x="nivel",
+        x="nivel_educativo",
         y="cantidad",
-        color="cantidad"
+        title="Nivel educativo"
     )
 
-    st.plotly_chart(
-        fig,
-        use_container_width=True
-    )
+    st.plotly_chart(fig, use_container_width=True)
 
+else:
+    st.warning("No existe la columna 'nivel_educativo'")
     # INTERPRETACIÓN
     edu_top = edu.iloc[0]
 
