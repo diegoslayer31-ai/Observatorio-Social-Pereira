@@ -45,6 +45,8 @@ df = pd.read_sql("SELECT * FROM habitante_de_calle", engine)
 # CARGAR DATOS
 # =========================
 df = pd.read_sql("SELECT * FROM habitante_de_calle", engine)
+st.write(df.columns.tolist())
+st.stop()
 df = df.drop_duplicates()
 # 🔥 LIMPIEZA DE COLUMNAS (OBLIGATORIO)
 df.columns = (
