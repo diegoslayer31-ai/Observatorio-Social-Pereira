@@ -1124,7 +1124,7 @@ col2.metric("Tasa de Egreso", f"{tasa_egreso}%")
 
 st.markdown("---")
 
-   st.subheader("📋 Hallazgos Institucionales")
+st.subheader("📋 Hallazgos Institucionales")
 
 hallazgos = []
 
