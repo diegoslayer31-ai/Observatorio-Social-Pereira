@@ -40,11 +40,11 @@ st.title("🧠 Observatorio Social Habitante de Calle Pereira 2026")
 # =========================
 # CARGAR DATOS
 # =========================
-df = pd.read_sql("SELECT * FROM habitante_calle", engine)
+df = pd.read_sql("SELECT * FROM habitante_de_calle", engine)
 # =========================
 # CARGAR DATOS
 # =========================
-df = pd.read_sql("SELECT * FROM habitante_calle", engine)
+df = pd.read_sql("SELECT * FROM habitante_de_calle", engine)
 
 # =========================
 # LIMPIEZA / FEATURES
