@@ -627,9 +627,6 @@ else:
     st.warning(
         "Los bajos niveles educativos pueden aumentar la exclusión social y laboral."
     )
-# =========================
-# TAB SEMÁFORO SOCIAL
-# =========================
 
 # =========================
 # TAB SEMÁFORO SOCIAL
@@ -654,7 +651,7 @@ with tab7:
         df["semáforo"] = df["semaforo"]
 
     # =========================
-    # MAPEO REAL DE COLUMNAS (SEGÚN TU DATASET)
+    # MAPEO REAL DE COLUMNAS 
     # =========================
     columnas = [
         "semáforo",
@@ -668,7 +665,7 @@ with tab7:
     ]
 
     # =========================
-    # FILTRAR SOLO LAS QUE EXISTEN
+    # FILTRO
     # =========================
     columnas_existentes = [c for c in columnas if c in df.columns]
 
@@ -1147,7 +1144,7 @@ else:
         st.warning(h)
 
 st.markdown("---")
-    # =========================
+# =========================
 # CONCLUSIÓN
 # =========================
 
@@ -1336,128 +1333,57 @@ if st.button("📥 Generar Informe Ejecutivo PDF", key="pdf_ejecutivo"):
 # =========================
 
 with tab11:
+
     st.subheader("🔐 Acceso al formulario")
 
-    clave = st.text_input(
-        "Ingrese la contraseña",
-        type="password"
-    )
+    clave = st.text_input("Ingrese la contraseña", type="password")
 
     if clave != "Pereira2026":
         st.warning("Contraseña incorrecta")
         st.stop()
 
     st.success("Acceso autorizado")
-    st.subheader("➕ Nuevo Registro Social")
 
     with st.form("registro_social"):
+
         st.markdown("### Datos personales")
 
         nombres = st.text_input("Nombres")
         apellidos = st.text_input("Apellidos")
 
-        sexo = st.selectbox(
-            "Sexo al nacer",
-            ["Masculino", "Femenino"]
-        )
+        sexo = st.selectbox("Sexo al nacer", ["Masculino", "Femenino"])
+        edad = st.number_input("Edad", 0, 120, 18)
 
-        edad = st.number_input(
-            "Edad",
-            min_value=0,
-            max_value=120,
-            value=18
-        )
+        tipo_id = st.selectbox("Tipo ID", ["CC", "TI", "CE", "PEP", "Otro"])
 
-        tipo_id = st.selectbox(
-            "Tipo de identificación",
-            ["CC", "TI", "CE", "PEP", "Otro"]
-        )
+        numero_id = st.text_input("Número de identificación")
 
-        numero_id = st.text_input(
-            " numero_de_identidadficacion_____sin_puntos,_ni_rayas,el_registr"
-        )
+        etnia = st.selectbox("Grupo étnico", ["Ninguno", "Afrodescendiente", "Indígena", "Mestizo"])
 
-        st.markdown("### Caracterización")
-
-        etnia = st.selectbox(
-            "Grupo étnico",
-            [
-                "Ninguno",
-                "Afrodescendiente",
-                "Indígena",
-                "Mestizo"
-            ]
-        )
-        discapacidad_txt = st.selectbox(
-            "¿Presenta discapacidad?",
-            ["NO", "SI"]
-        )
-        categoria_discapacidad = st.selectbox(
-            "Tipo de discapacidad",
-            [
-                "Física",
-                "Visual",
-                "Auditiva",
-                "Intelectual",
-                "Psicosocial",
-                "Múltiple",
-                "Otra"
-            ],
-            key="categoria_discapacidad_form"
-        )
-        migracion_txt = st.selectbox(
-            "Migración",
-            ["NO", "SI"]
-        )
+        migracion_txt = st.selectbox("Migración", ["NO", "SI"])
         migracion = 1 if migracion_txt == "SI" else 0
+
         educacion = st.selectbox(
             "Nivel educativo",
-            [
-                "Ninguno",
-                "Primaria",
-                "Secundaria",
-                "Técnico",
-                "Tecnólogo",
-                "Universitario"
-            ]
+            ["Ninguno", "Primaria", "Secundaria", "Técnico", "Tecnólogo", "Universitario"]
         )
 
-        st.markdown("### Territorio")
-
-        barrio = st.text_input("Barrio o vereda")
-        comuna = st.text_input("Comuna o corregimiento")
+        barrio = st.text_input("Barrio")
+        comuna = st.text_input("Comuna")
         telefono = st.text_input("Teléfono")
 
-        st.markdown("### Vulnerabilidad")
-
         consumo = st.selectbox(
-            "Tipo de consumo",
-            [
-                "No",
-                "Marihuana",
-                "Cocaína",
-                "Bazuco",
-                "Alcohol",
-                "Heroína",
-                "Policonsumo"
-            ]
+            "Consumo",
+            ["No", "Marihuana", "Cocaína", "Bazuco", "Alcohol", "Heroína", "Policonsumo"]
         )
 
-        enfermedad_mental = st.selectbox(
-            "Enfermedad mental",
-            [
-                "No",
-                "Sí"
-            ]
-        )
+        enfermedad_mental = st.selectbox("Enfermedad mental", ["No", "Sí"])
 
-        guardar = st.form_submit_button(
-        "💾 Guardar registro"
-    )
+        guardar = st.form_submit_button("💾 Guardar registro")
 
-if guardar:
-
-    st.success("Formulario enviado correctamente")
+    
+    if guardar:
+        st.success("Formulario enviado correctamente")
 
 
     sql = text("""
