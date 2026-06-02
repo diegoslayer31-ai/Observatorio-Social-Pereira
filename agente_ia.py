@@ -250,41 +250,32 @@ df["v_consumo"] = df["tipo_de_consumo"].apply(peso_consumo)
 # =========================
 st.header("📊 Indicadores Clave")
 
-# 🔥 DF limpio (evita duplicados y problemas de recarga)
-df_kpi = df.copy()
-df_kpi = df_kpi.drop_duplicates()
-df_kpi = df_kpi.reset_index(drop=True)
+# 🔥 LIMPIEZA SOLO EN MEMORIA (NO toca la base de datos)
+df = df.drop_duplicates().reset_index(drop=True)
 
-# =========================
-# COLUMNAS KPI
-# =========================
 col1, col2, col3 = st.columns(3)
 
 col1.metric(
     "Score promedio",
-    round(df_kpi["score_vulnerabilidad"].mean(), 2)
+    round(df["score_vulnerabilidad"].mean(), 2)
 )
 
 col2.metric(
     "Índice promedio",
-    round(df_kpi["indice_vulnerabilidad"].mean(), 2)
+    round(df["indice_vulnerabilidad"].mean(), 2)
 )
 
 col3.metric(
     "Casos críticos",
-    len(df_kpi[df_kpi["nivel_riesgo"] == "Crítico"])
+    len(df[df["nivel_riesgo"] == "Crítico"])
 )
 
-# =========================
-# SEGUNDA FILA KPI
-# =========================
 col4, col5, col6 = st.columns(3)
 
 col4.metric(
     "Total registros",
-    df_kpi.shape[0]
+    df.shape[0]
 )
-
 col5.metric(
     "Consumo SPA",
     f"{round(df_kpi['consumo_spa'].mean() * 100, 1)}%"
