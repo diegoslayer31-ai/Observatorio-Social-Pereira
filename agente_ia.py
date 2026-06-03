@@ -537,13 +537,45 @@ with tab5:
 
     if "departamento_procedencia" in df.columns:
 
-        barrio_df = df["departamento_procedencia"].value_counts().reset_index()
-        barrio_df.columns = ["departamento", "cantidad"]
+        # =========================
+        # LIMPIEZA BÁSICA
+        # =========================
+        dep_df = (
+            df["departamento_procedencia"]
+            .fillna("Sin dato")
+            .astype(str)
+            .str.strip()
+            .value_counts()
+            .reset_index()
+        )
 
-        st.dataframe(barrio_df)
+        dep_df.columns = ["departamento", "cantidad"]
+
+        # =========================
+        # GRÁFICA (BARRAS)
+        # =========================
+        fig_dep = px.bar(
+            dep_df,
+            x="departamento",
+            y="cantidad",
+            color="cantidad",
+            text="cantidad",
+            title="🌍 Personas por departamento de procedencia"
+        )
+
+        fig_dep.update_traces(textposition="outside")
+        fig_dep.update_layout(xaxis_tickangle=-45)
+
+        st.plotly_chart(fig_dep, use_container_width=True)
+
+        # =========================
+        # TABLA OPCIONAL
+        # =========================
+        with st.expander("📋 Ver tabla detallada"):
+            st.dataframe(dep_df)
 
     else:
-        st.warning("No existe la columna de departamento de procedencia")
+        st.warning("No existe la columna 'departamento_procedencia' en el dataset")
 # =========================
 # TAB EDUCACIÓN
 # =========================
