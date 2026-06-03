@@ -585,9 +585,9 @@ with tab6:
 
     df_local = df.copy()
 
-    if "nivel_educativo_que_tiene_o_cursa" in df_local.columns:
+    if "nivel_educativo" in df_local.columns:
 
-        edu = df_local["nivel_educativo_que_tiene_o_cursa"].value_counts().reset_index()
+        edu = df_local["nivel_educativo"].value_counts().reset_index()
         edu.columns = ["nivel", "conteo"]
 
         edu_top = edu.iloc[0]
