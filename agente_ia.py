@@ -581,61 +581,80 @@ with tab5:
 # =========================
 with tab6:
 
-    st.subheader("📚 Nivel educativo")
+    st.subheader("📚 Educación vs Vulnerabilidad")
 
     df_local = df.copy()
 
-    if "nivel_educativo" in df_local.columns:
+    # =========================
+    # VALIDACIÓN DE COLUMNAS
+    # =========================
+    if "nivel_educativo" in df_local.columns and "score_vulnerabilidad" in df_local.columns:
 
         # =========================
-        # LIMPIEZA Y AGRUPACIÓN
+        # LIMPIEZA
         # =========================
-        edu = (
+        df_local["nivel_educativo"] = (
             df_local["nivel_educativo"]
             .fillna("Sin dato")
             .astype(str)
             .str.strip()
-            .value_counts()
+        )
+
+        # =========================
+        # AGRUPACIÓN (PROMEDIO DE VULNERABILIDAD)
+        # =========================
+        edu_vuln = (
+            df_local.groupby("nivel_educativo")["score_vulnerabilidad"]
+            .mean()
             .reset_index()
         )
 
-        edu.columns = ["nivel", "conteo"]
+        edu_vuln.columns = ["nivel_educativo", "vulnerabilidad_promedio"]
+
+        edu_vuln = edu_vuln.sort_values("vulnerabilidad_promedio", ascending=False)
 
         # =========================
-        # GRÁFICA DE BARRAS
+        # GRÁFICA
         # =========================
-        fig_edu = px.bar(
-            edu,
-            x="nivel",
-            y="conteo",
-            color="conteo",
-            text="conteo",
-            title="📚 Distribución del nivel educativo"
+        fig = px.bar(
+            edu_vuln,
+            x="nivel_educativo",
+            y="vulnerabilidad_promedio",
+            color="vulnerabilidad_promedio",
+            text="vulnerabilidad_promedio",
+            title="📚 Vulnerabilidad promedio según nivel educativo"
         )
 
-        fig_edu.update_traces(textposition="outside")
-        fig_edu.update_layout(xaxis_tickangle=-45)
+        fig.update_traces(texttemplate='%{text:.2f}', textposition="outside")
+        fig.update_layout(xaxis_tickangle=-45)
 
-        st.plotly_chart(fig_edu, use_container_width=True)
+        st.plotly_chart(fig, use_container_width=True)
 
         # =========================
         # HALLAZGO AUTOMÁTICO
         # =========================
-        edu_top = edu.iloc[0]
+        peor_nivel = edu_vuln.iloc[0]
 
-        st.info(
-            f"El nivel educativo predominante es: **{edu_top['nivel']}** "
-            f"con {edu_top['conteo']} registros."
+        mejor_nivel = edu_vuln.iloc[-1]
+
+        st.warning(
+            f"📌 Mayor vulnerabilidad: {peor_nivel['nivel_educativo']} "
+            f"({peor_nivel['vulnerabilidad_promedio']:.2f})"
+        )
+
+        st.success(
+            f"📌 Menor vulnerabilidad: {mejor_nivel['nivel_educativo']} "
+            f"({mejor_nivel['vulnerabilidad_promedio']:.2f})"
         )
 
         # =========================
         # TABLA OPCIONAL
         # =========================
         with st.expander("📋 Ver tabla detallada"):
-            st.dataframe(edu)
+            st.dataframe(edu_vuln)
 
     else:
-        st.warning("No existe la columna 'nivel_educativo' en el dataset")
+        st.warning("Faltan columnas: 'nivel_educativo' o 'score_vulnerabilidad'")
 # =========================
 # TAB SEMÁFORO SOCIAL
 # =========================
