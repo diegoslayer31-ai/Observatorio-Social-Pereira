@@ -533,17 +533,17 @@ with tab4:
 # =========================
 with tab5:
 
-    st.subheader("📍 Barrio o vereda")
+    st.subheader("📍 Departamento de procedencia")
 
-    if "barrio_o_vereda_de_residencia" in df.columns:
+    if "departamento_procedencia" in df.columns:
 
-        barrio_df = df["barrio_o_vereda_de_residencia"].value_counts().reset_index()
-        barrio_df.columns = ["barrio", "cantidad"]
+        barrio_df = df["departamento_procedencia"].value_counts().reset_index()
+        barrio_df.columns = ["departamento", "cantidad"]
 
         st.dataframe(barrio_df)
 
     else:
-        st.warning("No existe la columna de barrio")
+        st.warning("No existe la columna de departamento de procedencia")
 # =========================
 # TAB EDUCACIÓN
 # =========================
