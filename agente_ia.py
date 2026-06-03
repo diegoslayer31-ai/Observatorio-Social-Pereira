@@ -348,7 +348,7 @@ with tab1:
     st.markdown("---")
 
     # =========================
-    # ALERTAS DE EDAD Y RIESGO
+    # ADULTOS MAYORES EN RIESGO
     # =========================
     if "grupo_etario" in df.columns and "nivel_riesgo" in df.columns:
 
@@ -359,32 +359,69 @@ with tab1:
             ]
         )
 
-        st.error(
-            f"👴 Adultos mayores en alto/critico riesgo: {adultos_criticos}"
-        )
-
         adultos_total = len(df[df["grupo_etario"] == "Adulto mayor"])
 
-        st.warning(
-            f"Adultos mayores totales: {adultos_total}"
+        st.error(
+            f"👴 Adultos mayores en alto/crítico riesgo: {adultos_criticos}"
         )
 
+        st.warning(
+            f"Total adultos mayores: {adultos_total}"
+        )
+
+    else:
+        st.info("No se puede calcular riesgo en adultos mayores")
+
+    st.markdown("---")
+
     # =========================
-    # ETNIA VS CONSUMO 
+    # JÓVENES EN RIESGO
+    # =========================
+    if "grupo_etario" in df.columns and "nivel_riesgo" in df.columns:
+
+        jovenes_criticos = len(
+            df[
+                (df["grupo_etario"] == "Joven") &
+                (df["nivel_riesgo"].isin(["Alto", "Crítico"]))
+            ]
+        )
+
+        jovenes_total = len(df[df["grupo_etario"] == "Joven"])
+
+        if jovenes_total > 0:
+            porcentaje_jovenes_criticos = round(
+                (jovenes_criticos / jovenes_total) * 100,
+                2
+            )
+        else:
+            porcentaje_jovenes_criticos = 0
+
+        st.warning(
+            f"🧑 Jóvenes en alta vulnerabilidad: {jovenes_criticos} "
+            f"({porcentaje_jovenes_criticos}%)"
+        )
+
+    else:
+        st.info("No se puede calcular jóvenes en riesgo")
+
+    st.markdown("---")
+
+    # =========================
+    # ETNIA VS CONSUMO
     # =========================
     st.subheader("💊 Etnia vs Consumo")
 
-    if "grupos_etnicos_afro_indigena" in df.columns and "tipo_consumo" in df.columns:
+    if "grupos_etnicos" in df.columns and "tipo_consumo" in df.columns:
 
         tabla = pd.crosstab(
-            df["grupos_etnicos_afro_indigena"],
+            df["grupos_etnicos"],
             df["tipo_consumo"]
         )
 
         st.dataframe(tabla)
 
     else:
-        st.warning("No existen las columnas necesarias para etnia vs consumo")
+        st.warning("No existen columnas para etnia vs consumo")
 # =========================
 # TAB VULNERABILIDAD
 # =========================
