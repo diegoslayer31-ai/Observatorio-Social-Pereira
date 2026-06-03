@@ -665,227 +665,81 @@ with tab8:
 with tab9:
 
     st.title("🏆 Egresos e Impacto")
+
     df_egresados = pd.read_sql("""
-    SELECT *
-    FROM personas_caracterizacion
-    WHERE estado_caso = 'EGRESADO'
-""", engine)
-    # ==========================
-    # IMPORTAR EGRESOS
-    # ==========================
-
-    st.subheader("📥 Cargar egresos desde Excel")
-
-    archivo_egresos = st.file_uploader(
-        "Subir Excel de egresos",
-        type=["xlsx"],
-        key="egresos"
-    )
-
-    if archivo_egresos is not None:
-
-        df_egresos = pd.read_excel(archivo_egresos)
-
-        # Limpiar columnas vacías
-        df_egresos = df_egresos.loc[
-            :, ~df_egresos.columns.str.contains("^Unnamed")
-        ]
-
-        # Renombrar documento
-        df_egresos = df_egresos.rename(
-            columns={
-                "NÚMERO DE IDENTIDAD": "documento"
-            }
-        )
-
-        st.success("Archivo cargado correctamente")
-        st.dataframe(df_egresos)
-
-        if st.button(
-            "📥 Importar egresos a PostgreSQL",
-            key="importar_egresos"
-        ):
-
-            actualizados = 0
-
-            with engine.begin() as conn:
-
-                for _, fila in df_egresos.iterrows():
-
-                    conn.execute(
-                        text("""
-                            UPDATE personas_caracterizacion
-                            SET
-                                estado_caso = 'EGRESADO',
-                                observaciones_egreso = :obs,
-                                funcionario_egreso = :funcionario
-                            WHERE numero_identidad = :doc
-                        """),
-                        {
-                            "doc": str(fila["documento"]),
-                            "obs": str(fila["OBSERVACIONES"]),
-                            "funcionario": str(
-                                fila["FUNCIONARIO /CONTRATISTA  RESPONSABLE"]
-                            )
-                        }
-                    )
-
-                    actualizados += 1
-
-            st.success(
-                f"✅ {actualizados} egresos importados correctamente"
-            )
-
-    st.markdown("---")
+        SELECT *
+        FROM personas_caracterizacion
+        WHERE estado_caso = 'EGRESADO'
+    """, engine)
 
     # ==========================
-    # INDICADORES DE IMPACTO
+    # INDICADORES
     # ==========================
 
     st.subheader("📊 Indicadores de Egreso")
 
-    query = """
+    df_impacto = pd.read_sql_query("""
         SELECT *
         FROM personas_caracterizacion
         WHERE estado_caso = 'EGRESADO'
-    """
-
-    df_impacto = pd.read_sql_query(query, engine)
+    """, engine)
 
     total_egresados = len(df_impacto)
-
     total_personas = len(df)
 
-    tasa_egreso = round(
-        (total_egresados / total_personas) * 100,
-        2
-    ) if total_personas > 0 else 0
+    tasa_egreso = round((total_egresados / total_personas) * 100, 2) if total_personas > 0 else 0
 
     col1, col2, col3 = st.columns(3)
 
-    col1.metric(
-        "🎓 Total Egresados",
-        total_egresados
-    )
+    col1.metric("🎓 Total Egresados", total_egresados)
+    col2.metric("📈 Tasa de Egreso", f"{tasa_egreso}%")
+    col3.metric("👤 Edad Promedio", round(df_impacto["edad"].mean(), 1) if len(df_impacto) > 0 else 0)
 
-    col2.metric(
-        "📈 Tasa de Egreso",
-        f"{tasa_egreso}%"
-    )
+    st.markdown("---")
 
-    col3.metric(
-        "👤 Edad Promedio",
-        round(df_impacto["edad"].mean(), 1)
-        if len(df_impacto) > 0 else 0
-    )
-# ==========================
-# OBSERVACIONES DE EGRESO
-# ==========================
-
-st.subheader("📌 Análisis de Observaciones de Egreso")
-
-obs_df = (
-    df_egresados["observaciones_egreso"]
-    .fillna("Sin observación")
-    .value_counts()
-    .reset_index()
-)
-
-obs_df.columns = ["observacion", "cantidad"]
-
-fig_obs = px.bar(
-    obs_df,
-    x="observacion",
-    y="cantidad",
-    color="cantidad",
-    title="📌 Observaciones de egreso"
-)
-
-st.plotly_chart(fig_obs, use_container_width=True)
-
-
-# ==========================
-# SEXO (EGRESADOS)
-# ==========================
-
-if "sexo_nacer" in df_impacto.columns:
-
-    fig_sexo = px.pie(
-        df_impacto,
-        names="sexo_nacer",
-        title="Egresados por sexo"
-    )
-
-    st.plotly_chart(
-        fig_sexo,
-        use_container_width=True,
-        key="sexo_egresados"
-    )
     # ==========================
-    # ORIENTACIÓN SEXUAL
+    # OBSERVACIONES DE EGRESO 
     # ==========================
+
+    st.subheader("📌 Observaciones de Egreso")
+
+    obs_df = (
+        df_egresados["observaciones_egreso"]
+        .fillna("Sin observación")
+        .value_counts()
+        .reset_index()
+    )
+
+    obs_df.columns = ["observacion", "cantidad"]
+
+    fig_obs = px.bar(
+        obs_df,
+        x="observacion",
+        y="cantidad",
+        color="cantidad",
+        title="📌 Observaciones de egreso"
+    )
+
+    st.plotly_chart(fig_obs, use_container_width=True)
+
+    st.markdown("---")
+
+    # ==========================
+    # DEMOGRAFÍA EGRESADOS
+    # ==========================
+
+    if "sexo_nacer" in df_impacto.columns:
+        st.plotly_chart(px.pie(df_impacto, names="sexo_nacer", title="Sexo"))
 
     if "orientacion_lgbti" in df_impacto.columns:
-    
-        fig_lgbti = px.histogram(
-            df_impacto,
-            x="orientacion_lgbti",
-            color="orientacion_lgbti",
-            title="Orientación sexual"
-        )
+        st.plotly_chart(px.histogram(df_impacto, x="orientacion_lgbti", title="Orientación sexual"))
 
-        st.plotly_chart(
-            fig_lgbti,
-            use_container_width=True,
-            key="lgbti_egresados"
-        )
+    if "grupos_etnicos_afro_indigena" in df_impacto.columns:
+        st.plotly_chart(px.histogram(df_impacto, x="grupos_etnicos_afro_indigena", title="Grupos étnicos"))
 
-    # ==========================
-    # GRUPO ÉTNICO
-    # ==========================
+    st.plotly_chart(px.histogram(df_impacto, x="edad", nbins=10, title="Edad"))
 
-    if "grupo_etnico" in df_impacto.columns:
-
-        fig_etnia = px.histogram(
-            df_impacto,
-            x="grupo_etnico",
-            color="grupo_etnico",
-            title="Grupo étnico"
-        )
-
-        st.plotly_chart(
-            fig_etnia,
-            use_container_width=True,
-            key="etnia_egresados"
-        )
-
-    # ==========================
-    # EDAD
-    # ==========================
-
-    fig_edad = px.histogram(
-        df_impacto,
-        x="edad",
-        nbins=10,
-        title="Distribución de edades"
-    )
-
-    st.plotly_chart(
-        fig_edad,
-        use_container_width=True,
-        key="edad_egresados"
-    )
-
-    # ==========================
-    # CONCLUSIÓN AUTOMÁTICA
-    # ==========================
-
-    st.info(
-        f"""
-        El programa registra actualmente {total_egresados} personas egresadas,
-        equivalentes al {tasa_egreso}% del total de personas caracterizadas.
-        """
-    )
+    st.info(f"Total egresados: {total_egresados} | Tasa: {tasa_egreso}%")
 with tab10:
 
     st.title("📄 Reportes Institucionales")
