@@ -86,39 +86,6 @@ def generar_resumen(df):
     }
 
 # =========================
-# FUNCIÓN PESO CONSUMO
-# =========================
-
-
-def peso_consumo(x):
-
-    x = str(x).lower().strip()
-
-    if x in ["no", "ninguno", "nan", ""]:
-        return 0
-
-    if "heroina" in x or "heroína" in x:
-        return 5
-
-    elif "policonsumo" in x:
-        return 4
-
-    elif "bazuco" in x:
-        return 4
-
-    elif "alcohol" in x:
-        return 4
-
-    elif "coca" in x:
-        return 3
-
-    elif "marihuana" in x:
-        return 1
-
-    return 1
-
-
-# =========================
 # APLICAR PESO
 # =========================
 
@@ -249,7 +216,6 @@ Escala:
 
 👉 A mayor score, mayor prioridad de intervención.
 """)
-df["v_consumo"] = df["tipo_consumo"].apply(peso_consumo)
 # =========================
 # KPIs
 # =========================
@@ -580,15 +546,15 @@ with tab5:
 
     st.subheader("📍 Barrio o vereda")
 
-if "barrio_vereda" in df.columns:
+    if "barrio_o_vereda_de_residencia" in df.columns:
 
-    barrio_df = df["barrio_vereda"].value_counts().reset_index()
-    barrio_df.columns = ["barrio", "cantidad"]
+        barrio_df = df["barrio_o_vereda_de_residencia"].value_counts().reset_index()
+        barrio_df.columns = ["barrio", "cantidad"]
 
-    st.dataframe(barrio_df)
+        st.dataframe(barrio_df)
 
-else:
-    st.warning("No existe la columna 'barrio_vereda' en la base de datos")
+    else:
+        st.warning("No existe la columna de barrio")
 # =========================
 # TAB EDUCACIÓN
 # =========================
@@ -596,27 +562,22 @@ with tab6:
 
     st.subheader("📚 Nivel educativo")
 
-if "nivel_educativo" in df.columns:
+    if "nivel_educativo_que_tiene_o_cursa" in df.columns:
 
-    edu = (
-        df["nivel_educativo"]
-        .value_counts()
-        .reset_index()
-    )
+        edu = df["nivel_educativo_que_tiene_o_cursa"].value_counts().reset_index()
+        edu.columns = ["nivel_educativo", "cantidad"]
 
-    edu.columns = ["nivel_educativo", "cantidad"]
+        fig = px.bar(
+            edu,
+            x="nivel_educativo",
+            y="cantidad",
+            title="Nivel educativo"
+        )
 
-    fig = px.bar(
-        edu,
-        x="nivel_educativo",
-        y="cantidad",
-        title="Nivel educativo"
-    )
+        st.plotly_chart(fig, use_container_width=True)
 
-    st.plotly_chart(fig, use_container_width=True)
-
-else:
-    st.warning("No existe la columna 'nivel_educativo'")
+    else:
+        st.warning("No existe la columna de educación")
     # INTERPRETACIÓN
     edu_top = edu.iloc[0]
 
@@ -1039,12 +1000,12 @@ with tab10:
 st.subheader("🚬 Consumo de Sustancias")
 
 if "tipo_consumo" in df.columns:
-
+    
     fig_consumo = px.histogram(
         df,
         x="tipo_consumo",
-        color="tipo_consumo",
-        title="Tipo de consumo"
+        color="tipo_consumo"
+    )
     )
 
     st.plotly_chart(fig_consumo, use_container_width=True)
@@ -1147,7 +1108,6 @@ st.markdown("---")
 # =========================
 # CONCLUSIÓN
 # =========================
-
 st.subheader("📝 Conclusión Ejecutiva")
 
 st.info(f"""
