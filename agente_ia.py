@@ -273,7 +273,9 @@ with tab1:
 
     st.subheader("📊 Caracterización general")
 
+    # =========================
     # SEXO AL NACER
+    # =========================
     if "sexo_al_nacer" in df.columns:
 
         sexo_df = df["sexo_al_nacer"].value_counts().reset_index()
@@ -288,29 +290,88 @@ with tab1:
 
         st.plotly_chart(fig1, use_container_width=True)
 
+        sexo_top = sexo_df.iloc[0]
+
+        st.info(
+            f"Predomina el sexo {sexo_top['sexo']} con {sexo_top['cantidad']} registros."
+        )
+
+    else:
+        st.warning("No existe la columna 'sexo_al_nacer'")
+
+    st.markdown("---")
+
+    # =========================
     # EDAD
+    # =========================
     if "edad" in df.columns:
 
         df["edad"] = pd.to_numeric(df["edad"], errors="coerce")
 
-        fig3 = px.histogram(df, x="edad", nbins=20, title="Distribución de edades")
+        fig2 = px.histogram(
+            df,
+            x="edad",
+            nbins=20,
+            title="Distribución de edades"
+        )
 
-        st.plotly_chart(fig3, use_container_width=True)
+        st.plotly_chart(fig2, use_container_width=True)
 
-    # GRUPOS ETARIOS
-    df["grupo_etario"] = pd.cut(
-        df["edad"],
-        bins=[0, 17, 28, 59, 120],
-        labels=["Adolescencia", "Joven", "Adulto", "Adulto mayor"]
-    )
+    else:
+        st.warning("No existe la columna 'edad'")
 
-    etario_df = df["grupo_etario"].value_counts().reset_index()
-    etario_df.columns = ["grupo", "cantidad"]
+    st.markdown("---")
 
-    st.subheader("📌 Grupo etario predominante")
-    st.info(f"{etario_df.iloc[0]['grupo']} con {etario_df.iloc[0]['cantidad']} registros")
+    # =========================
+    # GRUPO ETARIO
+    # =========================
+    if "edad" in df.columns:
 
-    # 🔥 ETNIA VS CONSUMO (SOLO AQUÍ)
+        df["grupo_etario"] = pd.cut(
+            df["edad"],
+            bins=[0, 17, 28, 59, 120],
+            labels=["Adolescencia", "Joven", "Adulto", "Adulto mayor"]
+        )
+
+        etario_df = df["grupo_etario"].value_counts().reset_index()
+        etario_df.columns = ["grupo", "cantidad"]
+
+        grupo_top = etario_df.iloc[0]
+
+        st.info(
+            f"Grupo etario predominante: {grupo_top['grupo']} con {grupo_top['cantidad']} registros."
+        )
+
+    else:
+        st.warning("No se puede calcular grupo etario sin la columna edad")
+
+    st.markdown("---")
+
+    # =========================
+    # ALERTAS DE EDAD Y RIESGO
+    # =========================
+    if "grupo_etario" in df.columns and "nivel_riesgo" in df.columns:
+
+        adultos_criticos = len(
+            df[
+                (df["grupo_etario"] == "Adulto mayor") &
+                (df["nivel_riesgo"].isin(["Alto", "Crítico"]))
+            ]
+        )
+
+        st.error(
+            f"👴 Adultos mayores en alto/critico riesgo: {adultos_criticos}"
+        )
+
+        adultos_total = len(df[df["grupo_etario"] == "Adulto mayor"])
+
+        st.warning(
+            f"Adultos mayores totales: {adultos_total}"
+        )
+
+    # =========================
+    # ETNIA VS CONSUMO 
+    # =========================
     st.subheader("💊 Etnia vs Consumo")
 
     if "grupos_etnicos_afro_indigena" in df.columns and "tipo_consumo" in df.columns:
@@ -323,52 +384,7 @@ with tab1:
         st.dataframe(tabla)
 
     else:
-        st.warning("Faltan columnas para etnia vs consumo")
-    # =========================
-    # EDUCACIÓN VS VULNERABILIDAD
-    # =========================
-    st.subheader("📚 Educación vs Vulnerabilidad")
-
-col_edu = "nivel_educativo_que_tiene_o_cursa"
-
-if col_edu in df.columns:
-
-    edu = df.groupby(col_edu)["score_vulnerabilidad"].mean().reset_index()
-
-    fig = px.bar(
-        edu,
-        x=col_edu,
-        y="score_vulnerabilidad",
-        title="Educación vs Vulnerabilidad"
-    )
-
-    st.plotly_chart(fig, use_container_width=True)
-
-else:
-    st.warning("⚠️ La columna de educación no existe en el dataset")
-
-    # =========================
-    # GRUPOS ÉTNICOS
-    # =========================
-    if "grupos_etnicos_afro_indigena" in df.columns:
-
-        etnia_df = (
-            df["grupos_etnicos_afro_indigena"]
-            .value_counts()
-            .reset_index()
-        )
-
-        etnia_df.columns = ["etnia", "cantidad"]
-
-        fig2 = px.bar(
-            etnia_df,
-            x="etnia",
-            y="cantidad",
-            color="cantidad",
-            title="Grupos étnicos"
-        )
-
-        st.plotly_chart(fig2, use_container_width=True)
+        st.warning("No existen las columnas necesarias para etnia vs consumo")
 # =========================
 # TAB VULNERABILIDAD
 # =========================
