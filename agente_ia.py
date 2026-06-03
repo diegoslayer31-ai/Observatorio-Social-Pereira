@@ -98,7 +98,7 @@ df["score_vulnerabilidad"] = ...
 df["nivel_riesgo"] = ...
 
 # =========================
-# FUNCIONES AUXILIARES (AQUÍ VA)
+# FUNCIONES AUXILIARES 
 # =========================
 def generar_resumen(df):
 
@@ -565,35 +565,21 @@ with tab6:
 
     st.subheader("📚 Nivel educativo")
 
-    if "nivel_educativo_que_tiene_o_cursa" in df.columns:
+    df_local = df.copy()
 
-        edu = (
-            df["nivel_educativo_que_tiene_o_cursa"]
-            .value_counts()
-            .reset_index()
-        )
+    if "nivel_educativo_que_tiene_o_cursa" in df_local.columns:
 
-        edu.columns = ["nivel", "cantidad"]
+        edu = df_local["nivel_educativo_que_tiene_o_cursa"].value_counts().reset_index()
+        edu.columns = ["nivel", "conteo"]
 
-        fig = px.bar(
-            edu,
-            x="nivel",
-            y="cantidad",
-            title="Nivel educativo"
-        )
+        edu_top = edu.iloc[0]
 
-        st.plotly_chart(fig, use_container_width=True)
+        st.dataframe(edu)
 
-        if len(edu) > 0:
-            edu_top = edu.iloc[0]
-        st.info(f"El nivel educativo predominante es: {edu_top['nivel']}.")
-
-        st.info(
-            f"El nivel educativo predominante es: {edu_top['nivel']}."
-        )
+        st.info(f"El nivel educativo predominante es: {edu_top['nivel']}")
 
     else:
-        st.warning("No existe la columna de educación en el dataset")
+        st.warning("No existe la columna de educación")
 # =========================
 # TAB SEMÁFORO SOCIAL
 # =========================
