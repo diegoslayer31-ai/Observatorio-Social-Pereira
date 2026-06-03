@@ -585,7 +585,7 @@ with tab6:
         st.plotly_chart(fig, use_container_width=True)
 
         if len(edu) > 0:
-        edu_top = edu.iloc[0]
+            edu_top = edu.iloc[0]
         st.info(f"El nivel educativo predominante es: {edu_top['nivel']}.")
 
         st.info(
