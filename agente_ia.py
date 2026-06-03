@@ -329,19 +329,23 @@ with tab1:
     # =========================
     st.subheader("📚 Educación vs Vulnerabilidad")
 
-    edu = df.groupby(
-        "nivel_educativo_que_tiene_o_cursa"
-    )["score_vulnerabilidad"].mean().reset_index()
+col_edu = "nivel_educativo_que_tiene_o_cursa"
+
+if col_edu in df.columns:
+
+    edu = df.groupby(col_edu)["score_vulnerabilidad"].mean().reset_index()
 
     fig = px.bar(
         edu,
-        x="nivel_educativo_que_tiene_o_cursa",
+        x=col_edu,
         y="score_vulnerabilidad",
-        color="score_vulnerabilidad",
-        color_continuous_scale="Reds"
+        title="Educación vs Vulnerabilidad"
     )
 
     st.plotly_chart(fig, use_container_width=True)
+
+else:
+    st.warning("⚠️ La columna de educación no existe en el dataset")
 
     # =========================
     # GRUPOS ÉTNICOS
