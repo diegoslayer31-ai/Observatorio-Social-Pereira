@@ -839,30 +839,6 @@ with tab10:
     st.markdown("---")
 
 # =========================
-# VULNERABILIDAD
-# =========================
-
-st.subheader("⚠️ Vulnerabilidad Social")
-
-fig_riesgo = px.histogram(
-    df,
-    x="nivel_riesgo",
-    color="nivel_riesgo",
-    title="Distribución de nivel de riesgo"
-)
-
-st.plotly_chart(fig_riesgo, use_container_width=True)
-
-if "semáforo" in df.columns:
-    fig_semaforo = px.pie(
-        df,
-        names="semáforo",
-        title="Clasificación por semáforo"
-    )
-    st.plotly_chart(fig_semaforo, use_container_width=True)
-
-st.markdown("---")
-# =========================
 # KPIs BASE
 # =========================
 
