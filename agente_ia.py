@@ -748,204 +748,14 @@ with tab10:
     # =========================
     # KPIs BASE
     # =========================
-
     total = len(df)
-
-    score = round(df["score_vulnerabilidad"].mean(), 2)
-
-    criticos = len(df[df["nivel_riesgo"] == "Crítico"])
-
-    edad_promedio = round(df["edad"].mean(), 1)
-
-    # =========================
-    # EGRESADOS (FUENTE CORRECTA)
-    # =========================
-
-    df_egresados = pd.read_sql("""
-    SELECT
-        numero_identidad,
-        estado_caso,
-        edad,
-        sexo_nacer,
-        grupo_etnico,
-        orientacion_lgbti,
-        observaciones_egreso,
-        funcionario_egreso
-    FROM personas_caracterizacion
-    WHERE estado_caso = 'EGRESADO'
-""", engine)
-
-    total_egresados = len(df_egresados)
-
-    tasa_egreso = round((total_egresados / total) * 100, 2) if total > 0 else 0
-
-    # =========================
-    # INDICADORES
-    # =========================
-
-    st.subheader("📊 Indicadores Estratégicos")
-
-    col1, col2, col3, col4, col5 = st.columns(5)
-
-    col1.metric("👥 Personas", total)
-    col2.metric("⚠️ Riesgo crítico", criticos)
-    col3.metric("📈 Vulnerabilidad", score)
-    col4.metric("🏆 Egresados", total_egresados)
-    col5.metric("📊 Tasa Egreso", f"{tasa_egreso}%")
-
-    st.markdown("---")
-
-    # =========================
-    # PERFIL SOCIODEMOGRÁFICO
-    # =========================
-
-    st.subheader("👤 Perfil Sociodemográfico")
-
-    c1, c2 = st.columns(2)
-
-    with c1:
-        fig_sexo = px.pie(df, names="sexo_al_nacer", title="Sexo al nacer")
-        st.plotly_chart(fig_sexo, use_container_width=True)
-
-    with c2:
-        fig_edad = px.histogram(df, x="edad", nbins=15, title="Distribución de edades")
-        st.plotly_chart(fig_edad, use_container_width=True)
-
-    st.markdown("---")
-
-    # =========================
-    # DIVERSIDAD
-    # =========================
-
-    st.subheader("🏳️ Diversidad e Inclusión")
-
-    fig_orientacion = px.histogram(
-        df,
-        x="orientacion_sexual_lgtbi",
-        color="orientacion_sexual_lgtbi",
-        title="Orientación sexual"
-    )
-    st.plotly_chart(fig_orientacion, use_container_width=True)
-
-    if "grupos_etnicos_afro_indigena" in df.columns:
-        fig_etnia = px.histogram(
-            df,
-            x="grupos_etnicos_afro_indigena",
-            color="grupos_etnicos_afro_indigena",
-            title="Grupos étnicos"
-        )
-        st.plotly_chart(fig_etnia, use_container_width=True)
-
-    st.markdown("---")
-
-# =========================
-# KPIs BASE
-# =========================
-
-total = len(df)
-score = round(df["score_vulnerabilidad"].mean(), 2)
-criticos = len(df[df["nivel_riesgo"] == "Crítico"])
-edad_promedio = round(df["edad"].mean(), 1)
-
-# EGRESADOS
-df_egresados = pd.read_sql("""
-    SELECT *
-    FROM personas_caracterizacion
-    WHERE estado_caso = 'EGRESADO'
-""", engine)
-
-total_egresados = len(df_egresados)
-tasa_egreso = round((total_egresados / total) * 100, 2) if total > 0 else 0
-# =========================
-# IMPACTO
-# =========================
-
-st.subheader("🏆 Impacto Institucional")
-
-col1, col2 = st.columns(2)
-
-col1.metric("Egresados", total_egresados)
-col2.metric("Tasa de Egreso", f"{tasa_egreso}%")
-
-st.markdown("---")
-
-st.subheader("📋 Hallazgos Institucionales")
-
-hallazgos = []
-
-if criticos > total * 0.25:
-    hallazgos.append("Alta concentración de riesgo crítico.")
-
-if score > 7:
-    hallazgos.append("Vulnerabilidad promedio elevada.")
-
-if tasa_egreso < 10:
-    hallazgos.append("Baja tasa de egreso institucional.")
-
-if edad_promedio > 50:
-    hallazgos.append("Envejecimiento progresivo de la población.")
-
-if len(hallazgos) == 0:
-    st.success("No se identifican alertas relevantes.")
-else:
-    for h in hallazgos:
-        st.warning(h)
-
-st.markdown("---")
-# =========================
-# CONCLUSIÓN
-# =========================
-st.subheader("📝 Conclusión Ejecutiva")
-
-st.info(f"""
-El Observatorio Social registra actualmente {total} personas.
-
-Edad promedio: {edad_promedio} años.
-
-Vulnerabilidad promedio: {score}.
-
-Casos críticos: {criticos}.
-
-Egresados: {total_egresados} ({tasa_egreso}%).
-
-Se recomienda fortalecer intervención social,
-salud mental y seguimiento post-egreso.
-""")
-
-st.markdown("---")
-st.subheader("📄 Informe Ejecutivo")
-
-if st.button("📥 Generar Informe Ejecutivo PDF", key="pdf_ejecutivo"):
-
-    # =========================
-    # IMPORTS BASE PDF
-    # =========================
-    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
-    from reportlab.lib.styles import getSampleStyleSheet
-    from reportlab.lib.pagesizes import letter
-    import os
-
-    styles = getSampleStyleSheet()
-    contenido = []
-
-    archivo = "informe_observatorio_social.pdf"
-
-    doc = SimpleDocTemplate(archivo, pagesize=letter)
-
-    # =========================
-    # KPIs BASE (df = habitante_calle)
-    # =========================
-
-    total = len(df)
-
     score = round(df["score_vulnerabilidad"].mean(), 2)
     criticos = len(df[df["nivel_riesgo"] == "Crítico"])
     edad_promedio = round(df["edad"].mean(), 1)
 
     # =========================
-    # EGRESADOS (FUENTE CORRECTA)
+    # EGRESADOS
     # =========================
-
     df_egresados = pd.read_sql("""
         SELECT *
         FROM personas_caracterizacion
@@ -953,129 +763,200 @@ if st.button("📥 Generar Informe Ejecutivo PDF", key="pdf_ejecutivo"):
     """, engine)
 
     total_egresados = len(df_egresados)
-
     tasa_egreso = round((total_egresados / total) * 100, 2) if total > 0 else 0
 
     # =========================
-    # ENCABEZADO
+    # INDICADORES
     # =========================
+    st.subheader("📊 Indicadores Estratégicos")
 
-    contenido.append(Paragraph("INFORME EJECUTIVO - OBSERVATORIO SOCIAL", styles["Title"]))
-    contenido.append(Spacer(1, 12))
+    col1, col2, col3, col4, col5 = st.columns(5)
 
-    # =========================
-    # KPIs
-    # =========================
+    col1.metric("👥 Personas", total)
+    col2.metric("⚠️ Críticos", criticos)
+    col3.metric("📈 Score", score)
+    col4.metric("🏆 Egresados", total_egresados)
+    col5.metric("📊 Tasa", f"{tasa_egreso}%")
 
-    contenido.append(Paragraph(f"Personas caracterizadas: {total}", styles["BodyText"]))
-    contenido.append(Paragraph(f"Edad promedio: {edad_promedio}", styles["BodyText"]))
-    contenido.append(Paragraph(f"Score de vulnerabilidad: {score}", styles["BodyText"]))
-    contenido.append(Paragraph(f"Casos críticos: {criticos}", styles["BodyText"]))
-    contenido.append(Paragraph(f"Egresados: {total_egresados}", styles["BodyText"]))
-    contenido.append(Paragraph(f"Tasa de egreso: {tasa_egreso}%", styles["BodyText"]))
-
-    contenido.append(Spacer(1, 12))
+    st.markdown("---")
 
     # =========================
-    # ANÁLISIS ESTADÍSTICO
+    # PERFIL
     # =========================
+    st.subheader("👤 Perfil Sociodemográfico")
 
-    contenido.append(Paragraph("ANÁLISIS ESTADÍSTICO", styles["Heading2"]))
+    c1, c2 = st.columns(2)
 
-    contenido.append(Paragraph(
-        f"""
-        La población analizada presenta una edad promedio de {edad_promedio} años.
-        El índice promedio de vulnerabilidad es de {score} puntos.
+    with c1:
+        st.plotly_chart(
+            px.pie(df, names="sexo_al_nacer", title="Sexo al nacer"),
+            use_container_width=True
+        )
 
-        Los casos clasificados como críticos representan
-        aproximadamente {round((criticos/total)*100,2) if total > 0 else 0}% de la población.
-        """,
-        styles["BodyText"]
-    ))
+    with c2:
+        st.plotly_chart(
+            px.histogram(df, x="edad", nbins=15, title="Edad"),
+            use_container_width=True
+        )
 
-    contenido.append(Spacer(1, 12))
+    st.markdown("---")
+
+    # =========================
+    # DIVERSIDAD
+    # =========================
+    st.subheader("🏳️ Diversidad")
+
+    st.plotly_chart(
+        px.histogram(
+            df,
+            x="orientacion_sexual_lgtbi",
+            color="orientacion_sexual_lgtbi",
+            title="Orientación sexual"
+        ),
+        use_container_width=True
+    )
+
+    if "grupos_etnicos_afro_indigena" in df.columns:
+        st.plotly_chart(
+            px.histogram(
+                df,
+                x="grupos_etnicos_afro_indigena",
+                color="grupos_etnicos_afro_indigena",
+                title="Grupos étnicos"
+            ),
+            use_container_width=True
+        )
+
+    st.markdown("---")
+
+    # =========================
+    # IMPACTO
+    # =========================
+    st.subheader("🏆 Impacto Institucional")
+
+    col1, col2 = st.columns(2)
+    col1.metric("Egresados", total_egresados)
+    col2.metric("Tasa Egreso", f"{tasa_egreso}%")
 
     # =========================
     # HALLAZGOS
     # =========================
-
-    contenido.append(Paragraph("HALLAZGOS INSTITUCIONALES", styles["Heading2"]))
+    st.subheader("📋 Hallazgos")
 
     hallazgos = []
 
     if criticos > total * 0.25:
-        hallazgos.append("Alta concentración de población en riesgo crítico.")
+        hallazgos.append("Alta concentración de riesgo crítico.")
 
     if score > 7:
-        hallazgos.append("Nivel promedio de vulnerabilidad elevado.")
+        hallazgos.append("Vulnerabilidad elevada.")
 
     if tasa_egreso < 10:
-        hallazgos.append("Baja tasa de egreso institucional.")
+        hallazgos.append("Baja tasa de egreso.")
 
     if edad_promedio > 50:
-        hallazgos.append("Tendencia de envejecimiento en la población atendida.")
+        hallazgos.append("Envejecimiento poblacional.")
 
     if len(hallazgos) == 0:
-        hallazgos.append("No se identifican alertas relevantes en el análisis.")
+        st.success("Sin alertas relevantes.")
+    else:
+        for h in hallazgos:
+            st.warning(h)
 
-    for h in hallazgos:
-        contenido.append(Paragraph(f"• {h}", styles["BodyText"]))
-
-    contenido.append(Spacer(1, 12))
-
-    # =========================
-    # RECOMENDACIONES
-    # =========================
-
-    contenido.append(Paragraph("RECOMENDACIONES", styles["Heading2"]))
-
-    recomendaciones = [
-        "Fortalecer seguimiento a casos de alta vulnerabilidad.",
-        "Incrementar estrategias de inclusión social.",
-        "Reforzar atención en salud mental.",
-        "Ampliar programas de reducción de daños.",
-        "Fortalecer procesos de egreso sostenible."
-    ]
-
-    for r in recomendaciones:
-        contenido.append(Paragraph(f"• {r}", styles["BodyText"]))
-
-    contenido.append(Spacer(1, 12))
+    st.markdown("---")
 
     # =========================
     # CONCLUSIÓN
     # =========================
+    st.subheader("📝 Conclusión")
 
-    contenido.append(Paragraph("CONCLUSIÓN INSTITUCIONAL", styles["Heading2"]))
+    st.info(f"""
+    Total: {total}
+    Score: {score}
+    Críticos: {criticos}
+    Egresados: {total_egresados}
+    Tasa: {tasa_egreso}%
+    """)
 
-    contenido.append(Paragraph(
-        f"""
-        El Observatorio Social registra {total} personas caracterizadas.
-        La tasa de egreso es del {tasa_egreso}%.
-
-        Los resultados evidencian la necesidad de fortalecer
-        estrategias integrales de intervención social,
-        salud mental, reducción de riesgos y acompañamiento
-        post-egreso para garantizar procesos sostenibles de inclusión.
-        """,
-        styles["BodyText"]
-    ))
+    st.markdown("---")
 
     # =========================
-    # GENERAR PDF
+    # PDF AVANZADO
     # =========================
+    st.subheader("📄 Informe PDF Avanzado")
 
-    doc.build(contenido)
+    if st.button("📥 Generar PDF completo"):
 
-    with open(archivo, "rb") as pdf:
-        st.download_button(
-            "⬇️ Descargar Informe PDF",
-            pdf,
-            file_name=archivo,
-            mime="application/pdf"
-        )
+        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image
+        from reportlab.lib.styles import getSampleStyleSheet
+        from reportlab.lib.pagesizes import letter
+        import matplotlib.pyplot as plt
 
-    st.success("✅ Informe generado correctamente")
+        styles = getSampleStyleSheet()
+        contenido = []
+        archivo = "informe_observatorio.pdf"
+        doc = SimpleDocTemplate(archivo, pagesize=letter)
+
+        # =========================
+        # GRAFICO 1 (EDAD)
+        # =========================
+        fig1 = px.histogram(df, x="edad", title="Distribución de edad")
+        fig1.write_image("edad.png")
+
+        # =========================
+        # GRAFICO 2 (SEXO)
+        # =========================
+        fig2 = px.pie(df, names="sexo_al_nacer", title="Sexo")
+        fig2.write_image("sexo.png")
+
+        # =========================
+        # CONTENIDO PDF
+        # =========================
+        contenido.append(Paragraph("INFORME EJECUTIVO - OBSERVATORIO SOCIAL", styles["Title"]))
+        contenido.append(Spacer(1, 12))
+
+        contenido.append(Paragraph(f"Personas: {total}", styles["BodyText"]))
+        contenido.append(Paragraph(f"Score: {score}", styles["BodyText"]))
+        contenido.append(Paragraph(f"Críticos: {criticos}", styles["BodyText"]))
+        contenido.append(Paragraph(f"Egresados: {total_egresados}", styles["BodyText"]))
+        contenido.append(Paragraph(f"Tasa: {tasa_egreso}%", styles["BodyText"]))
+
+        contenido.append(Spacer(1, 12))
+
+        contenido.append(Paragraph("ANÁLISIS GENERAL", styles["Heading2"]))
+        contenido.append(Paragraph(
+            "El análisis muestra la distribución poblacional y niveles de riesgo asociados.",
+            styles["BodyText"]
+        ))
+
+        contenido.append(Spacer(1, 12))
+
+        # =========================
+        # INSERTAR GRAFICOS
+        # =========================
+        contenido.append(Image("edad.png", width=400, height=200))
+        contenido.append(Spacer(1, 12))
+        contenido.append(Image("sexo.png", width=400, height=200))
+
+        contenido.append(Spacer(1, 12))
+
+        contenido.append(Paragraph("CONCLUSIÓN", styles["Heading2"]))
+        contenido.append(Paragraph(
+            "Se recomienda fortalecer intervención social y seguimiento de casos críticos.",
+            styles["BodyText"]
+        ))
+
+        doc.build(contenido)
+
+        with open(archivo, "rb") as f:
+            st.download_button(
+                "⬇️ Descargar PDF",
+                f,
+                file_name=archivo,
+                mime="application/pdf"
+            )
+
+        st.success("PDF generado correctamente")
 # NUEVO REGISTRO
 # =========================
 
