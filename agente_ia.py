@@ -55,6 +55,27 @@ df.columns = (
     .str.replace("  ", " ")
     .str.replace(" ", "_")
 )
+def peso_consumo(x):
+    x = str(x).lower()
+
+    if "heroina" in x or "heroína" in x:
+        return 5
+    elif "policonsumo" in x:
+        return 4
+    elif "bazuco" in x:
+        return 4
+    elif "alcohol" in x:
+        return 4
+    elif "coca" in x:
+        return 3
+    elif "marihuana" in x:
+        return 1
+    elif x in ["no", "ninguno", "nan", ""]:
+        return 0
+    else:
+        return 1
+    
+df["v_consumo"] = df["tipo_consumo"].apply(peso_consumo)
 # =========================
 # LIMPIEZA / FEATURES
 # =========================
