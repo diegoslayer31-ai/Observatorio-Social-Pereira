@@ -587,17 +587,55 @@ with tab6:
 
     if "nivel_educativo" in df_local.columns:
 
-        edu = df_local["nivel_educativo"].value_counts().reset_index()
+        # =========================
+        # LIMPIEZA Y AGRUPACIÓN
+        # =========================
+        edu = (
+            df_local["nivel_educativo"]
+            .fillna("Sin dato")
+            .astype(str)
+            .str.strip()
+            .value_counts()
+            .reset_index()
+        )
+
         edu.columns = ["nivel", "conteo"]
 
+        # =========================
+        # GRÁFICA DE BARRAS
+        # =========================
+        fig_edu = px.bar(
+            edu,
+            x="nivel",
+            y="conteo",
+            color="conteo",
+            text="conteo",
+            title="📚 Distribución del nivel educativo"
+        )
+
+        fig_edu.update_traces(textposition="outside")
+        fig_edu.update_layout(xaxis_tickangle=-45)
+
+        st.plotly_chart(fig_edu, use_container_width=True)
+
+        # =========================
+        # HALLAZGO AUTOMÁTICO
+        # =========================
         edu_top = edu.iloc[0]
 
-        st.dataframe(edu)
+        st.info(
+            f"El nivel educativo predominante es: **{edu_top['nivel']}** "
+            f"con {edu_top['conteo']} registros."
+        )
 
-        st.info(f"El nivel educativo predominante es: {edu_top['nivel']}")
+        # =========================
+        # TABLA OPCIONAL
+        # =========================
+        with st.expander("📋 Ver tabla detallada"):
+            st.dataframe(edu)
 
     else:
-        st.warning("No existe la columna de educación")
+        st.warning("No existe la columna 'nivel_educativo' en el dataset")
 # =========================
 # TAB SEMÁFORO SOCIAL
 # =========================
