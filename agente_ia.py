@@ -839,38 +839,6 @@ with tab10:
     st.markdown("---")
 
 # =========================
-# CONSUMO
-# =========================
-
-st.subheader("🚬 Consumo de Sustancias")
-
-if "tipo_consumo" in df.columns:
-    
-    fig_consumo = px.histogram(
-        df,
-        x="tipo_consumo",
-        color="tipo_consumo"
-    )
-    st.plotly_chart(fig_consumo, use_container_width=True)
-
-    consumo_promedio = df.groupby("tipo_consumo")["score_vulnerabilidad"].mean().reset_index()
-
-    fig_relacion = px.bar(
-        consumo_promedio,
-        x="tipo_consumo",
-        y="score_vulnerabilidad",
-        color="tipo_consumo",
-        title="Vulnerabilidad promedio según consumo"
-    )
-
-    st.plotly_chart(fig_relacion, use_container_width=True)
-
-else:
-    st.warning("No existe la columna 'tipo_consumo' en el dataset")
-
-st.markdown("---")
-
-# =========================
 # VULNERABILIDAD
 # =========================
 
