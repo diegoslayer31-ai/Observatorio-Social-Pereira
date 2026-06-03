@@ -55,8 +55,27 @@ df.columns = (
     .str.replace("  ", " ")
     .str.replace(" ", "_")
 )
+# =========================
+# LIMPIEZA COLUMNAS
+# =========================
+df.columns = (
+    df.columns
+    .str.strip()
+    .str.lower()
+    .str.replace("\n", " ")
+    .str.replace("  ", " ")
+    .str.replace(" ", "_")
+)
+
+# =========================
+# FUNCIÓN CONSOLIDADA 
+# =========================
+
 def peso_consumo(x):
-    x = str(x).lower()
+    x = str(x).lower().strip()
+
+    if x in ["no", "ninguno", "nan", ""]:
+        return 0
 
     if "heroina" in x or "heroína" in x:
         return 5
@@ -70,12 +89,8 @@ def peso_consumo(x):
         return 3
     elif "marihuana" in x:
         return 1
-    elif x in ["no", "ninguno", "nan", ""]:
-        return 0
     else:
         return 1
-    
-df["v_consumo"] = df["tipo_consumo"].apply(peso_consumo)
 # =========================
 # LIMPIEZA / FEATURES
 # =========================
@@ -129,39 +144,6 @@ if "sexo_al_nacer" in df.columns:
             }
         )
     )
-
-def peso_consumo(x):
-    x = str(x).lower()
-
-    # 🔴 CRÍTICO
-    if "heroina" in x or "heroína" in x:
-        return 5
-
-    # 🔴 MUY ALTO
-    elif "policonsumo" in x or ("," in x and len(x.split(",")) >= 2):
-        return 4
-
-    elif "bazuco" in x:
-        return 4
-
-    elif "alcohol" in x:
-        return 4
-
-    # 🟠 MEDIO
-    elif "coca" in x:
-        return 3
-
-    # 🟡 BAJO
-    elif "marihuana" in x:
-        return 1
-
-    # SIN CONSUMO
-    elif x in ["no", "ninguno", "nan", ""]:
-        return 0
-
-    else:
-        return 1
-
 
 # =========================
 # SIDEBAR
