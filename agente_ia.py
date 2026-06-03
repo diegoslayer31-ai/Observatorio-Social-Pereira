@@ -1006,8 +1006,6 @@ if "tipo_consumo" in df.columns:
         x="tipo_consumo",
         color="tipo_consumo"
     )
-    )
-
     st.plotly_chart(fig_consumo, use_container_width=True)
 
     consumo_promedio = df.groupby("tipo_consumo")["score_vulnerabilidad"].mean().reset_index()
