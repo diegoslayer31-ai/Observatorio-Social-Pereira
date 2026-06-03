@@ -567,31 +567,33 @@ with tab6:
 
     if "nivel_educativo_que_tiene_o_cursa" in df.columns:
 
-        edu = df["nivel_educativo_que_tiene_o_cursa"].value_counts().reset_index()
-        edu.columns = ["nivel_educativo", "cantidad"]
+        edu = (
+            df["nivel_educativo_que_tiene_o_cursa"]
+            .value_counts()
+            .reset_index()
+        )
+
+        edu.columns = ["nivel", "cantidad"]
 
         fig = px.bar(
             edu,
-            x="nivel_educativo",
+            x="nivel",
             y="cantidad",
             title="Nivel educativo"
         )
 
         st.plotly_chart(fig, use_container_width=True)
 
+        if len(edu) > 0:
+        edu_top = edu.iloc[0]
+        st.info(f"El nivel educativo predominante es: {edu_top['nivel']}.")
+
+        st.info(
+            f"El nivel educativo predominante es: {edu_top['nivel']}."
+        )
+
     else:
-        st.warning("No existe la columna de educación")
-    # INTERPRETACIÓN
-    edu_top = edu.iloc[0]
-
-    st.info(
-        f"El nivel educativo predominante es: {edu_top['nivel']}."
-    )
-
-    st.warning(
-        "Los bajos niveles educativos pueden aumentar la exclusión social y laboral."
-    )
-
+        st.warning("No existe la columna de educación en el dataset")
 # =========================
 # TAB SEMÁFORO SOCIAL
 # =========================
