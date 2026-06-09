@@ -1381,6 +1381,39 @@ with tab12:
 with tab13:
 
     st.title("📈 Seguimiento e Impacto - Reducción de Riesgos y Daños")
+    st.subheader("🧠 Metodología del indicador")
+
+with st.expander("📘 ¿Cómo se calcula el Índice de éxito?"):
+    st.markdown("""
+    El **Índice de éxito en reducción de riesgos y daños** mide el nivel de avance de cada persona en proceso de intervención.
+
+    ### 📊 Objetivo
+    Evaluar la evolución en:
+    - Adherencia a tratamiento médico y psiquiátrico
+    - Continuidad en el Plan de Atención Individual (PAI)
+    - Reducción de factores de riesgo asociados al consumo
+    - Seguimiento institucional
+
+    ### 🧮 Cálculo
+    Se asigna un valor a la adherencia:
+
+    - 🟢 Alta = 2
+    - 🟡 Media = 1
+    - 🔴 Baja = 0
+
+    Luego se calcula:
+
+    **Índice de éxito = (promedio adherencia / 2) × 100**
+
+    ### 📈 Interpretación
+    - 🟢 75–100: Estabilizado
+    - 🟡 50–74: En proceso
+    - 🟠 25–49: Riesgo
+    - 🔴 0–24: Crítico
+
+    ### ⚠️ Nota
+    Este indicador es de monitoreo social, no sustituye diagnóstico clínico.
+    """)
 
     # =========================
     # CARGA DE DATOS
