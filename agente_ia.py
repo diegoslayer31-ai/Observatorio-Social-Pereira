@@ -1381,45 +1381,47 @@ with tab12:
 with tab13:
 
     st.title("📈 Seguimiento e Impacto - Reducción de Riesgos y Daños")
+
+    # =========================
+    # METODOLOGÍA (SOLO EXPLICACIÓN)
+    # =========================
     st.subheader("🧠 Metodología del indicador")
 
-with st.expander("📘 ¿Cómo se calcula el Índice de éxito?"):
-    st.markdown("""
-    El **Índice de éxito en reducción de riesgos y daños** mide el nivel de avance de cada persona en proceso de intervención.
+    with st.expander("📘 ¿Cómo se calcula el Índice de éxito?"):
 
-    ### 📊 Objetivo
-    Evaluar la evolución en:
-    - Adherencia a tratamiento médico y psiquiátrico
-    - Continuidad en el Plan de Atención Individual (PAI)
-    - Reducción de factores de riesgo asociados al consumo
-    - Seguimiento institucional
+        st.markdown("""
+        El **Índice de éxito en reducción de riesgos y daños** mide el nivel de avance de cada persona en proceso de intervención.
 
-    ### 🧮 Cálculo
-    Se asigna un valor a la adherencia:
+        ### 📊 Objetivo
+        Evaluar:
+        - Adherencia a tratamiento médico y psiquiátrico
+        - Continuidad en el PAI
+        - Reducción de consumo problemático
+        - Seguimiento institucional
 
-    - 🟢 Alta = 2
-    - 🟡 Media = 1
-    - 🔴 Baja = 0
+        ### 🧮 Cálculo
+        - Alta = 2
+        - Media = 1
+        - Baja = 0
 
-    Luego se calcula:
+        **Índice = (promedio / 2) × 100**
 
-    **Índice de éxito = (promedio adherencia / 2) × 100**
+        ### 📈 Interpretación
+        - 🟢 75–100 Estabilizado
+        - 🟡 50–74 En proceso
+        - 🟠 25–49 Riesgo
+        - 🔴 0–24 Crítico
 
-    ### 📈 Interpretación
-    - 🟢 75–100: Estabilizado
-    - 🟡 50–74: En proceso
-    - 🟠 25–49: Riesgo
-    - 🔴 0–24: Crítico
+        ### ⚠️ Nota
+        Indicador de monitoreo social, no diagnóstico clínico.
+        """)
 
-    ### ⚠️ Nota
-    Este indicador es de monitoreo social, no sustituye diagnóstico clínico.
-    """)
+    st.divider()
 
     # =========================
-    # CARGA DE DATOS
+    # DATOS
     # =========================
     try:
-
         df_acciones = pd.read_sql("SELECT * FROM acciones_profesionales", engine)
         df_asistencia = pd.read_sql("SELECT * FROM asistencias", engine)
         df_pai = pd.read_sql("SELECT * FROM pai_intervenciones", engine)
@@ -1430,7 +1432,7 @@ with st.expander("📘 ¿Cómo se calcula el Índice de éxito?"):
         st.stop()
 
     # =========================
-    # INDICADORES GENERALES
+    # INDICADORES
     # =========================
     st.subheader("📊 Indicadores generales")
 
@@ -1438,22 +1440,19 @@ with st.expander("📘 ¿Cómo se calcula el Índice de éxito?"):
 
     c1.metric("Acciones", len(df_acciones))
     c2.metric("Asistencias", len(df_asistencia))
-    c3.metric("PAI registros", len(df_pai))
+    c3.metric("PAI", len(df_pai))
     c4.metric("Personas", len(df_base))
 
     st.divider()
 
     # =========================
-    # ADHERENCIA POR PATOLOGÍA
+    # ADHERENCIA
     # =========================
     st.subheader("💊 Adherencia por patología")
 
     if len(df_pai) > 0:
 
-        tabla = pd.crosstab(
-            df_pai["patologia"],
-            df_pai["adherencia"]
-        )
+        tabla = pd.crosstab(df_pai["patologia"], df_pai["adherencia"])
 
         st.dataframe(tabla)
         st.bar_chart(tabla)
@@ -1464,53 +1463,31 @@ with st.expander("📘 ¿Cómo se calcula el Índice de éxito?"):
     st.divider()
 
     # =========================
-    # 🧠 ÍNDICE DE ÉXITO (CORE)
+    # ÍNDICE
     # =========================
-    st.subheader("🧠 Índice de éxito en reducción de riesgos")
+    st.subheader("🧠 Índice de éxito")
 
     if len(df_pai) > 0:
 
-        # =========================
-        # MAPEO NUMÉRICO
-        # =========================
-        mapa_adherencia = {
-            "Alta": 2,
-            "Media": 1,
-            "Baja": 0
-        }
+        mapa = {"Alta": 2, "Media": 1, "Baja": 0}
 
-        df_pai["score_adherencia"] = df_pai["adherencia"].map(mapa_adherencia)
+        df_pai["score"] = df_pai["adherencia"].map(mapa)
 
-        # =========================
-        # AGRUPAR POR PERSONA
-        # =========================
-        df_indice = df_pai.groupby("documento_usuario").agg({
-            "score_adherencia": "mean"
-        }).reset_index()
+        df_indice = df_pai.groupby("documento_usuario")["score"].mean().reset_index()
 
-        # =========================
-        # NORMALIZAR A 0-100
-        # =========================
-        df_indice["indice_exito"] = (df_indice["score_adherencia"] / 2) * 100
+        df_indice["indice"] = (df_indice["score"] / 2) * 100
 
-        # =========================
-        # CLASIFICACIÓN
-        # =========================
-        def clasificar(x):
+        def estado(x):
             if x >= 75:
                 return "🟢 Estabilizado"
             elif x >= 50:
                 return "🟡 En proceso"
             elif x >= 25:
                 return "🟠 Riesgo"
-            else:
-                return "🔴 Crítico"
+            return "🔴 Crítico"
 
-        df_indice["estado"] = df_indice["indice_exito"].apply(clasificar)
+        df_indice["estado"] = df_indice["indice"].apply(estado)
 
-        # =========================
-        # UNIR CON BASE
-        # =========================
         df_final = df_indice.merge(
             df_base[["numero_identificacion", "nombres", "apellidos"]],
             left_on="documento_usuario",
@@ -1520,47 +1497,37 @@ with st.expander("📘 ¿Cómo se calcula el Índice de éxito?"):
 
         df_final["nombre"] = df_final["nombres"] + " " + df_final["apellidos"]
 
-        st.dataframe(
-            df_final[["nombre", "indice_exito", "estado"]],
-            use_container_width=True
-        )
+        st.dataframe(df_final[["nombre", "indice", "estado"]])
 
-        st.bar_chart(
-            df_final.groupby("estado").size()
-        )
+        st.bar_chart(df_final["estado"].value_counts())
 
     else:
-        st.warning("No hay datos suficientes para índice de éxito")
+        st.warning("Sin datos suficientes")
 
     st.divider()
 
     # =========================
     # ALERTAS
     # =========================
-    st.subheader("🚨 Alertas de riesgo")
+    st.subheader("🚨 Alertas")
 
     if len(df_pai) > 0:
 
-        criticos = len(df_indice[df_indice["indice_exito"] < 25])
+        criticos = len(df_indice[df_indice["indice"] < 25])
         total = len(df_indice)
 
-        porcentaje = round((criticos / total) * 100, 2)
+        pct = round((criticos / total) * 100, 2)
 
-        if porcentaje > 30:
-            st.error(f"Alta población en riesgo crítico: {porcentaje}%")
-        elif porcentaje > 15:
-            st.warning(f"Riesgo medio: {porcentaje}%")
-        else:
-            st.success(f"Situación controlada: {porcentaje}%")
+        st.write(f"Riesgo crítico: {pct}%")
 
     st.divider()
 
     # =========================
-    # HISTORIA INDIVIDUAL
+    # HISTORIA
     # =========================
     st.subheader("📋 Historia individual")
 
-    cedula = st.text_input("Documento")
+    cedula = st.text_input("Documento", key="historia_tab13")
 
     if cedula:
 
