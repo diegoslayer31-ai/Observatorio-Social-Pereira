@@ -1771,7 +1771,7 @@ with tab13:
         st.error(f"Error cargando indicadores: {e}")
     with tab14:
 
-    st.title("📥 Carga Masiva de Activos")
+        st.title("📥 Carga Masiva de Activos")
 
     archivo = st.file_uploader(
         "Sube Excel de activos",
