@@ -3,31 +3,7 @@ import pandas as pd
 import plotly.express as px
 from sqlalchemy import create_engine, text
 #from ollama import Client
-st.set_page_config(
-    page_title="Observatorio Social IA",
-    layout="wide"
-)
-st.sidebar.title("🧭 Navegación")
 
-menu_principal = st.sidebar.radio(
-    "Seleccione módulo",
-    [
-        "📊 Panel General",
-        "⚠️ Riesgo y Vulnerabilidad",
-        "👥 Caracterización Social",
-        "🧠 Salud y Consumo",
-        "🏠 Territorio",
-        "🎓 Educación",
-        "🚦 Semáforo Social",
-        "🤖 Asistente IA",
-        "🏆 Egresos e Impacto",
-        "📄 Reportes",
-        "➕ Registro Nuevo",
-        "📋 Seguimiento Profesional (PAI)",
-        "📈 Seguimiento e Impacto",
-        "📥 Carga Masiva"
-    ]
-)
 from reportlab.platypus import (
     SimpleDocTemplate,
     Paragraph,
