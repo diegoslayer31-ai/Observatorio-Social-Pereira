@@ -1595,148 +1595,78 @@ with tab12:
         st.info(
             "Ingrese un número de identificación para iniciar el seguimiento."
         )
-    # =====================================
-# SEGUIMIENTO E IMPACTO
-# =====================================
-
 with tab13:
 
     st.title("📈 Seguimiento e Impacto")
 
     try:
 
-        df_acciones = pd.read_sql(
-            "SELECT * FROM acciones_profesionales",
-            engine
-        )
-
-        df_asistencia = pd.read_sql(
-            "SELECT * FROM asistencias",
-            engine
-        )
-
-        df_adherencia = pd.read_sql(
-            "SELECT * FROM adherencia_tratamiento",
-            engine
-        )
-
-        df_valoracion = pd.read_sql(
-            "SELECT * FROM valoraciones_integrales",
-            engine
-        )
+        df_acciones = pd.read_sql("SELECT * FROM acciones_profesionales", engine)
+        df_asistencia = pd.read_sql("SELECT * FROM asistencias", engine)
+        df_adherencia = pd.read_sql("SELECT * FROM adherencia_tratamiento", engine)
+        df_valoracion = pd.read_sql("SELECT * FROM valoraciones_integrales", engine)
 
         # =========================
         # KPIs
         # =========================
-
         st.subheader("📊 Indicadores Generales")
 
         c1, c2, c3, c4 = st.columns(4)
 
-        c1.metric(
-            "Acciones",
-            len(df_acciones)
-        )
-
-        c2.metric(
-            "Asistencias",
-            len(df_asistencia)
-        )
-
-        c3.metric(
-            "Adherencias",
-            len(df_adherencia)
-        )
-
-        c4.metric(
-            "Valoraciones",
-            len(df_valoracion)
-        )
+        c1.metric("Acciones", len(df_acciones))
+        c2.metric("Asistencias", len(df_asistencia))
+        c3.metric("Adherencias", len(df_adherencia))
+        c4.metric("Valoraciones", len(df_valoracion))
 
         st.divider()
 
         # =========================
-        # ACCIONES POR PROFESIONAL
+        # ACCIONES
         # =========================
-
         if len(df_acciones) > 0:
 
             st.subheader("👨‍⚕️ Productividad por profesional")
 
-            acciones_prof = (
-                df_acciones
-                .groupby("profesional")
-                .size()
-                .reset_index(name="acciones")
-            )
-
-            fig = px.bar(
-                acciones_prof,
-                x="profesional",
-                y="acciones",
-                title="Acciones realizadas"
-            )
+            acciones_prof = df_acciones.groupby("profesional").size().reset_index(name="acciones")
 
             st.plotly_chart(
-                fig,
+                px.bar(acciones_prof, x="profesional", y="acciones"),
                 use_container_width=True
             )
 
         # =========================
-        # ASISTENCIAS
+        # ASISTENCIA
         # =========================
-
         if len(df_asistencia) > 0:
 
             st.subheader("📅 Asistencia")
 
-            fig = px.pie(
-                df_asistencia,
-                names="asistencia",
-                title="Distribución asistencia"
-            )
-
             st.plotly_chart(
-                fig,
+                px.pie(df_asistencia, names="asistencia"),
                 use_container_width=True
             )
 
         # =========================
         # ADHERENCIA
         # =========================
-
         if len(df_adherencia) > 0:
 
-            st.subheader("💊 Adherencia al tratamiento")
-
-            fig = px.pie(
-                df_adherencia,
-                names="adherencia",
-                title="Nivel de adherencia"
-            )
+            st.subheader("💊 Adherencia")
 
             st.plotly_chart(
-                fig,
+                px.pie(df_adherencia, names="adherencia"),
                 use_container_width=True
             )
 
         # =========================
-        # RIESGO
+        # VALORACIONES
         # =========================
-
         if len(df_valoracion) > 0:
 
             st.subheader("⚠️ Valoraciones")
 
-            fig = px.histogram(
-                df_valoracion,
-                x="nivel_riesgo",
-                color="nivel_riesgo",
-                title="Nivel de riesgo"
-            )
-
             st.plotly_chart(
-                fig,
+                px.histogram(df_valoracion, x="nivel_riesgo", color="nivel_riesgo"),
                 use_container_width=True
             )
 
@@ -1745,82 +1675,109 @@ with tab13:
         # =========================
         # HISTORIA SOCIAL
         # =========================
+        st.subheader("📋 Historia Social")
 
-        st.subheader("📋 Historia Social del Usuario")
-
-        cedula_historia = st.text_input(
-            "Número de identificación",
-            key="historia_social"
-        )
+        cedula_historia = st.text_input("Número de identificación", key="historia_tab13")
 
         if cedula_historia:
 
-            acciones = pd.read_sql(
-                f"""
-                SELECT *
-                FROM acciones_profesionales
+            acciones = pd.read_sql(f"""
+                SELECT * FROM acciones_profesionales
                 WHERE documento_usuario = '{cedula_historia}'
-                """,
-                engine
-            )
+            """, engine)
 
-            adherencia = pd.read_sql(
-                f"""
-                SELECT *
-                FROM adherencia_tratamiento
+            adherencia = pd.read_sql(f"""
+                SELECT * FROM adherencia_tratamiento
                 WHERE documento_usuario = '{cedula_historia}'
-                """,
-                engine
-            )
+            """, engine)
 
-            valoraciones = pd.read_sql(
-                f"""
-                SELECT *
-                FROM valoraciones_integrales
+            valoraciones = pd.read_sql(f"""
+                SELECT * FROM valoraciones_integrales
                 WHERE documento_usuario = '{cedula_historia}'
-                """,
-                engine
-            )
+            """, engine)
 
-            planes = pd.read_sql(
-                f"""
-                SELECT *
-                FROM plan_intervencion
+            planes = pd.read_sql(f"""
+                SELECT * FROM plan_intervencion
                 WHERE documento_usuario = '{cedula_historia}'
-                """,
-                engine
+            """, engine)
+
+            st.markdown("### Acciones")
+            st.dataframe(acciones)
+
+            st.markdown("### Adherencia")
+            st.dataframe(adherencia)
+
+            st.markdown("### Valoraciones")
+            st.dataframe(valoraciones)
+
+            st.markdown("### Plan de intervención")
+            st.dataframe(planes)
+
+        # =========================
+        # ACTIVIDADES GRUPALES
+        # =========================
+        st.subheader("👥 Actividades Grupales")
+
+        df_activos = pd.read_sql("""
+            SELECT numero_identificacion, nombres, apellidos
+            FROM habitante_de_calle
+            WHERE estado_caso = 'ACTIVO'
+        """, engine)
+
+        df_activos["nombre"] = df_activos["nombres"].astype(str) + " " + df_activos["apellidos"].astype(str)
+
+        with st.form("actividad_grupal"):
+
+            nombre_actividad = st.text_input("Nombre de la actividad")
+            fecha = st.date_input("Fecha")
+            observaciones = st.text_area("Observaciones")
+
+            participantes = st.multiselect(
+                "Selecciona participantes",
+                options=df_activos["numero_identificacion"].tolist(),
+                format_func=lambda x: df_activos[df_activos["numero_identificacion"] == x]["nombre"].values[0]
             )
 
-            st.markdown("### 👨‍⚕️ Acciones Profesionales")
-            st.dataframe(
-                acciones,
-                use_container_width=True
-            )
+            guardar = st.form_submit_button("Guardar actividad")
 
-            st.markdown("### 💊 Adherencia")
-            st.dataframe(
-                adherencia,
-                use_container_width=True
-            )
+        if guardar:
 
-            st.markdown("### ⚠️ Valoraciones")
-            st.dataframe(
-                valoraciones,
-                use_container_width=True
-            )
+            try:
+                with engine.begin() as conn:
 
-            st.markdown("### 🎯 Plan de Intervención")
-            st.dataframe(
-                planes,
-                use_container_width=True
-            )
+                    result = conn.execute(text("""
+                        INSERT INTO actividades_grupales
+                        (nombre_actividad, fecha, observaciones)
+                        VALUES (:nombre, :fecha, :obs)
+                        RETURNING id
+                    """), {
+                        "nombre": nombre_actividad,
+                        "fecha": fecha,
+                        "obs": observaciones
+                    })
+
+                    actividad_id = result.fetchone()[0]
+
+                    for doc in participantes:
+
+                        conn.execute(text("""
+                            INSERT INTO actividad_participantes
+                            (actividad_id, documento_usuario)
+                            VALUES (:actividad_id, :doc)
+                            ON CONFLICT DO NOTHING
+                        """), {
+                            "actividad_id": actividad_id,
+                            "doc": doc
+                        })
+
+                st.success("Actividad grupal registrada correctamente")
+
+            except Exception as e:
+                st.error(f"Error: {e}")
 
     except Exception as e:
-
-        st.error(
-            f"Error cargando indicadores: {e}"
-        )
-with tab14:
+        st.error(f"Error cargando indicadores: {e}")
+    with tab14:
 
     st.title("📥 Carga Masiva de Activos")
 
@@ -1832,21 +1789,18 @@ with tab14:
     if archivo:
 
         # =========================
-        # LECTURA ROBUSTA DEL EXCEL
+        # LECTURA
         # =========================
-        df_activos = pd.read_excel(archivo, header=1)
+        df_activos = pd.read_excel(archivo, header=0)
 
         # =========================
-        # LIMPIEZA DE COLUMNAS
+        # LIMPIEZA COLUMNAS
         # =========================
         df_activos.columns = (
             df_activos.columns
             .astype(str)
             .str.strip()
             .str.lower()
-            .str.replace("\n", "")
-            .str.replace("\t", "")
-            .str.replace("\r", "")
             .str.replace(" ", "_")
         )
 
@@ -1854,20 +1808,25 @@ with tab14:
         st.dataframe(df_activos)
 
         # =========================
-        # VALIDACIÓN DE COLUMNAS
+        # VALIDACIÓN
         # =========================
-        required_cols = ["modalidad", "numero_identificacion"]
+        required = ["numero_identificacion", "modalidad"]
 
-        missing = [c for c in required_cols if c not in df_activos.columns]
+        missing = [c for c in required if c not in df_activos.columns]
 
         if missing:
-            st.error(f"❌ Faltan columnas en el Excel: {missing}")
-            st.write("Columnas detectadas:", df_activos.columns.tolist())
+            st.error(f"❌ Faltan columnas: {missing}")
             st.stop()
 
         # =========================
-        # NORMALIZAR DATOS
+        # LIMPIEZA DATOS
         # =========================
+        df_activos["numero_identificacion"] = (
+            df_activos["numero_identificacion"]
+            .astype(str)
+            .str.strip()
+        )
+
         df_activos["modalidad"] = (
             df_activos["modalidad"]
             .astype(str)
@@ -1876,39 +1835,65 @@ with tab14:
         )
 
         # =========================
+        # DUPLICADOS EXCEL
+        # =========================
+        duplicados = df_activos[df_activos.duplicated("numero_identificacion", keep=False)]
+        df_activos = df_activos.drop_duplicates(subset=["numero_identificacion"])
+
+        if len(duplicados) > 0:
+            st.warning(f"⚠️ Duplicados en Excel: {len(duplicados)}")
+            st.dataframe(duplicados)
+
+        # =========================
+        # CONSULTAR BD
+        # =========================
+        cedulas = tuple(df_activos["numero_identificacion"].tolist())
+
+        if len(cedulas) == 1:
+            cedulas = f"('{cedulas[0]}')"
+
+        df_existentes = pd.read_sql(f"""
+            SELECT numero_identificacion
+            FROM habitante_de_calle
+            WHERE numero_identificacion IN {cedulas}
+        """, engine)
+
+        # =========================
+        # NUEVOS / EXISTENTES
+        # =========================
+        ya_existen = df_activos[df_activos["numero_identificacion"].isin(df_existentes["numero_identificacion"])]
+
+        nuevos = df_activos[~df_activos["numero_identificacion"].isin(df_existentes["numero_identificacion"])]
+
+        # =========================
         # KPIs
         # =========================
-        st.write("📊 Total registros:", len(df_activos))
+        st.write("📊 Total:", len(df_activos))
+        st.write("🆕 Nuevos:", len(nuevos))
+        st.write("♻️ Existentes:", len(ya_existen))
+
         st.write("🏡 GRANJA:", len(df_activos[df_activos["modalidad"] == "GRANJA"]))
         st.write("🏙️ URBANO:", len(df_activos[df_activos["modalidad"] == "URBANO"]))
 
-        confirmar = st.checkbox("Confirmo que el archivo es correcto")
+        confirmar = st.checkbox("Confirmo actualización")
 
         # =========================
-        # ACTUALIZACIÓN BD
+        # ACTUALIZAR BD
         # =========================
         if confirmar and st.button("🚀 Actualizar base de datos"):
 
-            try:
+            with engine.begin() as conn:
 
-                with engine.begin() as conn:
+                for _, row in df_activos.iterrows():
 
-                    for _, row in df_activos.iterrows():
+                    conn.execute(text("""
+                        UPDATE habitante_de_calle
+                        SET estado_caso = 'ACTIVO',
+                            modalidad = :modalidad
+                        WHERE numero_identificacion = :id
+                    """), {
+                        "modalidad": row["modalidad"],
+                        "id": row["numero_identificacion"]
+                    })
 
-                        conn.execute(
-                            text("""
-                                UPDATE habitante_de_calle
-                                SET estado_caso = 'ACTIVO',
-                                    modalidad = :modalidad
-                                WHERE numero_identificacion = :id
-                            """),
-                            {
-                                "modalidad": row["modalidad"],
-                                "id": row["numero_identificacion"]
-                            }
-                        )
-
-                st.success("✅ Base actualizada correctamente")
-
-            except Exception as e:
-                st.error(f"Error: {e}")
+            st.success("✅ Base actualizada correctamente")
