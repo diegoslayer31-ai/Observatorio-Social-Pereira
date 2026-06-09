@@ -1158,7 +1158,7 @@ with tab12:
         usuario = pd.read_sql(
             f"""
             SELECT *
-            FROM personas_caracterizacion
+            FROM habitante_de_calle
             WHERE numero_identificacion = '{cedula}'
             """,
             engine
