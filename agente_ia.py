@@ -1380,109 +1380,164 @@ with tab12:
         st.success("Asistencia registrada")
 with tab13:
 
-    st.title("📈 Seguimiento e Impacto")
+    st.title("📈 Seguimiento e Impacto - Reducción de Riesgos y Daños")
 
+    # =========================
+    # CARGA DE DATOS
+    # =========================
     try:
 
         df_acciones = pd.read_sql("SELECT * FROM acciones_profesionales", engine)
         df_asistencia = pd.read_sql("SELECT * FROM asistencias", engine)
-        df_adherencia = pd.read_sql("SELECT * FROM pai_intervenciones", engine)
+        df_pai = pd.read_sql("SELECT * FROM pai_intervenciones", engine)
+        df_base = pd.read_sql("SELECT * FROM habitante_de_calle", engine)
 
-        # =========================
-        # INDICADORES GENERALES
-        # =========================
-        st.subheader("📊 Indicadores Generales")
+    except Exception as e:
+        st.error(f"Error cargando datos: {e}")
+        st.stop()
 
-        c1, c2, c3 = st.columns(3)
+    # =========================
+    # INDICADORES GENERALES
+    # =========================
+    st.subheader("📊 Indicadores generales")
 
-        c1.metric("Acciones", len(df_acciones))
-        c2.metric("Asistencias", len(df_asistencia))
-        c3.metric("PAI registrados", len(df_adherencia))
+    c1, c2, c3, c4 = st.columns(4)
 
-        st.divider()
+    c1.metric("Acciones", len(df_acciones))
+    c2.metric("Asistencias", len(df_asistencia))
+    c3.metric("PAI registros", len(df_pai))
+    c4.metric("Personas", len(df_base))
 
-        # =========================
-        # PRODUCTIVIDAD PROFESIONAL
-        # =========================
-        st.subheader("👨‍⚕️ Gestión por  profesional")
+    st.divider()
 
-        prod = df_adherencia["profesional"].value_counts().reset_index()
-        prod.columns = ["profesional", "registros"]
+    # =========================
+    # ADHERENCIA POR PATOLOGÍA
+    # =========================
+    st.subheader("💊 Adherencia por patología")
 
-        st.dataframe(prod)
-        st.bar_chart(prod.set_index("profesional"))
-
-        st.divider()
-
-        # =========================
-        # ADHERENCIA POR PATOLOGÍA
-        # =========================
-        st.subheader("💊 Adherencia por patología")
+    if len(df_pai) > 0:
 
         tabla = pd.crosstab(
-            df_adherencia["patologia"],
-            df_adherencia["adherencia"]
+            df_pai["patologia"],
+            df_pai["adherencia"]
         )
 
         st.dataframe(tabla)
         st.bar_chart(tabla)
 
-        st.divider()
+    else:
+        st.warning("No hay datos PAI")
+
+    st.divider()
+
+    # =========================
+    # 🧠 ÍNDICE DE ÉXITO (CORE)
+    # =========================
+    st.subheader("🧠 Índice de éxito en reducción de riesgos")
+
+    if len(df_pai) > 0:
 
         # =========================
-        # ALERTA CLÍNICA
+        # MAPEO NUMÉRICO
         # =========================
-        baja = len(df_adherencia[df_adherencia["adherencia"] == "Baja"])
-        total = len(df_adherencia)
+        mapa_adherencia = {
+            "Alta": 2,
+            "Media": 1,
+            "Baja": 0
+        }
 
-        porcentaje = round((baja / total) * 100, 2) if total > 0 else 0
+        df_pai["score_adherencia"] = df_pai["adherencia"].map(mapa_adherencia)
 
-        st.subheader("🚨 Alertas")
+        # =========================
+        # AGRUPAR POR PERSONA
+        # =========================
+        df_indice = df_pai.groupby("documento_usuario").agg({
+            "score_adherencia": "mean"
+        }).reset_index()
 
-        if porcentaje >= 30:
-            st.error(f"Alta baja adherencia: {porcentaje}%")
-        elif porcentaje >= 15:
+        # =========================
+        # NORMALIZAR A 0-100
+        # =========================
+        df_indice["indice_exito"] = (df_indice["score_adherencia"] / 2) * 100
+
+        # =========================
+        # CLASIFICACIÓN
+        # =========================
+        def clasificar(x):
+            if x >= 75:
+                return "🟢 Estabilizado"
+            elif x >= 50:
+                return "🟡 En proceso"
+            elif x >= 25:
+                return "🟠 Riesgo"
+            else:
+                return "🔴 Crítico"
+
+        df_indice["estado"] = df_indice["indice_exito"].apply(clasificar)
+
+        # =========================
+        # UNIR CON BASE
+        # =========================
+        df_final = df_indice.merge(
+            df_base[["numero_identificacion", "nombres", "apellidos"]],
+            left_on="documento_usuario",
+            right_on="numero_identificacion",
+            how="left"
+        )
+
+        df_final["nombre"] = df_final["nombres"] + " " + df_final["apellidos"]
+
+        st.dataframe(
+            df_final[["nombre", "indice_exito", "estado"]],
+            use_container_width=True
+        )
+
+        st.bar_chart(
+            df_final.groupby("estado").size()
+        )
+
+    else:
+        st.warning("No hay datos suficientes para índice de éxito")
+
+    st.divider()
+
+    # =========================
+    # ALERTAS
+    # =========================
+    st.subheader("🚨 Alertas de riesgo")
+
+    if len(df_pai) > 0:
+
+        criticos = len(df_indice[df_indice["indice_exito"] < 25])
+        total = len(df_indice)
+
+        porcentaje = round((criticos / total) * 100, 2)
+
+        if porcentaje > 30:
+            st.error(f"Alta población en riesgo crítico: {porcentaje}%")
+        elif porcentaje > 15:
             st.warning(f"Riesgo medio: {porcentaje}%")
         else:
-            st.success(f"Adherencia adecuada: {porcentaje}%")
+            st.success(f"Situación controlada: {porcentaje}%")
 
-        st.divider()
+    st.divider()
 
-        # =========================
-        # HISTORIA SOCIAL
-        # =========================
-        st.subheader("📋 Historia Social")
+    # =========================
+    # HISTORIA INDIVIDUAL
+    # =========================
+    st.subheader("📋 Historia individual")
 
-        cedula = st.text_input("Documento", key="historia_tab13")
+    cedula = st.text_input("Documento")
 
-        if cedula:
+    if cedula:
 
-            acciones = pd.read_sql(f"""
-                SELECT * FROM acciones_profesionales
-                WHERE documento_usuario = '{cedula}'
-            """, engine)
+        historia = pd.read_sql(f"""
+            SELECT *
+            FROM pai_intervenciones
+            WHERE documento_usuario = '{cedula}'
+        """, engine)
 
-            pai = pd.read_sql(f"""
-                SELECT * FROM pai_intervenciones
-                WHERE documento_usuario = '{cedula}'
-            """, engine)
-
-            asistencia = pd.read_sql(f"""
-                SELECT * FROM asistencias
-                WHERE documento_usuario = '{cedula}'
-            """, engine)
-
-            st.write("### Acciones")
-            st.dataframe(acciones)
-
-            st.write("### PAI")
-            st.dataframe(pai)
-
-            st.write("### Asistencia")
-            st.dataframe(asistencia)
-
-    except Exception as e:
-        st.error(f"Error tab 13: {e}")
+        st.dataframe(historia)
 # =====================================
 # TAB 14 - CARGA MASIVA ACTUALIZADA
 # =====================================
