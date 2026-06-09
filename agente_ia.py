@@ -1387,83 +1387,17 @@ with tab14:
 
     st.title("📥 Carga Masiva de Activos")
 
-    archivo = st.file_uploader("Sube archivo Excel", type=["xlsx"])
-
-    if archivo:
-
-        df_activos = pd.read_excel(archivo)
-
-        df_activos.columns = (
-            df_activos.columns
-            .astype(str)
-            .str.strip()
-            .str.lower()
-            .str.replace(" ", "_")
-        )
-
-        st.write("Columnas detectadas:", df_activos.columns.tolist())
-
-        required = ["numero_identificacion", "modalidad"]
-        missing = [c for c in required if c not in df_activos.columns]
-
-        if missing:
-            st.error(f"Faltan columnas: {missing}")
-            st.stop()
-
-        df_activos["numero_identificacion"] = df_activos["numero_identificacion"].astype(str).str.strip()
-        df_activos["modalidad"] = df_activos["modalidad"].astype(str).str.upper().str.strip()
-
-        # =========================
-        # DIVISIÓN GRANAJA / URBANO
-        # =========================
-        df_granja = df_activos[df_activos["modalidad"] == "GRANJA"]
-        df_urbano = df_activos[df_activos["modalidad"] == "URBANO"]
-
-        st.subheader("📊 Resumen")
-        c1, c2 = st.columns(2)
-        c1.metric("Granja", len(df_granja))
-        c2.metric("Urbano", len(df_urbano))
-
-        st.dataframe(df_activos)
-
-        if st.checkbox("Confirmo actualización"):
-
-            with engine.begin() as conn:
-
-                for _, row in df_activos.iterrows():
-
-                    doc = row["numero_identificacion"]
-                    modalidad = row["modalidad"]
-
-                    conn.execute(text("""
-                        UPDATE habitante_de_calle
-                        SET estado_caso = 'ACTIVO',
-                            modalidad = :modalidad
-                        WHERE TRIM(CAST(numero_identificacion AS TEXT)) = :doc
-                    """), {
-                        "modalidad": modalidad,
-                        "doc": doc
-                    })
-
-            st.success("Base actualizada correctamente")
-with tab14:
-
-    st.title("📥 Carga Masiva de Activos")
-
     archivo = st.file_uploader(
-    "Sube archivo Excel",
-    type=["xlsx"],
-    key="upload_activos_tab14"
-)
+        "Sube archivo Excel",
+        type=["xlsx"],
+        key="upload_activos_tab14"
+    )
 
     if archivo:
 
         try:
             df_activos = pd.read_excel(archivo)
 
-            # =========================
-            # LIMPIEZA DE COLUMNAS
-            # =========================
             df_activos.columns = (
                 df_activos.columns
                 .astype(str)
@@ -1473,11 +1407,7 @@ with tab14:
             )
 
             st.write("📌 Columnas detectadas:", df_activos.columns.tolist())
-            st.dataframe(df_activos)
 
-            # =========================
-            # VALIDACIÓN
-            # =========================
             required = ["numero_identificacion", "modalidad"]
 
             missing = [c for c in required if c not in df_activos.columns]
@@ -1486,78 +1416,46 @@ with tab14:
                 st.error(f"❌ Faltan columnas: {missing}")
                 st.stop()
 
-            # =========================
-            # LIMPIEZA DE DATOS
-            # =========================
             df_activos["numero_identificacion"] = (
-                df_activos["numero_identificacion"]
-                .astype(str)
-                .str.strip()
+                df_activos["numero_identificacion"].astype(str).str.strip()
             )
 
             df_activos["modalidad"] = (
-                df_activos["modalidad"]
-                .astype(str)
-                .str.strip()
-                .str.upper()
+                df_activos["modalidad"].astype(str).str.upper().str.strip()
             )
 
             df_activos = df_activos.drop_duplicates(subset=["numero_identificacion"])
 
-            # =========================
-            # 🔥 RESUMEN GRANJA VS URBANO
-            # =========================
-            st.subheader("📊 Distribución modalidad")
+            # resumen
+            st.subheader("📊 Modalidad")
+            resumen = df_activos["modalidad"].value_counts().reset_index()
+            resumen.columns = ["modalidad", "cantidad"]
 
-            resumen_modalidad = (
-                df_activos["modalidad"]
-                .value_counts()
-                .reset_index()
-            )
+            st.dataframe(resumen)
+            st.bar_chart(resumen.set_index("modalidad"))
 
-            resumen_modalidad.columns = ["modalidad", "cantidad"]
-
-            st.dataframe(resumen_modalidad)
-
-            st.bar_chart(resumen_modalidad.set_index("modalidad"))
-
-            # =========================
-            # CONFIRMACIÓN
-            # =========================
-            st.subheader("🚀 Actualización en base de datos")
-
-            confirmar = st.checkbox("Confirmo actualización de datos")
+            confirmar = st.checkbox("Confirmo actualización")
 
             if confirmar and st.button("Actualizar base"):
 
-                try:
-                    with engine.begin() as conn:
+                with engine.begin() as conn:
 
-                        for _, row in df_activos.iterrows():
+                    for _, row in df_activos.iterrows():
 
-                            doc = str(row["numero_identificacion"]).strip()
-                            modalidad = str(row["modalidad"]).strip().upper()
+                        doc = str(row["numero_identificacion"]).strip()
+                        modalidad = str(row["modalidad"]).strip().upper()
 
-                            if doc in ["", "nan"]:
-                                continue
+                        conn.execute(text("""
+                            UPDATE habitante_de_calle
+                            SET estado_caso = 'ACTIVO',
+                                modalidad = :modalidad
+                            WHERE TRIM(CAST(numero_identificacion AS TEXT)) = :id
+                        """), {
+                            "modalidad": modalidad,
+                            "id": doc
+                        })
 
-                            if modalidad not in ["GRANJA", "URBANO"]:
-                                modalidad = "SIN_MODALIDAD"
-
-                            conn.execute(text("""
-                                UPDATE habitante_de_calle
-                                SET estado_caso = 'ACTIVO',
-                                    modalidad = :modalidad
-                                WHERE TRIM(CAST(numero_identificacion AS TEXT)) = :id
-                            """), {
-                                "modalidad": modalidad,
-                                "id": doc
-                            })
-
-                    st.success("✅ Base actualizada correctamente")
-
-                except Exception as e:
-                    st.error(f"❌ Error al actualizar: {e}")
+                st.success("✅ Base actualizada correctamente")
 
         except Exception as e:
-            st.error(f"❌ Error leyendo archivo: {e}")
+            st.error(f"❌ Error: {e}")
