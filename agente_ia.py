@@ -1831,34 +1831,42 @@ with tab14:
 
     if archivo:
 
-        df_activos = pd.read_excel(archivo)
-        st.write(df_activos.columns.tolist())
+        # =========================
+        # LECTURA ROBUSTA DEL EXCEL
+        # =========================
+        df_activos = pd.read_excel(archivo, header=1)
 
         # =========================
         # LIMPIEZA DE COLUMNAS
         # =========================
         df_activos.columns = (
             df_activos.columns
+            .astype(str)
             .str.strip()
             .str.lower()
+            .str.replace("\n", "")
+            .str.replace("\t", "")
+            .str.replace("\r", "")
+            .str.replace(" ", "_")
         )
 
         st.subheader("👀 Vista previa")
         st.dataframe(df_activos)
 
         # =========================
-        # VALIDACIÓN DE COLUMNA
+        # VALIDACIÓN DE COLUMNAS
         # =========================
-        if "modalidad" not in df_activos.columns:
-            st.error("❌ Falta la columna 'modalidad' en el Excel")
+        required_cols = ["modalidad", "numero_identificacion"]
+
+        missing = [c for c in required_cols if c not in df_activos.columns]
+
+        if missing:
+            st.error(f"❌ Faltan columnas en el Excel: {missing}")
+            st.write("Columnas detectadas:", df_activos.columns.tolist())
             st.stop()
 
-        if "numero_identificacion" not in df_activos.columns:
-            st.error("❌ Falta la columna 'numero_identificacion'")
-            st.stop()
-
         # =========================
-        # NORMALIZAR VALORES
+        # NORMALIZAR DATOS
         # =========================
         df_activos["modalidad"] = (
             df_activos["modalidad"]
@@ -1870,12 +1878,15 @@ with tab14:
         # =========================
         # KPIs
         # =========================
-        st.write("Total:", len(df_activos))
-        st.write("GRANJA:", len(df_activos[df_activos["modalidad"] == "GRANJA"]))
-        st.write("URBANO:", len(df_activos[df_activos["modalidad"] == "URBANO"]))
+        st.write("📊 Total registros:", len(df_activos))
+        st.write("🏡 GRANJA:", len(df_activos[df_activos["modalidad"] == "GRANJA"]))
+        st.write("🏙️ URBANO:", len(df_activos[df_activos["modalidad"] == "URBANO"]))
 
         confirmar = st.checkbox("Confirmo que el archivo es correcto")
 
+        # =========================
+        # ACTUALIZACIÓN BD
+        # =========================
         if confirmar and st.button("🚀 Actualizar base de datos"):
 
             try:
