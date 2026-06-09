@@ -250,7 +250,7 @@ col4.metric(
     len(df_kpi)
 )
 # KPIs
-tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10, tab11, tab12, tab13 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10, tab11, tab12, tab13, tab14 = st.tabs([
     "📊 General",
     "⚠️ Vulnerabilidad",
     "🚬 Consumo",
@@ -260,10 +260,11 @@ tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10, tab11, tab12, tab13
     "🚦 Semáforo",
     "🤖 IA",
     "🏆 Egresos e Impacto",
-    "📄 Reportes Institucionales",
+    "📄 Reportes",
     "➕ Nuevo Registro",
     "📋 Seguimiento Profesional",
-    "📈 Seguimiento e Impacto"
+    "📈 Seguimiento e Impacto",
+    "📥 Carga Activos"   # 👈 NUEVO
 ])
 # =========================
 # TAB GENERAL
@@ -1819,3 +1820,42 @@ with tab13:
         st.error(
             f"Error cargando indicadores: {e}"
         )
+with tab14:
+
+    st.title("📥 Carga Masiva de Activos")
+
+    archivo = st.file_uploader(
+        "Sube Excel de activos",
+        type=["xlsx"]
+    )
+
+    if archivo:
+
+        df_activos = pd.read_excel(archivo)
+
+        st.subheader("👀 Vista previa")
+        st.dataframe(df_activos)
+
+        # VALIDACIONES
+        st.write("Total:", len(df_activos))
+        st.write("GRANJA:", len(df_activos[df_activos["modalidad"] == "GRANJA"]))
+        st.write("URBANO:", len(df_activos[df_activos["modalidad"] == "URBANO"]))
+
+        confirmar = st.checkbox("Confirmo que el archivo es correcto")
+
+        if confirmar and st.button("🚀 Actualizar base de datos"):
+
+            try:
+                for _, row in df_activos.iterrows():
+
+                    engine.execute("""
+                        UPDATE habitante_de_calle
+                        SET estado_caso = 'ACTIVO',
+                            modalidad = %s
+                        WHERE numero_identificacion = %s
+                    """, (row["modalidad"], row["numero_identificacion"]))
+
+                st.success("✅ Base actualizada correctamente")
+
+            except Exception as e:
+                st.error(f"Error: {e}")
