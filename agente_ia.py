@@ -1780,8 +1780,10 @@ with tab14:
 
     if archivo:
 
-        df_activos = pd.read_excel(archivo, header=1)
-        st.write(df_activos.head(10))
+        # =========================
+        # LECTURA
+        # =========================
+        df_activos = pd.read_excel(archivo, header=0)
 
         # =========================
         # LIMPIEZA COLUMNAS
@@ -1862,39 +1864,41 @@ with tab14:
         st.write("🏡 GRANJA:", len(df_activos[df_activos["modalidad"] == "GRANJA"]))
         st.write("🏙️ URBANO:", len(df_activos[df_activos["modalidad"] == "URBANO"]))
 
+        # =========================
+        # CONFIRMACIÓN
+        # =========================
         confirmar = st.checkbox("Confirmo actualización")
 
-# =========================
-# ACTUALIZAR BD
-# =========================
-if confirmar and st.button("🚀 Actualizar base de datos"):
+        # =========================
+        # ACTUALIZAR BD
+        # =========================
+        if confirmar and st.button("🚀 Actualizar base de datos"):
 
-    try:
-        with engine.begin() as conn:
+            try:
+                with engine.begin() as conn:
 
-            for _, row in df_activos.iterrows():
+                    for _, row in df_activos.iterrows():
 
-                doc = str(row["numero_identificacion"]).strip()
-                modalidad = str(row["modalidad"]).strip().upper()
+                        doc = str(row["numero_identificacion"]).strip()
+                        modalidad = str(row["modalidad"]).strip().upper()
 
-                # saltar registros vacíos
-                if doc == "" or doc.lower() == "nan":
-                    continue
+                        if doc == "" or doc.lower() == "nan":
+                            continue
 
-                if modalidad == "" or modalidad.lower() == "nan":
-                    modalidad = "SIN_MODALIDAD"
+                        if modalidad == "" or modalidad.lower() == "nan":
+                            modalidad = "SIN_MODALIDAD"
 
-                conn.execute(text("""
-                    UPDATE habitante_de_calle
-                    SET estado_caso = 'ACTIVO',
-                        modalidad = :modalidad
-                    WHERE TRIM(CAST(numero_identificacion AS TEXT)) = :id
-                """), {
-                    "modalidad": modalidad,
-                    "id": doc
-                })
+                        conn.execute(text("""
+                            UPDATE habitante_de_calle
+                            SET estado_caso = 'ACTIVO',
+                                modalidad = :modalidad
+                            WHERE TRIM(CAST(numero_identificacion AS TEXT)) = :id
+                        """), {
+                            "modalidad": modalidad,
+                            "id": doc
+                        })
 
-        st.success("✅ Base actualizada correctamente")
+                st.success("✅ Base actualizada correctamente")
 
-    except Exception as e:
-        st.error(f"❌ Error en actualización: {e}")
+            except Exception as e:
+                st.error(f"❌ Error en actualización: {e}")
