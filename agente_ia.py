@@ -1128,7 +1128,7 @@ with tab11:
         if guardar:
 
             sql = text("""
-                INSERT INTO habitante_calle
+                INSERT INTO habitante_de_calle
                 (
                     nombres,
                     apellidos,
@@ -1216,11 +1216,7 @@ with tab12:
         key="cedula_seguimiento"
     )
 
-    st.write("Cédula digitada:", cedula)
-
     if cedula:
-
-        st.success("Entró a la búsqueda")
 
         try:
 
@@ -1233,10 +1229,158 @@ with tab12:
                 engine
             )
 
-            st.write("Registros encontrados:", len(usuario))
+            if usuario.empty:
 
-            st.dataframe(usuario)
+                st.warning("⚠️ Usuario no encontrado")
+
+            else:
+
+                st.success("✅ Usuario encontrado")
+
+                datos = usuario.iloc[0]
+
+                col1, col2 = st.columns(2)
+
+                with col1:
+                    st.write("**Nombre:**", datos.get("nombres", "N/A"))
+                    st.write("**Apellidos:**", datos.get("apellidos", "N/A"))
+                    st.write("**Edad:**", datos.get("edad", "N/A"))
+
+                with col2:
+                    st.write("**Documento:**", cedula)
+                    st.write("**Sexo:**", datos.get("sexo_al_nacer", "N/A"))
+                    st.write("**Barrio:**", datos.get("barrio_o_vereda", "N/A"))
+
+                st.markdown("---")
+
+                st.subheader("📝 Registro de intervención")
+
+                with st.form("form_accion_profesional"):
+
+                    profesional = st.selectbox(
+                        "Perfil profesional",
+                        [
+                            "Psicología",
+                            "Trabajo Social",
+                            "Pedagogía",
+                            "Enfermería",
+                            "Coordinación",
+                            "Dirección"
+                        ]
+                    )
+
+                    tipo_accion = st.selectbox(
+                        "Tipo de acción",
+                        [
+                            "Atención individual",
+                            "Atención grupal",
+                            "Orientación",
+                            "Seguimiento",
+                            "Remisión",
+                            "Visita",
+                            "Gestión institucional",
+                            "Otro"
+                        ]
+                    )
+
+                    observaciones = st.text_area(
+                        "Observaciones"
+                    )
+
+                    compromisos = st.text_area(
+                        "Compromisos"
+                    )
+
+                    fecha_seguimiento = st.date_input(
+                        "Próxima fecha de seguimiento"
+                    )
+
+                    guardar = st.form_submit_button(
+                        "💾 Guardar acción"
+                    )
+
+                if guardar:
+
+                    try:
+
+                        sql = text("""
+                            INSERT INTO acciones_profesionales
+                            (
+                                documento_usuario,
+                                profesional,
+                                tipo_accion,
+                                observaciones,
+                                compromisos,
+                                fecha_seguimiento
+                            )
+                            VALUES
+                            (
+                                :documento_usuario,
+                                :profesional,
+                                :tipo_accion,
+                                :observaciones,
+                                :compromisos,
+                                :fecha_seguimiento
+                            )
+                        """)
+
+                        with engine.begin() as conn:
+
+                            conn.execute(
+                                sql,
+                                {
+                                    "documento_usuario": cedula,
+                                    "profesional": profesional,
+                                    "tipo_accion": tipo_accion,
+                                    "observaciones": observaciones,
+                                    "compromisos": compromisos,
+                                    "fecha_seguimiento": fecha_seguimiento
+                                }
+                            )
+
+                        st.success(
+                            "✅ Acción registrada correctamente"
+                        )
+
+                    except Exception as e:
+
+                        st.error(
+                            f"Error al guardar: {e}"
+                        )
+
+                st.markdown("---")
+
+                st.subheader("📚 Historial de intervenciones")
+
+                historial = pd.read_sql(
+                    f"""
+                    SELECT *
+                    FROM acciones_profesionales
+                    WHERE documento_usuario = '{cedula}'
+                    ORDER BY id DESC
+                    """,
+                    engine
+                )
+
+                if len(historial) > 0:
+
+                    st.dataframe(
+                        historial,
+                        use_container_width=True
+                    )
+
+                else:
+
+                    st.info(
+                        "No existen intervenciones registradas."
+                    )
 
         except Exception as e:
 
             st.error(f"Error: {e}")
+
+    else:
+
+        st.info(
+            "Ingrese un número de identificación para consultar el usuario."
+        )
