@@ -1206,7 +1206,6 @@ with tab11:
 # =====================================
 # SEGUIMIENTO PROFESIONAL
 # =====================================
-
 # =====================================
 # SEGUIMIENTO PROFESIONAL
 # =====================================
@@ -1218,7 +1217,7 @@ with tab12:
     try:
 
         # =========================
-        # USUARIO INDIVIDUAL (opcional)
+        # CONSULTA INDIVIDUAL
         # =========================
         cedula = st.text_input(
             "Número de identificación (consulta individual)",
@@ -1250,8 +1249,10 @@ with tab12:
         st.divider()
 
         # =========================
-        # SELECTOR MASIVO DE ACTIVOS
+        # ASISTENCIA MASIVA (TALLERES)
         # =========================
+        st.subheader("📅 Asistencia a Talleres / Actividades Grupales")
+
         df_activos = pd.read_sql("""
             SELECT numero_identificacion, nombres, apellidos
             FROM habitante_de_calle
@@ -1262,20 +1263,19 @@ with tab12:
             df_activos["nombres"].astype(str) + " " + df_activos["apellidos"].astype(str)
         )
 
-        # =========================
-        # FORM ASISTENCIA MASIVA
-        # =========================
-        st.subheader("📅 Asistencia Masiva")
-
         with st.form("asistencia_masiva"):
 
-            fechas = st.date_input(
-                "Selecciona uno o varios días",
-                value=None
+            nombre_actividad = st.text_input("Nombre del taller / actividad")
+
+            profesional = st.selectbox(
+                "Profesional responsable",
+                ["Psicología", "Trabajo Social", "Pedagogía", "Enfermería", "Coordinación"]
             )
 
-            if not isinstance(fechas, list):
-                fechas = [fechas]
+            fechas = st.date_input(
+                "Selecciona fechas (puedes elegir varias si tu Streamlit lo permite)",
+                value=None
+            )
 
             participantes = st.multiselect(
                 "Selecciona participantes",
@@ -1292,33 +1292,57 @@ with tab12:
 
             observaciones = st.text_area("Observaciones")
 
-            guardar = st.form_submit_button("Guardar asistencia masiva")
+            guardar = st.form_submit_button("Guardar asistencia")
 
         if guardar:
 
-            with engine.begin() as conn:
+            try:
 
-                for fecha in fechas:
-                    for doc in participantes:
+                fechas_list = fechas if isinstance(fechas, (list, tuple)) else [fechas]
 
-                        conn.execute(text("""
-                            INSERT INTO asistencias
-                            (documento_usuario, fecha, asistencia, observaciones)
-                            VALUES (:doc, :fecha, :estado, :obs)
-                        """), {
-                            "doc": doc,
-                            "fecha": fecha,
-                            "estado": estado,
-                            "obs": observaciones
-                        })
+                with engine.begin() as conn:
 
-            st.success("Asistencia masiva registrada correctamente")
+                    for fecha in fechas_list:
+                        for doc in participantes:
+
+                            conn.execute(text("""
+                                INSERT INTO asistencias
+                                (
+                                    documento_usuario,
+                                    fecha,
+                                    asistencia,
+                                    observaciones,
+                                    profesional,
+                                    actividad
+                                )
+                                VALUES
+                                (
+                                    :doc,
+                                    :fecha,
+                                    :estado,
+                                    :obs,
+                                    :prof,
+                                    :act
+                                )
+                            """), {
+                                "doc": doc,
+                                "fecha": fecha,
+                                "estado": estado,
+                                "obs": observaciones,
+                                "prof": profesional,
+                                "act": nombre_actividad
+                            })
+
+                st.success("Asistencia registrada correctamente")
+
+            except Exception as e:
+                st.error(f"Error guardando asistencia: {e}")
 
         st.divider()
 
-        # =====================================
-        # RESTO DE MÓDULOS (INDIVIDUAL)
-        # =====================================
+        # =========================
+        # MÓDULOS INDIVIDUALES
+        # =========================
 
         modulo = st.selectbox(
             "Seleccione módulo",
@@ -1337,7 +1361,7 @@ with tab12:
 
             with st.form("acciones"):
 
-                profesional = st.selectbox(
+                profesional_ind = st.selectbox(
                     "Profesional",
                     ["Psicología", "Trabajo Social", "Pedagogía", "Enfermería"]
                 )
@@ -1353,11 +1377,11 @@ with tab12:
                     conn.execute(text("""
                         INSERT INTO acciones_profesionales
                         (documento_usuario, profesional, tipo_accion, observaciones)
-                        VALUES (:doc, :prof, :accion, :obs)
+                        VALUES (:doc, :prof, :acc, :obs)
                     """), {
                         "doc": cedula,
-                        "prof": profesional,
-                        "accion": tipo_accion,
+                        "prof": profesional_ind,
+                        "acc": tipo_accion,
                         "obs": observaciones
                     })
 
@@ -1463,7 +1487,7 @@ with tab12:
                 st.success("Plan registrado")
 
     except Exception as e:
-        st.error(f"Error: {e}")
+        st.error(f"Error general: {e}")
 with tab13:
 
     st.title("📈 Seguimiento e Impacto")
