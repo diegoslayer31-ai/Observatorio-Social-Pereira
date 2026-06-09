@@ -1864,11 +1864,11 @@ with tab14:
 
         confirmar = st.checkbox("Confirmo actualización")
 
-        # =========================
-        # ACTUALIZAR BD
-        # =========================
-        if confirmar and st.button("🚀 Actualizar base de datos"):
-    
+# =========================
+# ACTUALIZAR BD
+# =========================
+if confirmar and st.button("🚀 Actualizar base de datos"):
+
     try:
         with engine.begin() as conn:
 
