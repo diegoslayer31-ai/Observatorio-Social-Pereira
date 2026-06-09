@@ -1868,19 +1868,33 @@ with tab14:
         # ACTUALIZAR BD
         # =========================
         if confirmar and st.button("🚀 Actualizar base de datos"):
+    
+    try:
+        with engine.begin() as conn:
 
-            with engine.begin() as conn:
+            for _, row in df_activos.iterrows():
 
-                for _, row in df_activos.iterrows():
+                doc = str(row["numero_identificacion"]).strip()
+                modalidad = str(row["modalidad"]).strip().upper()
 
-                    conn.execute(text("""
-                        UPDATE habitante_de_calle
-                        SET estado_caso = 'ACTIVO',
-                            modalidad = :modalidad
-                        WHERE numero_identificacion = :id
-                    """), {
-                        "modalidad": row["modalidad"],
-                        "id": row["numero_identificacion"]
-                    })
+                # saltar registros vacíos
+                if doc == "" or doc.lower() == "nan":
+                    continue
 
-            st.success("✅ Base actualizada correctamente")
+                if modalidad == "" or modalidad.lower() == "nan":
+                    modalidad = "SIN_MODALIDAD"
+
+                conn.execute(text("""
+                    UPDATE habitante_de_calle
+                    SET estado_caso = 'ACTIVO',
+                        modalidad = :modalidad
+                    WHERE TRIM(CAST(numero_identificacion AS TEXT)) = :id
+                """), {
+                    "modalidad": modalidad,
+                    "id": doc
+                })
+
+        st.success("✅ Base actualizada correctamente")
+
+    except Exception as e:
+        st.error(f"❌ Error en actualización: {e}")
