@@ -1383,21 +1383,19 @@ with tab13:
     st.title("📈 Seguimiento e Impacto - Reducción de Riesgos y Daños")
 
     # =========================
-    # METODOLOGÍA (SOLO EXPLICACIÓN)
+    # METODOLOGÍA
     # =========================
     st.subheader("🧠 Metodología del indicador")
 
     with st.expander("📘 ¿Cómo se calcula el Índice de éxito?"):
-
         st.markdown("""
-        El **Índice de éxito en reducción de riesgos y daños** mide el nivel de avance de cada persona en proceso de intervención.
+        El **Índice de éxito en reducción de riesgos y daños** mide el nivel de avance de cada persona.
 
         ### 📊 Objetivo
-        Evaluar:
-        - Adherencia a tratamiento médico y psiquiátrico
-        - Continuidad en el PAI
+        - Adherencia a tratamiento
+        - Seguimiento PAI
         - Reducción de consumo problemático
-        - Seguimiento institucional
+        - Estabilidad en intervención
 
         ### 🧮 Cálculo
         - Alta = 2
@@ -1411,28 +1409,24 @@ with tab13:
         - 🟡 50–74 En proceso
         - 🟠 25–49 Riesgo
         - 🔴 0–24 Crítico
-
-        ### ⚠️ Nota
-        Indicador de monitoreo social, no diagnóstico clínico.
         """)
 
     st.divider()
 
     # =========================
-    # DATOS
+    # CARGA DE DATOS
     # =========================
     try:
         df_acciones = pd.read_sql("SELECT * FROM acciones_profesionales", engine)
         df_asistencia = pd.read_sql("SELECT * FROM asistencias", engine)
         df_pai = pd.read_sql("SELECT * FROM pai_intervenciones", engine)
         df_base = pd.read_sql("SELECT * FROM habitante_de_calle", engine)
-
     except Exception as e:
         st.error(f"Error cargando datos: {e}")
         st.stop()
 
     # =========================
-    # INDICADORES
+    # INDICADORES GENERALES
     # =========================
     st.subheader("📊 Indicadores generales")
 
@@ -1446,7 +1440,7 @@ with tab13:
     st.divider()
 
     # =========================
-    # ADHERENCIA
+    # ADHERENCIA POR PATOLOGÍA
     # =========================
     st.subheader("💊 Adherencia por patología")
 
@@ -1463,7 +1457,7 @@ with tab13:
     st.divider()
 
     # =========================
-    # ÍNDICE
+    # ÍNDICE DE ÉXITO
     # =========================
     st.subheader("🧠 Índice de éxito")
 
@@ -1495,9 +1489,11 @@ with tab13:
             how="left"
         )
 
-        df_final["nombre"] = df_final["nombres"] + " " + df_final["apellidos"]
+        df_final["nombre"] = (
+            df_final["nombres"].astype(str) + " " + df_final["apellidos"].astype(str)
+        )
 
-        st.dataframe(df_final[["nombre", "indice", "estado"]])
+        st.dataframe(df_final[["nombre", "indice", "estado"]], use_container_width=True)
 
         st.bar_chart(df_final["estado"].value_counts())
 
@@ -1505,6 +1501,52 @@ with tab13:
         st.warning("Sin datos suficientes")
 
     st.divider()
+
+    # =========================
+    # COBERTURA PAI
+    # =========================
+    st.subheader("📋 Cobertura del Plan de Atención Individual (PAI)")
+
+    personas_con_pai = df_pai["documento_usuario"].dropna().unique()
+
+    df_base_limpio = df_base[["numero_identificacion", "nombres", "apellidos"]].copy()
+
+    df_base_limpio["tiene_pai"] = df_base_limpio["numero_identificacion"].isin(personas_con_pai)
+
+    df_con_pai = df_base_limpio[df_base_limpio["tiene_pai"] == True]
+    df_sin_pai = df_base_limpio[df_base_limpio["tiene_pai"] == False]
+
+    c1, c2, c3 = st.columns(3)
+
+    c1.metric("Total personas", len(df_base_limpio))
+    c2.metric("Con PAI", len(df_con_pai))
+    c3.metric("Sin PAI", len(df_sin_pai))
+
+    cobertura = round((len(df_con_pai) / len(df_base_limpio)) * 100, 2) if len(df_base_limpio) > 0 else 0
+
+    st.info(f"📊 Cobertura PAI: {cobertura}%")
+
+    st.divider()
+
+    st.subheader("🚨 Personas SIN PAI")
+
+    df_sin_pai["nombre"] = (
+        df_sin_pai["nombres"].astype(str) + " " + df_sin_pai["apellidos"].astype(str)
+    )
+
+    st.dataframe(df_sin_pai[["numero_identificacion", "nombre"]], use_container_width=True)
+
+    st.warning(f"⚠️ Faltan {len(df_sin_pai)} personas por PAI")
+
+    st.divider()
+
+    st.subheader("✅ Personas con PAI")
+
+    df_con_pai["nombre"] = (
+        df_con_pai["nombres"].astype(str) + " " + df_con_pai["apellidos"].astype(str)
+    )
+
+    st.dataframe(df_con_pai[["numero_identificacion", "nombre"]], use_container_width=True)
 
     # =========================
     # ALERTAS
@@ -1516,14 +1558,19 @@ with tab13:
         criticos = len(df_indice[df_indice["indice"] < 25])
         total = len(df_indice)
 
-        pct = round((criticos / total) * 100, 2)
+        pct = round((criticos / total) * 100, 2) if total > 0 else 0
 
-        st.write(f"Riesgo crítico: {pct}%")
+        if pct > 30:
+            st.error(f"Alta población en riesgo crítico: {pct}%")
+        elif pct > 15:
+            st.warning(f"Riesgo medio: {pct}%")
+        else:
+            st.success(f"Situación controlada: {pct}%")
 
     st.divider()
 
     # =========================
-    # HISTORIA
+    # HISTORIA INDIVIDUAL
     # =========================
     st.subheader("📋 Historia individual")
 
