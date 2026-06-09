@@ -1446,12 +1446,15 @@ with tab14:
                     })
 
             st.success("Base actualizada correctamente")
-
 with tab14:
 
     st.title("📥 Carga Masiva de Activos")
 
-    archivo = st.file_uploader("Sube archivo Excel", type=["xlsx"])
+    archivo = st.file_uploader(
+    "Sube archivo Excel",
+    type=["xlsx"],
+    key="upload_activos_tab14"
+)
 
     if archivo:
 
