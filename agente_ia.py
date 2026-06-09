@@ -1203,6 +1203,7 @@ with tab11:
             "Ingrese la contraseña para habilitar el formulario."
         )
             
+
 # =====================================
 # SEGUIMIENTO PROFESIONAL
 # =====================================
@@ -1231,97 +1232,93 @@ with tab12:
 
             if usuario.empty:
 
-                st.warning("⚠️ Usuario no encontrado")
+                st.warning("Usuario no encontrado")
 
             else:
 
-                st.success("✅ Usuario encontrado")
-
                 datos = usuario.iloc[0]
 
-                col1, col2 = st.columns(2)
+                st.success("Usuario encontrado")
 
-                with col1:
-                    st.write("**Nombre:**", datos.get("nombres", "N/A"))
-                    st.write("**Apellidos:**", datos.get("apellidos", "N/A"))
-                    st.write("**Edad:**", datos.get("edad", "N/A"))
+                col1, col2, col3 = st.columns(3)
 
-                with col2:
-                    st.write("**Documento:**", cedula)
-                    st.write("**Sexo:**", datos.get("sexo_al_nacer", "N/A"))
-                    st.write("**Barrio:**", datos.get("barrio_o_vereda", "N/A"))
+                col1.metric(
+                    "Nombre",
+                    f"{datos['nombres']} {datos['apellidos']}"
+                )
 
-                st.markdown("---")
+                col2.metric(
+                    "Edad",
+                    datos["edad"]
+                )
 
-                st.subheader("📝 Registro de intervención")
+                col3.metric(
+                    "Documento",
+                    cedula
+                )
 
-                with st.form("form_accion_profesional"):
+                st.divider()
 
-                    profesional = st.selectbox(
-                        "Perfil profesional",
-                        [
-                            "Psicología",
-                            "Trabajo Social",
-                            "Pedagogía",
-                            "Enfermería",
-                            "Coordinación",
-                            "Dirección"
-                        ]
-                    )
+                modulo = st.selectbox(
+                    "Seleccione módulo",
+                    [
+                        "Acciones Profesionales",
+                        "Asistencia",
+                        "Adherencia al Tratamiento",
+                        "Valoración Integral",
+                        "Plan de Intervención"
+                    ]
+                )
 
-                    tipo_accion = st.selectbox(
-                        "Tipo de acción",
-                        [
-                            "Atención individual",
-                            "Atención grupal",
-                            "Orientación",
-                            "Seguimiento",
-                            "Remisión",
-                            "Visita",
-                            "Gestión institucional",
-                            "Otro"
-                        ]
-                    )
+                # =====================================
+                # ACCIONES PROFESIONALES
+                # =====================================
 
-                    observaciones = st.text_area(
-                        "Observaciones"
-                    )
+                if modulo == "Acciones Profesionales":
 
-                    compromisos = st.text_area(
-                        "Compromisos"
-                    )
+                    with st.form("acciones"):
 
-                    fecha_seguimiento = st.date_input(
-                        "Próxima fecha de seguimiento"
-                    )
+                        profesional = st.selectbox(
+                            "Profesional",
+                            [
+                                "Psicología",
+                                "Trabajo Social",
+                                "Pedagogía",
+                                "Enfermería",
+                                "Coordinación",
+                                "Dirección"
+                            ]
+                        )
 
-                    guardar = st.form_submit_button(
-                        "💾 Guardar acción"
-                    )
+                        tipo_accion = st.text_input(
+                            "Tipo de acción"
+                        )
 
-                if guardar:
+                        observaciones = st.text_area(
+                            "Observaciones"
+                        )
 
-                    try:
+                        guardar = st.form_submit_button(
+                            "Guardar Acción"
+                        )
+
+                    if guardar:
 
                         sql = text("""
-                            INSERT INTO acciones_profesionales
-                            (
-                                documento_usuario,
-                                profesional,
-                                tipo_accion,
-                                observaciones,
-                                compromisos,
-                                fecha_seguimiento
-                            )
-                            VALUES
-                            (
-                                :documento_usuario,
-                                :profesional,
-                                :tipo_accion,
-                                :observaciones,
-                                :compromisos,
-                                :fecha_seguimiento
-                            )
+                        INSERT INTO acciones_profesionales
+                        (
+                            documento_usuario,
+                            profesional,
+                            tipo_accion,
+                            observaciones
+                        )
+                        VALUES
+                        (
+                            :documento,
+                            :profesional,
+                            :accion,
+                            :obs
+                        )
                         """)
 
                         with engine.begin() as conn:
@@ -1329,51 +1326,266 @@ with tab12:
                             conn.execute(
                                 sql,
                                 {
-                                    "documento_usuario": cedula,
+                                    "documento": cedula,
                                     "profesional": profesional,
-                                    "tipo_accion": tipo_accion,
-                                    "observaciones": observaciones,
-                                    "compromisos": compromisos,
-                                    "fecha_seguimiento": fecha_seguimiento
+                                    "accion": tipo_accion,
+                                    "obs": observaciones
                                 }
                             )
 
                         st.success(
-                            "✅ Acción registrada correctamente"
+                            "Acción registrada"
                         )
 
-                    except Exception as e:
+                # =====================================
+                # ASISTENCIA
+                # =====================================
 
-                        st.error(
-                            f"Error al guardar: {e}"
+                elif modulo == "Asistencia":
+
+                    with st.form("asistencia"):
+
+                        fecha = st.date_input(
+                            "Fecha"
                         )
 
-                st.markdown("---")
+                        asistencia = st.selectbox(
+                            "Asistencia",
+                            [
+                                "Asistió",
+                                "No asistió"
+                            ]
+                        )
 
-                st.subheader("📚 Historial de intervenciones")
+                        observaciones = st.text_area(
+                            "Observaciones"
+                        )
 
-                historial = pd.read_sql(
-                    f"""
-                    SELECT *
-                    FROM acciones_profesionales
-                    WHERE documento_usuario = '{cedula}'
-                    ORDER BY id DESC
-                    """,
-                    engine
-                )
+                        guardar = st.form_submit_button(
+                            "Guardar Asistencia"
+                        )
 
-                if len(historial) > 0:
+                    if guardar:
 
-                    st.dataframe(
-                        historial,
-                        use_container_width=True
-                    )
+                        sql = text("""
+                        INSERT INTO asistencias
+                        (
+                            documento_usuario,
+                            fecha,
+                            asistencia,
+                            observaciones
+                        )
+                        VALUES
+                        (
+                            :documento,
+                            :fecha,
+                            :asistencia,
+                            :obs
+                        )
+                        """)
 
-                else:
+                        with engine.begin() as conn:
 
-                    st.info(
-                        "No existen intervenciones registradas."
-                    )
+                            conn.execute(
+                                sql,
+                                {
+                                    "documento": cedula,
+                                    "fecha": fecha,
+                                    "asistencia": asistencia,
+                                    "obs": observaciones
+                                }
+                            )
+
+                        st.success(
+                            "Asistencia registrada"
+                        )
+
+                # =====================================
+                # ADHERENCIA
+                # =====================================
+
+                elif modulo == "Adherencia al Tratamiento":
+
+                    with st.form("adherencia"):
+
+                        tratamiento = st.text_input(
+                            "Tratamiento"
+                        )
+
+                        adherencia = st.selectbox(
+                            "Nivel de adherencia",
+                            [
+                                "Alta",
+                                "Media",
+                                "Baja"
+                            ]
+                        )
+
+                        observaciones = st.text_area(
+                            "Observaciones"
+                        )
+
+                        guardar = st.form_submit_button(
+                            "Guardar Adherencia"
+                        )
+
+                    if guardar:
+
+                        sql = text("""
+                        INSERT INTO adherencia_tratamiento
+                        (
+                            documento_usuario,
+                            tratamiento,
+                            adherencia,
+                            observaciones
+                        )
+                        VALUES
+                        (
+                            :documento,
+                            :tratamiento,
+                            :adherencia,
+                            :obs
+                        )
+                        """)
+
+                        with engine.begin() as conn:
+
+                            conn.execute(
+                                sql,
+                                {
+                                    "documento": cedula,
+                                    "tratamiento": tratamiento,
+                                    "adherencia": adherencia,
+                                    "obs": observaciones
+                                }
+                            )
+
+                        st.success(
+                            "Adherencia registrada"
+                        )
+
+                # =====================================
+                # VALORACIÓN
+                # =====================================
+
+                elif modulo == "Valoración Integral":
+
+                    with st.form("valoracion"):
+
+                        riesgo = st.selectbox(
+                            "Nivel de riesgo",
+                            [
+                                "Bajo",
+                                "Medio",
+                                "Alto",
+                                "Crítico"
+                            ]
+                        )
+
+                        observaciones = st.text_area(
+                            "Valoración"
+                        )
+
+                        guardar = st.form_submit_button(
+                            "Guardar Valoración"
+                        )
+
+                    if guardar:
+
+                        sql = text("""
+                        INSERT INTO valoraciones_integrales
+                        (
+                            documento_usuario,
+                            nivel_riesgo,
+                            observaciones
+                        )
+                        VALUES
+                        (
+                            :documento,
+                            :riesgo,
+                            :obs
+                        )
+                        """)
+
+                        with engine.begin() as conn:
+
+                            conn.execute(
+                                sql,
+                                {
+                                    "documento": cedula,
+                                    "riesgo": riesgo,
+                                    "obs": observaciones
+                                }
+                            )
+
+                        st.success(
+                            "Valoración registrada"
+                        )
+
+                # =====================================
+                # PLAN INTERVENCIÓN
+                # =====================================
+
+                elif modulo == "Plan de Intervención":
+
+                    with st.form("plan"):
+
+                        objetivo = st.text_input(
+                            "Objetivo"
+                        )
+
+                        responsable = st.selectbox(
+                            "Responsable",
+                            [
+                                "Psicología",
+                                "Trabajo Social",
+                                "Pedagogía",
+                                "Enfermería"
+                            ]
+                        )
+
+                        fecha_meta = st.date_input(
+                            "Fecha meta"
+                        )
+
+                        guardar = st.form_submit_button(
+                            "Guardar Plan"
+                        )
+
+                    if guardar:
+
+                        sql = text("""
+                        INSERT INTO plan_intervencion
+                        (
+                            documento_usuario,
+                            objetivo,
+                            responsable,
+                            fecha_meta
+                        )
+                        VALUES
+                        (
+                            :documento,
+                            :objetivo,
+                            :responsable,
+                            :fecha_meta
+                        )
+                        """)
+
+                        with engine.begin() as conn:
+
+                            conn.execute(
+                                sql,
+                                {
+                                    "documento": cedula,
+                                    "objetivo": objetivo,
+                                    "responsable": responsable,
+                                    "fecha_meta": fecha_meta
+                                }
+                            )
+
+                        st.success(
+                            "Plan registrado"
+                        )
 
         except Exception as e:
 
@@ -1382,5 +1594,5 @@ with tab12:
     else:
 
         st.info(
-            "Ingrese un número de identificación para consultar el usuario."
+            "Ingrese un número de identificación para iniciar el seguimiento."
         )
