@@ -1780,7 +1780,8 @@ with tab14:
 
     if archivo:
 
-        df_activos = pd.read_excel(archivo, header=0)
+        df_activos = pd.read_excel(archivo, header=None)
+        st.write(df_activos.head(10))
 
         # =========================
         # LIMPIEZA COLUMNAS
