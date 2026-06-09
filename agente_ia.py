@@ -1210,25 +1210,28 @@ with tab11:
 with tab12:
 
     st.title("📋 Seguimiento Profesional")
-    # =========================
-# CARGA GLOBAL DE PROFESIONALES
-# =========================
-df_profesionales = pd.read_sql("""
-    SELECT id, nombre, rol
-    FROM profesionales
-    ORDER BY nombre
-""", engine)
 
-df_profesionales["label"] = (
-    df_profesionales["nombre"] + " (" + df_profesionales["rol"] + ")"
-)
-try:
+    # =========================
+    # CARGA GLOBAL PROFESIONALES
+    # =========================
+    df_profesionales = pd.read_sql("""
+        SELECT id, nombre, rol
+        FROM profesionales
+        ORDER BY nombre
+    """, engine)
+
+    df_profesionales["label"] = (
+        df_profesionales["nombre"].astype(str)
+        + " (" + df_profesionales["rol"].astype(str) + ")"
+    )
+
+    try:
 
         # =========================
         # CONSULTA INDIVIDUAL
         # =========================
         cedula = st.text_input(
-            "Número de identificación (consulta individual)",
+            "Número de identificación",
             key="cedula_seguimiento"
         )
 
@@ -1242,14 +1245,13 @@ try:
 
             if usuario.empty:
                 st.warning("Usuario no encontrado")
-            else:
 
+            else:
                 datos = usuario.iloc[0]
 
                 st.success("Usuario encontrado")
 
                 c1, c2, c3 = st.columns(3)
-
                 c1.metric("Nombre", f"{datos['nombres']} {datos['apellidos']}")
                 c2.metric("Edad", datos["edad"])
                 c3.metric("Documento", cedula)
@@ -1257,7 +1259,7 @@ try:
         st.divider()
 
         # =========================
-        # ASISTENCIA MASIVA (TALLERES)
+        # ASISTENCIA MASIVA
         # =========================
         st.subheader("📅 Asistencia a Talleres / Actividades Grupales")
 
@@ -1268,7 +1270,8 @@ try:
         """, engine)
 
         df_activos["nombre"] = (
-            df_activos["nombres"].astype(str) + " " + df_activos["apellidos"].astype(str)
+            df_activos["nombres"].astype(str)
+            + " " + df_activos["apellidos"].astype(str)
         )
 
         with st.form("asistencia_masiva"):
@@ -1277,12 +1280,11 @@ try:
 
             profesional = st.selectbox(
                 "Profesional responsable",
-                ["Psicología", "Trabajo Social", "Pedagogía", "Enfermería", "Coordinación"]
+                df_profesionales["label"].tolist()
             )
 
             fechas = st.date_input(
-                "Selecciona fecha)",
-                value=None
+                "Selecciona fecha(s)"
             )
 
             participantes = st.multiselect(
@@ -1304,47 +1306,27 @@ try:
 
         if guardar:
 
-            try:
+            fechas_list = fechas if isinstance(fechas, (list, tuple)) else [fechas]
 
-                fechas_list = fechas if isinstance(fechas, (list, tuple)) else [fechas]
+            with engine.begin() as conn:
 
-                with engine.begin() as conn:
+                for fecha in fechas_list:
+                    for doc in participantes:
 
-                    for fecha in fechas_list:
-                        for doc in participantes:
+                        conn.execute(text("""
+                            INSERT INTO asistencias
+                            (documento_usuario, fecha, asistencia, observaciones, profesional, actividad)
+                            VALUES (:doc, :fecha, :estado, :obs, :prof, :act)
+                        """), {
+                            "doc": doc,
+                            "fecha": fecha,
+                            "estado": estado,
+                            "obs": observaciones,
+                            "prof": profesional,
+                            "act": nombre_actividad
+                        })
 
-                            conn.execute(text("""
-                                INSERT INTO asistencias
-                                (
-                                    documento_usuario,
-                                    fecha,
-                                    asistencia,
-                                    observaciones,
-                                    profesional,
-                                    actividad
-                                )
-                                VALUES
-                                (
-                                    :doc,
-                                    :fecha,
-                                    :estado,
-                                    :obs,
-                                    :prof,
-                                    :act
-                                )
-                            """), {
-                                "doc": doc,
-                                "fecha": fecha,
-                                "estado": estado,
-                                "obs": observaciones,
-                                "prof": profesional,
-                                "act": nombre_actividad
-                            })
-
-                st.success("Asistencia registrada correctamente")
-
-            except Exception as e:
-                st.error(f"Error guardando asistencia: {e}")
+            st.success("Asistencia registrada correctamente")
 
         st.divider()
 
@@ -1371,7 +1353,7 @@ try:
 
                 profesional_ind = st.selectbox(
                     "Profesional",
-                    ["Psicología", "Trabajo Social", "Pedagogía", "Enfermería"]
+                    df_profesionales["label"].tolist()
                 )
 
                 tipo_accion = st.text_input("Tipo de acción")
@@ -1471,7 +1453,7 @@ try:
 
                 responsable = st.selectbox(
                     "Responsable",
-                    ["Psicología", "Trabajo Social", "Enfermería"]
+                    df_profesionales["label"].tolist()
                 )
 
                 fecha_meta = st.date_input("Fecha meta")
