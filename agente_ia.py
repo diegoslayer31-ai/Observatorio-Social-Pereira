@@ -1147,6 +1147,12 @@ with tab11:
 
 with tab12:
 
+
+    st.title("📋 SEGUIMIENTO PROFESIONAL FUNCIONANDO")
+
+    st.success("Si ves este mensaje, la pestaña está cargando correctamente")
+
+    cedula = st.text_input("Número de identificación")
     st.title("📋 Seguimiento Profesional")
 
     cedula = st.text_input(
