@@ -1210,7 +1210,7 @@ with tab12:
     st.title("📋 Seguimiento Profesional")
 
     # =========================
-    # PROFESIONALES (SAFE)
+    # PROFESIONALES
     # =========================
     try:
         df_profesionales = pd.read_sql("""
@@ -1225,7 +1225,6 @@ with tab12:
         )
 
     except Exception:
-        st.warning("No se pudo cargar profesionales desde la base")
         df_profesionales = pd.DataFrame({
             "label": [
                 "Psicología",
@@ -1317,7 +1316,6 @@ with tab12:
 
         try:
             with engine.begin() as conn:
-
                 for doc in participantes:
                     conn.execute(text("""
                         INSERT INTO asistencias
@@ -1332,11 +1330,83 @@ with tab12:
                         "act": actividad
                     })
 
-            st.success("Asistencia registrada correctamente")
+            st.success("Asistencia registrada")
 
         except Exception as e:
             st.error(f"Error guardando asistencia: {e}")
 
+    st.divider()
+
+    # =========================
+    # 🧠 PAI - PLAN DE ATENCIÓN INDIVIDUAL
+    # =========================
+    st.subheader("🧠 PAI - Plan de Atención Individual")
+
+    cedula_pai = st.text_input("Documento usuario PAI", key="pai_doc")
+
+    if cedula_pai:
+
+        with st.form("pai_form"):
+
+            objetivo = st.text_input("Objetivo del plan")
+
+            intervencion = st.text_area("Intervención / Estrategia")
+
+            responsable = st.selectbox(
+                "Responsable",
+                df_profesionales["label"].tolist()
+            )
+
+            fecha_inicio = st.date_input("Fecha inicio")
+            fecha_fin = st.date_input("Fecha fin")
+
+            estado_pai = st.selectbox(
+                "Estado del PAI",
+                ["Activo", "En seguimiento", "Cerrado"]
+            )
+
+            guardar_pai = st.form_submit_button("Guardar PAI")
+
+        if guardar_pai:
+
+            try:
+                with engine.begin() as conn:
+
+                    conn.execute(text("""
+                        INSERT INTO pai_plan_atencion_individual
+                        (
+                            documento_usuario,
+                            objetivo,
+                            intervencion,
+                            responsable,
+                            fecha_inicio,
+                            fecha_fin,
+                            estado
+                        )
+                        VALUES
+                        (
+                            :doc,
+                            :obj,
+                            :int,
+                            :res,
+                            :ini,
+                            :fin,
+                            :est
+                        )
+                    """), {
+                        "doc": cedula_pai,
+                        "obj": objetivo,
+                        "int": intervencion,
+                        "res": responsable,
+                        "ini": fecha_inicio,
+                        "fin": fecha_fin,
+                        "est": estado_pai
+                    })
+
+                st.success("PAI guardado correctamente")
+
+            except Exception as e:
+                st.error(f"Error guardando PAI: {e}")
 
 # =====================================
 # TAB 13 - SEGUIMIENTO E IMPACTO
@@ -1382,3 +1452,114 @@ with tab13:
 
     except Exception as e:
         st.error(f"Error en seguimiento e impacto: {e}")
+with tab14:
+
+    st.title("📥 Carga Masiva de Activos")
+
+    archivo = st.file_uploader("Sube archivo Excel", type=["xlsx"])
+
+    if archivo:
+
+        try:
+            df_activos = pd.read_excel(archivo)
+
+            # =========================
+            # LIMPIEZA DE COLUMNAS
+            # =========================
+            df_activos.columns = (
+                df_activos.columns
+                .astype(str)
+                .str.strip()
+                .str.lower()
+                .str.replace(" ", "_")
+            )
+
+            st.write("📌 Columnas detectadas:", df_activos.columns.tolist())
+            st.dataframe(df_activos)
+
+            # =========================
+            # VALIDACIÓN
+            # =========================
+            required = ["numero_identificacion", "modalidad"]
+
+            missing = [c for c in required if c not in df_activos.columns]
+
+            if missing:
+                st.error(f"❌ Faltan columnas: {missing}")
+                st.stop()
+
+            # =========================
+            # LIMPIEZA DE DATOS
+            # =========================
+            df_activos["numero_identificacion"] = (
+                df_activos["numero_identificacion"]
+                .astype(str)
+                .str.strip()
+            )
+
+            df_activos["modalidad"] = (
+                df_activos["modalidad"]
+                .astype(str)
+                .str.strip()
+                .str.upper()
+            )
+
+            df_activos = df_activos.drop_duplicates(subset=["numero_identificacion"])
+
+            # =========================
+            # 🔥 RESUMEN GRANJA VS URBANO
+            # =========================
+            st.subheader("📊 Distribución modalidad")
+
+            resumen_modalidad = (
+                df_activos["modalidad"]
+                .value_counts()
+                .reset_index()
+            )
+
+            resumen_modalidad.columns = ["modalidad", "cantidad"]
+
+            st.dataframe(resumen_modalidad)
+
+            st.bar_chart(resumen_modalidad.set_index("modalidad"))
+
+            # =========================
+            # CONFIRMACIÓN
+            # =========================
+            st.subheader("🚀 Actualización en base de datos")
+
+            confirmar = st.checkbox("Confirmo actualización de datos")
+
+            if confirmar and st.button("Actualizar base"):
+
+                try:
+                    with engine.begin() as conn:
+
+                        for _, row in df_activos.iterrows():
+
+                            doc = str(row["numero_identificacion"]).strip()
+                            modalidad = str(row["modalidad"]).strip().upper()
+
+                            if doc in ["", "nan"]:
+                                continue
+
+                            if modalidad not in ["GRANJA", "URBANO"]:
+                                modalidad = "SIN_MODALIDAD"
+
+                            conn.execute(text("""
+                                UPDATE habitante_de_calle
+                                SET estado_caso = 'ACTIVO',
+                                    modalidad = :modalidad
+                                WHERE TRIM(CAST(numero_identificacion AS TEXT)) = :id
+                            """), {
+                                "modalidad": modalidad,
+                                "id": doc
+                            })
+
+                    st.success("✅ Base actualizada correctamente")
+
+                except Exception as e:
+                    st.error(f"❌ Error al actualizar: {e}")
+
+        except Exception as e:
+            st.error(f"❌ Error leyendo archivo: {e}")
