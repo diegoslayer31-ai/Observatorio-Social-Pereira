@@ -253,7 +253,7 @@ col4.metric(
 # =========================
 # TABS PRINCIPALES
 # =========================
-tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10, tab11 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10, tab11, tab12 = st.tabs([
     "📊 General",
     "⚠️ Vulnerabilidad",
     "🚬 Consumo",
@@ -264,7 +264,8 @@ tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10, tab11 = st.tabs([
     "🤖 IA",
     "🏆 Egresos e Impacto",
     "📄 Reportes Institucionales",
-    "➕ Nuevo Registro"
+    "➕ Nuevo Registro",
+    "📋 Seguimiento Profesional"
 ])
 # =========================
 # TAB GENERAL
@@ -581,80 +582,61 @@ with tab5:
 # =========================
 with tab6:
 
-    st.subheader("📚 Educación vs Vulnerabilidad")
+    st.subheader("📚 Nivel educativo")
 
     df_local = df.copy()
 
-    # =========================
-    # VALIDACIÓN DE COLUMNAS
-    # =========================
-    if "nivel_educativo" in df_local.columns and "score_vulnerabilidad" in df_local.columns:
+    if "nivel_educativo" in df_local.columns:
 
         # =========================
-        # LIMPIEZA
+        # LIMPIEZA Y AGRUPACIÓN
         # =========================
-        df_local["nivel_educativo"] = (
+        edu = (
             df_local["nivel_educativo"]
             .fillna("Sin dato")
             .astype(str)
             .str.strip()
-        )
-
-        # =========================
-        # AGRUPACIÓN (PROMEDIO DE VULNERABILIDAD)
-        # =========================
-        edu_vuln = (
-            df_local.groupby("nivel_educativo")["score_vulnerabilidad"]
-            .mean()
+            .value_counts()
             .reset_index()
         )
 
-        edu_vuln.columns = ["nivel_educativo", "vulnerabilidad_promedio"]
-
-        edu_vuln = edu_vuln.sort_values("vulnerabilidad_promedio", ascending=False)
+        edu.columns = ["nivel", "conteo"]
 
         # =========================
-        # GRÁFICA
+        # GRÁFICA DE BARRAS
         # =========================
-        fig = px.bar(
-            edu_vuln,
-            x="nivel_educativo",
-            y="vulnerabilidad_promedio",
-            color="vulnerabilidad_promedio",
-            text="vulnerabilidad_promedio",
-            title="📚 Vulnerabilidad promedio según nivel educativo"
+        fig_edu = px.bar(
+            edu,
+            x="nivel",
+            y="conteo",
+            color="conteo",
+            text="conteo",
+            title="📚 Distribución del nivel educativo"
         )
 
-        fig.update_traces(texttemplate='%{text:.2f}', textposition="outside")
-        fig.update_layout(xaxis_tickangle=-45)
+        fig_edu.update_traces(textposition="outside")
+        fig_edu.update_layout(xaxis_tickangle=-45)
 
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig_edu, use_container_width=True)
 
         # =========================
         # HALLAZGO AUTOMÁTICO
         # =========================
-        peor_nivel = edu_vuln.iloc[0]
+        edu_top = edu.iloc[0]
 
-        mejor_nivel = edu_vuln.iloc[-1]
-
-        st.warning(
-            f"📌 Mayor vulnerabilidad: {peor_nivel['nivel_educativo']} "
-            f"({peor_nivel['vulnerabilidad_promedio']:.2f})"
-        )
-
-        st.success(
-            f"📌 Menor vulnerabilidad: {mejor_nivel['nivel_educativo']} "
-            f"({mejor_nivel['vulnerabilidad_promedio']:.2f})"
+        st.info(
+            f"El nivel educativo predominante es: **{edu_top['nivel']}** "
+            f"con {edu_top['conteo']} registros."
         )
 
         # =========================
         # TABLA OPCIONAL
         # =========================
         with st.expander("📋 Ver tabla detallada"):
-            st.dataframe(edu_vuln)
+            st.dataframe(edu)
 
     else:
-        st.warning("Faltan columnas: 'nivel_educativo' o 'score_vulnerabilidad'")
+        st.warning("No existe la columna 'nivel_educativo' en el dataset")
 # =========================
 # TAB SEMÁFORO SOCIAL
 # =========================
@@ -1159,3 +1141,256 @@ with tab11:
 
             st.error(str(e))
             
+# =====================================
+# SEGUIMIENTO PROFESIONAL
+# =====================================
+
+with tab12:
+
+    st.title("📋 Seguimiento Profesional")
+
+    cedula = st.text_input(
+        "Número de identificación del usuario"
+    )
+
+    if cedula:
+
+        usuario = pd.read_sql(
+            f"""
+            SELECT *
+            FROM personas_caracterizacion
+            WHERE numero_identificacion = '{cedula}'
+            """,
+            engine
+        )
+
+        if usuario.empty:
+
+            st.error("Usuario no encontrado")
+
+        else:
+
+            st.success(
+                f"Usuario: {usuario.iloc[0]['nombres']} "
+                f"{usuario.iloc[0]['apellidos']}"
+            )
+
+            sub1, sub2, sub3, sub4 = st.tabs([
+                "📝 Acciones",
+                "📅 Asistencias",
+                "💊 Adherencia",
+                "📊 Valoraciones"
+            ])
+
+            # =========================
+            # ACCIONES PROFESIONALES
+            # =========================
+
+            with sub1:
+
+                st.subheader("Registro de acción profesional")
+
+                profesional = st.text_input(
+                    "Nombre del profesional"
+                )
+
+                cargo = st.selectbox(
+                    "Cargo",
+                    [
+                        "Psicólogo",
+                        "Trabajador Social",
+                        "Pedagogía",
+                        "Enfermería",
+                        "Coordinador"
+                    ]
+                )
+
+                tipo_accion = st.text_input(
+                    "Tipo de acción"
+                )
+
+                observaciones = st.text_area(
+                    "Observaciones"
+                )
+
+                compromisos = st.text_area(
+                    "Compromisos"
+                )
+
+                fecha_seguimiento = st.date_input(
+                    "Próximo seguimiento"
+                )
+
+                if st.button("Guardar Acción"):
+
+                    sql = """
+                    INSERT INTO acciones_profesionales
+                    (
+                        documento_usuario,
+                        profesional,
+                        cargo,
+                        tipo_accion,
+                        observaciones,
+                        compromisos,
+                        fecha_seguimiento
+                    )
+                    VALUES
+                    (%s,%s,%s,%s,%s,%s,%s)
+                    """
+
+                    with engine.begin() as conn:
+
+                        conn.exec_driver_sql(
+                            sql,
+                            (
+                                cedula,
+                                profesional,
+                                cargo,
+                                tipo_accion,
+                                observaciones,
+                                compromisos,
+                                fecha_seguimiento
+                            )
+                        )
+
+                    st.success("Acción registrada")
+
+                historial = pd.read_sql(
+                    f"""
+                    SELECT *
+                    FROM acciones_profesionales
+                    WHERE documento_usuario = '{cedula}'
+                    ORDER BY fecha DESC
+                    """,
+                    engine
+                )
+
+                st.dataframe(
+                    historial,
+                    use_container_width=True
+                )
+
+            # =========================
+            # ASISTENCIAS
+            # =========================
+
+            with sub2:
+
+                st.subheader("Registro de asistencia")
+
+                actividad = st.text_input(
+                    "Actividad"
+                )
+
+                profesional_asistencia = st.text_input(
+                    "Profesional responsable"
+                )
+
+                asistencia = st.selectbox(
+                    "Asistió",
+                    ["Sí", "No"]
+                )
+
+                observacion_asistencia = st.text_area(
+                    "Observaciones asistencia"
+                )
+
+                st.info(
+                    "Conectar a tabla asistencias."
+                )
+
+            # =========================
+            # ADHERENCIA
+            # =========================
+
+            with sub3:
+
+                st.subheader(
+                    "Adherencia al tratamiento"
+                )
+
+                tratamiento = st.text_input(
+                    "Tratamiento"
+                )
+
+                entidad = st.text_input(
+                    "Entidad"
+                )
+
+                adherencia = st.selectbox(
+                    "Nivel de adherencia",
+                    [
+                        "Alta",
+                        "Media",
+                        "Baja",
+                        "No adherente"
+                    ]
+                )
+
+                observacion_adherencia = st.text_area(
+                    "Observaciones"
+                )
+
+                st.info(
+                    "Conectar a tabla adherencia_tratamiento."
+                )
+
+            # =========================
+            # VALORACIONES
+            # =========================
+
+            with sub4:
+
+                st.subheader(
+                    "Valoración integral"
+                )
+
+                salud_fisica = st.slider(
+                    "Salud física",
+                    1,
+                    5,
+                    3
+                )
+
+                salud_mental = st.slider(
+                    "Salud mental",
+                    1,
+                    5,
+                    3
+                )
+
+                consumo_spa = st.slider(
+                    "Consumo SPA",
+                    1,
+                    5,
+                    3
+                )
+
+                redes_apoyo = st.slider(
+                    "Redes de apoyo",
+                    1,
+                    5,
+                    3
+                )
+
+                autonomia = st.slider(
+                    "Autonomía",
+                    1,
+                    5,
+                    3
+                )
+
+                empleabilidad = st.slider(
+                    "Empleabilidad",
+                    1,
+                    5,
+                    3
+                )
+
+                concepto = st.text_area(
+                    "Concepto profesional"
+                )
+
+                st.info(
+                    "Conectar a tabla valoraciones_integrales."
+                )
