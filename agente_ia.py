@@ -1202,15 +1202,15 @@ with tab11:
             "Ingrese la contraseña para habilitar el formulario."
         )
 # =====================================
-# TAB 12 - SEGUIMIENTO PROFESIONAL
+# TAB 12 - SEGUIMIENTO PROFESIONAL + PAI
 # =====================================
 
 with tab12:
 
-    st.title("📋 Seguimiento Profesional")
+    st.title("📋 Seguimiento Profesional - PAI (Plan de Atención Individual)")
 
     # =========================
-    # PROFESIONALES
+    # PROFESIONALES (SEGURIDAD)
     # =========================
     try:
         df_profesionales = pd.read_sql("""
@@ -1227,20 +1227,19 @@ with tab12:
     except Exception:
         df_profesionales = pd.DataFrame({
             "label": [
-                "Psicología",
-                "Trabajo Social",
-                "Pedagogía",
-                "Enfermería"
+                "Psicología", "Enfermería",
+                "Trabajo Social", "Pedagogía"
             ]
         })
 
     # =========================
-    # CONSULTA INDIVIDUAL
+    # USUARIO INDIVIDUAL
     # =========================
-    cedula = st.text_input("Número de identificación")
+    cedula = st.text_input("Documento del usuario (PAI)", key="pai_user")
+
+    usuario = None
 
     if cedula:
-
         try:
             usuario = pd.read_sql(f"""
                 SELECT *
@@ -1248,9 +1247,7 @@ with tab12:
                 WHERE numero_identificacion = '{cedula}'
             """, engine)
 
-            if usuario.empty:
-                st.warning("Usuario no encontrado")
-            else:
+            if not usuario.empty:
                 datos = usuario.iloc[0]
 
                 st.success("Usuario encontrado")
@@ -1260,30 +1257,29 @@ with tab12:
                 c2.metric("Edad", datos.get("edad", "N/A"))
                 c3.metric("Documento", cedula)
 
+            else:
+                st.warning("Usuario no encontrado")
+
         except Exception as e:
-            st.error(f"Error consultando usuario: {e}")
+            st.error(f"Error usuario: {e}")
 
     st.divider()
 
     # =========================
     # ASISTENCIA MASIVA
     # =========================
-    st.subheader("📅 Asistencia Masiva")
+    st.subheader("📅 Asistencia a talleres")
 
-    try:
-        df_activos = pd.read_sql("""
-            SELECT numero_identificacion, nombres, apellidos
-            FROM habitante_de_calle
-            WHERE estado_caso = 'ACTIVO'
-        """, engine)
+    df_activos = pd.read_sql("""
+        SELECT numero_identificacion, nombres, apellidos, modalidad
+        FROM habitante_de_calle
+        WHERE estado_caso = 'ACTIVO'
+    """, engine)
 
-        df_activos["nombre"] = (
-            df_activos["nombres"].astype(str)
-            + " " + df_activos["apellidos"].astype(str)
-        )
-
-    except Exception:
-        df_activos = pd.DataFrame(columns=["numero_identificacion", "nombre"])
+    df_activos["nombre"] = (
+        df_activos["nombres"].astype(str)
+        + " " + df_activos["apellidos"].astype(str)
+    )
 
     with st.form("asistencia_masiva"):
 
@@ -1294,17 +1290,16 @@ with tab12:
             df_profesionales["label"].tolist()
         )
 
-        fecha = st.date_input("Fecha")
+        fechas = st.date_input(
+            "Fechas (puedes seleccionar varias)"
+        )
 
         participantes = st.multiselect(
             "Participantes",
             df_activos["numero_identificacion"].tolist(),
-            format_func=lambda x: (
-                df_activos.loc[
-                    df_activos["numero_identificacion"] == x, "nombre"
-                ].values[0]
-                if not df_activos.empty else x
-            )
+            format_func=lambda x: df_activos.loc[
+                df_activos["numero_identificacion"] == x, "nombre"
+            ].values[0]
         )
 
         estado = st.selectbox("Asistencia", ["Asistió", "No asistió"])
@@ -1313,10 +1308,12 @@ with tab12:
         guardar = st.form_submit_button("Guardar asistencia")
 
     if guardar:
+        fechas_list = fechas if isinstance(fechas, (list, tuple)) else [fechas]
 
-        try:
-            with engine.begin() as conn:
+        with engine.begin() as conn:
+            for fecha in fechas_list:
                 for doc in participantes:
+
                     conn.execute(text("""
                         INSERT INTO asistencias
                         (documento_usuario, fecha, asistencia, observaciones, profesional, actividad)
@@ -1330,128 +1327,55 @@ with tab12:
                         "act": actividad
                     })
 
-            st.success("Asistencia registrada")
-
-        except Exception as e:
-            st.error(f"Error guardando asistencia: {e}")
+        st.success("Asistencia registrada")
 
     st.divider()
 
     # =========================
-    # 🧠 PAI - PLAN DE ATENCIÓN INDIVIDUAL
+    # PAI - PLAN INDIVIDUAL
     # =========================
     st.subheader("🧠 PAI - Plan de Atención Individual")
 
-    cedula_pai = st.text_input("Documento usuario PAI", key="pai_doc")
-
-    if cedula_pai:
+    if cedula:
 
         with st.form("pai_form"):
 
-            objetivo = st.text_input("Objetivo del plan")
-
-            intervencion = st.text_area("Intervención / Estrategia")
-
-            responsable = st.selectbox(
-                "Responsable",
-                df_profesionales["label"].tolist()
+            tipo_intervencion = st.selectbox(
+                "Tipo de intervención",
+                [
+                    "Reducción de riesgos y daños",
+                    "Adherencia tratamiento infectocontagioso",
+                    "Adherencia medicamento ansiedad",
+                    "Consumo problemático de sustancias",
+                    "Valoración enfermería",
+                    "Valoración psicología"
+                ]
             )
 
-            fecha_inicio = st.date_input("Fecha inicio")
-            fecha_fin = st.date_input("Fecha fin")
+            descripcion = st.text_area("Descripción de la intervención")
 
-            estado_pai = st.selectbox(
-                "Estado del PAI",
-                ["Activo", "En seguimiento", "Cerrado"]
+            nivel_adherencia = st.selectbox(
+                "Nivel de adherencia",
+                ["Alta", "Media", "Baja"]
             )
 
             guardar_pai = st.form_submit_button("Guardar PAI")
 
         if guardar_pai:
 
-            try:
-                with engine.begin() as conn:
+            with engine.begin() as conn:
+                conn.execute(text("""
+                    INSERT INTO pai_intervenciones
+                    (documento_usuario, tipo_intervencion, descripcion, adherencia)
+                    VALUES (:doc, :tipo, :desc, :adh)
+                """), {
+                    "doc": cedula,
+                    "tipo": tipo_intervencion,
+                    "desc": descripcion,
+                    "adh": nivel_adherencia
+                })
 
-                    conn.execute(text("""
-                        INSERT INTO pai_plan_atencion_individual
-                        (
-                            documento_usuario,
-                            objetivo,
-                            intervencion,
-                            responsable,
-                            fecha_inicio,
-                            fecha_fin,
-                            estado
-                        )
-                        VALUES
-                        (
-                            :doc,
-                            :obj,
-                            :int,
-                            :res,
-                            :ini,
-                            :fin,
-                            :est
-                        )
-                    """), {
-                        "doc": cedula_pai,
-                        "obj": objetivo,
-                        "int": intervencion,
-                        "res": responsable,
-                        "ini": fecha_inicio,
-                        "fin": fecha_fin,
-                        "est": estado_pai
-                    })
-
-                st.success("PAI guardado correctamente")
-
-            except Exception as e:
-                st.error(f"Error guardando PAI: {e}")
-
-# =====================================
-# TAB 13 - SEGUIMIENTO E IMPACTO
-# =====================================
-
-with tab13:
-
-    st.title("📈 Seguimiento e Impacto")
-
-    try:
-        df_acciones = pd.read_sql("SELECT * FROM acciones_profesionales", engine)
-        df_asistencia = pd.read_sql("SELECT * FROM asistencias", engine)
-        df_adherencia = pd.read_sql("SELECT * FROM adherencia_tratamiento", engine)
-        df_valoracion = pd.read_sql("SELECT * FROM valoraciones_integrales", engine)
-
-        st.subheader("📊 Indicadores Generales")
-
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("Acciones", len(df_acciones))
-        c2.metric("Asistencias", len(df_asistencia))
-        c3.metric("Adherencia", len(df_adherencia))
-        c4.metric("Valoraciones", len(df_valoracion))
-
-        st.divider()
-
-        st.subheader("📋 Historia Social")
-
-        cedula = st.text_input("Documento", key="historia_tab13")
-
-        if cedula:
-
-            st.write("### Acciones Profesionales")
-            st.dataframe(df_acciones[df_acciones["documento_usuario"] == cedula])
-
-            st.write("### Asistencia")
-            st.dataframe(df_asistencia[df_asistencia["documento_usuario"] == cedula])
-
-            st.write("### Adherencia")
-            st.dataframe(df_adherencia[df_adherencia["documento_usuario"] == cedula])
-
-            st.write("### Valoración")
-            st.dataframe(df_valoracion[df_valoracion["documento_usuario"] == cedula])
-
-    except Exception as e:
-        st.error(f"Error en seguimiento e impacto: {e}")
+            st.success("PAI registrado correctamente")
 with tab14:
 
     st.title("📥 Carga Masiva de Activos")
