@@ -1379,6 +1379,38 @@ with tab12:
                 })
 
             st.success("PAI registrado correctamente")
+with tab13:
+    st.title("📈 Seguimiento e Impacto")
+
+    try:
+        df_acciones = pd.read_sql("SELECT * FROM acciones_profesionales", engine)
+        df_asistencia = pd.read_sql("SELECT * FROM asistencias", engine)
+        df_adherencia = pd.read_sql("SELECT * FROM adherencia_tratamiento", engine)
+        df_valoracion = pd.read_sql("SELECT * FROM valoraciones_integrales", engine)
+
+        st.metric("Acciones", len(df_acciones))
+        st.metric("Asistencias", len(df_asistencia))
+        st.metric("Adherencia", len(df_adherencia))
+        st.metric("Valoraciones", len(df_valoracion))
+
+        cedula = st.text_input("Documento historial", key="hist_tab13")
+
+        if cedula:
+
+            st.write("Acciones")
+            st.dataframe(pd.read_sql(f"SELECT * FROM acciones_profesionales WHERE documento_usuario='{cedula}'", engine))
+
+            st.write("Asistencias")
+            st.dataframe(pd.read_sql(f"SELECT * FROM asistencias WHERE documento_usuario='{cedula}'", engine))
+
+            st.write("Adherencia")
+            st.dataframe(pd.read_sql(f"SELECT * FROM adherencia_tratamiento WHERE documento_usuario='{cedula}'", engine))
+
+            st.write("Valoración")
+            st.dataframe(pd.read_sql(f"SELECT * FROM valoraciones_integrales WHERE documento_usuario='{cedula}'", engine))
+
+    except Exception as e:
+        st.error(f"Error tab 13: {e}")
 # =====================================
 # TAB 14 - CARGA MASIVA ACTUALIZADA
 # =====================================
