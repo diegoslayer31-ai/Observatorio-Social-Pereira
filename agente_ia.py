@@ -1833,10 +1833,42 @@ with tab14:
 
         df_activos = pd.read_excel(archivo)
 
+        # =========================
+        # LIMPIEZA DE COLUMNAS
+        # =========================
+        df_activos.columns = (
+            df_activos.columns
+            .str.strip()
+            .str.lower()
+        )
+
         st.subheader("👀 Vista previa")
         st.dataframe(df_activos)
 
-        # VALIDACIONES
+        # =========================
+        # VALIDACIÓN DE COLUMNA
+        # =========================
+        if "modalidad" not in df_activos.columns:
+            st.error("❌ Falta la columna 'modalidad' en el Excel")
+            st.stop()
+
+        if "numero_identificacion" not in df_activos.columns:
+            st.error("❌ Falta la columna 'numero_identificacion'")
+            st.stop()
+
+        # =========================
+        # NORMALIZAR VALORES
+        # =========================
+        df_activos["modalidad"] = (
+            df_activos["modalidad"]
+            .astype(str)
+            .str.upper()
+            .str.strip()
+        )
+
+        # =========================
+        # KPIs
+        # =========================
         st.write("Total:", len(df_activos))
         st.write("GRANJA:", len(df_activos[df_activos["modalidad"] == "GRANJA"]))
         st.write("URBANO:", len(df_activos[df_activos["modalidad"] == "URBANO"]))
@@ -1846,14 +1878,23 @@ with tab14:
         if confirmar and st.button("🚀 Actualizar base de datos"):
 
             try:
-                for _, row in df_activos.iterrows():
 
-                    engine.execute("""
-                        UPDATE habitante_de_calle
-                        SET estado_caso = 'ACTIVO',
-                            modalidad = %s
-                        WHERE numero_identificacion = %s
-                    """, (row["modalidad"], row["numero_identificacion"]))
+                with engine.begin() as conn:
+
+                    for _, row in df_activos.iterrows():
+
+                        conn.execute(
+                            text("""
+                                UPDATE habitante_de_calle
+                                SET estado_caso = 'ACTIVO',
+                                    modalidad = :modalidad
+                                WHERE numero_identificacion = :id
+                            """),
+                            {
+                                "modalidad": row["modalidad"],
+                                "id": row["numero_identificacion"]
+                            }
+                        )
 
                 st.success("✅ Base actualizada correctamente")
 
