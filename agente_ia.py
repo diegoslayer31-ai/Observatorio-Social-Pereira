@@ -1201,9 +1201,7 @@ with tab11:
         st.info(
             "Ingrese la contraseña para habilitar el formulario."
         )
-# =====================================
-# TAB 12 - SEGUIMIENTO PROFESIONAL + PAI
-# =====================================
+
 # =====================================
 # TAB 12 - SEGUIMIENTO PROFESIONAL + PAI
 # =====================================
@@ -1213,7 +1211,7 @@ with tab12:
     st.title("📋 Seguimiento Profesional - PAI (Plan de Atención Individual)")
 
     # =========================
-    # PROFESIONALES (SEGURIDAD)
+    # PROFESIONALES
     # =========================
     try:
         df_profesionales = pd.read_sql("""
@@ -1227,115 +1225,37 @@ with tab12:
             + " (" + df_profesionales["rol"].astype(str) + ")"
         )
 
-    except Exception:
+    except:
         df_profesionales = pd.DataFrame({
-            "label": [
-                "Psicología", "Enfermería",
-                "Trabajo Social", "Pedagogía"
-            ]
+            "label": ["Psicología", "Enfermería", "Trabajo Social", "Pedagogía"]
         })
 
     # =========================
-    # USUARIO INDIVIDUAL
+    # USUARIO
     # =========================
     cedula = st.text_input("Documento del usuario (PAI)", key="pai_user")
 
-    usuario = None
-
     if cedula:
-        try:
-            usuario = pd.read_sql(f"""
-                SELECT *
-                FROM habitante_de_calle
-                WHERE numero_identificacion = '{cedula}'
-            """, engine)
+        usuario = pd.read_sql(f"""
+            SELECT * FROM habitante_de_calle
+            WHERE numero_identificacion = '{cedula}'
+        """, engine)
 
-            if not usuario.empty:
-                datos = usuario.iloc[0]
+        if not usuario.empty:
+            datos = usuario.iloc[0]
+            st.success("Usuario encontrado")
 
-                st.success("Usuario encontrado")
-
-                c1, c2, c3 = st.columns(3)
-                c1.metric("Nombre", f"{datos['nombres']} {datos['apellidos']}")
-                c2.metric("Edad", datos.get("edad", "N/A"))
-                c3.metric("Documento", cedula)
-
-            else:
-                st.warning("Usuario no encontrado")
-
-        except Exception as e:
-            st.error(f"Error usuario: {e}")
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Nombre", f"{datos['nombres']} {datos['apellidos']}")
+            c2.metric("Edad", datos.get("edad", "N/A"))
+            c3.metric("Documento", cedula)
+        else:
+            st.warning("Usuario no encontrado")
 
     st.divider()
 
     # =========================
-    # ASISTENCIA MASIVA
-    # =========================
-    st.subheader("📅 Asistencia a talleres")
-
-    df_activos = pd.read_sql("""
-        SELECT numero_identificacion, nombres, apellidos, modalidad
-        FROM habitante_de_calle
-        WHERE estado_caso = 'ACTIVO'
-    """, engine)
-
-    df_activos["nombre"] = (
-        df_activos["nombres"].astype(str)
-        + " " + df_activos["apellidos"].astype(str)
-    )
-
-    with st.form("asistencia_masiva"):
-
-        actividad = st.text_input("Actividad / Taller")
-
-        profesional = st.selectbox(
-            "Profesional responsable",
-            df_profesionales["label"].tolist()
-        )
-
-        fechas = st.date_input(
-            "Fechas (puedes seleccionar varias)"
-        )
-
-        participantes = st.multiselect(
-            "Participantes",
-            df_activos["numero_identificacion"].tolist(),
-            format_func=lambda x: df_activos.loc[
-                df_activos["numero_identificacion"] == x, "nombre"
-            ].values[0]
-        )
-
-        estado = st.selectbox("Asistencia", ["Asistió", "No asistió"])
-        observaciones = st.text_area("Observaciones")
-
-        guardar = st.form_submit_button("Guardar asistencia")
-
-    if guardar:
-        fechas_list = fechas if isinstance(fechas, (list, tuple)) else [fechas]
-
-        with engine.begin() as conn:
-            for fecha in fechas_list:
-                for doc in participantes:
-
-                    conn.execute(text("""
-                        INSERT INTO asistencias
-                        (documento_usuario, fecha, asistencia, observaciones, profesional, actividad)
-                        VALUES (:doc, :fecha, :estado, :obs, :prof, :act)
-                    """), {
-                        "doc": doc,
-                        "fecha": fecha,
-                        "estado": estado,
-                        "obs": observaciones,
-                        "prof": profesional,
-                        "act": actividad
-                    })
-
-        st.success("Asistencia registrada")
-
-    st.divider()
-
-    # =========================
-    # PAI - PLAN INDIVIDUAL
+    # PAI FORM
     # =========================
     st.subheader("🧠 PAI - Plan de Atención Individual")
 
@@ -1347,67 +1267,219 @@ with tab12:
                 "Tipo de intervención",
                 [
                     "Reducción de riesgos y daños",
-                    "Adherencia tratamiento infectocontagioso",
-                    "Adherencia medicamento ansiedad",
-                    "Consumo problemático de sustancias",
+                    "Adherencia tratamiento",
                     "Valoración enfermería",
-                    "Valoración psicología"
+                    "Valoración psicología",
+                    "Seguimiento social"
                 ]
             )
 
-            descripcion = st.text_area("Descripción de la intervención")
+            patologia = st.selectbox(
+                "Patología / condición",
+                [
+                    "Consumo de sustancias",
+                    "Ansiedad",
+                    "Depresión",
+                    "Trastorno mental severo",
+                    "VIH",
+                    "Tuberculosis",
+                    "Enfermedad infectocontagiosa",
+                    "Hipertensión",
+                    "Otra"
+                ]
+            )
 
-            nivel_adherencia = st.selectbox(
+            profesional = st.selectbox(
+                "Profesional",
+                df_profesionales["label"].tolist()
+            )
+
+            descripcion = st.text_area("Descripción")
+
+            adherencia = st.selectbox(
                 "Nivel de adherencia",
                 ["Alta", "Media", "Baja"]
             )
 
-            guardar_pai = st.form_submit_button("Guardar PAI")
+            guardar = st.form_submit_button("Guardar PAI")
 
-        if guardar_pai:
+        if guardar:
 
             with engine.begin() as conn:
                 conn.execute(text("""
                     INSERT INTO pai_intervenciones
-                    (documento_usuario, tipo_intervencion, descripcion, adherencia)
-                    VALUES (:doc, :tipo, :desc, :adh)
+                    (documento_usuario, tipo_intervencion, patologia, profesional, descripcion, adherencia)
+                    VALUES (:doc, :tipo, :patologia, :prof, :desc, :adh)
                 """), {
                     "doc": cedula,
                     "tipo": tipo_intervencion,
+                    "patologia": patologia,
+                    "prof": profesional,
                     "desc": descripcion,
-                    "adh": nivel_adherencia
+                    "adh": adherencia
                 })
 
             st.success("PAI registrado correctamente")
+
+    st.divider()
+
+    # =========================
+    # ASISTENCIA
+    # =========================
+    st.subheader("📅 Asistencia a talleres")
+
+    df_activos = pd.read_sql("""
+        SELECT numero_identificacion, nombres, apellidos
+        FROM habitante_de_calle
+        WHERE estado_caso = 'ACTIVO'
+    """, engine)
+
+    df_activos["nombre"] = df_activos["nombres"] + " " + df_activos["apellidos"]
+
+    with st.form("asistencia"):
+
+        actividad = st.text_input("Actividad")
+
+        profesional_a = st.selectbox(
+            "Profesional",
+            df_profesionales["label"].tolist()
+        )
+
+        fecha = st.date_input("Fecha")
+
+        participantes = st.multiselect(
+            "Participantes",
+            df_activos["numero_identificacion"].tolist(),
+            format_func=lambda x: df_activos.loc[
+                df_activos["numero_identificacion"] == x, "nombre"
+            ].values[0]
+        )
+
+        estado = st.selectbox("Asistencia", ["Asistió", "No asistió"])
+        obs = st.text_area("Observaciones")
+
+        guardar2 = st.form_submit_button("Guardar")
+
+    if guardar2:
+
+        with engine.begin() as conn:
+            for doc in participantes:
+                conn.execute(text("""
+                    INSERT INTO asistencias
+                    (documento_usuario, fecha, asistencia, observaciones, profesional, actividad)
+                    VALUES (:doc, :fecha, :estado, :obs, :prof, :act)
+                """), {
+                    "doc": doc,
+                    "fecha": fecha,
+                    "estado": estado,
+                    "obs": obs,
+                    "prof": profesional_a,
+                    "act": actividad
+                })
+
+        st.success("Asistencia registrada")
 with tab13:
+
     st.title("📈 Seguimiento e Impacto")
 
     try:
+
         df_acciones = pd.read_sql("SELECT * FROM acciones_profesionales", engine)
         df_asistencia = pd.read_sql("SELECT * FROM asistencias", engine)
-        df_adherencia = pd.read_sql("SELECT * FROM adherencia_tratamiento", engine)
-        df_valoracion = pd.read_sql("SELECT * FROM valoraciones_integrales", engine)
+        df_adherencia = pd.read_sql("SELECT * FROM pai_intervenciones", engine)
 
-        st.metric("Acciones", len(df_acciones))
-        st.metric("Asistencias", len(df_asistencia))
-        st.metric("Adherencia", len(df_adherencia))
-        st.metric("Valoraciones", len(df_valoracion))
+        # =========================
+        # INDICADORES GENERALES
+        # =========================
+        st.subheader("📊 Indicadores Generales")
 
-        cedula = st.text_input("Documento historial", key="hist_tab13")
+        c1, c2, c3 = st.columns(3)
+
+        c1.metric("Acciones", len(df_acciones))
+        c2.metric("Asistencias", len(df_asistencia))
+        c3.metric("PAI registrados", len(df_adherencia))
+
+        st.divider()
+
+        # =========================
+        # PRODUCTIVIDAD PROFESIONAL
+        # =========================
+        st.subheader("👨‍⚕️ Productividad por profesional")
+
+        prod = df_adherencia["profesional"].value_counts().reset_index()
+        prod.columns = ["profesional", "registros"]
+
+        st.dataframe(prod)
+        st.bar_chart(prod.set_index("profesional"))
+
+        st.divider()
+
+        # =========================
+        # ADHERENCIA POR PATOLOGÍA
+        # =========================
+        st.subheader("💊 Adherencia por patología")
+
+        tabla = pd.crosstab(
+            df_adherencia["patologia"],
+            df_adherencia["adherencia"]
+        )
+
+        st.dataframe(tabla)
+        st.bar_chart(tabla)
+
+        st.divider()
+
+        # =========================
+        # ALERTA CLÍNICA
+        # =========================
+        baja = len(df_adherencia[df_adherencia["adherencia"] == "Baja"])
+        total = len(df_adherencia)
+
+        porcentaje = round((baja / total) * 100, 2) if total > 0 else 0
+
+        st.subheader("🚨 Alertas")
+
+        if porcentaje >= 30:
+            st.error(f"Alta baja adherencia: {porcentaje}%")
+        elif porcentaje >= 15:
+            st.warning(f"Riesgo medio: {porcentaje}%")
+        else:
+            st.success(f"Adherencia adecuada: {porcentaje}%")
+
+        st.divider()
+
+        # =========================
+        # HISTORIA SOCIAL
+        # =========================
+        st.subheader("📋 Historia Social")
+
+        cedula = st.text_input("Documento", key="historia_tab13")
 
         if cedula:
 
-            st.write("Acciones")
-            st.dataframe(pd.read_sql(f"SELECT * FROM acciones_profesionales WHERE documento_usuario='{cedula}'", engine))
+            acciones = pd.read_sql(f"""
+                SELECT * FROM acciones_profesionales
+                WHERE documento_usuario = '{cedula}'
+            """, engine)
 
-            st.write("Asistencias")
-            st.dataframe(pd.read_sql(f"SELECT * FROM asistencias WHERE documento_usuario='{cedula}'", engine))
+            pai = pd.read_sql(f"""
+                SELECT * FROM pai_intervenciones
+                WHERE documento_usuario = '{cedula}'
+            """, engine)
 
-            st.write("Adherencia")
-            st.dataframe(pd.read_sql(f"SELECT * FROM adherencia_tratamiento WHERE documento_usuario='{cedula}'", engine))
+            asistencia = pd.read_sql(f"""
+                SELECT * FROM asistencias
+                WHERE documento_usuario = '{cedula}'
+            """, engine)
 
-            st.write("Valoración")
-            st.dataframe(pd.read_sql(f"SELECT * FROM valoraciones_integrales WHERE documento_usuario='{cedula}'", engine))
+            st.write("### Acciones")
+            st.dataframe(acciones)
+
+            st.write("### PAI")
+            st.dataframe(pai)
+
+            st.write("### Asistencia")
+            st.dataframe(asistencia)
 
     except Exception as e:
         st.error(f"Error tab 13: {e}")
