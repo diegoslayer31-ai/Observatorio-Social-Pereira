@@ -250,10 +250,7 @@ col4.metric(
     len(df_kpi)
 )
 # KPIs
-# =========================
-# TABS PRINCIPALES
-# =========================
-tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10, tab11, tab12 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10, tab11, tab12, tab13 = st.tabs([
     "📊 General",
     "⚠️ Vulnerabilidad",
     "🚬 Consumo",
@@ -265,7 +262,8 @@ tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10, tab11, tab12 = st.t
     "🏆 Egresos e Impacto",
     "📄 Reportes Institucionales",
     "➕ Nuevo Registro",
-    "📋 Seguimiento Profesional"
+    "📋 Seguimiento Profesional",
+    "📈 Seguimiento e Impacto"
 ])
 # =========================
 # TAB GENERAL
@@ -1595,4 +1593,229 @@ with tab12:
 
         st.info(
             "Ingrese un número de identificación para iniciar el seguimiento."
+        )
+    # =====================================
+# SEGUIMIENTO E IMPACTO
+# =====================================
+
+with tab13:
+
+    st.title("📈 Seguimiento e Impacto")
+
+    try:
+
+        df_acciones = pd.read_sql(
+            "SELECT * FROM acciones_profesionales",
+            engine
+        )
+
+        df_asistencia = pd.read_sql(
+            "SELECT * FROM asistencias",
+            engine
+        )
+
+        df_adherencia = pd.read_sql(
+            "SELECT * FROM adherencia_tratamiento",
+            engine
+        )
+
+        df_valoracion = pd.read_sql(
+            "SELECT * FROM valoraciones_integrales",
+            engine
+        )
+
+        # =========================
+        # KPIs
+        # =========================
+
+        st.subheader("📊 Indicadores Generales")
+
+        c1, c2, c3, c4 = st.columns(4)
+
+        c1.metric(
+            "Acciones",
+            len(df_acciones)
+        )
+
+        c2.metric(
+            "Asistencias",
+            len(df_asistencia)
+        )
+
+        c3.metric(
+            "Adherencias",
+            len(df_adherencia)
+        )
+
+        c4.metric(
+            "Valoraciones",
+            len(df_valoracion)
+        )
+
+        st.divider()
+
+        # =========================
+        # ACCIONES POR PROFESIONAL
+        # =========================
+
+        if len(df_acciones) > 0:
+
+            st.subheader("👨‍⚕️ Productividad por profesional")
+
+            acciones_prof = (
+                df_acciones
+                .groupby("profesional")
+                .size()
+                .reset_index(name="acciones")
+            )
+
+            fig = px.bar(
+                acciones_prof,
+                x="profesional",
+                y="acciones",
+                title="Acciones realizadas"
+            )
+
+            st.plotly_chart(
+                fig,
+                use_container_width=True
+            )
+
+        # =========================
+        # ASISTENCIAS
+        # =========================
+
+        if len(df_asistencia) > 0:
+
+            st.subheader("📅 Asistencia")
+
+            fig = px.pie(
+                df_asistencia,
+                names="asistencia",
+                title="Distribución asistencia"
+            )
+
+            st.plotly_chart(
+                fig,
+                use_container_width=True
+            )
+
+        # =========================
+        # ADHERENCIA
+        # =========================
+
+        if len(df_adherencia) > 0:
+
+            st.subheader("💊 Adherencia al tratamiento")
+
+            fig = px.pie(
+                df_adherencia,
+                names="adherencia",
+                title="Nivel de adherencia"
+            )
+
+            st.plotly_chart(
+                fig,
+                use_container_width=True
+            )
+
+        # =========================
+        # RIESGO
+        # =========================
+
+        if len(df_valoracion) > 0:
+
+            st.subheader("⚠️ Valoraciones")
+
+            fig = px.histogram(
+                df_valoracion,
+                x="nivel_riesgo",
+                color="nivel_riesgo",
+                title="Nivel de riesgo"
+            )
+
+            st.plotly_chart(
+                fig,
+                use_container_width=True
+            )
+
+        st.divider()
+
+        # =========================
+        # HISTORIA SOCIAL
+        # =========================
+
+        st.subheader("📋 Historia Social del Usuario")
+
+        cedula_historia = st.text_input(
+            "Número de identificación",
+            key="historia_social"
+        )
+
+        if cedula_historia:
+
+            acciones = pd.read_sql(
+                f"""
+                SELECT *
+                FROM acciones_profesionales
+                WHERE documento_usuario = '{cedula_historia}'
+                """,
+                engine
+            )
+
+            adherencia = pd.read_sql(
+                f"""
+                SELECT *
+                FROM adherencia_tratamiento
+                WHERE documento_usuario = '{cedula_historia}'
+                """,
+                engine
+            )
+
+            valoraciones = pd.read_sql(
+                f"""
+                SELECT *
+                FROM valoraciones_integrales
+                WHERE documento_usuario = '{cedula_historia}'
+                """,
+                engine
+            )
+
+            planes = pd.read_sql(
+                f"""
+                SELECT *
+                FROM plan_intervencion
+                WHERE documento_usuario = '{cedula_historia}'
+                """,
+                engine
+            )
+
+            st.markdown("### 👨‍⚕️ Acciones Profesionales")
+            st.dataframe(
+                acciones,
+                use_container_width=True
+            )
+
+            st.markdown("### 💊 Adherencia")
+            st.dataframe(
+                adherencia,
+                use_container_width=True
+            )
+
+            st.markdown("### ⚠️ Valoraciones")
+            st.dataframe(
+                valoraciones,
+                use_container_width=True
+            )
+
+            st.markdown("### 🎯 Plan de Intervención")
+            st.dataframe(
+                planes,
+                use_container_width=True
+            )
+
+    except Exception as e:
+
+        st.error(
+            f"Error cargando indicadores: {e}"
         )
