@@ -1149,60 +1149,31 @@ with tab12:
 
     st.title("📋 Seguimiento Profesional")
 
-    st.success("Módulo cargado correctamente")
-
     cedula = st.text_input(
-        "Número de identificación del usuario",
+        "Número de identificación",
         key="cedula_seguimiento"
     )
 
+    st.write("Cédula digitada:", cedula)
+
     if cedula:
+
+        st.success("Entró a la búsqueda")
 
         try:
 
-            consulta = f"""
+            usuario = pd.read_sql(
+                f"""
                 SELECT *
                 FROM habitante_de_calle
                 WHERE numero_identificacion = '{cedula}'
-            """
+                """,
+                engine
+            )
 
-            usuario = pd.read_sql(consulta, engine)
+            st.write("Registros encontrados:", len(usuario))
 
-            if usuario.empty:
-
-                st.warning("Usuario no encontrado")
-
-            else:
-
-                st.subheader("Información del usuario")
-
-                st.write(usuario)
-
-                st.markdown("---")
-
-                st.subheader("Registrar acción profesional")
-
-                profesional = st.selectbox(
-                    "Perfil profesional",
-                    [
-                        "Psicología",
-                        "Trabajo Social",
-                        "Pedagogía",
-                        "Enfermería",
-                        "Coordinación",
-                        "Dirección"
-                    ]
-                )
-
-                tipo_accion = st.text_input("Tipo de acción")
-
-                observaciones = st.text_area("Observaciones")
-
-                if st.button("Guardar acción"):
-
-                    st.success(
-                        "Prueba exitosa. El formulario funciona correctamente."
-                    )
+            st.dataframe(usuario)
 
         except Exception as e:
 
