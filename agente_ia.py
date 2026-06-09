@@ -1832,6 +1832,7 @@ with tab14:
     if archivo:
 
         df_activos = pd.read_excel(archivo)
+        st.write(df_activos.columns.tolist())
 
         # =========================
         # LIMPIEZA DE COLUMNAS
