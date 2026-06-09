@@ -1606,9 +1606,6 @@ with tab13:
         df_adherencia = pd.read_sql("SELECT * FROM adherencia_tratamiento", engine)
         df_valoracion = pd.read_sql("SELECT * FROM valoraciones_integrales", engine)
 
-        # =========================
-        # KPIs
-        # =========================
         st.subheader("📊 Indicadores Generales")
 
         c1, c2, c3, c4 = st.columns(4)
@@ -1714,7 +1711,7 @@ with tab13:
             st.dataframe(planes)
 
         # =========================
-        # ACTIVIDADES GRUPALES
+        # ACTIVIDADES GRUPALES (CORRECTO UBICADO)
         # =========================
         st.subheader("👥 Actividades Grupales")
 
@@ -1724,7 +1721,9 @@ with tab13:
             WHERE estado_caso = 'ACTIVO'
         """, engine)
 
-        df_activos["nombre"] = df_activos["nombres"].astype(str) + " " + df_activos["apellidos"].astype(str)
+        df_activos["nombre"] = (
+            df_activos["nombres"].astype(str) + " " + df_activos["apellidos"].astype(str)
+        )
 
         with st.form("actividad_grupal"):
 
@@ -1735,45 +1734,38 @@ with tab13:
             participantes = st.multiselect(
                 "Selecciona participantes",
                 options=df_activos["numero_identificacion"].tolist(),
-                format_func=lambda x: df_activos[df_activos["numero_identificacion"] == x]["nombre"].values[0]
+                format_func=lambda x: df_activos.loc[
+                    df_activos["numero_identificacion"] == x, "nombre"
+                ].values[0]
             )
 
             guardar = st.form_submit_button("Guardar actividad")
 
         if guardar:
 
-            try:
-                with engine.begin() as conn:
+            with engine.begin() as conn:
 
-                    result = conn.execute(text("""
-                        INSERT INTO actividades_grupales
-                        (nombre_actividad, fecha, observaciones)
-                        VALUES (:nombre, :fecha, :obs)
-                        RETURNING id
+                actividad_id = conn.execute(text("""
+                    INSERT INTO actividades_grupales
+                    (nombre_actividad, fecha, observaciones)
+                    VALUES (:nombre, :fecha, :obs)
+                    RETURNING id
+                """), {
+                    "nombre": nombre_actividad,
+                    "fecha": fecha,
+                    "obs": observaciones
+                }).fetchone()[0]
+
+                for doc in participantes:
+
+                    conn.execute(text("""
+                        INSERT INTO actividad_participantes
+                        (actividad_id, documento_usuario)
+                        VALUES (:actividad_id, :doc)
                     """), {
-                        "nombre": nombre_actividad,
-                        "fecha": fecha,
-                        "obs": observaciones
+                        "actividad_id": actividad_id,
+                        "doc": doc
                     })
-
-                    actividad_id = result.fetchone()[0]
-
-                    for doc in participantes:
-
-                        conn.execute(text("""
-                            INSERT INTO actividad_participantes
-                            (actividad_id, documento_usuario)
-                            VALUES (:actividad_id, :doc)
-                            ON CONFLICT DO NOTHING
-                        """), {
-                            "actividad_id": actividad_id,
-                            "doc": doc
-                        })
-
-                st.success("Actividad grupal registrada correctamente")
-
-            except Exception as e:
-                st.error(f"Error: {e}")
 
     except Exception as e:
         st.error(f"Error cargando indicadores: {e}")
@@ -1788,9 +1780,6 @@ with tab13:
 
     if archivo:
 
-        # =========================
-        # LECTURA
-        # =========================
         df_activos = pd.read_excel(archivo, header=0)
 
         # =========================
@@ -1811,7 +1800,6 @@ with tab13:
         # VALIDACIÓN
         # =========================
         required = ["numero_identificacion", "modalidad"]
-
         missing = [c for c in required if c not in df_activos.columns]
 
         if missing:
@@ -1822,20 +1810,15 @@ with tab13:
         # LIMPIEZA DATOS
         # =========================
         df_activos["numero_identificacion"] = (
-            df_activos["numero_identificacion"]
-            .astype(str)
-            .str.strip()
+            df_activos["numero_identificacion"].astype(str).str.strip()
         )
 
         df_activos["modalidad"] = (
-            df_activos["modalidad"]
-            .astype(str)
-            .str.upper()
-            .str.strip()
+            df_activos["modalidad"].astype(str).str.upper().str.strip()
         )
 
         # =========================
-        # DUPLICADOS EXCEL
+        # DUPLICADOS EN EXCEL
         # =========================
         duplicados = df_activos[df_activos.duplicated("numero_identificacion", keep=False)]
         df_activos = df_activos.drop_duplicates(subset=["numero_identificacion"])
@@ -1845,7 +1828,7 @@ with tab13:
             st.dataframe(duplicados)
 
         # =========================
-        # CONSULTAR BD
+        # CONSULTA BD
         # =========================
         cedulas = tuple(df_activos["numero_identificacion"].tolist())
 
@@ -1861,9 +1844,13 @@ with tab13:
         # =========================
         # NUEVOS / EXISTENTES
         # =========================
-        ya_existen = df_activos[df_activos["numero_identificacion"].isin(df_existentes["numero_identificacion"])]
+        ya_existen = df_activos[
+            df_activos["numero_identificacion"].isin(df_existentes["numero_identificacion"])
+        ]
 
-        nuevos = df_activos[~df_activos["numero_identificacion"].isin(df_existentes["numero_identificacion"])]
+        nuevos = df_activos[
+            ~df_activos["numero_identificacion"].isin(df_existentes["numero_identificacion"])
+        ]
 
         # =========================
         # KPIs
@@ -1871,7 +1858,6 @@ with tab13:
         st.write("📊 Total:", len(df_activos))
         st.write("🆕 Nuevos:", len(nuevos))
         st.write("♻️ Existentes:", len(ya_existen))
-
         st.write("🏡 GRANJA:", len(df_activos[df_activos["modalidad"] == "GRANJA"]))
         st.write("🏙️ URBANO:", len(df_activos[df_activos["modalidad"] == "URBANO"]))
 
