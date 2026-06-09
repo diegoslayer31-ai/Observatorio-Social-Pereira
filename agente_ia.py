@@ -1663,7 +1663,7 @@ with tab14:
 
     if archivo:
 
-        df_activos = pd.read_excel(archivo, header=0)
+        df_activos = pd.read_excel(archivo, header=1)
 
         # LIMPIAR COLUMNAS
         df_activos.columns = (
