@@ -1206,15 +1206,23 @@ with tab11:
 # =====================================
 # SEGUIMIENTO PROFESIONAL
 # =====================================
-# =====================================
-# SEGUIMIENTO PROFESIONAL
-# =====================================
 
 with tab12:
 
     st.title("📋 Seguimiento Profesional")
+    # =========================
+# CARGA GLOBAL DE PROFESIONALES
+# =========================
+df_profesionales = pd.read_sql("""
+    SELECT id, nombre, rol
+    FROM profesionales
+    ORDER BY nombre
+""", engine)
 
-    try:
+df_profesionales["label"] = (
+    df_profesionales["nombre"] + " (" + df_profesionales["rol"] + ")"
+)
+try:
 
         # =========================
         # CONSULTA INDIVIDUAL
@@ -1273,7 +1281,7 @@ with tab12:
             )
 
             fechas = st.date_input(
-                "Selecciona fechas (puedes elegir varias si tu Streamlit lo permite)",
+                "Selecciona fecha)",
                 value=None
             )
 
