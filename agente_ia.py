@@ -1404,7 +1404,7 @@ with tab13:
         # =========================
         # PRODUCTIVIDAD PROFESIONAL
         # =========================
-        st.subheader("👨‍⚕️ Productividad por profesional")
+        st.subheader("👨‍⚕️ Gestión por  profesional")
 
         prod = df_adherencia["profesional"].value_counts().reset_index()
         prod.columns = ["profesional", "registros"]
