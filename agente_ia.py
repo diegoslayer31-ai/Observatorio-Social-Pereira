@@ -1204,6 +1204,9 @@ with tab11:
 # =====================================
 # TAB 12 - SEGUIMIENTO PROFESIONAL + PAI
 # =====================================
+# =====================================
+# TAB 12 - SEGUIMIENTO PROFESIONAL + PAI
+# =====================================
 
 with tab12:
 
@@ -1376,6 +1379,74 @@ with tab12:
                 })
 
             st.success("PAI registrado correctamente")
+# =====================================
+# TAB 14 - CARGA MASIVA ACTUALIZADA
+# =====================================
+
+with tab14:
+
+    st.title("📥 Carga Masiva de Activos")
+
+    archivo = st.file_uploader("Sube archivo Excel", type=["xlsx"])
+
+    if archivo:
+
+        df_activos = pd.read_excel(archivo)
+
+        df_activos.columns = (
+            df_activos.columns
+            .astype(str)
+            .str.strip()
+            .str.lower()
+            .str.replace(" ", "_")
+        )
+
+        st.write("Columnas detectadas:", df_activos.columns.tolist())
+
+        required = ["numero_identificacion", "modalidad"]
+        missing = [c for c in required if c not in df_activos.columns]
+
+        if missing:
+            st.error(f"Faltan columnas: {missing}")
+            st.stop()
+
+        df_activos["numero_identificacion"] = df_activos["numero_identificacion"].astype(str).str.strip()
+        df_activos["modalidad"] = df_activos["modalidad"].astype(str).str.upper().str.strip()
+
+        # =========================
+        # DIVISIÓN GRANAJA / URBANO
+        # =========================
+        df_granja = df_activos[df_activos["modalidad"] == "GRANJA"]
+        df_urbano = df_activos[df_activos["modalidad"] == "URBANO"]
+
+        st.subheader("📊 Resumen")
+        c1, c2 = st.columns(2)
+        c1.metric("Granja", len(df_granja))
+        c2.metric("Urbano", len(df_urbano))
+
+        st.dataframe(df_activos)
+
+        if st.checkbox("Confirmo actualización"):
+
+            with engine.begin() as conn:
+
+                for _, row in df_activos.iterrows():
+
+                    doc = row["numero_identificacion"]
+                    modalidad = row["modalidad"]
+
+                    conn.execute(text("""
+                        UPDATE habitante_de_calle
+                        SET estado_caso = 'ACTIVO',
+                            modalidad = :modalidad
+                        WHERE TRIM(CAST(numero_identificacion AS TEXT)) = :doc
+                    """), {
+                        "modalidad": modalidad,
+                        "doc": doc
+                    })
+
+            st.success("Base actualizada correctamente")
+
 with tab14:
 
     st.title("📥 Carga Masiva de Activos")
