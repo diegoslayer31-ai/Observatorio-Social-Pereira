@@ -1780,7 +1780,7 @@ with tab14:
 
     if archivo:
 
-        df_activos = pd.read_excel(archivo, header=None)
+        df_activos = pd.read_excel(archivo, header=1)
         st.write(df_activos.head(10))
 
         # =========================
