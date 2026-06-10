@@ -251,7 +251,16 @@ df.columns = (
     .str.replace("  ", " ")
     .str.replace(" ", "_")
 )
+def cupos_actuales(df):
+    urbano_activos = len(
+        df[(df["modalidad"] == "URBANO") & (df["estado_caso"] == "ACTIVO")]
+    )
 
+    granja_activos = len(
+        df[(df["modalidad"] == "GRANJA") & (df["estado_caso"] == "ACTIVO")]
+    )
+
+    return urbano_activos, granja_activos
 # =========================
 # FUNCIÓN CONSOLIDADA 
 # =========================
@@ -334,7 +343,15 @@ if "sexo_al_nacer" in df.columns:
 # SIDEBAR
 # =========================
 st.sidebar.header("Filtros")
+urbano, granja = cupos_actuales(df)
 
+st.markdown("### 🧭 Cupos en tiempo real")
+
+st.metric("🏙️ Urbano (máx 100)", f"{urbano}/100")
+st.metric("🌱 Granja", granja)
+
+if urbano >= 100:
+    st.error("🚨 URBANO EN CAPACIDAD MÁXIMA")
 if "sexo_al_nacer" in df.columns:
     sexo = st.sidebar.multiselect(
         "Sexo",
@@ -342,13 +359,7 @@ if "sexo_al_nacer" in df.columns:
         default=df["sexo_al_nacer"].dropna().unique(),
     )
     df = df[df["sexo_al_nacer"].isin(sexo)]
-if "comuna_o_corregimiento_de_residencia" in df.columns:
-    comuna = st.sidebar.multiselect(
-        "Comuna",
-        options=df["comuna_o_corregimiento_de_residencia"].dropna().unique(),
-        default=df["comuna_o_corregimiento_de_residencia"].dropna().unique(),
-    )
-    df = df[df["comuna_o_corregimiento_de_residencia"].isin(comuna)]
+
 # =========================
 # ÍNDICE DE VULNERABILIDAD
 # =========================
