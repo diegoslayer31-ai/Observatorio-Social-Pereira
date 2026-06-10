@@ -372,55 +372,67 @@ elif st.session_state.page == "gestion_usuarios":
 
     st.divider()
 
+   # =====================================
+    # 2. USUARIOS ACTIVOS + INACTIVAR
     # =====================================
-    # 📋 USUARIOS REGISTRADOS
-    # =====================================
-    st.subheader("📋 Usuarios registrados")
+    st.subheader("📋 Usuarios activos")
 
     df_usuarios = pd.read_sql("""
-        SELECT *
+        SELECT
+            nombres,
+            apellidos,
+            numero_de_identificacion,
+            estado_caso,
+            modalidad
         FROM habitante_de_calle
-        ORDER BY id DESC
+        WHERE LOWER(TRIM(estado_caso)) = 'activo'
     """, engine)
 
-    st.dataframe(df_usuarios, use_container_width=True)
+    df_usuarios["nombre"] = (
+        df_usuarios["nombres"].astype(str)
+        + " "
+        + df_usuarios["apellidos"].astype(str)
+    )
+
+    st.dataframe(
+        df_usuarios[[
+            "nombre",
+            "numero_de_identificacion",
+            "modalidad"
+        ]],
+        use_container_width=True
+    )
 
     st.divider()
 
-    # =====================================
-    # 🚫 INACTIVAR / REACTIVAR
-    # =====================================
-    st.subheader("🚫 Cambiar estado del usuario")
+    st.subheader("🚫 Inactivar usuario")
 
-    df_lista = pd.read_sql("""
-        SELECT numero_de_identificacion, nombres, apellidos, estado_caso
-        FROM habitante_de_calle
-    """, engine)
+    if len(df_usuarios) > 0:
 
-    df_lista["nombre"] = df_lista["nombres"] + " " + df_lista["apellidos"]
+        usuario_sel = st.selectbox(
+            "Selecciona usuario",
+            df_usuarios["numero_de_identificacion"].tolist(),
+            format_func=lambda x: df_usuarios[
+                df_usuarios["numero_de_identificacion"] == x
+            ]["nombre"].values[0]
+        )
 
-    usuario_sel = st.selectbox(
-        "Selecciona usuario",
-        df_lista["numero_de_identificacion"].tolist(),
-        format_func=lambda x: df_lista[df_lista["numero_de_identificacion"] == x]["nombre"].values[0]
-    )
+        if st.button("Inactivar usuario"):
 
-    nuevo_estado = st.selectbox("Nuevo estado", ["ACTIVO", "INACTIVO"])
+            with engine.begin() as conn:
+                conn.execute(text("""
+                    UPDATE habitante_de_calle
+                    SET estado_caso = 'INACTIVO'
+                    WHERE numero_de_identificacion = :id
+                """), {
+                    "id": usuario_sel
+                })
 
-    if st.button("Actualizar estado"):
+            st.success("Usuario inactivado correctamente")
+            st.rerun()
 
-        with engine.begin() as conn:
-            conn.execute(text("""
-                UPDATE habitante_de_calle
-                SET estado_caso = :estado
-                WHERE numero_de_identificacion = :id
-            """), {
-                "estado": nuevo_estado,
-                "id": usuario_sel
-            })
-
-        st.success("Estado actualizado")
-        st.rerun()
+    else:
+        st.info("No hay usuarios activos")
 # =====================================
 # BANNER PRINCIPAL
 # =====================================
