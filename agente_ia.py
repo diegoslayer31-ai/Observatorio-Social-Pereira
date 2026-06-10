@@ -181,15 +181,33 @@ with st.sidebar:
 # NAVEGACIÓN SIMPLE
 # =========================
 
+# =========================
+# NAVEGACIÓN SIMPLE
+# =========================
+
 if st.session_state.page == "gestion_usuarios":
 
     st.title("⚙️ Gestión de usuarios")
 
+    st.info("Aquí irá tu módulo de gestión de usuarios")
+
+    st.markdown("---")
+
+    # AQUÍ puedes reutilizar tu TAB 11 si quieres
+    st.subheader("➕ Registro de usuarios")
+
+    # 👉 LLAMAS TU FORMULARIO DIRECTAMENTE (sin función)
+    clave = st.text_input("Clave", type="password")
+
+    if clave == "Pereira2026":
+
+        st.success("Acceso autorizado")
+
+        st.write("👉 AQUÍ PEGA TU FORMULARIO DEL TAB11")
+
     if st.button("⬅️ Volver al inicio"):
         st.session_state.page = "home"
         st.rerun()
-
-    formulario_registro()  # 👈 AQUÍ SE CONECTA EL FORMULARIO
 
     st.stop()
 # =====================================
@@ -530,6 +548,7 @@ with st.sidebar:
     # =========================
     if st.button("⚙️ Gestión de usuarios", key="btn_gestion_usuarios"):
         st.session_state.page = "gestion_usuarios"
+    st.rerun()
 # =========================
 # ÍNDICE DE VULNERABILIDAD
 # =========================
