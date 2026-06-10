@@ -275,7 +275,15 @@ df.columns = (
     .str.replace("  ", " ")
     .str.replace(" ", "_")
 )
+
+# =========================
+# CUPOS EN TIEMPO REAL
+# =========================
 def cupos_actuales(df):
+
+    df["modalidad"] = df["modalidad"].astype(str).str.upper().str.strip()
+    df["estado_caso"] = df["estado_caso"].astype(str).str.upper().str.strip()
+
     urbano_activos = len(
         df[(df["modalidad"] == "URBANO") & (df["estado_caso"] == "ACTIVO")]
     )
