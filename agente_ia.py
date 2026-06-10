@@ -455,7 +455,53 @@ with tab1:
 # =========================
 with tab2:
 
-    st.subheader("🚦 Distribución de vulnerabilidad")
+    st.title("🚦 Análisis de Vulnerabilidad Social")
+
+    # =========================
+    # INDICADORES
+    # =========================
+    total_personas = len(df)
+
+    criticos = len(
+        df[df["nivel_riesgo"] == "Crítico"]
+    )
+
+    altos = len(
+        df[df["nivel_riesgo"] == "Alto"]
+    )
+
+    riesgo_promedio = round(
+        df["score_vulnerabilidad"].mean(), 1
+    )
+
+    c1, c2, c3, c4 = st.columns(4)
+
+    c1.metric(
+        "Personas evaluadas",
+        total_personas
+    )
+
+    c2.metric(
+        "Riesgo crítico",
+        criticos
+    )
+
+    c3.metric(
+        "Riesgo alto",
+        altos
+    )
+
+    c4.metric(
+        "Score promedio",
+        riesgo_promedio
+    )
+
+    st.divider()
+
+    # =========================
+    # GRÁFICO
+    # =========================
+    st.subheader("📊 Distribución del Score de Vulnerabilidad")
 
     fig = px.histogram(
         df,
@@ -469,19 +515,45 @@ with tab2:
         use_container_width=True
     )
 
-    # INTERPRETACIÓN
-    criticos = len(
-        df[df["nivel_riesgo"] == "Crítico"]
+    # =========================
+    # MENSAJE EJECUTIVO
+    # =========================
+    if criticos > 0:
+        st.error(
+            f"⚠️ Se identifican {criticos} personas clasificadas en riesgo crítico que requieren priorización inmediata."
+        )
+    else:
+        st.success(
+            "No se identifican personas en riesgo crítico."
+        )
+
+  
+    # =========================
+    # TOP 20 CASOS CRÍTICOS
+    # =========================
+    st.subheader("🚨 Casos Prioritarios")
+
+    top_criticos = df.sort_values(
+        "score_vulnerabilidad",
+        ascending=False
     )
 
-    st.error(
-        f"Se identifican {criticos} personas en nivel crítico de vulnerabilidad social."
-    )
+    columnas_mostrar = [
+        "nombres",
+        "apellidos",
+        "score_vulnerabilidad",
+        "nivel_riesgo"
+    ]
 
-    st.info(
-        "El score de vulnerabilidad refleja acumulación de riesgos sociales, sanitarios y territoriales."
-    )
+    columnas_existentes = [
+        c for c in columnas_mostrar
+        if c in top_criticos.columns
+    ]
 
+    st.dataframe(
+        top_criticos[columnas_existentes].head(20),
+        use_container_width=True
+    )
 # =========================
 # TAB CONSUMO
 # =========================
