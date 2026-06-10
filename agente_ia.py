@@ -20,60 +20,92 @@ st.set_page_config(
     page_title="Observatorio Social Asociación Ciudad Futuro",
     layout="wide"
 )
+
 st.markdown("""
 <style>
 
+/* Ocultar elementos Streamlit */
 #MainMenu {visibility:hidden;}
 footer {visibility:hidden;}
 header {visibility:hidden;}
 
+/* Márgenes */
 .main .block-container{
     padding-top:1rem;
     padding-bottom:1rem;
+    max-width: 1400px;
 }
 
-div[data-testid="stMetric"]{
-    background:#111827;
-    border:1px solid #374151;
-    border-radius:15px;
-    padding:20px;
-}
-
+/* Fondo general */
 .stApp{
     background-color:#F3F4F6;
 }
 
+/* Tarjetas KPI */
+div[data-testid="stMetric"]{
+    background:#0F172A;
+    border-radius:15px;
+    padding:20px;
+    border:none;
+}
+
+/* Texto KPI */
+div[data-testid="stMetricValue"]{
+    color:white;
+}
+
+div[data-testid="stMetricLabel"]{
+    color:white;
+}
+
+/* Títulos */
+h1,h2,h3{
+    color:#0F172A !important;
+}
+
 </style>
 """, unsafe_allow_html=True)
+
+
 # =====================================
 # ENCABEZADO PROFESIONAL
 # =====================================
 
-col_logo, col_texto = st.columns([1,3])
+col_logo, col_texto = st.columns([1,4])
 
 with col_logo:
-    st.image("logo_acf.png", width=180)
+    st.image("logo_acf.png", width=220)
 
 with col_texto:
 
     st.markdown("""
-    <h1 style="
-    color:white;
-    margin-top:30px;
+    <div style="
+        padding-top:40px;
+        padding-left:20px;
     ">
-    Sistema Integral de Atención y Seguimiento
-    </h1>
 
-    <p style="
-    color:#CFCFCF;
-    font-size:18px;
-    ">
-    Gestión integral de usuarios, seguimiento profesional,
-    Plan de Atención Individual (PAI), reducción de riesgos y daños,
-    adherencia al tratamiento e indicadores de impacto social.
-    </p>
-    """,
-    unsafe_allow_html=True)
+        <h1 style="
+            color:#0F172A;
+            font-size:48px;
+            margin-bottom:10px;
+        ">
+        Sistema Integral de Atención y Seguimiento
+        </h1>
+
+        <p style="
+            color:#475569;
+            font-size:22px;
+            line-height:1.6;
+        ">
+        Gestión integral de usuarios, seguimiento profesional,
+        Plan de Atención Individual (PAI), reducción de riesgos y daños,
+        adherencia al tratamiento e indicadores de impacto social.
+        </p>
+
+    </div>
+    """, unsafe_allow_html=True)
+
+st.markdown("---")
 # =========================
 # OLLAMA
 # =========================
