@@ -18,79 +18,161 @@ from reportlab.lib.styles import getSampleStyleSheet
 # =========================
 st.set_page_config(
     page_title="Observatorio Social Asociación Ciudad Futuro",
+    page_icon="📊",
     layout="wide"
 )
 
+# =========================
+# ESTILO INSTITUCIONAL
+# =========================
 st.markdown("""
 <style>
 
-/* Ocultar elementos Streamlit */
+/* =========================
+   STREAMLIT
+========================= */
 #MainMenu {visibility:hidden;}
 footer {visibility:hidden;}
 header {visibility:hidden;}
 
-/* Márgenes */
-.main .block-container{
-    padding-top:1rem;
-    padding-bottom:1rem;
-    max-width: 1400px;
-}
-
-/* Fondo general */
+/* =========================
+   FONDO
+========================= */
 .stApp{
-    background-color:#F3F4F6;
+    background-color:#F5F7FA;
 }
 
-/* Tarjetas KPI */
+/* =========================
+   CONTENEDOR
+========================= */
+.main .block-container{
+    max-width:1500px;
+    padding-top:0rem;
+    padding-bottom:1rem;
+}
+
+/* =========================
+   SIDEBAR
+========================= */
+section[data-testid="stSidebar"]{
+    background-color:#0F172A;
+}
+
+section[data-testid="stSidebar"] *{
+    color:white !important;
+}
+
+/* =========================
+   KPIs
+========================= */
 div[data-testid="stMetric"]{
-    background:#0F172A;
-    border-radius:15px;
-    padding:20px;
-    border:none;
+    background:white;
+    border-radius:14px;
+    padding:18px;
+    box-shadow:0 3px 10px rgba(0,0,0,0.08);
+    border-left:6px solid #2563EB;
 }
 
-/* Texto KPI */
 div[data-testid="stMetricValue"]{
-    color:white;
+    color:#0F172A;
+    font-weight:bold;
 }
 
 div[data-testid="stMetricLabel"]{
-    color:white;
+    color:#64748B;
 }
 
-/* Títulos */
+/* =========================
+   TABS
+========================= */
+button[data-baseweb="tab"]{
+    font-size:15px;
+    font-weight:600;
+}
+
+/* =========================
+   TÍTULOS
+========================= */
 h1,h2,h3{
     color:#0F172A !important;
+}
+
+/* =========================
+   GRÁFICOS
+========================= */
+[data-testid="stPlotlyChart"]{
+    background:white;
+    border-radius:15px;
+    padding:10px;
+}
+
+/* =========================
+   EXPANDER
+========================= */
+.streamlit-expanderHeader{
+    font-weight:bold;
+}
+
+/* =========================
+   BANNER
+========================= */
+.banner {
+    background: linear-gradient(90deg,#0F172A,#1E3A8A);
+    padding:35px;
+    border-radius:0px 0px 20px 20px;
+    margin-bottom:25px;
+}
+
+.banner-title{
+    color:white;
+    font-size:42px;
+    font-weight:700;
+}
+
+.banner-subtitle{
+    color:#E2E8F0;
+    font-size:18px;
 }
 
 </style>
 """, unsafe_allow_html=True)
 
-# =====================================
-# ENCABEZADO PROFESIONAL
-# =====================================
+# =========================
+# SIDEBAR PROFESIONAL
+# =========================
+with st.sidebar:
 
-col_logo, col_texto = st.columns([1,4])
+    st.image("logo_acf.png", width=230)
 
-with col_logo:
-    st.image("logo_acf.png", width=220)
+    st.markdown("---")
 
-with col_texto:
+    st.markdown("### Asociación Ciudad Futuro")
 
-    st.markdown(
-        """
-        <h1 style='color:#0F172A;font-size:48px;margin-top:40px;'>
-        Sistema Integral de Atención y Seguimiento
-        </h1>
+    st.caption("""
+    Sistema Integral de Atención,
+    Seguimiento y Observatorio Social.
+    """)
 
-        <p style='color:#475569;font-size:22px;'>
-        Gestión integral de usuarios, seguimiento profesional,
-        Plan de Atención Individual (PAI), reducción de riesgos y daños,
-        adherencia al tratamiento e indicadores de impacto social.
-        </p>
-        """,
-        unsafe_allow_html=True
-    )
+    st.markdown("---")
+
+# =========================
+# BANNER PRINCIPAL
+# =========================
+st.markdown("""
+<div class="banner">
+
+<div class="banner-title">
+Sistema Integral de Atención y Seguimiento
+</div>
+
+<div class="banner-subtitle">
+Gestión integral de usuarios • Seguimiento profesional •
+Plan de Atención Individual (PAI) • Reducción de riesgos y daños •
+Adherencia al tratamiento • Indicadores de impacto social
+</div>
+
+</div>
+""", unsafe_allow_html=True)
 # =========================
 # OLLAMA
 # =========================
