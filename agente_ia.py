@@ -20,86 +20,31 @@ st.set_page_config(
     page_title="Observatorio Social Asociación Ciudad Futuro",
     layout="wide"
 )
-# =========================
-# TAB VULNERABILIDAD
-# =========================
-with tab2:
+st.markdown("""
+<style>
 
-    st.subheader("🚦 Distribución de Vulnerabilidad Social")
+#MainMenu {visibility:hidden;}
+footer {visibility:hidden;}
+header {visibility:hidden;}
 
-    fig = px.histogram(
-        df,
-        x="score_vulnerabilidad",
-        nbins=20,
-        color="nivel_riesgo"
-    )
+.main .block-container{
+    padding-top:1rem;
+    padding-bottom:1rem;
+}
 
-    st.plotly_chart(
-        fig,
-        use_container_width=True
-    )
+div[data-testid="stMetric"]{
+    background:#111827;
+    border:1px solid #374151;
+    border-radius:15px;
+    padding:20px;
+}
 
-    # =========================
-    # RESUMEN EJECUTIVO
-    # =========================
-    criticos = len(
-        df[df["nivel_riesgo"] == "Crítico"]
-    )
+.stApp{
+    background-color:#F3F4F6;
+}
 
-    st.error(
-        f"⚠️ Se identifican {criticos} personas en nivel crítico de vulnerabilidad social."
-    )
-
-    # =========================
-    # METODOLOGÍA
-    # =========================
-    with st.expander("📘 Metodología del Score de Vulnerabilidad"):
-
-        st.markdown("""
-        ### ¿Qué mide este indicador?
-
-        El **Score de Vulnerabilidad Social** estima el nivel de acumulación de factores de riesgo presentes en cada persona atendida.
-
-        ### Variables consideradas
-
-        - Consumo de sustancias psicoactivas
-        - Enfermedad mental reportada
-        - Situación de discapacidad
-        - Condición migratoria
-
-        ### Escala de clasificación
-
-        | Puntaje | Nivel |
-        |----------|----------|
-        | 0 - 25 | 🟢 Bajo |
-        | 26 - 50 | 🟡 Medio |
-        | 51 - 75 | 🟠 Alto |
-        | 76 - 100 | 🔴 Crítico |
-
-        ### Interpretación
-
-        Un puntaje más alto indica una mayor acumulación de vulnerabilidades sociales y sanitarias, por lo que la persona requiere una prioridad superior en los procesos de intervención, seguimiento y acompañamiento institucional.
-
-        **Este indicador no constituye un diagnóstico clínico**, sino una herramienta de focalización para la toma de decisiones.
-        """)
-
-    # =========================
-    # TABLA RESUMEN
-    # =========================
-    st.subheader("📊 Distribución por nivel de riesgo")
-
-    resumen = (
-        df["nivel_riesgo"]
-        .value_counts()
-        .reset_index()
-    )
-
-    resumen.columns = ["Nivel", "Cantidad"]
-
-    st.dataframe(
-        resumen,
-        use_container_width=True
-    )
+</style>
+""", unsafe_allow_html=True)
 # =====================================
 # ENCABEZADO PROFESIONAL
 # =====================================
