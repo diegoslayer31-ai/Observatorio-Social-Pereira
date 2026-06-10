@@ -379,6 +379,50 @@ with st.sidebar.expander("🌱 Ver usuarios GRANJA activos"):
         df_granja[["nombre", "numero_identificacion"]],
         use_container_width=True
     )
+    
+    crm = st.sidebar.button("🧠 CRM Usuarios")
+    if crm:
+    
+    st.subheader("🧠 Gestión de Usuario")
+
+    doc = st.text_input("Documento del usuario")
+
+    if doc:
+
+        usuario = pd.read_sql("""
+            SELECT *
+            FROM habitante_de_calle
+            WHERE numero_identificacion = :doc
+        """, engine, params={"doc": doc})
+
+        if not usuario.empty:
+
+            u = usuario.iloc[0]
+
+            st.success("Usuario encontrado")
+
+            st.write(f"Nombre: {u['nombres']} {u['apellidos']}")
+            st.write(f"Estado actual: {u['estado_caso']}")
+            st.write(f"Modalidad: {u['modalidad']}")
+            nuevo_estado = st.selectbox(
+                "Cambiar estado",
+                ["INACTIVO", "ACTIVO", "EGRESADO"],
+                index=["INACTIVO", "ACTIVO", "EGRESADO"].index(u["estado_caso"])
+            )
+            if guardar:
+    
+                with engine.begin() as conn:
+                    conn.execute(text("""
+                        UPDATE habitante_de_calle
+                        SET estado_caso = :estado
+                        WHERE numero_identificacion = :doc
+                    """), {
+                        "estado": nuevo_estado,
+                        "doc": doc
+                    })
+                st.success("✅ Estado actualizado correctamente")
+                df = pd.read_sql("SELECT * FROM habitante_de_calle", engine)
+            guardar = st.button("Actualizar estado")
 if "sexo_al_nacer" in df.columns:
     sexo = st.sidebar.multiselect(
         "Sexo",
