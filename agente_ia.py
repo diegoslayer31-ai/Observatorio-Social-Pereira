@@ -663,13 +663,13 @@ La distribución etaria permite focalizar recursos y ajustar la oferta instituci
     st.subheader("💊 Etnia vs Consumo")
 
     if (
-        "grupos_etnicos_afro_indigena" in df.columns
+        "grupos_etnicos" in df.columns
         and
         "tipo_consumo" in df.columns
     ):
 
         tabla = pd.crosstab(
-            df["grupos_etnicos_afro_indigena"],
+            df["grupos_etnicos"],
             df["tipo_consumo"]
         )
 
@@ -692,10 +692,10 @@ La distribución etaria permite focalizar recursos y ajustar la oferta instituci
 
     st.subheader("📍 Distribución Territorial")
 
-    if "comuna_o_corregimiento_de_residencia" in df.columns:
+    if "departamento_procedencia" in df.columns:
 
         territorio = (
-            df["comuna_o_corregimiento_de_residencia"]
+            df["departamento_procedencia"]
             .fillna("Sin dato")
             .value_counts()
             .head(10)
@@ -712,7 +712,7 @@ La distribución etaria permite focalizar recursos y ajustar la oferta instituci
             x="cantidad",
             y="territorio",
             orientation="h",
-            title="Distribución por comuna o corregimiento"
+            title="Distribución por departamento de procedencia"
         )
 
         st.plotly_chart(
@@ -729,7 +729,7 @@ La distribución etaria permite focalizar recursos y ajustar la oferta instituci
     else:
 
         st.warning(
-            "No existe la columna comuna_o_corregimiento_de_residencia."
+            "No existe la columna departamento_procedencia."
         )
 # =========================
 # TAB VULNERABILIDAD
