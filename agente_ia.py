@@ -399,6 +399,11 @@ with st.sidebar:
     # =========================
     if st.button("⚙️ Gestión de usuarios"):
         st.session_state["gestionar_usuario"] = True
+    if "gestionar_usuario" not in st.session_state:
+        st.session_state["gestionar_usuario"] = False
+
+    if st.button("⚙️ Gestión de usuarios"):
+         st.session_state["gestionar_usuario"] = True
 # =========================
 # ÍNDICE DE VULNERABILIDAD
 # =========================
@@ -2101,3 +2106,44 @@ with tab14:
 
         except Exception as e:
             st.error(f"❌ Error: {e}")
+if st.session_state.get("gestionar_usuario", False):
+    
+    st.title("⚙️ Gestión de usuarios")
+
+    doc = st.text_input("Documento del usuario")
+
+    if doc:
+
+        usuario = pd.read_sql("""
+            SELECT *
+            FROM habitante_de_calle
+            WHERE numero_identificacion = :doc
+        """, engine, params={"doc": doc})
+
+        if not usuario.empty:
+
+            u = usuario.iloc[0]
+
+            st.write(f"👤 {u['nombres']} {u['apellidos']}")
+            st.write(f"Estado actual: {u['estado_caso']}")
+
+            nuevo_estado = st.selectbox(
+                "Cambiar estado",
+                ["ACTIVO", "INACTIVO", "EGRESADO"],
+                index=["ACTIVO", "INACTIVO", "EGRESADO"].index(u["estado_caso"])
+            )
+
+            if st.button("💾 Actualizar estado"):
+
+                with engine.begin() as conn:
+                    conn.execute(text("""
+                        UPDATE habitante_de_calle
+                        SET estado_caso = :estado
+                        WHERE numero_identificacion = :doc
+                    """), {
+                        "estado": nuevo_estado,
+                        "doc": doc
+                    })
+
+                st.success("Estado actualizado")
+                st.rerun()
