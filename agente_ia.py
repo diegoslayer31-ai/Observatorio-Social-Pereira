@@ -1,90 +1,75 @@
 import streamlit as st
 import pandas as pd
-import plotly.express as px
+from sqlalchemy import create_engine, text
+
+st.set_page_config(
+    page_title="Observatorio Social Asociación Ciudad Futuro",
+    page_icon="📊",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
+engine = create_engine(st.secrets["DATABASE_URL"])
+
 if "page" not in st.session_state:
     st.session_state.page = "home"
+from sqlalchemy import create_engine, text
+#from ollama import Client
 
-# =========================
-# RUTAS
-# =========================
-if st.session_state.page == "gestion_usuarios":
+from reportlab.platypus import (
+    SimpleDocTemplate,
+    Paragraph,
+    Spacer,
+    PageBreak
+)
 
-    st.title("⚙️ Gestión de usuarios")
-
-    st.info("Aquí se gestionan registros y estados")
-
-    # 👉 aquí insertas funciones o tabs reutilizables
-    st.divider()
-
-    st.subheader("➕ Registro de usuarios")
-
-    formulario_registro(df, engine)   # 👈 SOLO ESTA FORMA
-
-    st.divider()
-
-    st.markdown("## 🚪 Egreso de usuario")
-
-    cedula = st.text_input("Documento del usuario")
-
-    if st.button("🔴 Marcar como INACTIVO"):
-
-        with engine.begin() as conn:
-            conn.execute(text("""
-                UPDATE habitante_de_calle
-                SET estado_caso = 'INACTIVO'
-                WHERE numero_de_identificacion = :doc
-            """), {"doc": cedula})
-
-        st.success("Usuario marcado como INACTIVO")
-
-    if st.button("⬅️ Volver"):
-        st.session_state.page = "home"
-        st.rerun()
-
-    st.stop()
+from reportlab.lib.styles import getSampleStyleSheet
 def formulario_registro():
-    st.subheader("🔐 Acceso al formulario")
+    
+    st.subheader("🔐 Registro de usuarios")
 
     clave = st.text_input("Ingrese la contraseña", type="password")
 
     if clave == "Pereira2026":
 
-        st.success("✅ Acceso autorizado")
+        st.success("Acceso autorizado")
 
-        with st.form("registro_social"):
+        with st.form("registro"):
 
             nombres = st.text_input("Nombres")
             apellidos = st.text_input("Apellidos")
-            sexo = st.selectbox("Sexo al nacer", ["Masculino", "Femenino"])
+            sexo = st.selectbox("Sexo", ["Masculino", "Femenino"])
             edad = st.number_input("Edad", 0, 120, 18)
 
             tipo_id = st.selectbox("Tipo ID", ["CC", "TI", "CE", "PEP", "Otro"])
             numero_id = st.text_input("Número de identificación")
 
-            etnia = st.selectbox("Grupo étnico",
-                                 ["Ninguno", "Afrodescendiente", "Indígena", "Mestizo"])
-
+            etnia = st.selectbox("Etnia", ["Ninguno", "Afrodescendiente", "Indígena", "Mestizo"])
             discapacidad = st.selectbox("Discapacidad", ["No", "Sí"])
+
             migracion = 1 if st.selectbox("Migración", ["NO", "SI"]) == "SI" else 0
 
-            educacion = st.selectbox("Nivel educativo",
-                                     ["Ninguno", "Primaria", "Secundaria", "Técnico", "Tecnólogo", "Universitario"])
+            educacion = st.selectbox(
+                "Educación",
+                ["Ninguno", "Primaria", "Secundaria", "Técnico", "Tecnólogo", "Universitario"]
+            )
 
             barrio = st.text_input("Barrio")
             comuna = st.text_input("Comuna")
             telefono = st.text_input("Teléfono")
 
-            consumo = st.selectbox("Consumo",
-                                   ["No", "Marihuana", "Cocaína", "Bazuco", "Alcohol", "Heroína", "Policonsumo"])
+            consumo = st.selectbox(
+                "Consumo",
+                ["No", "Marihuana", "Cocaína", "Bazuco", "Alcohol", "Heroína", "Policonsumo"]
+            )
 
-            enfermedad_mental = st.selectbox("Enfermedad mental", ["No", "Sí"])
+            enfermedad = st.selectbox("Enfermedad mental", ["No", "Sí"])
             modalidad = st.selectbox("Modalidad", ["GRANJA", "URBANO"])
 
-            estado_caso = "ACTIVO"
-
-            guardar = st.form_submit_button("💾 Guardar registro")
+            guardar = st.form_submit_button("Guardar")
 
         if guardar:
+
             with engine.begin() as conn:
                 conn.execute(text("""
                     INSERT INTO habitante_de_calle (
@@ -102,24 +87,20 @@ def formulario_registro():
                         :etnia, :discapacidad,
                         :migracion, :educacion,
                         :barrio, :comuna,
-                        :telefono, :consumo, :enfermedad_mental,
-                        :estado_caso, :modalidad
+                        :telefono, :consumo, :enfermedad,
+                        'ACTIVO', :modalidad
                     )
                 """), locals())
 
-            st.success("✅ Guardado")
-from sqlalchemy import create_engine, text
-#from ollama import Client
+            st.success("Usuario registrado correctamente")
+if st.session_state.page == "registro":
+    formulario_registro()
 
-from reportlab.platypus import (
-    SimpleDocTemplate,
-    Paragraph,
-    Spacer,
-    PageBreak
-)
+    if st.button("⬅️ Volver"):
+        st.session_state.page = "home"
+        st.rerun()
 
-from reportlab.lib.styles import getSampleStyleSheet
-
+    st.stop()
 # =========================
 # CONFIG
 # =========================
@@ -1558,7 +1539,7 @@ with tab10:
 # NUEVO REGISTRO
 # =========================
 
-#with tab11:
+with tab11:
 
     st.subheader("🔐 Acceso al formulario")
 
