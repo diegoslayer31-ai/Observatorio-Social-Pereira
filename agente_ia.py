@@ -26,6 +26,7 @@ st.set_page_config(
 # =========================
 # ESTILO INSTITUCIONAL
 # =========================
+
 st.markdown("""
 <style>
 
@@ -35,6 +36,15 @@ st.markdown("""
 #MainMenu {visibility:hidden;}
 footer {visibility:hidden;}
 header {visibility:hidden;}
+
+/* =====================================
+   BOTÓN SIDEBAR (FORZAR VISIBILIDAD)
+===================================== */
+[data-testid="collapsedControl"] {
+    display: block !important;
+    visibility: visible !important;
+    z-index: 9999;
+}
 
 /* =====================================
    FONDO GENERAL
@@ -87,7 +97,7 @@ div[data-testid="stMetricLabel"]{
 }
 
 /* =====================================
-   METRICAS (SIDEBAR - FONDO OSCURO)
+   METRICAS SIDEBAR
 ===================================== */
 section[data-testid="stSidebar"] div[data-testid="stMetric"]{
     background: rgba(255,255,255,0.08) !important;
@@ -137,11 +147,7 @@ button[data-baseweb="tab"]{
 /* =====================================
    TITULOS
 ===================================== */
-h1{
-    color:#0F172A !important;
-}
-
-h2{
+h1, h2{
     color:#0F172A !important;
 }
 
@@ -194,7 +200,6 @@ p, label, span{
 
 </style>
 """, unsafe_allow_html=True)
-
 # =====================================
 # SIDEBAR
 # =====================================
