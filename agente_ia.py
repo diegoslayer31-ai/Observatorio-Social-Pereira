@@ -279,15 +279,52 @@ if st.session_state.page == "home":
     # TODO observatorio completo
 
 elif st.session_state.page == "gestion_usuarios":
-
+    
     st.title("⚙️ Gestión de usuarios")
-    st.info("Aquí irá tu módulo de gestión de usuarios")
 
-    if st.button("⬅️ Volver"):
+    # =========================
+    # CARGAR USUARIOS
+    # =========================
+    df_usuarios = pd.read_sql("""
+        SELECT nombres, apellidos, numero_identificacion, modalidad, estado_caso
+        FROM habitante_de_calle
+        ORDER BY nombres
+    """, engine)
+
+    # =========================
+    # BUSCADOR
+    # =========================
+    buscar = st.text_input("🔎 Buscar usuario (nombre o documento)")
+
+    if buscar:
+        df_usuarios = df_usuarios[
+            df_usuarios["nombres"].str.contains(buscar, case=False, na=False) |
+            df_usuarios["apellidos"].str.contains(buscar, case=False, na=False) |
+            df_usuarios["numero_identificacion"].astype(str).str.contains(buscar, na=False)
+        ]
+
+    # =========================
+    # TABLA PRINCIPAL
+    # =========================
+    st.dataframe(df_usuarios, use_container_width=True)
+
+    # =========================
+    # ESTADÍSTICAS RÁPIDAS
+    # =========================
+    col1, col2, col3 = st.columns(3)
+
+    col1.metric("Total usuarios", len(df_usuarios))
+    col2.metric("Activos", len(df_usuarios[df_usuarios["estado_caso"] == "ACTIVO"]))
+    col3.metric("Egresados", len(df_usuarios[df_usuarios["estado_caso"] == "EGRESADO"]))
+
+    # =========================
+    # BOTÓN VOLVER
+    # =========================
+    if st.button("⬅️ Volver al inicio"):
         st.session_state.page = "home"
         st.rerun()
 
-    st.stop()   
+    st.stop()
 # =====================================
 # BANNER PRINCIPAL
 # =====================================
