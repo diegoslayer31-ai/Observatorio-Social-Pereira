@@ -219,14 +219,6 @@ engine = create_engine(
     st.secrets["DATABASE_URL"]
 )
 
-# =====================================
-# TÍTULO OBSERVATORIO
-# =====================================
-st.markdown("""
-<h1 style='text-align:center; margin-bottom:25px;'>
-🧠 Observatorio Social Habitante de Calle Pereira 2026
-</h1>
-""", unsafe_allow_html=True)
 # =========================
 # OLLAMA
 # =========================
