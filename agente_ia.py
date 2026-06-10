@@ -16,6 +16,7 @@ from reportlab.lib.styles import getSampleStyleSheet
 # =========================
 # CONFIG
 # =========================
+st.set_page_config(initial_sidebar_state="expanded")
 st.set_page_config(
     page_title="Observatorio Social Asociación Ciudad Futuro",
     page_icon="📊",
