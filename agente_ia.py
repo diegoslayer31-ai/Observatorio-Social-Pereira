@@ -228,25 +228,8 @@ def color_riesgo(r):
 
 
 df["semáforo"] = df["nivel_riesgo"].apply(color_riesgo)
-st.subheader("🧠 ¿Cómo interpretar el Score de Vulnerabilidad?")
 
-st.info("""
-El Score de Vulnerabilidad mide el nivel de acumulación de factores de riesgo social.
 
-Se construye a partir de:
-- Consumo de sustancias
-- Salud mental
-- Discapacidad
-- Migración
-
-Escala:
-- 0–25 → Bajo riesgo
-- 26–50 → Riesgo medio
-- 51–75 → Alto riesgo
-- 76–100 → Riesgo crítico
-
-👉 A mayor score, mayor prioridad de intervención.
-""")
 # =========================
 # KPIs
 # =========================
@@ -455,53 +438,7 @@ with tab1:
 # =========================
 with tab2:
 
-    st.title("🚦 Análisis de Vulnerabilidad Social")
-
-    # =========================
-    # INDICADORES
-    # =========================
-    total_personas = len(df)
-
-    criticos = len(
-        df[df["nivel_riesgo"] == "Crítico"]
-    )
-
-    altos = len(
-        df[df["nivel_riesgo"] == "Alto"]
-    )
-
-    riesgo_promedio = round(
-        df["score_vulnerabilidad"].mean(), 1
-    )
-
-    c1, c2, c3, c4 = st.columns(4)
-
-    c1.metric(
-        "Personas evaluadas",
-        total_personas
-    )
-
-    c2.metric(
-        "Riesgo crítico",
-        criticos
-    )
-
-    c3.metric(
-        "Riesgo alto",
-        altos
-    )
-
-    c4.metric(
-        "Score promedio",
-        riesgo_promedio
-    )
-
-    st.divider()
-
-    # =========================
-    # GRÁFICO
-    # =========================
-    st.subheader("📊 Distribución del Score de Vulnerabilidad")
+    st.subheader("🚦 Distribución de Vulnerabilidad Social")
 
     fig = px.histogram(
         df,
@@ -516,18 +453,66 @@ with tab2:
     )
 
     # =========================
-    # MENSAJE EJECUTIVO
+    # RESUMEN EJECUTIVO
     # =========================
-    if criticos > 0:
-        st.error(
-            f"⚠️ Se identifican {criticos} personas clasificadas en riesgo crítico que requieren priorización inmediata."
-        )
-    else:
-        st.success(
-            "No se identifican personas en riesgo crítico."
-        )
+    criticos = len(
+        df[df["nivel_riesgo"] == "Crítico"]
+    )
 
-  
+    st.error(
+        f"⚠️ Se identifican {criticos} personas en nivel crítico de vulnerabilidad social."
+    )
+
+    # =========================
+    # METODOLOGÍA
+    # =========================
+    with st.expander("📘 Metodología del Score de Vulnerabilidad"):
+
+        st.markdown("""
+        ### ¿Qué mide este indicador?
+
+        El **Score de Vulnerabilidad Social** estima el nivel de acumulación de factores de riesgo presentes en cada persona atendida.
+
+        ### Variables consideradas
+
+        - Consumo de sustancias psicoactivas
+        - Enfermedad mental reportada
+        - Situación de discapacidad
+        - Condición migratoria
+
+        ### Escala de clasificación
+
+        | Puntaje | Nivel |
+        |----------|----------|
+        | 0 - 25 | 🟢 Bajo |
+        | 26 - 50 | 🟡 Medio |
+        | 51 - 75 | 🟠 Alto |
+        | 76 - 100 | 🔴 Crítico |
+
+        ### Interpretación
+
+        Un puntaje más alto indica una mayor acumulación de vulnerabilidades sociales y sanitarias, por lo que la persona requiere una prioridad superior en los procesos de intervención, seguimiento y acompañamiento institucional.
+
+        **Este indicador no constituye un diagnóstico clínico**, sino una herramienta de focalización para la toma de decisiones.
+        """)
+
+    # =========================
+    # TABLA RESUMEN
+    # =========================
+    st.subheader("📊 Distribución por nivel de riesgo")
+
+    resumen = (
+        df["nivel_riesgo"]
+        .value_counts()
+        .reset_index()
+    )
+
+    resumen.columns = ["Nivel", "Cantidad"]
+
+    st.dataframe(
+        resumen,
+        use_container_width=True
+    )
     # =========================
     # TOP 20 CASOS CRÍTICOS
     # =========================
