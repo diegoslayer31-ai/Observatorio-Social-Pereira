@@ -177,6 +177,22 @@ with st.sidebar:
 
     st.markdown("---")
 
+# =========================
+# NAVEGACIÓN SIMPLE
+# =========================
+
+if st.session_state.page == "gestion_usuarios":
+
+    st.title("⚙️ Gestión de usuarios")
+
+    st.info("Aquí irá tu módulo de gestión de usuarios")
+
+    if st.button("⬅️ Volver al inicio"):
+        st.session_state.page = "home"
+        st.rerun()
+
+    st.stop()
+
 # =====================================
 # BANNER PRINCIPAL
 # =====================================
