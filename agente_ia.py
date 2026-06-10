@@ -20,7 +20,65 @@ st.set_page_config(
     page_title="Observatorio Social IA",
     layout="wide"
 )
+from PIL import Image
 
+logo = Image.open("logo_acf.png")
+
+col1, col2 = st.columns([1,4])
+
+with col1:
+    st.image(logo, width=150)
+
+with col2:
+    st.markdown("""
+    <div style="
+        background: linear-gradient(90deg,#0B1F4D,#133E87);
+        padding:20px;
+        border-radius:12px;
+        text-align:center;
+        color:white;
+    ">
+        <h1 style='margin-bottom:0;'>
+        Sistema Integral de Seguimiento Social
+        </h1>
+
+        <h4 style='margin-top:5px;'>
+        Asociación Ciudad Futuro
+        </h4>
+
+        <p>
+        Gestión de usuarios, PAI, reducción de riesgos y daños,
+        seguimiento profesional e indicadores de impacto.
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
+
+st.divider()
+with st.sidebar:
+
+    st.image("logo_acf.png", width=180)
+
+    st.markdown("## Asociación Ciudad Futuro")
+
+    st.markdown("---")
+
+    st.info("""
+    Sistema de gestión para:
+
+    ✔ Registro de usuarios
+
+    ✔ Seguimiento profesional
+
+    ✔ Plan de Atención Individual
+
+    ✔ Indicadores de impacto
+
+    ✔ Reducción de riesgos y daños
+    """)
+
+    st.markdown("---")
+
+    st.caption("Versión 2025")
 # =========================
 # OLLAMA
 # =========================
