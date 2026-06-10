@@ -19,9 +19,9 @@ from reportlab.lib.styles import getSampleStyleSheet
 st.set_page_config(
     page_title="Observatorio Social Asociación Ciudad Futuro",
     page_icon="📊",
-    layout="wide"
+    layout="wide",
+    initial_sidebar_state="expanded"
 )
-
 # =========================
 # ESTILO INSTITUCIONAL
 # =========================
