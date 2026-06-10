@@ -6,14 +6,15 @@ from sqlalchemy import create_engine, text
 st.set_page_config(
     page_title="Observatorio Social Asociación Ciudad Futuro",
     page_icon="📊",
-    layout="wide",
-    initial_sidebar_state="expanded"
+    layout="wide"
 )
 
 engine = create_engine(st.secrets["DATABASE_URL"])
 
 if "page" not in st.session_state:
     st.session_state.page = "home"
+
+
 from sqlalchemy import create_engine, text
 #from ollama import Client
 
@@ -247,14 +248,13 @@ p, label, span {
 </style>
 """, unsafe_allow_html=True)
 # =====================================
-# SIDEBAR
+# SIDEBAR (VA ARRIBA DEL ROUTER)
 # =====================================
 with st.sidebar:
 
     st.image("logo_acf.png", width=220)
 
     st.markdown("---")
-
     st.markdown("### Asociación Ciudad Futuro")
 
     st.caption("""
@@ -264,11 +264,26 @@ with st.sidebar:
 
     st.markdown("---")
 
-# =========================
-# NAVEGACIÓN SIMPLE
-# =========================
+    # BOTONES DE NAVEGACIÓN (IMPORTANTE)
+    if st.button("🏠 Inicio"):
+        st.session_state.page = "home"
+        st.rerun()
 
-if st.session_state.page == "gestion_usuarios":
+    if st.button("⚙️ Gestión usuarios"):
+        st.session_state.page = "gestion_usuarios"
+        st.rerun()
+
+# =====================================
+# ROUTER (ESTO VA DESPUÉS DEL SIDEBAR)
+# =====================================
+
+if st.session_state.page == "home":
+
+    st.title("🏠 Dashboard principal")
+
+    # 👉 AQUÍ VA TODO TU OBSERVATORIO (tabs, gráficos, KPIs)
+
+elif st.session_state.page == "gestion_usuarios":
 
     st.title("⚙️ Gestión de usuarios")
 
@@ -279,6 +294,27 @@ if st.session_state.page == "gestion_usuarios":
         st.rerun()
 
     st.stop()
+if st.session_state.page == "home":
+    
+    st.title("🏠 Dashboard principal")
+
+    # 👇 AQUÍ VA TODO TU OBSERVATORIO
+    # KPIs
+    # tabs
+    # gráficos
+    # df
+    # etc
+
+    st.write("Aquí va TODO tu sistema actual")
+
+elif st.session_state.page == "gestion":
+
+    st.title("⚙️ Gestión de usuarios")
+    st.info("Módulo en construcción")
+
+elif st.session_state.page == "registro":
+
+    formulario_registro()
 
 # =====================================
 # BANNER PRINCIPAL
