@@ -20,65 +20,113 @@ st.set_page_config(
     page_title="Observatorio Social IA",
     layout="wide"
 )
-from PIL import Image
+# =====================================
+# ENCABEZADO INSTITUCIONAL
+# =====================================
 
-logo = Image.open("logo_acf.png")
+st.image(
+    "logo_acf.png",
+    width=550
+)
 
-col1, col2 = st.columns([1,4])
+st.markdown("""
+<div style="
+background: linear-gradient(90deg,#0B1F4D,#133E87);
+padding:30px;
+border-radius:15px;
+margin-bottom:25px;
+">
 
-with col1:
-    st.image(logo, width=150)
+<h1 style="
+color:white;
+text-align:center;
+margin-bottom:10px;
+">
+Sistema Integral de Atención y Seguimiento
+</h1>
 
-with col2:
-    st.markdown("""
-    <div style="
-        background: linear-gradient(90deg,#0B1F4D,#133E87);
-        padding:20px;
-        border-radius:12px;
-        text-align:center;
-        color:white;
-    ">
-        <h1 style='margin-bottom:0;'>
-        Sistema Integral de Seguimiento Social
-        </h1>
+<p style="
+color:white;
+text-align:center;
+font-size:18px;
+">
 
-        <h4 style='margin-top:5px;'>
-        Asociación Ciudad Futuro
-        </h4>
+Gestión integral de usuarios, seguimiento profesional,
+Plan de Atención Individual (PAI), reducción de riesgos y daños,
+adherencia al tratamiento, actividades grupales e indicadores
+de impacto social.
 
-        <p>
-        Gestión de usuarios, PAI, reducción de riesgos y daños,
-        seguimiento profesional e indicadores de impacto.
-        </p>
-    </div>
-    """, unsafe_allow_html=True)
+</p>
+
+</div>
+""", unsafe_allow_html=True)
+
+# =====================================
+# MÉTRICAS GENERALES
+# =====================================
+
+try:
+
+    total_activos = pd.read_sql("""
+        SELECT COUNT(*) total
+        FROM habitante_de_calle
+        WHERE estado_caso='ACTIVO'
+    """, engine).iloc[0]["total"]
+
+    total_granja = pd.read_sql("""
+        SELECT COUNT(*) total
+        FROM habitante_de_calle
+        WHERE estado_caso='ACTIVO'
+        AND modalidad='GRANJA'
+    """, engine).iloc[0]["total"]
+
+    total_urbano = pd.read_sql("""
+        SELECT COUNT(*) total
+        FROM habitante_de_calle
+        WHERE estado_caso='ACTIVO'
+        AND modalidad='URBANO'
+    """, engine).iloc[0]["total"]
+
+except:
+    total_activos = 0
+    total_granja = 0
+    total_urbano = 0
+
+col1, col2, col3 = st.columns(3)
+
+col1.metric(
+    "👥 Activos",
+    total_activos
+)
+
+col2.metric(
+    "🌱 Granja",
+    total_granja
+)
+
+col3.metric(
+    "🏙️ Urbano",
+    total_urbano
+)
 
 st.divider()
-with st.sidebar:
+st.markdown("""
+<style>
 
-    st.image("logo_acf.png", width=180)
+div[data-testid="stMetric"]{
+    background-color:#F8F9FA;
+    padding:15px;
+    border-radius:12px;
+    border:1px solid #EAEAEA;
+    text-align:center;
+}
 
-    st.markdown("## Asociación Ciudad Futuro")
+div[data-testid="stMetric"]:hover{
+    box-shadow:0px 4px 10px rgba(0,0,0,0.15);
+}
 
-    st.markdown("---")
-
-    st.info("""
-    Sistema de gestión para:
-
-    ✔ Registro de usuarios
-
-    ✔ Seguimiento profesional
-
-    ✔ Plan de Atención Individual
-
-    ✔ Indicadores de impacto
-
-    ✔ Reducción de riesgos y daños
-    """)
-
-    st.markdown("---")
-
-    st.caption("Versión 2025")
+</style>
+""", unsafe_allow_html=True)
 # =========================
 # OLLAMA
 # =========================
