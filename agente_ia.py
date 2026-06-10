@@ -28,172 +28,135 @@ st.set_page_config(
 st.markdown("""
 <style>
 
-/* =====================================
+/* =========================
    STREAMLIT BASICO
-===================================== */
-#MainMenu {visibility:hidden;}
-footer {visibility:hidden;}
-header {visibility:hidden;}
+========================= */
+#MainMenu {visibility: hidden;}
+footer {visibility: hidden;}
 
-/* =====================================
-   FONDO GENERAL
-===================================== */
-.stApp{
-    background-color:#F5F7FA;
+/* ⚠️ IMPORTANTE: NO romper header */
+header {visibility: visible !important;}
+
+/* =========================
+   APP DARK MODE
+========================= */
+.stApp {
+    background-color: #0B1220;
+    color: #E5E7EB;
 }
 
-/* =====================================
-   CONTENEDOR PRINCIPAL
-===================================== */
-.main .block-container{
-    max-width:1500px;
-    padding-top:0rem;
-    padding-bottom:1rem;
+/* =========================
+   SIDEBAR (FIJO Y VISIBLE)
+========================= */
+section[data-testid="stSidebar"] {
+    background-color: #0F172A !important;
+    width: 21rem !important;
 }
 
-/* =====================================
-   SIDEBAR
-===================================== */
-section[data-testid="stSidebar"]{
-    background-color:#0F172A;
+/* texto sidebar */
+section[data-testid="stSidebar"] * {
+    color: #E5E7EB !important;
 }
 
-/* texto sidebar base */
-section[data-testid="stSidebar"] *{
-    color:white !important;
+/* =========================
+   BOTÓN COLAPSE (OCULTAR)
+========================= */
+[data-testid="collapsedControl"] {
+    display: none !important;
 }
 
-/* =====================================
-   METRICAS (MAIN - FONDO CLARO)
-===================================== */
-div[data-testid="stMetric"]{
-    background: #F8FAFC;
-    border-radius: 15px;
-    padding: 18px;
-    border-left: 6px solid #2563EB;
-    box-shadow: 0px 3px 10px rgba(0,0,0,0.08);
+/* =========================
+   CONTAINER PRINCIPAL
+========================= */
+.main .block-container {
+    max-width: 1500px;
+    padding-top: 1rem;
 }
 
-div[data-testid="stMetricValue"]{
-    color: #0F172A !important;
-    font-weight: 800;
-    font-size: 22px;
-}
-
-div[data-testid="stMetricLabel"]{
-    color: #475569 !important;
-    font-weight: 600;
-}
-
-/* =====================================
-   METRICAS (SIDEBAR - FONDO OSCURO)
-===================================== */
-section[data-testid="stSidebar"] div[data-testid="stMetric"]{
-    background: rgba(255,255,255,0.08) !important;
+/* =========================
+   METRICAS
+========================= */
+div[data-testid="stMetric"] {
+    background: #111827;
     border-radius: 14px;
-    padding: 14px;
-    border-left: 4px solid #60A5FA;
-    box-shadow: none;
+    padding: 16px;
+    border-left: 4px solid #3B82F6;
 }
 
-section[data-testid="stSidebar"] div[data-testid="stMetricValue"]{
+div[data-testid="stMetricValue"] {
     color: #FFFFFF !important;
     font-weight: 800;
-    font-size: 20px;
 }
 
-section[data-testid="stSidebar"] div[data-testid="stMetricLabel"]{
-    color: #CBD5E1 !important;
-    font-weight: 600;
+div[data-testid="stMetricLabel"] {
+    color: #9CA3AF !important;
 }
 
-/* =====================================
+/* =========================
    TABS
-===================================== */
-button[data-baseweb="tab"]{
-    font-size:15px;
-    font-weight:600;
+========================= */
+button[data-baseweb="tab"] {
+    font-weight: 600;
+    color: #E5E7EB !important;
 }
 
-/* =====================================
+/* =========================
    TABLAS
-===================================== */
-[data-testid="stDataFrame"]{
-    background:white;
-    border-radius:15px;
-    padding:5px;
+========================= */
+[data-testid="stDataFrame"] {
+    background: #111827;
+    border-radius: 12px;
+    padding: 8px;
+    color: white;
 }
 
-/* =====================================
+/* =========================
    GRAFICOS
-===================================== */
-[data-testid="stPlotlyChart"]{
-    background:white;
-    border-radius:15px;
-    padding:10px;
+========================= */
+[data-testid="stPlotlyChart"] {
+    background: #111827;
+    border-radius: 12px;
+    padding: 10px;
 }
 
-/* =====================================
+/* =========================
    TITULOS
-===================================== */
-h1{
-    color:#0F172A !important;
+========================= */
+h1, h2, h3 {
+    color: #F9FAFB !important;
 }
 
-h2{
-    color:#0F172A !important;
+/* =========================
+   TEXTO
+========================= */
+p, label, span {
+    color: #D1D5DB;
 }
 
-h3{
-    color:#1E293B !important;
-}
-
-/* =====================================
-   EXPANDERS
-===================================== */
-.streamlit-expanderHeader{
-    color:#0F172A !important;
-    font-weight:700;
-}
-
-/* =====================================
-   TEXTO GENERAL
-===================================== */
-p, label, span{
-    color:#334155;
-}
-
-/* =====================================
+/* =========================
    BANNER
-===================================== */
+========================= */
 .banner {
-    background: linear-gradient(
-        90deg,
-        #0F172A,
-        #1E3A8A,
-        #2563EB
-    );
-
-    padding:35px;
-    border-radius:0px 0px 20px 20px;
-    margin-bottom:25px;
+    background: linear-gradient(90deg,#0F172A,#1E3A8A,#2563EB);
+    padding: 35px;
+    border-radius: 0 0 20px 20px;
+    margin-bottom: 25px;
 }
 
-.banner-title{
-    color:white;
-    font-size:42px;
-    font-weight:700;
+.banner-title {
+    color: white;
+    font-size: 42px;
+    font-weight: 700;
 }
 
-.banner-subtitle{
-    color:#E2E8F0;
-    font-size:18px;
-    margin-top:10px;
+.banner-subtitle {
+    color: #CBD5E1;
+    font-size: 18px;
+    margin-top: 10px;
 }
 
 </style>
 """, unsafe_allow_html=True)
-
 # =====================================
 # SIDEBAR
 # =====================================
