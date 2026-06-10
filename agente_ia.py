@@ -452,105 +452,19 @@ tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10, tab11, tab12, tab13
 # =========================
 with tab1:
 
-    # =========================
-    # RESUMEN EJECUTIVO
-    # =========================
-
-    activos = len(df)
-
-    criticos = len(
-        df[df["nivel_riesgo"] == "Crítico"]
-    )
-
-    granja = len(
-        df[
-            df["modalidad"]
-            .astype(str)
-            .str.upper()
-            .str.strip()
-            == "GRANJA"
-        ]
-    ) if "modalidad" in df.columns else 0
-
-    urbano = len(
-        df[
-            df["modalidad"]
-            .astype(str)
-            .str.upper()
-            .str.strip()
-            == "URBANO"
-        ]
-    ) if "modalidad" in df.columns else 0
-
-    col1,col2,col3,col4 = st.columns(4)
-
-    with col1:
-        st.markdown(f"""
-        <div style="
-        background:#0F172A;
-        padding:20px;
-        border-radius:15px;
-        text-align:center;
-        color:white;
-        ">
-        <h2>{activos}</h2>
-        <p>👥 Usuarios</p>
-        </div>
-        """, unsafe_allow_html=True)
-
-    with col2:
-        st.markdown(f"""
-        <div style="
-        background:#DC2626;
-        padding:20px;
-        border-radius:15px;
-        text-align:center;
-        color:white;
-        ">
-        <h2>{criticos}</h2>
-        <p>⚠️ Riesgo Crítico</p>
-        </div>
-        """, unsafe_allow_html=True)
-
-    with col3:
-        st.markdown(f"""
-        <div style="
-        background:#059669;
-        padding:20px;
-        border-radius:15px;
-        text-align:center;
-        color:white;
-        ">
-        <h2>{granja}</h2>
-        <p>🌱 Granja</p>
-        </div>
-        """, unsafe_allow_html=True)
-
-    with col4:
-        st.markdown(f"""
-        <div style="
-        background:#2563EB;
-        padding:20px;
-        border-radius:15px;
-        text-align:center;
-        color:white;
-        ">
-        <h2>{urbano}</h2>
-        <p>🏙️ Urbano</p>
-        </div>
-        """, unsafe_allow_html=True)
-
-    st.markdown("<br>", unsafe_allow_html=True)
-
     st.subheader("📊 Caracterización General")
 
-    # =========================
+    st.caption(
+        "Descripción sociodemográfica de la población atendida."
+    )
+
+    # =====================================
     # SEXO Y EDAD
-    # =========================
+    # =====================================
 
-    col_g1, col_g2 = st.columns(2)
+    col1, col2 = st.columns(2)
 
-    with col_g1:
+    with col1:
 
         if "sexo_al_nacer" in df.columns:
 
@@ -560,7 +474,10 @@ with tab1:
                 .reset_index()
             )
 
-            sexo_df.columns = ["sexo", "cantidad"]
+            sexo_df.columns = [
+                "sexo",
+                "cantidad"
+            ]
 
             fig1 = px.pie(
                 sexo_df,
@@ -580,7 +497,7 @@ with tab1:
                 f"Predomina el sexo {sexo_top['sexo']} con {sexo_top['cantidad']} registros."
             )
 
-    with col_g2:
+    with col2:
 
         if "edad" in df.columns:
 
@@ -603,9 +520,9 @@ with tab1:
 
     st.markdown("---")
 
-    # =========================
+    # =====================================
     # GRUPO ETARIO
-    # =========================
+    # =====================================
 
     if "edad" in df.columns:
 
@@ -616,7 +533,7 @@ with tab1:
                 "Adolescencia",
                 "Joven",
                 "Adulto",
-                "Adulto mayor"
+                "Adulto Mayor"
             ]
         )
 
@@ -631,103 +548,80 @@ with tab1:
             "cantidad"
         ]
 
-        col_a, col_b = st.columns([2,1])
+        fig_etario = px.bar(
+            etario_df,
+            x="grupo",
+            y="cantidad",
+            text="cantidad",
+            title="Distribución por grupo etario"
+        )
 
-        with col_a:
+        st.plotly_chart(
+            fig_etario,
+            use_container_width=True
+        )
 
-            fig_etario = px.bar(
-                etario_df,
-                x="grupo",
-                y="cantidad",
-                title="Distribución por grupo etario"
-            )
+        grupo_top = etario_df.iloc[0]
 
-            st.plotly_chart(
-                fig_etario,
-                use_container_width=True
-            )
+        st.success(
+            f"Grupo predominante: {grupo_top['grupo']} ({grupo_top['cantidad']} personas)"
+        )
 
-        with col_b:
+    st.markdown("---")
 
-            grupo_top = etario_df.iloc[0]
+    # =====================================
+    # RIESGOS POBLACIONALES
+    # =====================================
 
-            st.success(
-                f"Grupo predominante: {grupo_top['grupo']}"
-            )
+    if (
+        "grupo_etario" in df.columns
+        and
+        "nivel_riesgo" in df.columns
+    ):
+
+        adultos_criticos = len(
+            df[
+                (df["grupo_etario"] == "Adulto Mayor")
+                &
+                (
+                    df["nivel_riesgo"]
+                    .isin(["Alto", "Crítico"])
+                )
+            ]
+        )
+
+        jovenes_criticos = len(
+            df[
+                (df["grupo_etario"] == "Joven")
+                &
+                (
+                    df["nivel_riesgo"]
+                    .isin(["Alto", "Crítico"])
+                )
+            ]
+        )
+
+        col1, col2 = st.columns(2)
+
+        with col1:
 
             st.metric(
-                "Cantidad",
-                grupo_top['cantidad']
+                "👴 Adultos mayores en riesgo",
+                adultos_criticos
+            )
+
+        with col2:
+
+            st.metric(
+                "🧑 Jóvenes en riesgo",
+                jovenes_criticos
             )
 
     st.markdown("---")
 
-    # =========================
-    # ADULTOS MAYORES
-    # =========================
-
-    col_r1, col_r2 = st.columns(2)
-
-    with col_r1:
-
-        if (
-            "grupo_etario" in df.columns and
-            "nivel_riesgo" in df.columns
-        ):
-
-            adultos_criticos = len(
-                df[
-                    (df["grupo_etario"] == "Adulto mayor") &
-                    (
-                        df["nivel_riesgo"]
-                        .isin(["Alto", "Crítico"])
-                    )
-                ]
-            )
-
-            st.error(
-                f"👴 Adultos mayores en alto/crítico riesgo: {adultos_criticos}"
-            )
-
-    with col_r2:
-
-        if (
-            "grupo_etario" in df.columns and
-            "nivel_riesgo" in df.columns
-        ):
-
-            jovenes_criticos = len(
-                df[
-                    (df["grupo_etario"] == "Joven") &
-                    (
-                        df["nivel_riesgo"]
-                        .isin(["Alto", "Crítico"])
-                    )
-                ]
-            )
-
-            jovenes_total = len(
-                df[df["grupo_etario"] == "Joven"]
-            )
-
-            porcentaje = (
-                round(
-                    (jovenes_criticos / jovenes_total) * 100,
-                    2
-                )
-                if jovenes_total > 0
-                else 0
-            )
-
-            st.warning(
-                f"🧑 Jóvenes en alta vulnerabilidad: {jovenes_criticos} ({porcentaje}%)"
-            )
-
-    st.markdown("---")
-
-    # =========================
+    # =====================================
     # ETNIA VS CONSUMO
-    # =========================
+    # =====================================
 
     st.subheader("💊 Etnia vs Consumo")
 
@@ -747,21 +641,58 @@ with tab1:
             use_container_width=True
         )
 
-        fig_consumo = px.imshow(
-            tabla,
-            aspect="auto",
-            title="Patrones de consumo por grupo étnico"
+    else:
+
+        st.warning(
+            "No existen columnas para etnia vs consumo."
+        )
+
+    st.markdown("---")
+
+    # =====================================
+    # DISTRIBUCIÓN TERRITORIAL
+    # =====================================
+
+    st.subheader("📍 Distribución Territorial")
+
+    if "comuna_o_corregimiento_de_residencia" in df.columns:
+
+        territorio = (
+            df["comuna_o_corregimiento_de_residencia"]
+            .fillna("Sin dato")
+            .value_counts()
+            .head(10)
+            .reset_index()
+        )
+
+        territorio.columns = [
+            "comuna",
+            "cantidad"
+        ]
+
+        fig_territorio = px.bar(
+            territorio,
+            x="cantidad",
+            y="comuna",
+            orientation="h",
+            title="Top 10 comunas o corregimientos"
         )
 
         st.plotly_chart(
-            fig_consumo,
+            fig_territorio,
             use_container_width=True
+        )
+
+        comuna_top = territorio.iloc[0]
+
+        st.info(
+            f"La mayor concentración de usuarios se encuentra en {comuna_top['comuna']} ({comuna_top['cantidad']} registros)."
         )
 
     else:
 
         st.warning(
-            "No existen columnas para etnia vs consumo."
+            "No existe la columna de comuna o corregimiento."
         )
 # =========================
 # TAB VULNERABILIDAD
