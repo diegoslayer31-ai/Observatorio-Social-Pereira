@@ -339,18 +339,18 @@ if "sexo_al_nacer" in df.columns:
         )
     )
 # =========================
-# SIDEBAR
+# SIDEBAR - SISTEMA
 # =========================
 with st.sidebar:
 
-    st.header("📊 Control del Sistema")
+    st.header("🏛️ Sistema de Atención")
 
     # =========================
-    # CUPOS EN TIEMPO REAL
+    # 1. ESTADO DEL SISTEMA
     # =========================
+    st.subheader("📊 Estado del sistema")
+
     urbano, granja = cupos_actuales(df)
-
-    st.markdown("### 🧭 Cupos en tiempo real")
 
     st.metric("🏙️ Urbano (máx 100)", f"{urbano}/100")
     st.metric("🌱 Granja", granja)
@@ -361,9 +361,11 @@ with st.sidebar:
     st.divider()
 
     # =========================
-    # USUARIOS URBANO
+    # 2. USUARIOS ACTIVOS
     # =========================
-    with st.expander("🏙️ Usuarios URBANO activos"):
+    st.subheader("👥 Usuarios activos")
+
+    with st.expander("🏙️ Urbano activo"):
 
         df_urbano = df[
             (df["modalidad"] == "URBANO") &
@@ -377,10 +379,7 @@ with st.sidebar:
             use_container_width=True
         )
 
-    # =========================
-    # USUARIOS GRANJA
-    # =========================
-    with st.expander("🌱 Usuarios GRANJA activos"):
+    with st.expander("🌱 Granja activo"):
 
         df_granja = df[
             (df["modalidad"] == "GRANJA") &
@@ -397,9 +396,11 @@ with st.sidebar:
     st.divider()
 
     # =========================
-    # BOTÓN CRM
+    # 3. CRM BUTTON
     # =========================
-    crm = st.button("🧠 CRM Usuarios")
+    st.subheader("⚙️ Gestión de usuarios")
+
+    crm = st.button("🧠 Abrir CRM")
 
 
 # =========================
@@ -407,7 +408,7 @@ with st.sidebar:
 # =========================
 if crm:
 
-    st.title("🧠 Gestión de Usuario")
+    st.title("🧠 CRM - Gestión de Usuario")
 
     doc = st.text_input("Documento del usuario")
 
@@ -461,7 +462,7 @@ if crm:
 
                 st.success("✅ Estado actualizado correctamente")
 
-                # recargar datos
+                # recargar dataframe
                 df = pd.read_sql("SELECT * FROM habitante_de_calle", engine)
 
         else:
