@@ -1,9 +1,4 @@
 import streamlit as st
-
-st.set_page_config(
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
 import pandas as pd
 import plotly.express as px
 from sqlalchemy import create_engine, text
@@ -21,7 +16,6 @@ from reportlab.lib.styles import getSampleStyleSheet
 # =========================
 # CONFIG
 # =========================
-st.set_page_config(initial_sidebar_state="expanded")
 st.set_page_config(
     page_title="Observatorio Social Asociación Ciudad Futuro",
     page_icon="📊",
@@ -33,15 +27,6 @@ st.set_page_config(
 # =========================
 st.markdown("""
 <style>
-[data-testid="stSidebar"] {
-    display: block !important;
-    transform: none !important;
-    visibility: visible !important;
-    width: 21rem !important;
-}
-</style>
-""", unsafe_allow_html=True)
-<style>
 
 /* =====================================
    STREAMLIT BASICO
@@ -49,15 +34,6 @@ st.markdown("""
 #MainMenu {visibility:hidden;}
 footer {visibility:hidden;}
 header {visibility:hidden;}
-
-/* =====================================
-   BOTÓN SIDEBAR (FORZAR VISIBILIDAD)
-===================================== */
-[data-testid="collapsedControl"] {
-    display: block !important;
-    visibility: visible !important;
-    z-index: 9999;
-}
 
 /* =====================================
    FONDO GENERAL
@@ -110,7 +86,7 @@ div[data-testid="stMetricLabel"]{
 }
 
 /* =====================================
-   METRICAS SIDEBAR
+   METRICAS (SIDEBAR - FONDO OSCURO)
 ===================================== */
 section[data-testid="stSidebar"] div[data-testid="stMetric"]{
     background: rgba(255,255,255,0.08) !important;
@@ -160,7 +136,11 @@ button[data-baseweb="tab"]{
 /* =====================================
    TITULOS
 ===================================== */
-h1, h2{
+h1{
+    color:#0F172A !important;
+}
+
+h2{
     color:#0F172A !important;
 }
 
@@ -213,6 +193,7 @@ p, label, span{
 
 </style>
 """, unsafe_allow_html=True)
+
 # =====================================
 # SIDEBAR
 # =====================================
