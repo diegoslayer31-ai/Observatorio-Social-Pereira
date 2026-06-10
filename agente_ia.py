@@ -1013,9 +1013,6 @@ with tab10:
             )
 
         st.success("PDF generado correctamente")
-# NUEVO REGISTRO
-# =========================
-
 # =========================
 # NUEVO REGISTRO
 # =========================
@@ -1120,6 +1117,20 @@ with tab11:
                 ["No", "Sí"]
             )
 
+            # =========================
+            # NUEVOS CAMPOS
+            # =========================
+
+            modalidad = st.selectbox(
+                "Modalidad",
+                [
+                    "GRANJA",
+                    "URBANO"
+                ]
+            )
+
+            estado_caso = "ACTIVO"
+
             guardar = st.form_submit_button(
                 "💾 Guardar registro"
             )
@@ -1143,7 +1154,9 @@ with tab11:
                     comuna_o_corregimiento_de_residencia,
                     telefono_y_o_celular,
                     tipo_de_consumo,
-                    enfermedad_mental
+                    enfermedad_mental,
+                    estado_caso,
+                    modalidad
                 )
                 VALUES
                 (
@@ -1161,7 +1174,9 @@ with tab11:
                     :comuna,
                     :telefono,
                     :consumo,
-                    :enfermedad_mental
+                    :enfermedad_mental,
+                    :estado_caso,
+                    :modalidad
                 )
             """)
 
@@ -1186,7 +1201,9 @@ with tab11:
                             "comuna": comuna,
                             "telefono": telefono,
                             "consumo": consumo,
-                            "enfermedad_mental": enfermedad_mental
+                            "enfermedad_mental": enfermedad_mental,
+                            "estado_caso": estado_caso,
+                            "modalidad": modalidad
                         }
                     )
 
@@ -1201,7 +1218,6 @@ with tab11:
         st.info(
             "Ingrese la contraseña para habilitar el formulario."
         )
-
 # =====================================
 # TAB 12 - SEGUIMIENTO PROFESIONAL + PAI
 # =====================================
