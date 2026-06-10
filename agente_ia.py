@@ -372,40 +372,55 @@ elif st.session_state.page == "gestion_usuarios":
 
     st.divider()
 
-   # =====================================
-    # 2. USUARIOS ACTIVOS + INACTIVAR
     # =====================================
-st.subheader("📋 Usuarios activos")
+    # 📋 USUARIOS REGISTRADOS
+    # =====================================
+    st.subheader("📋 Usuarios registrados")
 
-try:
     df_usuarios = pd.read_sql("""
         SELECT *
         FROM habitante_de_calle
+        ORDER BY id DESC
     """, engine)
 
-    df_usuarios = df_usuarios[
-        df_usuarios["estado_caso"].astype(str).str.strip().str.lower() == "activo"
-    ]
+    st.dataframe(df_usuarios, use_container_width=True)
 
-    df_usuarios["nombre"] = (
-        df_usuarios["nombres"].astype(str)
-        + " "
-        + df_usuarios["apellidos"].astype(str)
+    st.divider()
+
+    # =====================================
+    # 🚫 INACTIVAR / REACTIVAR
+    # =====================================
+    st.subheader("🚫 Cambiar estado del usuario")
+
+    df_lista = pd.read_sql("""
+        SELECT numero_de_identificacion, nombres, apellidos, estado_caso
+        FROM habitante_de_calle
+    """, engine)
+
+    df_lista["nombre"] = df_lista["nombres"] + " " + df_lista["apellidos"]
+
+    usuario_sel = st.selectbox(
+        "Selecciona usuario",
+        df_lista["numero_de_identificacion"].tolist(),
+        format_func=lambda x: df_lista[df_lista["numero_de_identificacion"] == x]["nombre"].values[0]
     )
 
-    st.dataframe(
-        df_usuarios[[
-            "nombre",
-            "numero_de_identificacion",
-            "estado_caso"
-        ]],
-        use_container_width=True
-    )
+    nuevo_estado = st.selectbox("Nuevo estado", ["ACTIVO", "INACTIVO"])
 
-except Exception as e:
-    st.error("Error cargando usuarios")
-    st.code(str(e))
-    st.rerun()
+    if st.button("Actualizar estado"):
+
+        with engine.begin() as conn:
+            conn.execute(text("""
+                UPDATE habitante_de_calle
+                SET estado_caso = :estado
+                WHERE numero_de_identificacion = :id
+            """), {
+                "estado": nuevo_estado,
+                "id": usuario_sel
+            })
+
+        st.success("Estado actualizado")
+        st.rerun()
 # =====================================
 # BANNER PRINCIPAL
 # =====================================
