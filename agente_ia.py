@@ -26,6 +26,7 @@ from reportlab.platypus import (
 )
 
 from reportlab.lib.styles import getSampleStyleSheet
+
 def formulario_registro():
     
     st.subheader("🔐 Registro de usuarios")
@@ -34,13 +35,12 @@ def formulario_registro():
 
     if clave == "Pereira2026":
 
-        st.success("Acceso autorizado")
-
-        with st.form("registro"):
+        with st.form("registro_usuario"):
 
             nombres = st.text_input("Nombres")
             apellidos = st.text_input("Apellidos")
-            sexo = st.selectbox("Sexo", ["Masculino", "Femenino"])
+
+            sexo = st.selectbox("Sexo al nacer", ["Masculino", "Femenino"])
             edad = st.number_input("Edad", 0, 120, 18)
 
             tipo_id = st.selectbox("Tipo ID", ["CC", "TI", "CE", "PEP", "Otro"])
@@ -49,7 +49,7 @@ def formulario_registro():
             etnia = st.selectbox("Etnia", ["Ninguno", "Afrodescendiente", "Indígena", "Mestizo"])
             discapacidad = st.selectbox("Discapacidad", ["No", "Sí"])
 
-            migracion = 1 if st.selectbox("Migración", ["NO", "SI"]) == "SI" else 0
+            migracion = st.selectbox("Migración", ["NO", "SI"])
 
             educacion = st.selectbox(
                 "Educación",
@@ -66,9 +66,10 @@ def formulario_registro():
             )
 
             enfermedad = st.selectbox("Enfermedad mental", ["No", "Sí"])
+
             modalidad = st.selectbox("Modalidad", ["GRANJA", "URBANO"])
 
-            guardar = st.form_submit_button("Guardar")
+            guardar = st.form_submit_button("Guardar usuario")
 
         if guardar:
 
@@ -77,32 +78,32 @@ def formulario_registro():
                     INSERT INTO habitante_de_calle (
                         nombres, apellidos, sexo_al_nacer, edad,
                         tipo_de_identificacion, numero_de_identificacion,
-                        grupos_etnicos_afro_indigena, personas_con_discapacidad,
-                        indicador_migracion, nivel_educativo_que_tiene_o_cursa,
-                        barrio_o_vereda_de_residencia, comuna_o_corregimiento_de_residencia,
-                        telefono_y_o_celular, tipo_de_consumo, enfermedad_mental,
-                        estado_caso, modalidad
+                        grupos_etnicos_afro_indigena,
+                        personas_con_discapacidad,
+                        indicador_migracion,
+                        nivel_educativo_que_tiene_o_cursa,
+                        barrio_o_vereda_de_residencia,
+                        comuna_o_corregimiento_de_residencia,
+                        telefono_y_o_celular,
+                        tipo_de_consumo,
+                        enfermedad_mental,
+                        estado_caso,
+                        modalidad
                     )
                     VALUES (
                         :nombres, :apellidos, :sexo, :edad,
-                        :tipo_id, :numero_id,
-                        :etnia, :discapacidad,
-                        :migracion, :educacion,
-                        :barrio, :comuna,
-                        :telefono, :consumo, :enfermedad,
+                        :tipo_id, :numero_id, :etnia,
+                        :discapacidad, :migracion, :educacion,
+                        :barrio, :comuna, :telefono,
+                        :consumo, :enfermedad,
                         'ACTIVO', :modalidad
                     )
                 """), locals())
 
             st.success("Usuario registrado correctamente")
-if st.session_state.page == "registro":
-    formulario_registro()
 
-    if st.button("⬅️ Volver"):
-        st.session_state.page = "home"
-        st.rerun()
-
-    st.stop()
+    else:
+        st.info("Ingrese la contraseña para habilitar el formulario")
 # =========================
 # CONFIG
 # =========================
