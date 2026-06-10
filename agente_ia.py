@@ -519,7 +519,37 @@ with tab1:
             )
 
     st.markdown("---")
+        # =========================
+    # INTERPRETACIÓN
+    # =========================
 
+    edad_promedio = round(df["edad"].mean(), 1)
+
+    edad_mediana = round(df["edad"].median(), 1)
+
+    grupo_predominante = (
+        df["grupo_etario"]
+        .value_counts()
+        .idxmax()
+    )
+
+    st.info(f"""
+    ### 📘 Interpretación
+
+    - Edad promedio: **{edad_promedio} años**
+    - Edad mediana: **{edad_mediana} años**
+    - Grupo etario predominante: **{grupo_predominante}**
+
+    #### ¿Qué significa?
+
+    La distribución etaria permite identificar el ciclo de vida predominante de la población atendida.
+
+    - Si predominan los **jóvenes**, se requieren estrategias preventivas y de inclusión educativa y laboral.
+    - Si predominan los **adultos**, las acciones deben enfocarse en estabilización social, generación de ingresos y reducción de riesgos.
+    - Si existe una proporción importante de **adultos mayores**, aumenta la necesidad de atención sociosanitaria y protección integral.
+
+    La edad constituye un factor clave para la planificación de intervenciones diferenciales dentro del modelo de atención.
+    """)
     # =====================================
     # GRUPO ETARIO
     # =====================================
