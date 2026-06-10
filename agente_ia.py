@@ -273,33 +273,21 @@ with st.sidebar:
         st.session_state.page = "gestion_usuarios"
         st.rerun()
 
-# =========================
-# ROUTER ÚNICO (ESTO ES LO CORRECTO)
-# =========================
-
 if st.session_state.page == "home":
-
+    
     st.title("🏠 Dashboard principal")
-
-    # TODO tu observatorio aquí:
-    # KPIs
-    # tabs
-    # gráficos
-    # dataframe
+    # TODO observatorio completo
 
 elif st.session_state.page == "gestion_usuarios":
 
     st.title("⚙️ Gestión de usuarios")
-
     st.info("Aquí irá tu módulo de gestión de usuarios")
 
-    if st.button("⬅️ Volver al inicio"):
+    if st.button("⬅️ Volver"):
         st.session_state.page = "home"
         st.rerun()
 
-elif st.session_state.page == "registro":
-
-    formulario_registro()
+    st.stop()   
 # =====================================
 # BANNER PRINCIPAL
 # =====================================
