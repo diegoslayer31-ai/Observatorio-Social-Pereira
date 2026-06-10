@@ -375,18 +375,17 @@ elif st.session_state.page == "gestion_usuarios":
    # =====================================
     # 2. USUARIOS ACTIVOS + INACTIVAR
     # =====================================
-    st.subheader("📋 Usuarios activos")
+   st.subheader("📋 Usuarios activos")
 
+try:
     df_usuarios = pd.read_sql("""
-        SELECT
-            nombres,
-            apellidos,
-            numero_de_identificacion,
-            estado_caso,
-            modalidad
+        SELECT *
         FROM habitante_de_calle
-        WHERE LOWER(TRIM(estado_caso)) = 'activo'
     """, engine)
+
+    df_usuarios = df_usuarios[
+        df_usuarios["estado_caso"].astype(str).str.strip().str.lower() == "activo"
+    ]
 
     df_usuarios["nombre"] = (
         df_usuarios["nombres"].astype(str)
@@ -398,41 +397,14 @@ elif st.session_state.page == "gestion_usuarios":
         df_usuarios[[
             "nombre",
             "numero_de_identificacion",
-            "modalidad"
+            "estado_caso"
         ]],
         use_container_width=True
     )
 
-    st.divider()
-
-    st.subheader("🚫 Inactivar usuario")
-
-    if len(df_usuarios) > 0:
-
-        usuario_sel = st.selectbox(
-            "Selecciona usuario",
-            df_usuarios["numero_de_identificacion"].tolist(),
-            format_func=lambda x: df_usuarios[
-                df_usuarios["numero_de_identificacion"] == x
-            ]["nombre"].values[0]
-        )
-
-        if st.button("Inactivar usuario"):
-
-            with engine.begin() as conn:
-                conn.execute(text("""
-                    UPDATE habitante_de_calle
-                    SET estado_caso = 'INACTIVO'
-                    WHERE numero_de_identificacion = :id
-                """), {
-                    "id": usuario_sel
-                })
-
-            st.success("Usuario inactivado correctamente")
-            st.rerun()
-
-    else:
-        st.info("No hay usuarios activos")
+except Exception as e:
+    st.error("Error cargando usuarios")
+    st.code(str(e))
 # =====================================
 # BANNER PRINCIPAL
 # =====================================
