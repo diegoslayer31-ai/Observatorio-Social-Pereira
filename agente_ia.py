@@ -21,112 +21,34 @@ st.set_page_config(
     layout="wide"
 )
 # =====================================
-# ENCABEZADO INSTITUCIONAL
+# ENCABEZADO PROFESIONAL
 # =====================================
 
-st.image(
-    "logo_acf.png",
-    width=550
-)
+col_logo, col_texto = st.columns([1,3])
 
-st.markdown("""
-<div style="
-background: linear-gradient(90deg,#0B1F4D,#133E87);
-padding:30px;
-border-radius:15px;
-margin-bottom:25px;
-">
+with col_logo:
+    st.image("logo_acf.png", width=180)
 
-<h1 style="
-color:white;
-text-align:center;
-margin-bottom:10px;
-">
-Sistema Integral de Atención y Seguimiento
-</h1>
+with col_texto:
 
-<p style="
-color:white;
-text-align:center;
-font-size:18px;
-">
+    st.markdown("""
+    <h1 style="
+    color:white;
+    margin-top:30px;
+    ">
+    Sistema Integral de Atención y Seguimiento
+    </h1>
 
-Gestión integral de usuarios, seguimiento profesional,
-Plan de Atención Individual (PAI), reducción de riesgos y daños,
-adherencia al tratamiento, actividades grupales e indicadores
-de impacto social.
-
-</p>
-
-</div>
-""", unsafe_allow_html=True)
-
-# =====================================
-# MÉTRICAS GENERALES
-# =====================================
-
-try:
-
-    total_activos = pd.read_sql("""
-        SELECT COUNT(*) total
-        FROM habitante_de_calle
-        WHERE estado_caso='ACTIVO'
-    """, engine).iloc[0]["total"]
-
-    total_granja = pd.read_sql("""
-        SELECT COUNT(*) total
-        FROM habitante_de_calle
-        WHERE estado_caso='ACTIVO'
-        AND modalidad='GRANJA'
-    """, engine).iloc[0]["total"]
-
-    total_urbano = pd.read_sql("""
-        SELECT COUNT(*) total
-        FROM habitante_de_calle
-        WHERE estado_caso='ACTIVO'
-        AND modalidad='URBANO'
-    """, engine).iloc[0]["total"]
-
-except:
-    total_activos = 0
-    total_granja = 0
-    total_urbano = 0
-
-col1, col2, col3 = st.columns(3)
-
-col1.metric(
-    "👥 Activos",
-    total_activos
-)
-
-col2.metric(
-    "🌱 Granja",
-    total_granja
-)
-
-col3.metric(
-    "🏙️ Urbano",
-    total_urbano
-)
-
-st.divider()
-st.markdown("""
-<style>
-
-div[data-testid="stMetric"]{
-    background-color:#F8F9FA;
-    padding:15px;
-    border-radius:12px;
-    border:1px solid #EAEAEA;
-    text-align:center;
-}
-
-div[data-testid="stMetric"]:hover{
-    box-shadow:0px 4px 10px rgba(0,0,0,0.15);
-}
-
-</style>
-""", unsafe_allow_html=True)
+    <p style="
+    color:#CFCFCF;
+    font-size:18px;
+    ">
+    Gestión integral de usuarios, seguimiento profesional,
+    Plan de Atención Individual (PAI), reducción de riesgos y daños,
+    adherencia al tratamiento e indicadores de impacto social.
+    </p>
+    """,
+    unsafe_allow_html=True)
 # =========================
 # OLLAMA
 # =========================
