@@ -1,6 +1,8 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+if "page" not in st.session_state:
+    st.session_state.page = "home"
 from sqlalchemy import create_engine, text
 #from ollama import Client
 
@@ -398,7 +400,7 @@ with st.sidebar:
     # BOTÓN GESTIÓN
     # =========================
     if st.button("⚙️ Gestión de usuarios", key="btn_gestion_usuarios"):
-        st.session_state["gestionar_usuario"] = True
+        st.session_state.page = "gestion_usuarios"
 # =========================
 # ÍNDICE DE VULNERABILIDAD
 # =========================
@@ -2101,44 +2103,3 @@ with tab14:
 
         except Exception as e:
             st.error(f"❌ Error: {e}")
-if st.session_state.get("gestionar_usuario", False):
-    
-    st.title("⚙️ Gestión de usuarios")
-
-    doc = st.text_input("Documento del usuario")
-
-    if doc:
-
-        usuario = pd.read_sql("""
-            SELECT *
-            FROM habitante_de_calle
-            WHERE numero_identificacion = :doc
-        """, engine, params={"doc": doc})
-
-        if not usuario.empty:
-
-            u = usuario.iloc[0]
-
-            st.write(f"👤 {u['nombres']} {u['apellidos']}")
-            st.write(f"Estado actual: {u['estado_caso']}")
-
-            nuevo_estado = st.selectbox(
-                "Cambiar estado",
-                ["ACTIVO", "INACTIVO", "EGRESADO"],
-                index=["ACTIVO", "INACTIVO", "EGRESADO"].index(u["estado_caso"])
-            )
-
-            if st.button("💾 Actualizar estado"):
-
-                with engine.begin() as conn:
-                    conn.execute(text("""
-                        UPDATE habitante_de_calle
-                        SET estado_caso = :estado
-                        WHERE numero_identificacion = :doc
-                    """), {
-                        "estado": nuevo_estado,
-                        "doc": doc
-                    })
-
-                st.success("Estado actualizado")
-                st.rerun()
