@@ -409,7 +409,7 @@ except Exception as e:
     st.dataframe(df_usuarios, use_container_width=True)
 
     st.divider()
-
+    st.stop()
     # =====================================
     # 🚫 INACTIVAR / REACTIVAR
     # =====================================
