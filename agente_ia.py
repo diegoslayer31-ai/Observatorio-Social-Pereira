@@ -387,6 +387,7 @@ elif st.session_state.page == "gestion_usuarios":
 
     except Exception as e:
         st.warning("No hay usuarios o la tabla no existe aún")
+        st.stop()
 # =====================================
 # BANNER PRINCIPAL
 # =====================================
