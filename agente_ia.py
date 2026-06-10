@@ -66,7 +66,6 @@ h1,h2,h3{
 </style>
 """, unsafe_allow_html=True)
 
-
 # =====================================
 # ENCABEZADO PROFESIONAL
 # =====================================
@@ -78,34 +77,20 @@ with col_logo:
 
 with col_texto:
 
-    st.markdown("""
-    <div style="
-        padding-top:40px;
-        padding-left:20px;
-    ">
-
-        <h1 style="
-            color:#0F172A;
-            font-size:48px;
-            margin-bottom:10px;
-        ">
+    st.markdown(
+        """
+        <h1 style='color:#0F172A;font-size:48px;margin-top:40px;'>
         Sistema Integral de Atención y Seguimiento
         </h1>
 
-        <p style="
-            color:#475569;
-            font-size:22px;
-            line-height:1.6;
-        ">
+        <p style='color:#475569;font-size:22px;'>
         Gestión integral de usuarios, seguimiento profesional,
         Plan de Atención Individual (PAI), reducción de riesgos y daños,
         adherencia al tratamiento e indicadores de impacto social.
         </p>
-
-    </div>
-    """, unsafe_allow_html=True)
-
-st.markdown("---")
+        """,
+        unsafe_allow_html=True
+    )
 # =========================
 # OLLAMA
 # =========================
