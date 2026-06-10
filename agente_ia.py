@@ -375,7 +375,7 @@ elif st.session_state.page == "gestion_usuarios":
    # =====================================
     # 2. USUARIOS ACTIVOS + INACTIVAR
     # =====================================
-   st.subheader("📋 Usuarios activos")
+st.subheader("📋 Usuarios activos")
 
 try:
     df_usuarios = pd.read_sql("""
