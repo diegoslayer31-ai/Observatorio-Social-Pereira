@@ -399,9 +399,6 @@ with st.sidebar:
     # =========================
     if st.button("⚙️ Gestión de usuarios", key="btn_gestion_usuarios"):
         st.session_state["gestionar_usuario"] = True
-
-    if st.button("⚙️ Gestión de usuarios"):
-         st.session_state["gestionar_usuario"] = True
 # =========================
 # ÍNDICE DE VULNERABILIDAD
 # =========================
