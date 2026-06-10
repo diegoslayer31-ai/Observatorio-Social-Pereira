@@ -3,6 +3,111 @@ import pandas as pd
 import plotly.express as px
 if "page" not in st.session_state:
     st.session_state.page = "home"
+
+# =========================
+# RUTAS
+# =========================
+if st.session_state.page == "gestion_usuarios":
+
+    st.title("⚙️ Gestión de usuarios")
+
+    st.info("Aquí se gestionan registros y estados")
+
+    # 👉 aquí insertas funciones o tabs reutilizables
+    st.divider()
+
+    st.subheader("➕ Registro de usuarios")
+
+    formulario_registro(df, engine)   # 👈 SOLO ESTA FORMA
+
+    st.divider()
+
+    st.markdown("## 🚪 Egreso de usuario")
+
+    cedula = st.text_input("Documento del usuario")
+
+    if st.button("🔴 Marcar como INACTIVO"):
+
+        with engine.begin() as conn:
+            conn.execute(text("""
+                UPDATE habitante_de_calle
+                SET estado_caso = 'INACTIVO'
+                WHERE numero_de_identificacion = :doc
+            """), {"doc": cedula})
+
+        st.success("Usuario marcado como INACTIVO")
+
+    if st.button("⬅️ Volver"):
+        st.session_state.page = "home"
+        st.rerun()
+
+    st.stop()
+def formulario_registro():
+    st.subheader("🔐 Acceso al formulario")
+
+    clave = st.text_input("Ingrese la contraseña", type="password")
+
+    if clave == "Pereira2026":
+
+        st.success("✅ Acceso autorizado")
+
+        with st.form("registro_social"):
+
+            nombres = st.text_input("Nombres")
+            apellidos = st.text_input("Apellidos")
+            sexo = st.selectbox("Sexo al nacer", ["Masculino", "Femenino"])
+            edad = st.number_input("Edad", 0, 120, 18)
+
+            tipo_id = st.selectbox("Tipo ID", ["CC", "TI", "CE", "PEP", "Otro"])
+            numero_id = st.text_input("Número de identificación")
+
+            etnia = st.selectbox("Grupo étnico",
+                                 ["Ninguno", "Afrodescendiente", "Indígena", "Mestizo"])
+
+            discapacidad = st.selectbox("Discapacidad", ["No", "Sí"])
+            migracion = 1 if st.selectbox("Migración", ["NO", "SI"]) == "SI" else 0
+
+            educacion = st.selectbox("Nivel educativo",
+                                     ["Ninguno", "Primaria", "Secundaria", "Técnico", "Tecnólogo", "Universitario"])
+
+            barrio = st.text_input("Barrio")
+            comuna = st.text_input("Comuna")
+            telefono = st.text_input("Teléfono")
+
+            consumo = st.selectbox("Consumo",
+                                   ["No", "Marihuana", "Cocaína", "Bazuco", "Alcohol", "Heroína", "Policonsumo"])
+
+            enfermedad_mental = st.selectbox("Enfermedad mental", ["No", "Sí"])
+            modalidad = st.selectbox("Modalidad", ["GRANJA", "URBANO"])
+
+            estado_caso = "ACTIVO"
+
+            guardar = st.form_submit_button("💾 Guardar registro")
+
+        if guardar:
+            with engine.begin() as conn:
+                conn.execute(text("""
+                    INSERT INTO habitante_de_calle (
+                        nombres, apellidos, sexo_al_nacer, edad,
+                        tipo_de_identificacion, numero_de_identificacion,
+                        grupos_etnicos_afro_indigena, personas_con_discapacidad,
+                        indicador_migracion, nivel_educativo_que_tiene_o_cursa,
+                        barrio_o_vereda_de_residencia, comuna_o_corregimiento_de_residencia,
+                        telefono_y_o_celular, tipo_de_consumo, enfermedad_mental,
+                        estado_caso, modalidad
+                    )
+                    VALUES (
+                        :nombres, :apellidos, :sexo, :edad,
+                        :tipo_id, :numero_id,
+                        :etnia, :discapacidad,
+                        :migracion, :educacion,
+                        :barrio, :comuna,
+                        :telefono, :consumo, :enfermedad_mental,
+                        :estado_caso, :modalidad
+                    )
+                """), locals())
+
+            st.success("✅ Guardado")
 from sqlalchemy import create_engine, text
 #from ollama import Client
 
@@ -181,35 +286,18 @@ with st.sidebar:
 # NAVEGACIÓN SIMPLE
 # =========================
 
-# =========================
-# NAVEGACIÓN SIMPLE
-# =========================
-
 if st.session_state.page == "gestion_usuarios":
 
     st.title("⚙️ Gestión de usuarios")
 
     st.info("Aquí irá tu módulo de gestión de usuarios")
 
-    st.markdown("---")
-
-    # AQUÍ puedes reutilizar tu TAB 11 si quieres
-    st.subheader("➕ Registro de usuarios")
-
-    # 👉 LLAMAS TU FORMULARIO DIRECTAMENTE (sin función)
-    clave = st.text_input("Clave", type="password")
-
-    if clave == "Pereira2026":
-
-        st.success("Acceso autorizado")
-
-        st.write("👉 AQUÍ PEGA TU FORMULARIO DEL TAB11")
-
     if st.button("⬅️ Volver al inicio"):
         st.session_state.page = "home"
         st.rerun()
 
     st.stop()
+
 # =====================================
 # BANNER PRINCIPAL
 # =====================================
@@ -274,120 +362,6 @@ df.columns = (
     .str.replace(" ", "_")
 )
 
-# =========================
-# FORMULARIO DE REGISTRO
-# =========================
-
-def formulario_registro():
-
-    st.subheader("🔐 Acceso al formulario")
-
-    clave = st.text_input(
-        "Ingrese la contraseña",
-        type="password",
-        key="clave_registro"
-    )
-
-    if clave == "Pereira2026":
-
-        st.success("✅ Acceso autorizado")
-
-        with st.form("registro_social"):
-
-            st.markdown("### Datos personales")
-
-            nombres = st.text_input("Nombres")
-            apellidos = st.text_input("Apellidos")
-
-            sexo = st.selectbox("Sexo al nacer", ["Masculino", "Femenino"])
-
-            edad = st.number_input("Edad", 0, 120, 18)
-
-            tipo_id = st.selectbox("Tipo ID", ["CC", "TI", "CE", "PEP", "Otro"])
-
-            numero_id = st.text_input("Número de identificación")
-
-            etnia = st.selectbox(
-                "Grupo étnico",
-                ["Ninguno", "Afrodescendiente", "Indígena", "Mestizo"]
-            )
-
-            discapacidad = st.selectbox("Discapacidad", ["No", "Sí"])
-
-            migracion = 1 if st.selectbox("Migración", ["NO", "SI"]) == "SI" else 0
-
-            educacion = st.selectbox(
-                "Nivel educativo",
-                ["Ninguno", "Primaria", "Secundaria", "Técnico", "Tecnólogo", "Universitario"]
-            )
-
-            barrio = st.text_input("Barrio")
-            comuna = st.text_input("Comuna")
-            telefono = st.text_input("Teléfono")
-
-            consumo = st.selectbox(
-                "Consumo",
-                ["No", "Marihuana", "Cocaína", "Bazuco", "Alcohol", "Heroína", "Policonsumo"]
-            )
-
-            enfermedad_mental = st.selectbox("Enfermedad mental", ["No", "Sí"])
-
-            modalidad = st.selectbox("Modalidad", ["GRANJA", "URBANO"])
-
-            estado_caso = "ACTIVO"
-
-            guardar = st.form_submit_button("💾 Guardar registro")
-
-        if guardar:
-
-            try:
-                with engine.begin() as conn:
-                    conn.execute(text("""
-                        INSERT INTO habitante_de_calle (
-                            nombres, apellidos, sexo_al_nacer, edad,
-                            tipo_de_identificacion, numero_de_identificacion,
-                            grupos_etnicos_afro_indigena, personas_con_discapacidad,
-                            indicador_migracion, nivel_educativo_que_tiene_o_cursa,
-                            barrio_o_vereda_de_residencia, comuna_o_corregimiento_de_residencia,
-                            telefono_y_o_celular, tipo_de_consumo, enfermedad_mental,
-                            estado_caso, modalidad
-                        )
-                        VALUES (
-                            :nombres, :apellidos, :sexo, :edad,
-                            :tipo_id, :numero_id,
-                            :etnia, :discapacidad,
-                            :migracion, :educacion,
-                            :barrio, :comuna,
-                            :telefono, :consumo, :enfermedad_mental,
-                            :estado_caso, :modalidad
-                        )
-                    """), {
-                        "nombres": nombres,
-                        "apellidos": apellidos,
-                        "sexo": sexo,
-                        "edad": edad,
-                        "tipo_id": tipo_id,
-                        "numero_id": numero_id,
-                        "etnia": etnia,
-                        "discapacidad": discapacidad,
-                        "migracion": migracion,
-                        "educacion": educacion,
-                        "barrio": barrio,
-                        "comuna": comuna,
-                        "telefono": telefono,
-                        "consumo": consumo,
-                        "enfermedad_mental": enfermedad_mental,
-                        "estado_caso": estado_caso,
-                        "modalidad": modalidad
-                    })
-
-                st.success("✅ Registro guardado correctamente")
-
-            except Exception as e:
-                st.error(f"Error al guardar: {e}")
-
-    else:
-        st.info("Ingrese la contraseña para continuar")
 # =========================
 # CUPOS EN TIEMPO REAL
 # =========================
@@ -548,7 +522,6 @@ with st.sidebar:
     # =========================
     if st.button("⚙️ Gestión de usuarios", key="btn_gestion_usuarios"):
         st.session_state.page = "gestion_usuarios"
-    st.rerun()
 # =========================
 # ÍNDICE DE VULNERABILIDAD
 # =========================
@@ -1585,7 +1558,7 @@ with tab10:
 # NUEVO REGISTRO
 # =========================
 
-with tab11:
+#with tab11:
 
     st.subheader("🔐 Acceso al formulario")
 
@@ -1747,20 +1720,6 @@ with tab11:
 
     else:
         st.info("Ingrese la contraseña para habilitar el formulario.")
-st.markdown("## 🚪 Egreso de usuario")
-
-cedula_egreso = st.text_input("Documento del usuario")
-
-if st.button("🔴 Marcar como INACTIVO"):
-
-    with engine.begin() as conn:
-        conn.execute(text("""
-            UPDATE habitante_de_calle
-            SET estado_caso = 'INACTIVO'
-            WHERE numero_de_identificacion = :doc
-        """), {"doc": cedula_egreso})
-
-    st.success("Usuario marcado como INACTIVO")
 # =====================================
 # TAB 12 - SEGUIMIENTO PROFESIONAL + PAI
 # =====================================
