@@ -518,12 +518,6 @@ with st.sidebar:
         st.dataframe(df_granja[["nombre", "numero_identificacion"]], use_container_width=True)
 
     st.divider()
-
-    # =========================
-    # BOTÓN GESTIÓN
-    # =========================
-    if st.button("⚙️ Gestión de usuarios", key="btn_gestion_usuarios"):
-        st.session_state.page = "gestion_usuarios"
 # =========================
 # ÍNDICE DE VULNERABILIDAD
 # =========================
