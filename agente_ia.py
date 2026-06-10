@@ -352,6 +352,33 @@ st.metric("🌱 Granja", granja)
 
 if urbano >= 100:
     st.error("🚨 URBANO EN CAPACIDAD MÁXIMA")
+
+with st.sidebar.expander("🏙️ Ver usuarios URBANO activos"):
+
+    df_urbano = df[
+        (df["modalidad"] == "URBANO") &
+        (df["estado_caso"] == "ACTIVO")
+    ][["nombres", "apellidos", "numero_identificacion"]]
+
+    df_urbano["nombre"] = df_urbano["nombres"] + " " + df_urbano["apellidos"]
+
+    st.dataframe(
+        df_urbano[["nombre", "numero_identificacion"]],
+        use_container_width=True
+    )
+with st.sidebar.expander("🌱 Ver usuarios GRANJA activos"):
+
+    df_granja = df[
+        (df["modalidad"] == "GRANJA") &
+        (df["estado_caso"] == "ACTIVO")
+    ][["nombres", "apellidos", "numero_identificacion"]]
+
+    df_granja["nombre"] = df_granja["nombres"] + " " + df_granja["apellidos"]
+
+    st.dataframe(
+        df_granja[["nombre", "numero_identificacion"]],
+        use_container_width=True
+    )
 if "sexo_al_nacer" in df.columns:
     sexo = st.sidebar.multiselect(
         "Sexo",
