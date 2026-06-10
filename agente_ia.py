@@ -339,18 +339,18 @@ if "sexo_al_nacer" in df.columns:
         )
     )
 # =========================
-# SIDEBAR - SISTEMA
+# SIDEBAR
 # =========================
 with st.sidebar:
 
-    st.header("🏛️ Sistema de Atención")
+    st.header("Filtros")
 
     # =========================
-    # 1. ESTADO DEL SISTEMA
+    # CUPOS
     # =========================
-    st.subheader("📊 Estado del sistema")
-
     urbano, granja = cupos_actuales(df)
+
+    st.markdown("### 🧭 Cupos en tiempo real")
 
     st.metric("🏙️ Urbano (máx 100)", f"{urbano}/100")
     st.metric("🌱 Granja", granja)
@@ -358,71 +358,56 @@ with st.sidebar:
     if urbano >= 100:
         st.error("🚨 URBANO EN CAPACIDAD MÁXIMA")
 
-    st.divider()
-
     # =========================
-    # 2. USUARIOS ACTIVOS
+    # LISTA URBANO
     # =========================
-    st.subheader("👥 Usuarios activos")
-
-    with st.expander("🏙️ Urbano activo"):
+    with st.expander("🏙️ Ver usuarios URBANO activos"):
 
         df_urbano = df[
             (df["modalidad"] == "URBANO") &
             (df["estado_caso"] == "ACTIVO")
-        ][["nombres", "apellidos", "numero_identificacion"]].copy()
+        ][["nombres", "apellidos", "numero_identificacion"]]
 
         df_urbano["nombre"] = df_urbano["nombres"] + " " + df_urbano["apellidos"]
 
-        st.dataframe(
-            df_urbano[["nombre", "numero_identificacion"]],
-            use_container_width=True
-        )
+        st.dataframe(df_urbano[["nombre", "numero_identificacion"]])
 
-    with st.expander("🌱 Granja activo"):
+    # =========================
+    # LISTA GRANJA
+    # =========================
+    with st.expander("🌱 Ver usuarios GRANJA activos"):
 
         df_granja = df[
             (df["modalidad"] == "GRANJA") &
             (df["estado_caso"] == "ACTIVO")
-        ][["nombres", "apellidos", "numero_identificacion"]].copy()
+        ][["nombres", "apellidos", "numero_identificacion"]]
 
         df_granja["nombre"] = df_granja["nombres"] + " " + df_granja["apellidos"]
 
-        st.dataframe(
-            df_granja[["nombre", "numero_identificacion"]],
-            use_container_width=True
-        )
-
-    st.divider()
+        st.dataframe(df_granja[["nombre", "numero_identificacion"]])
 
     # =========================
-    # 3. CRM BUTTON
+    # BOTÓN CRM
     # =========================
-    st.subheader("⚙️ Gestión de usuarios")
-
-    crm = st.button("🧠 Abrir CRM")
+    crm = st.button("🧠 CRM Usuarios")
 
 
 # =========================
-# CRM (FUERA DEL SIDEBAR)
+# CRM FUERA DEL SIDEBAR (IMPORTANTE)
 # =========================
 if crm:
 
-    st.title("🧠 CRM - Gestión de Usuario")
+    st.subheader("🧠 Gestión de Usuario")
 
     doc = st.text_input("Documento del usuario")
 
     if doc:
 
-        usuario = pd.read_sql(
-            """
+        usuario = pd.read_sql("""
             SELECT *
             FROM habitante_de_calle
             WHERE numero_identificacion = :doc
-            """,
-            engine,
-            params={"doc": doc}
-        )
+        """, engine, params={"doc": doc})
 
         if not usuario.empty:
 
@@ -430,43 +415,47 @@ if crm:
 
             st.success("Usuario encontrado")
 
-            st.write(f"👤 Nombre: {u['nombres']} {u['apellidos']}")
-            st.write(f"📌 Estado actual: {u['estado_caso']}")
-            st.write(f"🏠 Modalidad: {u['modalidad']}")
+            st.write(f"Nombre: {u['nombres']} {u['apellidos']}")
+            st.write(f"Estado actual: {u['estado_caso']}")
+            st.write(f"Modalidad: {u['modalidad']}")
 
-            # =========================
-            # CAMBIO DE ESTADO
-            # =========================
             nuevo_estado = st.selectbox(
                 "Cambiar estado",
-                ["ACTIVO", "INACTIVO", "EGRESADO"],
-                index=["ACTIVO", "INACTIVO", "EGRESADO"].index(u["estado_caso"])
+                ["INACTIVO", "ACTIVO", "EGRESADO"],
+                index=["INACTIVO", "ACTIVO", "EGRESADO"].index(u["estado_caso"])
             )
 
-            guardar = st.button("💾 Actualizar estado")
+            guardar = st.button("Actualizar estado")
 
             if guardar:
 
                 with engine.begin() as conn:
-                    conn.execute(
-                        text("""
-                            UPDATE habitante_de_calle
-                            SET estado_caso = :estado
-                            WHERE numero_identificacion = :doc
-                        """),
-                        {
-                            "estado": nuevo_estado,
-                            "doc": doc
-                        }
-                    )
+                    conn.execute(text("""
+                        UPDATE habitante_de_calle
+                        SET estado_caso = :estado
+                        WHERE numero_identificacion = :doc
+                    """), {
+                        "estado": nuevo_estado,
+                        "doc": doc
+                    })
 
                 st.success("✅ Estado actualizado correctamente")
 
-                # recargar dataframe
                 df = pd.read_sql("SELECT * FROM habitante_de_calle", engine)
 
-        else:
-            st.warning("Usuario no encontrado")
+
+# =========================
+# FILTRO SEXO (CORRECTO)
+# =========================
+if "sexo_al_nacer" in df.columns:
+
+    sexo = st.sidebar.multiselect(
+        "Sexo",
+        options=df["sexo_al_nacer"].dropna().unique(),
+        default=df["sexo_al_nacer"].dropna().unique(),
+    )
+
+    df = df[df["sexo_al_nacer"].isin(sexo)]
 # =========================
 # ÍNDICE DE VULNERABILIDAD
 # =========================
