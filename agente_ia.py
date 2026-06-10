@@ -280,7 +280,7 @@ if st.session_state.page == "home":
     # TODO observatorio completo
 
 elif st.session_state.page == "gestion_usuarios":
-    
+
     st.title("⚙️ Gestión de usuarios")
 
     # =====================================
@@ -377,39 +377,16 @@ elif st.session_state.page == "gestion_usuarios":
     # =====================================
     st.subheader("📋 Usuarios registrados")
 
-try:
     df_usuarios = pd.read_sql("""
         SELECT *
         FROM habitante_de_calle
+        ORDER BY id DESC
     """, engine)
-
-    df_usuarios = df_usuarios[
-        df_usuarios["estado_caso"].astype(str).str.strip().str.lower() == "activo"
-    ]
-
-    df_usuarios["nombre"] = (
-        df_usuarios["nombres"].astype(str)
-        + " "
-        + df_usuarios["apellidos"].astype(str)
-    )
-
-    st.dataframe(
-        df_usuarios[[
-            "nombre",
-            "numero_identificacion",
-            "estado_caso"
-        ]],
-        use_container_width=True
-    )
-
-except Exception as e:
-    st.error("Error cargando usuarios")
-    st.code(str(e))
 
     st.dataframe(df_usuarios, use_container_width=True)
 
     st.divider()
-    st.stop()
+
     # =====================================
     # 🚫 INACTIVAR / REACTIVAR
     # =====================================
