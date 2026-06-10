@@ -1491,18 +1491,11 @@ with tab11:
                 ["CC", "TI", "CE", "PEP", "Otro"]
             )
 
-            numero_id = st.text_input(
-                "Número de identificación"
-            )
+            numero_id = st.text_input("Número de identificación")
 
             etnia = st.selectbox(
                 "Grupo étnico",
-                [
-                    "Ninguno",
-                    "Afrodescendiente",
-                    "Indígena",
-                    "Mestizo"
-                ]
+                ["Ninguno", "Afrodescendiente", "Indígena", "Mestizo"]
             )
 
             discapacidad = st.selectbox(
@@ -1519,33 +1512,16 @@ with tab11:
 
             educacion = st.selectbox(
                 "Nivel educativo",
-                [
-                    "Ninguno",
-                    "Primaria",
-                    "Secundaria",
-                    "Técnico",
-                    "Tecnólogo",
-                    "Universitario"
-                ]
+                ["Ninguno", "Primaria", "Secundaria", "Técnico", "Tecnólogo", "Universitario"]
             )
 
             barrio = st.text_input("Barrio")
-
             comuna = st.text_input("Comuna")
-
             telefono = st.text_input("Teléfono")
 
             consumo = st.selectbox(
                 "Consumo",
-                [
-                    "No",
-                    "Marihuana",
-                    "Cocaína",
-                    "Bazuco",
-                    "Alcohol",
-                    "Heroína",
-                    "Policonsumo"
-                ]
+                ["No", "Marihuana", "Cocaína", "Bazuco", "Alcohol", "Heroína", "Policonsumo"]
             )
 
             enfermedad_mental = st.selectbox(
@@ -1553,24 +1529,18 @@ with tab11:
                 ["No", "Sí"]
             )
 
-            # =========================
-            # NUEVOS CAMPOS
-            # =========================
-
             modalidad = st.selectbox(
                 "Modalidad",
-                [
-                    "GRANJA",
-                    "URBANO"
-                ]
+                ["GRANJA", "URBANO"]
             )
 
             estado_caso = "ACTIVO"
 
-            guardar = st.form_submit_button(
-                "💾 Guardar registro"
-            )
+            guardar = st.form_submit_button("💾 Guardar registro")
 
+        # =========================
+        # 🔥 INSERT CORREGIDO
+        # =========================
         if guardar:
 
             sql = text("""
@@ -1581,7 +1551,7 @@ with tab11:
                     sexo_al_nacer,
                     edad,
                     tipo_de_identificacion,
-                    numero_de_identidadficacion_____sin_puntos,_ni_rayas,el_registr,
+                    numero_de_identificacion,
                     grupos_etnicos_afro_indigena,
                     personas_con_discapacidad,
                     indicador_migracion,
@@ -1617,43 +1587,48 @@ with tab11:
             """)
 
             try:
-
                 with engine.begin() as conn:
-
-                    conn.execute(
-                        sql,
-                        {
-                            "nombres": nombres,
-                            "apellidos": apellidos,
-                            "sexo": sexo,
-                            "edad": edad,
-                            "tipo_id": tipo_id,
-                            "numero_id": numero_id,
-                            "etnia": etnia,
-                            "discapacidad": discapacidad,
-                            "migracion": migracion,
-                            "educacion": educacion,
-                            "barrio": barrio,
-                            "comuna": comuna,
-                            "telefono": telefono,
-                            "consumo": consumo,
-                            "enfermedad_mental": enfermedad_mental,
-                            "estado_caso": estado_caso,
-                            "modalidad": modalidad
-                        }
-                    )
+                    conn.execute(sql, {
+                        "nombres": nombres,
+                        "apellidos": apellidos,
+                        "sexo": sexo,
+                        "edad": edad,
+                        "tipo_id": tipo_id,
+                        "numero_id": numero_id,
+                        "etnia": etnia,
+                        "discapacidad": discapacidad,
+                        "migracion": migracion,
+                        "educacion": educacion,
+                        "barrio": barrio,
+                        "comuna": comuna,
+                        "telefono": telefono,
+                        "consumo": consumo,
+                        "enfermedad_mental": enfermedad_mental,
+                        "estado_caso": estado_caso,
+                        "modalidad": modalidad
+                    })
 
                 st.success("✅ Registro guardado correctamente")
 
             except Exception as e:
-
                 st.error(f"Error al guardar: {e}")
 
     else:
+        st.info("Ingrese la contraseña para habilitar el formulario.")
+st.markdown("## 🚪 Egreso de usuario")
 
-        st.info(
-            "Ingrese la contraseña para habilitar el formulario."
-        )
+cedula_egreso = st.text_input("Documento del usuario")
+
+if st.button("🔴 Marcar como INACTIVO"):
+
+    with engine.begin() as conn:
+        conn.execute(text("""
+            UPDATE habitante_de_calle
+            SET estado_caso = 'INACTIVO'
+            WHERE numero_de_identificacion = :doc
+        """), {"doc": cedula_egreso})
+
+    st.success("Usuario marcado como INACTIVO")
 # =====================================
 # TAB 12 - SEGUIMIENTO PROFESIONAL + PAI
 # =====================================
