@@ -399,8 +399,6 @@ with st.sidebar:
     # =========================
     if st.button("⚙️ Gestión de usuarios", key="btn_gestion_usuarios"):
         st.session_state["gestionar_usuario"] = True
-    if "gestionar_usuario" not in st.session_state:
-        st.session_state["gestionar_usuario"] = False
 
     if st.button("⚙️ Gestión de usuarios"):
          st.session_state["gestionar_usuario"] = True
