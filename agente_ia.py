@@ -282,9 +282,9 @@ elif st.session_state.page == "gestion_usuarios":
     
     st.title("⚙️ Gestión de usuarios")
 
-    # =========================
-    # 🔍 CREAR USUARIO (IGUAL A TAB 11)
-    # =========================
+    # =====================================================
+    # ➕ CREAR USUARIO (FORMULARIO)
+    # =====================================================
     st.subheader("➕ Crear nuevo usuario")
 
     with st.form("crear_usuario"):
@@ -292,11 +292,11 @@ elif st.session_state.page == "gestion_usuarios":
         nombres = st.text_input("Nombres")
         apellidos = st.text_input("Apellidos")
 
-        sexo = st.selectbox("Sexo", ["Masculino", "Femenino"])
+        sexo = st.selectbox("Sexo al nacer", ["Masculino", "Femenino"])
         edad = st.number_input("Edad", 0, 120, 18)
 
         tipo_id = st.selectbox("Tipo ID", ["CC", "TI", "CE", "PEP", "Otro"])
-        numero_id = st.text_input("Número identificación")
+        numero_id = st.text_input("Número de identificación")
 
         etnia = st.selectbox("Etnia", ["Ninguno", "Afrodescendiente", "Indígena", "Mestizo"])
         discapacidad = st.selectbox("Discapacidad", ["No", "Sí"])
@@ -370,53 +370,61 @@ elif st.session_state.page == "gestion_usuarios":
                 "modalidad": modalidad
             })
 
-        st.success("Usuario creado correctamente")
+        st.success("✅ Usuario creado correctamente")
 
     st.divider()
 
-    # =========================
-    # 📋 LISTA DE USUARIOS
-    # =========================
+    # =====================================================
+    # 📋 LISTADO DE USUARIOS
+    # =====================================================
     st.subheader("📋 Usuarios registrados")
 
     df_usuarios = pd.read_sql("""
-        SELECT id, nombres, apellidos, numero_de_identificacion,
-               modalidad, estado_caso
+        SELECT nombres,
+               apellidos,
+               numero_de_identificacion,
+               modalidad,
+               estado_caso
         FROM habitante_de_calle
-        ORDER BY id DESC
+        ORDER BY numero_de_identificacion DESC
     """, engine)
 
     st.dataframe(df_usuarios, use_container_width=True)
 
-    # =========================
-    # 🚦 CAMBIAR ESTADO
-    # =========================
+    # =====================================================
+    # 🔄 CAMBIO DE ESTADO
+    # =====================================================
     st.subheader("🔄 Cambiar estado del usuario")
 
-    usuario_sel = st.selectbox(
-        "Seleccionar usuario",
-        df_usuarios["numero_de_identificacion"].astype(str).tolist()
-    )
+    if len(df_usuarios) > 0:
 
-    nuevo_estado = st.selectbox(
-        "Nuevo estado",
-        ["ACTIVO", "INACTIVO", "EGRESADO"]
-    )
+        usuario_sel = st.selectbox(
+            "Seleccionar usuario",
+            df_usuarios["numero_de_identificacion"].astype(str).tolist()
+        )
 
-    if st.button("Actualizar estado"):
+        nuevo_estado = st.selectbox(
+            "Nuevo estado",
+            ["ACTIVO", "INACTIVO", "EGRESADO"]
+        )
 
-        with engine.begin() as conn:
-            conn.execute(text("""
-                UPDATE habitante_de_calle
-                SET estado_caso = :estado
-                WHERE numero_de_identificacion = :doc
-            """), {
-                "estado": nuevo_estado,
-                "doc": usuario_sel
-            })
+        if st.button("Actualizar estado"):
 
-        st.success("Estado actualizado correctamente")
-        st.rerun()
+            with engine.begin() as conn:
+                conn.execute(text("""
+                    UPDATE habitante_de_calle
+                    SET estado_caso = :estado
+                    WHERE numero_de_identificacion = :doc
+                """), {
+                    "estado": nuevo_estado,
+                    "doc": usuario_sel
+                })
+
+            st.success("✅ Estado actualizado correctamente")
+            st.rerun()
+
+    else:
+        st.info("No hay usuarios registrados aún")
 
     st.stop()
 # =====================================
