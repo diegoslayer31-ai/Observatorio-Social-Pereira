@@ -239,20 +239,7 @@ st.title("🧠 Observatorio Social Habitante de Calle Pereira 2026")
 # CARGAR DATOS
 # =========================
 df = pd.read_sql("SELECT * FROM habitante_de_calle", engine)
-# =========================
-# CARGAR DATOS
-# =========================
-df = pd.read_sql("SELECT * FROM habitante_de_calle", engine)
 df = df.drop_duplicates()
-# 🔥 LIMPIEZA DE COLUMNAS (OBLIGATORIO)
-df.columns = (
-    df.columns
-    .str.strip()
-    .str.lower()
-    .str.replace("\n", " ")
-    .str.replace("  ", " ")
-    .str.replace(" ", "_")
-)
 # =========================
 # LIMPIEZA COLUMNAS
 # =========================
@@ -599,9 +586,6 @@ El grupo etario predominante corresponde a **{grupo_top['grupo']}**, con **{grup
 
 - **Adulto Mayor (60 años o más):** requiere atención integral en salud, protección social y acompañamiento permanente.
 
-### Uso para la toma de decisiones
-
-La distribución etaria permite focalizar recursos y ajustar la oferta institucional según las necesidades de cada grupo poblacional.
             """)
 
     st.markdown("---")
