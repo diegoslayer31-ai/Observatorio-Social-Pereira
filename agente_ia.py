@@ -27,7 +27,24 @@ st.set_page_config(
 # =========================
 st.markdown("""
 <style>
+div[data-testid="stMetric"]{
+    background: #F8FAFC;
+    border-radius: 15px;
+    padding: 18px;
+    border-left: 6px solid #2563EB;
+    box-shadow: 0px 3px 10px rgba(0,0,0,0.08);
+}
 
+div[data-testid="stMetricValue"]{
+    color: #0F172A !important;
+    font-weight: 800;
+    font-size: 22px;
+}
+
+div[data-testid="stMetricLabel"]{
+    color: #475569 !important;
+    font-weight: 600;
+}
 /* =====================================
    STREAMLIT
 ===================================== */
