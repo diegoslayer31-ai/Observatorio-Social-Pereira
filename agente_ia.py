@@ -27,44 +27,9 @@ st.set_page_config(
 # =========================
 st.markdown("""
 <style>
-section[data-testid="stSidebar"] div[data-testid="stMetric"]{
-    background: #F8FAFC !important;
-    border-radius: 15px;
-    padding: 14px;
-    border-left: 5px solid #2563EB;
-    box-shadow: 0px 3px 10px rgba(0,0,0,0.15);
-}
 
-section[data-testid="stSidebar"] div[data-testid="stMetricValue"]{
-    color: white !important;
-    font-weight: 800;
-    font-size: 20px;
-}
-
-section[data-testid="stSidebar"] div[data-testid="stMetricLabel"]{
-    color: #E2E8F0 !important;
-    font-weight: 600;
-}
-div[data-testid="stMetric"]{
-    background: #F8FAFC;
-    border-radius: 15px;
-    padding: 18px;
-    border-left: 6px solid #2563EB;
-    box-shadow: 0px 3px 10px rgba(0,0,0,0.08);
-}
-
-div[data-testid="stMetricValue"]{
-    color: #0F172A !important;
-    font-weight: 800;
-    font-size: 22px;
-}
-
-div[data-testid="stMetricLabel"]{
-    color: #475569 !important;
-    font-weight: 600;
-}
 /* =====================================
-   STREAMLIT
+   STREAMLIT BASICO
 ===================================== */
 #MainMenu {visibility:hidden;}
 footer {visibility:hidden;}
@@ -93,29 +58,53 @@ section[data-testid="stSidebar"]{
     background-color:#0F172A;
 }
 
+/* texto sidebar base */
 section[data-testid="stSidebar"] *{
     color:white !important;
 }
 
 /* =====================================
-   KPIs
+   METRICAS (MAIN - FONDO CLARO)
 ===================================== */
 div[data-testid="stMetric"]{
-    background:#FFFFFF;
-    border-radius:15px;
-    padding:18px;
-    border-left:6px solid #2563EB;
-    box-shadow:0px 3px 10px rgba(0,0,0,0.08);
+    background: #F8FAFC;
+    border-radius: 15px;
+    padding: 18px;
+    border-left: 6px solid #2563EB;
+    box-shadow: 0px 3px 10px rgba(0,0,0,0.08);
 }
 
 div[data-testid="stMetricValue"]{
-    color:#0F172A !important;
-    font-weight:700;
+    color: #0F172A !important;
+    font-weight: 800;
+    font-size: 22px;
 }
 
 div[data-testid="stMetricLabel"]{
-    color:#475569 !important;
-    font-weight:600;
+    color: #475569 !important;
+    font-weight: 600;
+}
+
+/* =====================================
+   METRICAS (SIDEBAR - FONDO OSCURO)
+===================================== */
+section[data-testid="stSidebar"] div[data-testid="stMetric"]{
+    background: rgba(255,255,255,0.08) !important;
+    border-radius: 14px;
+    padding: 14px;
+    border-left: 4px solid #60A5FA;
+    box-shadow: none;
+}
+
+section[data-testid="stSidebar"] div[data-testid="stMetricValue"]{
+    color: #FFFFFF !important;
+    font-weight: 800;
+    font-size: 20px;
+}
+
+section[data-testid="stSidebar"] div[data-testid="stMetricLabel"]{
+    color: #CBD5E1 !important;
+    font-weight: 600;
 }
 
 /* =====================================
@@ -136,7 +125,7 @@ button[data-baseweb="tab"]{
 }
 
 /* =====================================
-   GRÁFICOS
+   GRAFICOS
 ===================================== */
 [data-testid="stPlotlyChart"]{
     background:white;
@@ -145,7 +134,7 @@ button[data-baseweb="tab"]{
 }
 
 /* =====================================
-   TÍTULOS
+   TITULOS
 ===================================== */
 h1{
     color:#0F172A !important;
