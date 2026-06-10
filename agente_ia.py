@@ -293,6 +293,14 @@ def cupos_actuales(df):
     )
 
     return urbano_activos, granja_activos
+def validar_cupos(df, modalidad):
+    
+    urbano, granja = cupos_actuales(df)
+
+    if modalidad == "URBANO" and urbano >= 100:
+        return False, "🚨 Urbano está en capacidad máxima"
+
+    return True, "OK"
 # =========================
 # FUNCIÓN CONSOLIDADA 
 # =========================
@@ -370,15 +378,12 @@ if "sexo_al_nacer" in df.columns:
             }
         )
     )
-# =========================
-# SIDEBAR
-# =========================
 with st.sidebar:
 
     st.header("🏛️ Sistema de Atención")
 
     # =========================
-    # CUPOS EN TIEMPO REAL
+    # CUPOS
     # =========================
     urbano, granja = cupos_actuales(df)
 
@@ -395,7 +400,7 @@ with st.sidebar:
     # =========================
     # USUARIOS URBANO
     # =========================
-    with st.expander("🏙️ Ver usuarios URBANO activos"):
+    with st.expander("🏙️ Usuarios URBANO activos"):
 
         df_urbano = df[
             (df["modalidad"] == "URBANO") &
@@ -403,20 +408,15 @@ with st.sidebar:
         ][["nombres", "apellidos", "numero_identificacion"]].copy()
 
         df_urbano["nombre"] = (
-            df_urbano["nombres"].astype(str)
-            + " "
-            + df_urbano["apellidos"].astype(str)
+            df_urbano["nombres"].astype(str) + " " + df_urbano["apellidos"].astype(str)
         )
 
-        st.dataframe(
-            df_urbano[["nombre", "numero_identificacion"]],
-            use_container_width=True
-        )
+        st.dataframe(df_urbano[["nombre", "numero_identificacion"]], use_container_width=True)
 
     # =========================
     # USUARIOS GRANJA
     # =========================
-    with st.expander("🌱 Ver usuarios GRANJA activos"):
+    with st.expander("🌱 Usuarios GRANJA activos"):
 
         df_granja = df[
             (df["modalidad"] == "GRANJA") &
@@ -424,15 +424,18 @@ with st.sidebar:
         ][["nombres", "apellidos", "numero_identificacion"]].copy()
 
         df_granja["nombre"] = (
-            df_granja["nombres"].astype(str)
-            + " "
-            + df_granja["apellidos"].astype(str)
+            df_granja["nombres"].astype(str) + " " + df_granja["apellidos"].astype(str)
         )
 
-        st.dataframe(
-            df_granja[["nombre", "numero_identificacion"]],
-            use_container_width=True
-        )
+        st.dataframe(df_granja[["nombre", "numero_identificacion"]], use_container_width=True)
+
+    st.divider()
+
+    # =========================
+    # BOTÓN GESTIÓN
+    # =========================
+    if st.button("⚙️ Gestión de usuarios"):
+        st.session_state["gestionar_usuario"] = True
 # =========================
 # ÍNDICE DE VULNERABILIDAD
 # =========================
