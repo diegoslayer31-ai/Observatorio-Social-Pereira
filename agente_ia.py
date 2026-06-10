@@ -282,151 +282,111 @@ elif st.session_state.page == "gestion_usuarios":
     
     st.title("⚙️ Gestión de usuarios")
 
-    # =====================================================
-    # ➕ CREAR USUARIO (FORMULARIO)
-    # =====================================================
-    st.subheader("➕ Crear nuevo usuario")
+    # =========================
+    # 1. FORMULARIO REGISTRO
+    # =========================
+    st.subheader("➕ Registrar usuario")
 
-    with st.form("crear_usuario"):
+    with st.form("form_usuario"):
 
         nombres = st.text_input("Nombres")
         apellidos = st.text_input("Apellidos")
 
-        sexo = st.selectbox("Sexo al nacer", ["Masculino", "Femenino"])
-        edad = st.number_input("Edad", 0, 120, 18)
-
-        tipo_id = st.selectbox("Tipo ID", ["CC", "TI", "CE", "PEP", "Otro"])
         numero_id = st.text_input("Número de identificación")
 
-        etnia = st.selectbox("Etnia", ["Ninguno", "Afrodescendiente", "Indígena", "Mestizo"])
-        discapacidad = st.selectbox("Discapacidad", ["No", "Sí"])
-
-        migracion = st.selectbox("Migración", ["NO", "SI"])
-        migracion_val = 1 if migracion == "SI" else 0
-
-        educacion = st.selectbox(
-            "Educación",
-            ["Ninguno", "Primaria", "Secundaria", "Técnico", "Tecnólogo", "Universitario"]
+        estado = st.selectbox(
+            "Estado del usuario",
+            ["ACTIVO", "INACTIVO"]
         )
 
-        barrio = st.text_input("Barrio")
-        comuna = st.text_input("Comuna")
-        telefono = st.text_input("Teléfono")
-
-        consumo = st.selectbox(
-            "Consumo",
-            ["No", "Marihuana", "Cocaína", "Bazuco", "Alcohol", "Heroína", "Policonsumo"]
-        )
-
-        enfermedad = st.selectbox("Enfermedad mental", ["No", "Sí"])
-        modalidad = st.selectbox("Modalidad", ["GRANJA", "URBANO"])
-
-        guardar = st.form_submit_button("💾 Crear usuario")
+        guardar = st.form_submit_button("Guardar usuario")
 
     if guardar:
 
-        with engine.begin() as conn:
-            conn.execute(text("""
-                INSERT INTO habitante_de_calle (
-                    nombres, apellidos, sexo_al_nacer, edad,
-                    tipo_de_identificacion, numero_de_identificacion,
-                    grupos_etnicos_afro_indigena, personas_con_discapacidad,
-                    indicador_migracion, nivel_educativo_que_tiene_o_cursa,
-                    barrio_o_vereda_de_residencia,
-                    comuna_o_corregimiento_de_residencia,
-                    telefono_y_o_celular,
-                    tipo_de_consumo,
-                    enfermedad_mental,
-                    estado_caso,
-                    modalidad
-                )
-                VALUES (
-                    :nombres, :apellidos, :sexo, :edad,
-                    :tipo_id, :numero_id,
-                    :etnia, :discapacidad,
-                    :migracion, :educacion,
-                    :barrio, :comuna,
-                    :telefono, :consumo,
-                    :enfermedad,
-                    'ACTIVO',
-                    :modalidad
-                )
-            """), {
-                "nombres": nombres,
-                "apellidos": apellidos,
-                "sexo": sexo,
-                "edad": edad,
-                "tipo_id": tipo_id,
-                "numero_id": numero_id,
-                "etnia": etnia,
-                "discapacidad": discapacidad,
-                "migracion": migracion_val,
-                "educacion": educacion,
-                "barrio": barrio,
-                "comuna": comuna,
-                "telefono": telefono,
-                "consumo": consumo,
-                "enfermedad": enfermedad,
-                "modalidad": modalidad
-            })
+        try:
+            with engine.begin() as conn:
+                conn.execute(text("""
+                    INSERT INTO usuarios (
+                        nombres,
+                        apellidos,
+                        numero_de_identificacion,
+                        estado
+                    )
+                    VALUES (
+                        :nombres,
+                        :apellidos,
+                        :numero_id,
+                        :estado
+                    )
+                """), {
+                    "nombres": nombres,
+                    "apellidos": apellidos,
+                    "numero_id": numero_id,
+                    "estado": estado
+                })
 
-        st.success("✅ Usuario creado correctamente")
+            st.success("Usuario guardado correctamente")
+
+        except Exception as e:
+            st.error(f"Error guardando usuario: {e}")
 
     st.divider()
 
-    # =====================================================
-    # 📋 LISTADO DE USUARIOS
-    # =====================================================
+    # =========================
+    # 2. LISTADO DE USUARIOS (SEGURO)
+    # =========================
     st.subheader("📋 Usuarios registrados")
 
-    df_usuarios = pd.read_sql("""
-        SELECT nombres,
-               apellidos,
-               numero_de_identificacion,
-               modalidad,
-               estado_caso
-        FROM habitante_de_calle
-        ORDER BY numero_de_identificacion DESC
-    """, engine)
+    try:
+        df_usuarios = pd.read_sql("""
+            SELECT
+                nombres,
+                apellidos,
+                numero_de_identificacion,
+                estado
+            FROM usuarios
+            ORDER BY nombres ASC
+        """, engine)
 
-    st.dataframe(df_usuarios, use_container_width=True)
+        st.dataframe(df_usuarios, use_container_width=True)
 
-    # =====================================================
-    # 🔄 CAMBIO DE ESTADO
-    # =====================================================
-    st.subheader("🔄 Cambiar estado del usuario")
+    except Exception as e:
+        st.error("No se pudo cargar la tabla de usuarios")
+        st.caption(str(e))
 
-    if len(df_usuarios) > 0:
+    st.divider()
+
+    # =========================
+    # 3. INACTIVAR USUARIO
+    # =========================
+    st.subheader("🚫 Inactivar usuario")
+
+    try:
+        df_lista = pd.read_sql("""
+            SELECT numero_de_identificacion, nombres, apellidos, estado
+            FROM usuarios
+            WHERE estado = 'ACTIVO'
+        """, engine)
 
         usuario_sel = st.selectbox(
-            "Seleccionar usuario",
-            df_usuarios["numero_de_identificacion"].astype(str).tolist()
+            "Selecciona usuario",
+            df_lista["numero_de_identificacion"].tolist()
         )
 
-        nuevo_estado = st.selectbox(
-            "Nuevo estado",
-            ["ACTIVO", "INACTIVO", "EGRESADO"]
-        )
-
-        if st.button("Actualizar estado"):
+        if st.button("Inactivar"):
 
             with engine.begin() as conn:
                 conn.execute(text("""
-                    UPDATE habitante_de_calle
-                    SET estado_caso = :estado
-                    WHERE numero_de_identificacion = :doc
-                """), {
-                    "estado": nuevo_estado,
-                    "doc": usuario_sel
-                })
+                    UPDATE usuarios
+                    SET estado = 'INACTIVO'
+                    WHERE numero_de_identificacion = :id
+                """), {"id": usuario_sel})
 
-            st.success("✅ Estado actualizado correctamente")
+            st.success("Usuario inactivado")
             st.rerun()
 
-    else:
-        st.info("No hay usuarios registrados aún")
-
-    st.stop()
+    except Exception as e:
+        st.warning("No hay usuarios o la tabla no existe aún")
 # =====================================
 # BANNER PRINCIPAL
 # =====================================
