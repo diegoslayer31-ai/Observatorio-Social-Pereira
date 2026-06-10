@@ -27,6 +27,24 @@ st.set_page_config(
 # =========================
 st.markdown("""
 <style>
+section[data-testid="stSidebar"] div[data-testid="stMetric"]{
+    background: #F8FAFC !important;
+    border-radius: 15px;
+    padding: 14px;
+    border-left: 5px solid #2563EB;
+    box-shadow: 0px 3px 10px rgba(0,0,0,0.15);
+}
+
+section[data-testid="stSidebar"] div[data-testid="stMetricValue"]{
+    color: white !important;
+    font-weight: 800;
+    font-size: 20px;
+}
+
+section[data-testid="stSidebar"] div[data-testid="stMetricLabel"]{
+    color: #E2E8F0 !important;
+    font-weight: 600;
+}
 div[data-testid="stMetric"]{
     background: #F8FAFC;
     border-radius: 15px;
