@@ -28,32 +28,32 @@ st.set_page_config(
 st.markdown("""
 <style>
 
-/* =========================
+/* =====================================
    STREAMLIT
-========================= */
+===================================== */
 #MainMenu {visibility:hidden;}
 footer {visibility:hidden;}
 header {visibility:hidden;}
 
-/* =========================
-   FONDO
-========================= */
+/* =====================================
+   FONDO GENERAL
+===================================== */
 .stApp{
     background-color:#F5F7FA;
 }
 
-/* =========================
-   CONTENEDOR
-========================= */
+/* =====================================
+   CONTENEDOR PRINCIPAL
+===================================== */
 .main .block-container{
     max-width:1500px;
     padding-top:0rem;
     padding-bottom:1rem;
 }
 
-/* =========================
+/* =====================================
    SIDEBAR
-========================= */
+===================================== */
 section[data-testid="stSidebar"]{
     background-color:#0F172A;
 }
@@ -62,62 +62,94 @@ section[data-testid="stSidebar"] *{
     color:white !important;
 }
 
-/* =========================
+/* =====================================
    KPIs
-========================= */
+===================================== */
 div[data-testid="stMetric"]{
-    background:white;
-    border-radius:14px;
+    background:#FFFFFF;
+    border-radius:15px;
     padding:18px;
-    box-shadow:0 3px 10px rgba(0,0,0,0.08);
     border-left:6px solid #2563EB;
+    box-shadow:0px 3px 10px rgba(0,0,0,0.08);
 }
 
 div[data-testid="stMetricValue"]{
-    color:#0F172A;
-    font-weight:bold;
+    color:#0F172A !important;
+    font-weight:700;
 }
 
 div[data-testid="stMetricLabel"]{
-    color:#64748B;
+    color:#475569 !important;
+    font-weight:600;
 }
 
-/* =========================
+/* =====================================
    TABS
-========================= */
+===================================== */
 button[data-baseweb="tab"]{
     font-size:15px;
     font-weight:600;
 }
 
-/* =========================
-   TÍTULOS
-========================= */
-h1,h2,h3{
-    color:#0F172A !important;
+/* =====================================
+   TABLAS
+===================================== */
+[data-testid="stDataFrame"]{
+    background:white;
+    border-radius:15px;
+    padding:5px;
 }
 
-/* =========================
+/* =====================================
    GRÁFICOS
-========================= */
+===================================== */
 [data-testid="stPlotlyChart"]{
     background:white;
     border-radius:15px;
     padding:10px;
 }
 
-/* =========================
-   EXPANDER
-========================= */
-.streamlit-expanderHeader{
-    font-weight:bold;
+/* =====================================
+   TÍTULOS
+===================================== */
+h1{
+    color:#0F172A !important;
 }
 
-/* =========================
+h2{
+    color:#0F172A !important;
+}
+
+h3{
+    color:#1E293B !important;
+}
+
+/* =====================================
+   EXPANDERS
+===================================== */
+.streamlit-expanderHeader{
+    color:#0F172A !important;
+    font-weight:700;
+}
+
+/* =====================================
+   TEXTO GENERAL
+===================================== */
+p, label, span{
+    color:#334155;
+}
+
+/* =====================================
    BANNER
-========================= */
+===================================== */
 .banner {
-    background: linear-gradient(90deg,#0F172A,#1E3A8A);
+    background: linear-gradient(
+        90deg,
+        #0F172A,
+        #1E3A8A,
+        #2563EB
+    );
+
     padding:35px;
     border-radius:0px 0px 20px 20px;
     margin-bottom:25px;
@@ -132,17 +164,18 @@ h1,h2,h3{
 .banner-subtitle{
     color:#E2E8F0;
     font-size:18px;
+    margin-top:10px;
 }
 
 </style>
 """, unsafe_allow_html=True)
 
-# =========================
-# SIDEBAR PROFESIONAL
-# =========================
+# =====================================
+# SIDEBAR
+# =====================================
 with st.sidebar:
 
-    st.image("logo_acf.png", width=230)
+    st.image("logo_acf.png", width=220)
 
     st.markdown("---")
 
@@ -150,14 +183,14 @@ with st.sidebar:
 
     st.caption("""
     Sistema Integral de Atención,
-    Seguimiento y Observatorio Social.
+    Seguimiento y Observatorio Social
     """)
 
     st.markdown("---")
 
-# =========================
+# =====================================
 # BANNER PRINCIPAL
-# =========================
+# =====================================
 st.markdown("""
 <div class="banner">
 
@@ -172,6 +205,27 @@ Adherencia al tratamiento • Indicadores de impacto social
 </div>
 
 </div>
+""", unsafe_allow_html=True)
+
+# =====================================
+# OLLAMA
+# =====================================
+# client = Client(host="http://localhost:11434")
+
+# =====================================
+# POSTGRESQL / SUPABASE
+# =====================================
+engine = create_engine(
+    st.secrets["DATABASE_URL"]
+)
+
+# =====================================
+# TÍTULO OBSERVATORIO
+# =====================================
+st.markdown("""
+<h1 style='text-align:center; margin-bottom:25px;'>
+🧠 Observatorio Social Habitante de Calle Pereira 2026
+</h1>
 """, unsafe_allow_html=True)
 # =========================
 # OLLAMA
