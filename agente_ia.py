@@ -570,23 +570,23 @@ with st.expander(
 ):
 
     st.markdown(f"""
-### Resultado principal
+    ### Resultado principal
 
-El grupo etario predominante corresponde a **{grupo_top['grupo']}**, con **{grupo_top['cantidad']} personas**, equivalente al **{porcentaje_grupo}%** de la población registrada.
+    El grupo etario predominante corresponde a **{grupo_top['grupo']}**, con **{grupo_top['cantidad']} personas**, equivalente al **{porcentaje_grupo}%** de la población registrada.
 
-### Interpretación
+    ### Interpretación
 
-- **Joven (18-28 años):** requiere estrategias de inclusión social, formación para el trabajo, fortalecimiento de capacidades y prevención de riesgos asociados al consumo.
+    - **Joven (18-28 años):** requiere estrategias de inclusión social, formación para el trabajo, fortalecimiento de capacidades y prevención de riesgos asociados al consumo.
 
-- **Adulto (29-59 años):** demanda procesos de estabilización social, fortalecimiento de redes de apoyo, reducción de riesgos y generación de oportunidades para la inclusión económica.
+    - **Adulto (29-59 años):** demanda procesos de estabilización social, fortalecimiento de redes de apoyo, reducción de riesgos y generación de oportunidades para la inclusión económica.
 
-- **Adulto Mayor (60 años o más):** requiere atención integral en salud, protección social, acompañamiento psicosocial y estrategias diferenciales de cuidado.
+    - **Adulto Mayor (60 años o más):** requiere atención integral en salud, protección social, acompañamiento psicosocial y estrategias diferenciales de cuidado.
 
-### Uso para la toma de decisiones
+    ### Uso para la toma de decisiones
 
-La distribución etaria permite focalizar recursos y ajustar la oferta institucional según las necesidades específicas de cada grupo poblacional.
-    """)
-st.markdown("---")
+    La distribución etaria permite focalizar recursos y ajustar la oferta institucional según las necesidades específicas de cada grupo poblacional.
+        """)
+    st.markdown("---")
 
     # =====================================
     # RIESGOS POBLACIONALES
