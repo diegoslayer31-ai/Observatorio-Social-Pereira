@@ -273,15 +273,19 @@ with st.sidebar:
         st.session_state.page = "gestion_usuarios"
         st.rerun()
 
-# =====================================
-# ROUTER (ESTO VA DESPUÉS DEL SIDEBAR)
-# =====================================
+# =========================
+# ROUTER ÚNICO (ESTO ES LO CORRECTO)
+# =========================
 
 if st.session_state.page == "home":
 
     st.title("🏠 Dashboard principal")
 
-    # 👉 AQUÍ VA TODO TU OBSERVATORIO (tabs, gráficos, KPIs)
+    # TODO tu observatorio aquí:
+    # KPIs
+    # tabs
+    # gráficos
+    # dataframe
 
 elif st.session_state.page == "gestion_usuarios":
 
@@ -293,29 +297,9 @@ elif st.session_state.page == "gestion_usuarios":
         st.session_state.page = "home"
         st.rerun()
 
-    st.stop()
-if st.session_state.page == "home":
-    
-    st.title("🏠 Dashboard principal")
-
-    # 👇 AQUÍ VA TODO TU OBSERVATORIO
-    # KPIs
-    # tabs
-    # gráficos
-    # df
-    # etc
-
-    st.write("Aquí va TODO tu sistema actual")
-
-elif st.session_state.page == "gestion":
-
-    st.title("⚙️ Gestión de usuarios")
-    st.info("Módulo en construcción")
-
 elif st.session_state.page == "registro":
 
     formulario_registro()
-
 # =====================================
 # BANNER PRINCIPAL
 # =====================================
