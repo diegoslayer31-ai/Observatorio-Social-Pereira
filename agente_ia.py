@@ -405,6 +405,7 @@ try:
 except Exception as e:
     st.error("Error cargando usuarios")
     st.code(str(e))
+    st.rerun()
 # =====================================
 # BANNER PRINCIPAL
 # =====================================
