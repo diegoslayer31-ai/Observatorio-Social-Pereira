@@ -518,74 +518,92 @@ with tab1:
                 use_container_width=True
             )
 
+            edad_promedio = round(
+                df["edad"].mean(),
+                1
+            )
+
+            st.info(
+                f"Edad promedio de la población: {edad_promedio} años."
+            )
+
     st.markdown("---")
-    
+
     # =====================================
-# GRUPO ETARIO
-# =====================================
+    # GRUPO ETARIO
+    # =====================================
 
-if "edad" in df.columns:
+    if "edad" in df.columns:
 
-    df["grupo_etario"] = pd.cut(
-        df["edad"],
-        bins=[18, 28, 59, 120],
-        labels=[
-            "Joven",
-            "Adulto",
-            "Adulto Mayor"
+        df["grupo_etario"] = pd.cut(
+            df["edad"],
+            bins=[18, 28, 59, 120],
+            labels=[
+                "Joven",
+                "Adulto",
+                "Adulto Mayor"
+            ]
+        )
+
+        etario_df = (
+            df["grupo_etario"]
+            .value_counts()
+            .reset_index()
+        )
+
+        etario_df.columns = [
+            "grupo",
+            "cantidad"
         ]
-    )
 
-    etario_df = (
-        df["grupo_etario"]
-        .value_counts()
-        .reset_index()
-    )
+        fig_etario = px.bar(
+            etario_df,
+            x="grupo",
+            y="cantidad",
+            text="cantidad",
+            title="Distribución por grupo etario"
+        )
 
-    etario_df.columns = [
-        "grupo",
-        "cantidad"
-    ]
+        st.plotly_chart(
+            fig_etario,
+            use_container_width=True
+        )
 
-    fig_etario = px.bar(
-        etario_df,
-        x="grupo",
-        y="cantidad",
-        text="cantidad",
-        title="Distribución por grupo etario"
-    )
+        grupo_top = etario_df.iloc[0]
 
-    st.plotly_chart(
-        fig_etario,
-        use_container_width=True
-    )
+        st.success(
+            f"Grupo predominante: {grupo_top['grupo']} ({grupo_top['cantidad']} personas)"
+        )
 
-    grupo_top = etario_df.iloc[0]
+        total_personas = len(df)
 
-    st.success(
-        f"Grupo predominante: {grupo_top['grupo']} ({grupo_top['cantidad']} personas)"
-    )
-with st.expander(
-    "📘 Interpretación de la distribución por grupo etario"
-):
+        porcentaje_grupo = round(
+            (grupo_top["cantidad"] / total_personas) * 100,
+            1
+        )
 
-    st.markdown(f"""
-    ### Resultado principal
+        with st.expander(
+            "📘 Interpretación de la distribución por grupo etario"
+        ):
 
-    El grupo etario predominante corresponde a **{grupo_top['grupo']}**, con **{grupo_top['cantidad']} personas**, equivalente al **{porcentaje_grupo}%** de la población registrada.
+            st.markdown(f"""
+### Resultado principal
 
-    ### Interpretación
+El grupo etario predominante corresponde a **{grupo_top['grupo']}**, con **{grupo_top['cantidad']} personas**, equivalente al **{porcentaje_grupo}%** de la población registrada.
 
-    - **Joven (18-28 años):** requiere estrategias de inclusión social, formación para el trabajo, fortalecimiento de capacidades y prevención de riesgos asociados al consumo.
+### Interpretación
 
-    - **Adulto (29-59 años):** demanda procesos de estabilización social, fortalecimiento de redes de apoyo, reducción de riesgos y generación de oportunidades para la inclusión económica.
+- **Joven (18-28 años):** requiere estrategias de inclusión social, formación para el trabajo y prevención de riesgos.
 
-    - **Adulto Mayor (60 años o más):** requiere atención integral en salud, protección social, acompañamiento psicosocial y estrategias diferenciales de cuidado.
+- **Adulto (29-59 años):** demanda procesos de estabilización social, fortalecimiento de redes de apoyo y generación de ingresos.
 
-    ### Uso para la toma de decisiones
+- **Adulto Mayor (60 años o más):** requiere atención integral en salud, protección social y acompañamiento permanente.
 
-    La distribución etaria permite focalizar recursos y ajustar la oferta institucional según las necesidades específicas de cada grupo poblacional.
-        """)
+### Uso para la toma de decisiones
+
+La distribución etaria permite focalizar recursos y ajustar la oferta institucional según las necesidades de cada grupo poblacional.
+            """)
+
     st.markdown("---")
 
     # =====================================
@@ -645,13 +663,13 @@ with st.expander(
     st.subheader("💊 Etnia vs Consumo")
 
     if (
-        "grupos_etnicos" in df.columns
+        "grupos_etnicos_afro_indigena" in df.columns
         and
         "tipo_consumo" in df.columns
     ):
 
         tabla = pd.crosstab(
-            df["grupos_etnicos"],
+            df["grupos_etnicos_afro_indigena"],
             df["tipo_consumo"]
         )
 
@@ -674,10 +692,10 @@ with st.expander(
 
     st.subheader("📍 Distribución Territorial")
 
-    if "departamento_procedencia" in df.columns:
+    if "comuna_o_corregimiento_de_residencia" in df.columns:
 
         territorio = (
-            df["departamento_procedencia"]
+            df["comuna_o_corregimiento_de_residencia"]
             .fillna("Sin dato")
             .value_counts()
             .head(10)
@@ -685,16 +703,16 @@ with st.expander(
         )
 
         territorio.columns = [
-            "departamento",
+            "territorio",
             "cantidad"
         ]
 
         fig_territorio = px.bar(
             territorio,
             x="cantidad",
-            y="departamento",
+            y="territorio",
             orientation="h",
-            title="Top 10 departamentos"
+            title="Distribución por comuna o corregimiento"
         )
 
         st.plotly_chart(
@@ -702,16 +720,16 @@ with st.expander(
             use_container_width=True
         )
 
-        departamento_top = territorio.iloc[0]
+        territorio_top = territorio.iloc[0]
 
         st.info(
-            f"La mayor concentración de usuarios se encuentra en {departamento_top['departamento']} ({departamento_top['cantidad']} registros)."
+            f"La mayor concentración de usuarios se encuentra en {territorio_top['territorio']} ({territorio_top['cantidad']} registros)."
         )
 
     else:
 
         st.warning(
-            "No existe la columna de departamento."
+            "No existe la columna comuna_o_corregimiento_de_residencia."
         )
 # =========================
 # TAB VULNERABILIDAD
