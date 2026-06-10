@@ -519,85 +519,74 @@ with tab1:
             )
 
     st.markdown("---")
-        # =========================
-    # INTERPRETACIÓN
-    # =========================
+    
+    # =====================================
+# GRUPO ETARIO
+# =====================================
 
-    edad_promedio = round(df["edad"].mean(), 1)
+if "edad" in df.columns:
 
-    edad_mediana = round(df["edad"].median(), 1)
-
-    grupo_predominante = (
-        df["grupo_etario"]
-        .value_counts()
-        .idxmax()
+    df["grupo_etario"] = pd.cut(
+        df["edad"],
+        bins=[18, 28, 59, 120],
+        labels=[
+            "Joven",
+            "Adulto",
+            "Adulto Mayor"
+        ]
     )
 
-    st.info(f"""
-    ### 📘 Interpretación
+    etario_df = (
+        df["grupo_etario"]
+        .value_counts()
+        .reset_index()
+    )
 
-    - Edad promedio: **{edad_promedio} años**
-    - Edad mediana: **{edad_mediana} años**
-    - Grupo etario predominante: **{grupo_predominante}**
+    etario_df.columns = [
+        "grupo",
+        "cantidad"
+    ]
 
-    #### ¿Qué significa?
+    fig_etario = px.bar(
+        etario_df,
+        x="grupo",
+        y="cantidad",
+        text="cantidad",
+        title="Distribución por grupo etario"
+    )
 
-    La distribución etaria permite identificar el ciclo de vida predominante de la población atendida.
+    st.plotly_chart(
+        fig_etario,
+        use_container_width=True
+    )
 
-    - Si predominan los **jóvenes**, se requieren estrategias preventivas y de inclusión educativa y laboral.
-    - Si predominan los **adultos**, las acciones deben enfocarse en estabilización social, generación de ingresos y reducción de riesgos.
-    - Si existe una proporción importante de **adultos mayores**, aumenta la necesidad de atención sociosanitaria y protección integral.
+    grupo_top = etario_df.iloc[0]
 
-    La edad constituye un factor clave para la planificación de intervenciones diferenciales dentro del modelo de atención.
+    st.success(
+        f"Grupo predominante: {grupo_top['grupo']} ({grupo_top['cantidad']} personas)"
+    )
+with st.expander(
+    "📘 Interpretación de la distribución por grupo etario"
+):
+
+    st.markdown(f"""
+### Resultado principal
+
+El grupo etario predominante corresponde a **{grupo_top['grupo']}**, con **{grupo_top['cantidad']} personas**, equivalente al **{porcentaje_grupo}%** de la población registrada.
+
+### Interpretación
+
+- **Joven (18-28 años):** requiere estrategias de inclusión social, formación para el trabajo, fortalecimiento de capacidades y prevención de riesgos asociados al consumo.
+
+- **Adulto (29-59 años):** demanda procesos de estabilización social, fortalecimiento de redes de apoyo, reducción de riesgos y generación de oportunidades para la inclusión económica.
+
+- **Adulto Mayor (60 años o más):** requiere atención integral en salud, protección social, acompañamiento psicosocial y estrategias diferenciales de cuidado.
+
+### Uso para la toma de decisiones
+
+La distribución etaria permite focalizar recursos y ajustar la oferta institucional según las necesidades específicas de cada grupo poblacional.
     """)
-    # =====================================
-    # GRUPO ETARIO
-    # =====================================
-
-    if "edad" in df.columns:
-
-        df["grupo_etario"] = pd.cut(
-            df["edad"],
-            bins=[0, 17, 28, 59, 120],
-            labels=[
-                "Adolescencia",
-                "Joven",
-                "Adulto",
-                "Adulto Mayor"
-            ]
-        )
-
-        etario_df = (
-            df["grupo_etario"]
-            .value_counts()
-            .reset_index()
-        )
-
-        etario_df.columns = [
-            "grupo",
-            "cantidad"
-        ]
-
-        fig_etario = px.bar(
-            etario_df,
-            x="grupo",
-            y="cantidad",
-            text="cantidad",
-            title="Distribución por grupo etario"
-        )
-
-        st.plotly_chart(
-            fig_etario,
-            use_container_width=True
-        )
-
-        grupo_top = etario_df.iloc[0]
-
-        st.success(
-            f"Grupo predominante: {grupo_top['grupo']} ({grupo_top['cantidad']} personas)"
-        )
-
-    st.markdown("---")
+st.markdown("---")
 
     # =====================================
     # RIESGOS POBLACIONALES
