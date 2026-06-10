@@ -31,8 +31,16 @@ st.set_page_config(
 # =========================
 # ESTILO INSTITUCIONAL
 # =========================
-
 st.markdown("""
+<style>
+[data-testid="stSidebar"] {
+    display: block !important;
+    transform: none !important;
+    visibility: visible !important;
+    width: 21rem !important;
+}
+</style>
+""", unsafe_allow_html=True)
 <style>
 
 /* =====================================
