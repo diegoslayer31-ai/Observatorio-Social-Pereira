@@ -521,50 +521,7 @@ tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10, tab11, tab12, tab13
     "📈 Seguimiento e Impacto",
     "📥 Carga Activos"   # 👈 NUEVO
 ])
-if st.session_state.get("gestionar_usuario", False):
-    
-    st.subheader("⚙️ Gestión de estado de usuarios")
 
-    doc = st.text_input("Documento del usuario")
-
-    if doc:
-
-        usuario = pd.read_sql("""
-            SELECT *
-            FROM habitante_de_calle
-            WHERE numero_identificacion = :doc
-        """, engine, params={"doc": doc})
-
-        if not usuario.empty:
-
-            u = usuario.iloc[0]
-
-            st.write(f"👤 {u['nombres']} {u['apellidos']}")
-            st.write(f"Estado actual: {u['estado_caso']}")
-            st.write(f"Modalidad: {u['modalidad']}")
-
-            nuevo_estado = st.selectbox(
-                "Cambiar estado",
-                ["ACTIVO", "INACTIVO", "EGRESADO"],
-                index=["ACTIVO", "INACTIVO", "EGRESADO"].index(u["estado_caso"])
-            )
-
-            if st.button("💾 Actualizar estado"):
-
-                with engine.begin() as conn:
-                    conn.execute(text("""
-                        UPDATE habitante_de_calle
-                        SET estado_caso = :estado
-                        WHERE numero_identificacion = :doc
-                    """), {
-                        "estado": nuevo_estado,
-                        "doc": doc
-                    })
-
-                st.success("Estado actualizado")
-
-                # 🔥 clave: refrescar UI
-                st.rerun()
 # =========================
 # TAB GENERAL
 # =========================
@@ -2181,3 +2138,49 @@ with tab14:
 
         except Exception as e:
             st.error(f"❌ Error: {e}")
+# =========================
+# GESTIÓN DE USUARIOS
+# =========================
+
+if st.session_state.get("gestionar_usuario", False):
+
+    st.subheader("⚙️ Gestión de estado de usuarios")
+
+    doc = st.text_input("Documento del usuario")
+
+    if doc:
+
+        usuario = pd.read_sql("""
+            SELECT *
+            FROM habitante_de_calle
+            WHERE numero_identificacion = :doc
+        """, engine, params={"doc": doc})
+
+        if not usuario.empty:
+
+            u = usuario.iloc[0]
+
+            st.write(f"👤 {u['nombres']} {u['apellidos']}")
+            st.write(f"Estado actual: {u['estado_caso']}")
+            st.write(f"Modalidad: {u['modalidad']}")
+
+            nuevo_estado = st.selectbox(
+                "Cambiar estado",
+                ["ACTIVO", "INACTIVO", "EGRESADO"],
+                index=["ACTIVO", "INACTIVO", "EGRESADO"].index(u["estado_caso"])
+            )
+
+            if st.button("💾 Actualizar estado"):
+
+                with engine.begin() as conn:
+                    conn.execute(text("""
+                        UPDATE habitante_de_calle
+                        SET estado_caso = :estado
+                        WHERE numero_identificacion = :doc
+                    """), {
+                        "estado": nuevo_estado,
+                        "doc": doc
+                    })
+
+                st.success("Estado actualizado")
+                st.rerun()
