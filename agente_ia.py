@@ -626,13 +626,13 @@ with tab1:
     st.subheader("💊 Etnia vs Consumo")
 
     if (
-        "grupos_etnicos_afro_indigena" in df.columns
+        "grupos_etnicos" in df.columns
         and
         "tipo_consumo" in df.columns
     ):
 
         tabla = pd.crosstab(
-            df["grupos_etnicos_afro_indigena"],
+            df["grupos_etnicos"],
             df["tipo_consumo"]
         )
 
@@ -655,10 +655,10 @@ with tab1:
 
     st.subheader("📍 Distribución Territorial")
 
-    if "comuna_o_corregimiento_de_residencia" in df.columns:
+    if "departamento_procedencia" in df.columns:
 
         territorio = (
-            df["comuna_o_corregimiento_de_residencia"]
+            df["departamento_procedencia"]
             .fillna("Sin dato")
             .value_counts()
             .head(10)
@@ -666,16 +666,16 @@ with tab1:
         )
 
         territorio.columns = [
-            "comuna",
+            "departamento",
             "cantidad"
         ]
 
         fig_territorio = px.bar(
             territorio,
             x="cantidad",
-            y="comuna",
+            y="departamento",
             orientation="h",
-            title="Top 10 comunas o corregimientos"
+            title="Top 10 departamentos"
         )
 
         st.plotly_chart(
@@ -683,16 +683,16 @@ with tab1:
             use_container_width=True
         )
 
-        comuna_top = territorio.iloc[0]
+        departamento_top = territorio.iloc[0]
 
         st.info(
-            f"La mayor concentración de usuarios se encuentra en {comuna_top['comuna']} ({comuna_top['cantidad']} registros)."
+            f"La mayor concentración de usuarios se encuentra en {departamento_top['departamento']} ({departamento_top['cantidad']} registros)."
         )
 
     else:
 
         st.warning(
-            "No existe la columna de comuna o corregimiento."
+            "No existe la columna de departamento."
         )
 # =========================
 # TAB VULNERABILIDAD
