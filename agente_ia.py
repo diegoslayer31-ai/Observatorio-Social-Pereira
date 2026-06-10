@@ -283,45 +283,139 @@ elif st.session_state.page == "gestion_usuarios":
     st.title("⚙️ Gestión de usuarios")
 
     # =========================
-    # CARGAR USUARIOS
+    # 🔍 CREAR USUARIO (IGUAL A TAB 11)
     # =========================
+    st.subheader("➕ Crear nuevo usuario")
+
+    with st.form("crear_usuario"):
+
+        nombres = st.text_input("Nombres")
+        apellidos = st.text_input("Apellidos")
+
+        sexo = st.selectbox("Sexo", ["Masculino", "Femenino"])
+        edad = st.number_input("Edad", 0, 120, 18)
+
+        tipo_id = st.selectbox("Tipo ID", ["CC", "TI", "CE", "PEP", "Otro"])
+        numero_id = st.text_input("Número identificación")
+
+        etnia = st.selectbox("Etnia", ["Ninguno", "Afrodescendiente", "Indígena", "Mestizo"])
+        discapacidad = st.selectbox("Discapacidad", ["No", "Sí"])
+
+        migracion = st.selectbox("Migración", ["NO", "SI"])
+        migracion_val = 1 if migracion == "SI" else 0
+
+        educacion = st.selectbox(
+            "Educación",
+            ["Ninguno", "Primaria", "Secundaria", "Técnico", "Tecnólogo", "Universitario"]
+        )
+
+        barrio = st.text_input("Barrio")
+        comuna = st.text_input("Comuna")
+        telefono = st.text_input("Teléfono")
+
+        consumo = st.selectbox(
+            "Consumo",
+            ["No", "Marihuana", "Cocaína", "Bazuco", "Alcohol", "Heroína", "Policonsumo"]
+        )
+
+        enfermedad = st.selectbox("Enfermedad mental", ["No", "Sí"])
+        modalidad = st.selectbox("Modalidad", ["GRANJA", "URBANO"])
+
+        guardar = st.form_submit_button("💾 Crear usuario")
+
+    if guardar:
+
+        with engine.begin() as conn:
+            conn.execute(text("""
+                INSERT INTO habitante_de_calle (
+                    nombres, apellidos, sexo_al_nacer, edad,
+                    tipo_de_identificacion, numero_de_identificacion,
+                    grupos_etnicos_afro_indigena, personas_con_discapacidad,
+                    indicador_migracion, nivel_educativo_que_tiene_o_cursa,
+                    barrio_o_vereda_de_residencia,
+                    comuna_o_corregimiento_de_residencia,
+                    telefono_y_o_celular,
+                    tipo_de_consumo,
+                    enfermedad_mental,
+                    estado_caso,
+                    modalidad
+                )
+                VALUES (
+                    :nombres, :apellidos, :sexo, :edad,
+                    :tipo_id, :numero_id,
+                    :etnia, :discapacidad,
+                    :migracion, :educacion,
+                    :barrio, :comuna,
+                    :telefono, :consumo,
+                    :enfermedad,
+                    'ACTIVO',
+                    :modalidad
+                )
+            """), {
+                "nombres": nombres,
+                "apellidos": apellidos,
+                "sexo": sexo,
+                "edad": edad,
+                "tipo_id": tipo_id,
+                "numero_id": numero_id,
+                "etnia": etnia,
+                "discapacidad": discapacidad,
+                "migracion": migracion_val,
+                "educacion": educacion,
+                "barrio": barrio,
+                "comuna": comuna,
+                "telefono": telefono,
+                "consumo": consumo,
+                "enfermedad": enfermedad,
+                "modalidad": modalidad
+            })
+
+        st.success("Usuario creado correctamente")
+
+    st.divider()
+
+    # =========================
+    # 📋 LISTA DE USUARIOS
+    # =========================
+    st.subheader("📋 Usuarios registrados")
+
     df_usuarios = pd.read_sql("""
-        SELECT nombres, apellidos, numero_identificacion, modalidad, estado_caso
+        SELECT id, nombres, apellidos, numero_de_identificacion,
+               modalidad, estado_caso
         FROM habitante_de_calle
-        ORDER BY nombres
+        ORDER BY id DESC
     """, engine)
 
-    # =========================
-    # BUSCADOR
-    # =========================
-    buscar = st.text_input("🔎 Buscar usuario (nombre o documento)")
-
-    if buscar:
-        df_usuarios = df_usuarios[
-            df_usuarios["nombres"].str.contains(buscar, case=False, na=False) |
-            df_usuarios["apellidos"].str.contains(buscar, case=False, na=False) |
-            df_usuarios["numero_identificacion"].astype(str).str.contains(buscar, na=False)
-        ]
-
-    # =========================
-    # TABLA PRINCIPAL
-    # =========================
     st.dataframe(df_usuarios, use_container_width=True)
 
     # =========================
-    # ESTADÍSTICAS RÁPIDAS
+    # 🚦 CAMBIAR ESTADO
     # =========================
-    col1, col2, col3 = st.columns(3)
+    st.subheader("🔄 Cambiar estado del usuario")
 
-    col1.metric("Total usuarios", len(df_usuarios))
-    col2.metric("Activos", len(df_usuarios[df_usuarios["estado_caso"] == "ACTIVO"]))
-    col3.metric("Egresados", len(df_usuarios[df_usuarios["estado_caso"] == "EGRESADO"]))
+    usuario_sel = st.selectbox(
+        "Seleccionar usuario",
+        df_usuarios["numero_de_identificacion"].astype(str).tolist()
+    )
 
-    # =========================
-    # BOTÓN VOLVER
-    # =========================
-    if st.button("⬅️ Volver al inicio"):
-        st.session_state.page = "home"
+    nuevo_estado = st.selectbox(
+        "Nuevo estado",
+        ["ACTIVO", "INACTIVO", "EGRESADO"]
+    )
+
+    if st.button("Actualizar estado"):
+
+        with engine.begin() as conn:
+            conn.execute(text("""
+                UPDATE habitante_de_calle
+                SET estado_caso = :estado
+                WHERE numero_de_identificacion = :doc
+            """), {
+                "estado": nuevo_estado,
+                "doc": usuario_sel
+            })
+
+        st.success("Estado actualizado correctamente")
         st.rerun()
 
     st.stop()
