@@ -599,7 +599,17 @@ def generar_resumen(df):
         "consumo_top": consumo_top,
         "etnia_top": etnia_top
     }
+def cargar_datos():
+    df = pd.read_sql("SELECT * FROM habitante_de_calle", engine)
 
+    df["estado_caso"] = (
+        df["estado_caso"]
+        .astype(str)
+        .str.strip()
+        .str.upper()
+    )
+
+    return df
 # =========================
 # APLICAR PESO
 # =========================
