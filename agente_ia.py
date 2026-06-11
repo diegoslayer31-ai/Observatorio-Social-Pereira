@@ -333,39 +333,7 @@ elif st.session_state.page == "gestion_usuarios":
 
     st.markdown("---")
 
-    # =========================
-    # 3. INACTIVAR USUARIO
-    # =========================
-    st.subheader("🚫 Inactivar usuario")
 
-    if len(df_activos) == 0:
-        st.info("No hay usuarios activos")
-        st.stop()
-
-    usuario_sel = st.selectbox(
-        "Selecciona usuario",
-        df_activos["numero_identificacion"].tolist(),
-        format_func=lambda x: df_activos[
-            df_activos["numero_identificacion"] == x
-        ]["nombre"].values[0]
-    )
-
-    if st.button("Inactivar usuario"):
-
-        try:
-            with engine.begin() as conn:
-                conn.execute(text("""
-                    UPDATE habitante_de_calle
-                    SET estado_caso = 'INACTIVO'
-                    WHERE numero_identificacion = :id
-                """), {"id": usuario_sel})
-
-            st.success("Usuario inactivado correctamente")
-            st.rerun()
-
-        except Exception as e:
-            st.error("Error inactivando usuario")
-            st.caption(str(e))
     # =====================================
     # 🔐 REGISTRO COMPLETO (ANTES TAB11)
     # =====================================
