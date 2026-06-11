@@ -248,42 +248,40 @@ p, label, span {
 
 </style>
 """, unsafe_allow_html=True)
-# =====================================
-# SIDEBAR (VA ARRIBA DEL ROUTER)
-# =====================================
+# =========================
+# SIDEBAR
+# =========================
 with st.sidebar:
 
     st.image("logo_acf.png", width=220)
 
-    st.markdown("---")
-    st.markdown("### Asociación Ciudad Futuro")
-
-    st.caption("""
-    Sistema Integral de Atención,
-    Seguimiento y Observatorio Social
-    """)
-
-    st.markdown("---")
-
-    # BOTONES DE NAVEGACIÓN (IMPORTANTE)
     if st.button("🏠 Inicio"):
         st.session_state.page = "home"
         st.rerun()
 
     if st.button("⚙️ Gestión usuarios"):
         st.session_state.page = "gestion_usuarios"
-    
         st.rerun()
 
+
+# =========================
+# ROUTER PRINCIPAL
+# =========================
+
+if "page" not in st.session_state:
+    st.session_state.page = "home"
+
+
 if st.session_state.page == "home":
-    
+
     st.title("🏠 Dashboard principal")
-    # TODO observatorio completo
+    st.subheader("Sistema de Atención Integral")  # SOLO AQUÍ
+
 elif st.session_state.page == "gestion_usuarios":
-    
+
     st.title("⚙️ Gestión de usuarios")
 
-    st.markdown("---")
+    # TODO: aquí va TODO el módulo usuarios
 
     # =========================
     # 1. CARGAR USUARIOS
