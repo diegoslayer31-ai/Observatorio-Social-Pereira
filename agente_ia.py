@@ -285,7 +285,253 @@ def formulario_genero_diversidad():
 
     with st.form("form_genero_diversidad"):
 
-        # TODO TU FORMULARIO COMPLETO AQUÍ
+        numero_identificacion = st.text_input(
+            "Número de identificación"
+        )
+
+        nombre_identitario = st.text_input(
+            "Nombre identitario"
+        )
+
+        identidad_genero = st.selectbox(
+            "Identidad de género",
+            [
+                "Mujer cisgénero",
+                "Mujer trans",
+                "Persona no binaria",
+                "Género fluido",
+                "Queer",
+                "Otra",
+                "Prefiere no responder"
+            ]
+        )
+
+        orientacion_sexual = st.selectbox(
+            "Orientación sexual",
+            [
+                "Heterosexual",
+                "Lesbiana",
+                "Bisexual",
+                "Pansexual",
+                "Asexual",
+                "Otra",
+                "Prefiere no responder"
+            ]
+        )
+
+        expresion_genero = st.selectbox(
+            "Expresión de género",
+            [
+                "Masculina",
+                "Femenina",
+                "Andrógina",
+                "Variable",
+                "Otra"
+            ]
+        )
+
+        discriminacion = st.checkbox(
+            "¿Ha sufrido discriminación?"
+        )
+
+        tipo_discriminacion = st.text_area(
+            "Tipo de discriminación"
+        )
+
+        violencia_genero = st.checkbox(
+            "Violencia basada en género"
+        )
+
+        violencia_fisica = st.checkbox(
+            "Violencia física"
+        )
+
+        violencia_sexual = st.checkbox(
+            "Violencia sexual"
+        )
+
+        violencia_institucional = st.checkbox(
+            "Violencia institucional"
+        )
+
+        trabajo_sexual = st.selectbox(
+            "Trabajo sexual",
+            [
+                "Nunca",
+                "Anteriormente",
+                "Actualmente"
+            ]
+        )
+
+        estado_vih = st.selectbox(
+            "Estado VIH",
+            [
+                "Negativo",
+                "Positivo",
+                "No conoce"
+            ]
+        )
+
+        tratamiento_vih = st.selectbox(
+            "Tratamiento VIH",
+            [
+                "Sí",
+                "No",
+                "No aplica"
+            ]
+        )
+
+        acceso_salud = st.selectbox(
+            "Acceso a salud",
+            [
+                "Sí",
+                "No",
+                "Parcial"
+            ]
+        )
+
+        regimen_salud = st.selectbox(
+            "Régimen de salud",
+            [
+                "Subsidiado",
+                "Contributivo",
+                "Especial",
+                "No afiliado"
+            ]
+        )
+
+        red_apoyo = st.selectbox(
+            "Red de apoyo",
+            [
+                "Sí",
+                "No",
+                "Parcial"
+            ]
+        )
+
+        amenazas = st.checkbox(
+            "¿Ha recibido amenazas?"
+        )
+
+        custodia_hijos = st.text_input(
+            "Situación de hijos"
+        )
+
+        fuente_ingresos = st.text_input(
+            "Fuente principal de ingresos"
+        )
+
+        necesidades_prioritarias = st.text_area(
+            "Necesidades prioritarias"
+        )
+
+        guardar_genero = st.form_submit_button(
+            "💾 Guardar Caracterización"
+        )
+
+    if guardar_genero:
+
+        with engine.begin() as conn:
+
+            conn.execute(
+                text("""
+                    INSERT INTO caracterizacion_genero_diversidad (
+
+                        numero_identificacion,
+                        identidad_genero,
+                        orientacion_sexual,
+                        expresion_genero,
+                        nombre_identitario,
+
+                        discriminacion,
+                        tipo_discriminacion,
+
+                        violencia_genero,
+                        violencia_fisica,
+                        violencia_sexual,
+                        violencia_institucional,
+
+                        trabajo_sexual,
+
+                        estado_vih,
+                        tratamiento_vih,
+
+                        acceso_salud,
+                        regimen_salud,
+
+                        red_apoyo,
+
+                        amenazas,
+
+                        custodia_hijos,
+
+                        fuente_ingresos,
+
+                        necesidades_prioritarias
+
+                    )
+
+                    VALUES (
+
+                        :numero_identificacion,
+                        :identidad_genero,
+                        :orientacion_sexual,
+                        :expresion_genero,
+                        :nombre_identitario,
+
+                        :discriminacion,
+                        :tipo_discriminacion,
+
+                        :violencia_genero,
+                        :violencia_fisica,
+                        :violencia_sexual,
+                        :violencia_institucional,
+
+                        :trabajo_sexual,
+
+                        :estado_vih,
+                        :tratamiento_vih,
+
+                        :acceso_salud,
+                        :regimen_salud,
+
+                        :red_apoyo,
+
+                        :amenazas,
+
+                        :custodia_hijos,
+
+                        :fuente_ingresos,
+
+                        :necesidades_prioritarias
+                    )
+                """),
+                {
+                    "numero_identificacion": numero_identificacion,
+                    "identidad_genero": identidad_genero,
+                    "orientacion_sexual": orientacion_sexual,
+                    "expresion_genero": expresion_genero,
+                    "nombre_identitario": nombre_identitario,
+                    "discriminacion": discriminacion,
+                    "tipo_discriminacion": tipo_discriminacion,
+                    "violencia_genero": violencia_genero,
+                    "violencia_fisica": violencia_fisica,
+                    "violencia_sexual": violencia_sexual,
+                    "violencia_institucional": violencia_institucional,
+                    "trabajo_sexual": trabajo_sexual,
+                    "estado_vih": estado_vih,
+                    "tratamiento_vih": tratamiento_vih,
+                    "acceso_salud": acceso_salud,
+                    "regimen_salud": regimen_salud,
+                    "red_apoyo": red_apoyo,
+                    "amenazas": amenazas,
+                    "custodia_hijos": custodia_hijos,
+                    "fuente_ingresos": fuente_ingresos,
+                    "necesidades_prioritarias": necesidades_prioritarias
+                }
+            )
+
+        st.success("✅ Caracterización guardada correctamente")
 
         guardar_genero = st.form_submit_button(
             "💾 Guardar Caracterización"
@@ -802,7 +1048,7 @@ col4.metric(
     len(df_kpi)
 )
 # KPIs
-tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10, tab11, tab12, tab13, tab14, tab15 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10, tab11, tab12, tab13, tab14 = st.tabs([
     "📊 General",
     "⚠️ Vulnerabilidad",
     "🚬 Consumo",
@@ -816,8 +1062,7 @@ tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10, tab11, tab12, tab13
     "➕ Nuevo Registro",
     "📋 Seguimiento Profesional",
     "📈 Seguimiento e Impacto",
-    "📥 Carga Activos",  
-    "♀️ Género y Diversidad"
+    "📥 Carga Activos"
 ])
 
 # =========================
@@ -2397,261 +2642,3 @@ with tab14:
 
         except Exception as e:
             st.error(f"❌ Error: {e}")
-# =====================================
-# TAB 15 - GÉNERO Y DIVERSIDAD
-# =====================================
-
-with tab15:
-
-    st.title("♀️ Género y Diversidad")
-    st.header("♀️ Equidad de Género y Diversidad")
-
-    with st.form("form_genero_diversidad"):
-
-        numero_identificacion = st.text_input(
-            "Número de identificación"
-        )
-
-        nombre_identitario = st.text_input(
-            "Nombre identitario"
-        )
-
-        identidad_genero = st.selectbox(
-            "Identidad de género",
-            [
-                "Mujer cisgénero",
-                "Mujer trans",
-                "Persona no binaria",
-                "Género fluido",
-                "Queer",
-                "Otra",
-                "Prefiere no responder"
-            ]
-        )
-
-        orientacion_sexual = st.selectbox(
-            "Orientación sexual",
-            [
-                "Heterosexual",
-                "Lesbiana",
-                "Bisexual",
-                "Pansexual",
-                "Asexual",
-                "Otra",
-                "Prefiere no responder"
-            ]
-        )
-
-        expresion_genero = st.selectbox(
-            "Expresión de género",
-            [
-                "Masculina",
-                "Femenina",
-                "Andrógina",
-                "Variable",
-                "Otra"
-            ]
-        )
-
-        discriminacion = st.checkbox(
-            "¿Ha sufrido discriminación?"
-        )
-
-        tipo_discriminacion = st.text_area(
-            "Tipo de discriminación"
-        )
-
-        violencia_genero = st.checkbox(
-            "Violencia basada en género"
-        )
-
-        violencia_fisica = st.checkbox(
-            "Violencia física"
-        )
-
-        violencia_sexual = st.checkbox(
-            "Violencia sexual"
-        )
-
-        violencia_institucional = st.checkbox(
-            "Violencia institucional"
-        )
-
-        trabajo_sexual = st.selectbox(
-            "Trabajo sexual",
-            [
-                "Nunca",
-                "Anteriormente",
-                "Actualmente"
-            ]
-        )
-
-        estado_vih = st.selectbox(
-            "Estado VIH",
-            [
-                "Negativo",
-                "Positivo",
-                "No conoce"
-            ]
-        )
-
-        tratamiento_vih = st.selectbox(
-            "Tratamiento VIH",
-            [
-                "Sí",
-                "No",
-                "No aplica"
-            ]
-        )
-
-        acceso_salud = st.selectbox(
-            "Acceso a salud",
-            [
-                "Sí",
-                "No",
-                "Parcial"
-            ]
-        )
-
-        regimen_salud = st.selectbox(
-            "Régimen de salud",
-            [
-                "Subsidiado",
-                "Contributivo",
-                "Especial",
-                "No afiliado"
-            ]
-        )
-
-        red_apoyo = st.selectbox(
-            "Red de apoyo",
-            [
-                "Sí",
-                "No",
-                "Parcial"
-            ]
-        )
-
-        amenazas = st.checkbox(
-            "¿Ha recibido amenazas?"
-        )
-
-        custodia_hijos = st.text_input(
-            "Situación de hijos"
-        )
-
-        fuente_ingresos = st.text_input(
-            "Fuente principal de ingresos"
-        )
-
-        necesidades_prioritarias = st.text_area(
-            "Necesidades prioritarias"
-        )
-
-        guardar_genero = st.form_submit_button(
-            "💾 Guardar Caracterización"
-        )
-
-    if guardar_genero:
-
-        with engine.begin() as conn:
-
-            conn.execute(
-                text("""
-                    INSERT INTO caracterizacion_genero_diversidad (
-
-                        numero_identificacion,
-                        identidad_genero,
-                        orientacion_sexual,
-                        expresion_genero,
-                        nombre_identitario,
-
-                        discriminacion,
-                        tipo_discriminacion,
-
-                        violencia_genero,
-                        violencia_fisica,
-                        violencia_sexual,
-                        violencia_institucional,
-
-                        trabajo_sexual,
-
-                        estado_vih,
-                        tratamiento_vih,
-
-                        acceso_salud,
-                        regimen_salud,
-
-                        red_apoyo,
-
-                        amenazas,
-
-                        custodia_hijos,
-
-                        fuente_ingresos,
-
-                        necesidades_prioritarias
-
-                    )
-
-                    VALUES (
-
-                        :numero_identificacion,
-                        :identidad_genero,
-                        :orientacion_sexual,
-                        :expresion_genero,
-                        :nombre_identitario,
-
-                        :discriminacion,
-                        :tipo_discriminacion,
-
-                        :violencia_genero,
-                        :violencia_fisica,
-                        :violencia_sexual,
-                        :violencia_institucional,
-
-                        :trabajo_sexual,
-
-                        :estado_vih,
-                        :tratamiento_vih,
-
-                        :acceso_salud,
-                        :regimen_salud,
-
-                        :red_apoyo,
-
-                        :amenazas,
-
-                        :custodia_hijos,
-
-                        :fuente_ingresos,
-
-                        :necesidades_prioritarias
-                    )
-                """),
-                {
-                    "numero_identificacion": numero_identificacion,
-                    "identidad_genero": identidad_genero,
-                    "orientacion_sexual": orientacion_sexual,
-                    "expresion_genero": expresion_genero,
-                    "nombre_identitario": nombre_identitario,
-                    "discriminacion": discriminacion,
-                    "tipo_discriminacion": tipo_discriminacion,
-                    "violencia_genero": violencia_genero,
-                    "violencia_fisica": violencia_fisica,
-                    "violencia_sexual": violencia_sexual,
-                    "violencia_institucional": violencia_institucional,
-                    "trabajo_sexual": trabajo_sexual,
-                    "estado_vih": estado_vih,
-                    "tratamiento_vih": tratamiento_vih,
-                    "acceso_salud": acceso_salud,
-                    "regimen_salud": regimen_salud,
-                    "red_apoyo": red_apoyo,
-                    "amenazas": amenazas,
-                    "custodia_hijos": custodia_hijos,
-                    "fuente_ingresos": fuente_ingresos,
-                    "necesidades_prioritarias": necesidades_prioritarias
-                }
-            )
-
-        st.success("✅ Caracterización guardada correctamente")
