@@ -627,6 +627,9 @@ with st.sidebar:
 
     st.header("🏛️ Sistema de Atención")
 
+    # 🔥 CLAVE: recargar datos aquí
+    df = cargar_datos()
+
     # =========================
     # CUPOS
     # =========================
@@ -641,7 +644,6 @@ with st.sidebar:
         st.error("🚨 URBANO EN CAPACIDAD MÁXIMA")
 
     st.divider()
-
     # =========================
     # USUARIOS URBANO
     # =========================
