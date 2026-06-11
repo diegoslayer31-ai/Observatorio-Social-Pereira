@@ -527,6 +527,7 @@ def formulario_genero_diversidad():
     try:
 
         df_genero = pd.read_sql(
+        st.dataframe(df_genero)
             """
             SELECT *
             FROM caracterizacion_genero_diversidad
