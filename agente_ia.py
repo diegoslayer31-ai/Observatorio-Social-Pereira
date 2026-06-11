@@ -288,15 +288,8 @@ def formulario_genero_diversidad():
 
     st.header("♀️ Equidad de Género y Diversidad")
 
-    with st.form("form_genero_diversidad"):
-
-        def formulario_genero_diversidad():
+    def formulario_genero_diversidad():
     
-    st.title("♀️ Género y Diversidad")
-    st.header("♀️ Equidad de Género y Diversidad")
-
-    with st.form("form_genero_diversidad"):
-
         numero_identificacion = st.text_input(
             "Número de identificación"
         )
