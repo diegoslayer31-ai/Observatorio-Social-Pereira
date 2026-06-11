@@ -279,60 +279,93 @@ if st.session_state.page == "home":
     
     st.title("🏠 Dashboard principal")
     # TODO observatorio completo
-
 elif st.session_state.page == "gestion_usuarios":
-
     
     st.title("⚙️ Gestión de usuarios")
 
-# =========================
-# 1. LISTA DE ACTIVOS
-# =========================
-st.subheader("📋 Usuarios activos")
+    st.markdown("---")
 
-df_usuarios = pd.read_sql("""
-    SELECT *
-    FROM habitante_de_calle
-""", engine)
+    # =========================
+    # 1. CARGAR USUARIOS
+    # =========================
+    try:
+        df_usuarios = pd.read_sql("""
+            SELECT *
+            FROM habitante_de_calle
+        """, engine)
 
-df_usuarios = df_usuarios[
-    df_usuarios["estado_caso"].astype(str).str.strip().str.upper() == "ACTIVO"
-]
+        # normalizar estado por si viene con espacios
+        df_usuarios["estado_caso"] = (
+            df_usuarios["estado_caso"]
+            .astype(str)
+            .str.strip()
+            .str.upper()
+        )
 
-df_usuarios["nombre"] = (
-    df_usuarios["nombres"].astype(str)
-    + " "
-    + df_usuarios["apellidos"].astype(str)
-)
+        # filtrar activos
+        df_activos = df_usuarios[df_usuarios["estado_caso"] == "ACTIVO"].copy()
 
-st.dataframe(df_usuarios[[
-    "nombre",
-    "numero_identificacion",
-    "estado_caso"
-]])
+        # nombre completo
+        df_activos["nombre"] = (
+            df_activos["nombres"].astype(str) + " " +
+            df_activos["apellidos"].astype(str)
+        )
 
-# =========================
-# 2. INACTIVAR USUARIO
-# =========================
-st.subheader("🚫 Inactivar usuario")
+    except Exception as e:
+        st.error("Error cargando usuarios")
+        st.caption(str(e))
+        st.stop()
 
-usuario_sel = st.selectbox(
-    "Selecciona usuario",
-    df_usuarios["numero_identificacion"].tolist(),
-    format_func=lambda x: df_usuarios[df_usuarios["numero_identificacion"] == x]["nombre"].values[0]
-)
+    # =========================
+    # 2. LISTA DE USUARIOS ACTIVOS
+    # =========================
+    st.subheader("📋 Usuarios activos")
 
-if st.button("Inactivar usuario"):
+    with st.container():
+        st.dataframe(
+            df_activos[[
+                "nombre",
+                "numero_identificacion",
+                "estado_caso"
+            ]],
+            use_container_width=True
+        )
 
-    with engine.begin() as conn:
-        conn.execute(text("""
-            UPDATE habitante_de_calle
-            SET estado_caso = 'INACTIVO'
-            WHERE numero_identificacion = :id
-        """), {"id": usuario_sel})
+    st.markdown("---")
 
-    st.success("Usuario inactivado")
-    st.rerun()
+    # =========================
+    # 3. INACTIVAR USUARIO
+    # =========================
+    st.subheader("🚫 Inactivar usuario")
+
+    if len(df_activos) == 0:
+        st.info("No hay usuarios activos")
+        st.stop()
+
+    usuario_sel = st.selectbox(
+        "Selecciona usuario",
+        df_activos["numero_identificacion"].tolist(),
+        format_func=lambda x: df_activos[
+            df_activos["numero_identificacion"] == x
+        ]["nombre"].values[0]
+    )
+
+    if st.button("Inactivar usuario"):
+
+        try:
+            with engine.begin() as conn:
+                conn.execute(text("""
+                    UPDATE habitante_de_calle
+                    SET estado_caso = 'INACTIVO'
+                    WHERE numero_identificacion = :id
+                """), {"id": usuario_sel})
+
+            st.success("Usuario inactivado correctamente")
+            st.rerun()
+
+        except Exception as e:
+            st.error("Error inactivando usuario")
+            st.caption(str(e))
     # =====================================
     # 🔐 REGISTRO COMPLETO (ANTES TAB11)
     # =====================================
