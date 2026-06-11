@@ -279,7 +279,6 @@ with st.sidebar:
         st.session_state.page = "genero_diversidad"
         st.rerun()
 
-
 # =====================================
 # FUNCIÓN GÉNERO Y DIVERSIDAD
 # =====================================
@@ -288,8 +287,7 @@ def formulario_genero_diversidad():
 
     st.header("♀️ Equidad de Género y Diversidad")
 
-    def formulario_genero_diversidad():
-    
+  
         numero_identificacion = st.text_input(
             "Número de identificación"
         )
