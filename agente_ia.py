@@ -282,8 +282,57 @@ if st.session_state.page == "home":
 
 elif st.session_state.page == "gestion_usuarios":
 
+    
     st.title("⚙️ Gestión de usuarios")
 
+# =========================
+# 1. LISTA DE ACTIVOS
+# =========================
+st.subheader("📋 Usuarios activos")
+
+df_usuarios = pd.read_sql("""
+    SELECT *
+    FROM habitante_de_calle
+""", engine)
+
+df_usuarios = df_usuarios[
+    df_usuarios["estado_caso"].astype(str).str.strip().str.upper() == "ACTIVO"
+]
+
+df_usuarios["nombre"] = (
+    df_usuarios["nombres"].astype(str)
+    + " "
+    + df_usuarios["apellidos"].astype(str)
+)
+
+st.dataframe(df_usuarios[[
+    "nombre",
+    "numero_identificacion",
+    "estado_caso"
+]])
+
+# =========================
+# 2. INACTIVAR USUARIO
+# =========================
+st.subheader("🚫 Inactivar usuario")
+
+usuario_sel = st.selectbox(
+    "Selecciona usuario",
+    df_usuarios["numero_identificacion"].tolist(),
+    format_func=lambda x: df_usuarios[df_usuarios["numero_identificacion"] == x]["nombre"].values[0]
+)
+
+if st.button("Inactivar usuario"):
+
+    with engine.begin() as conn:
+        conn.execute(text("""
+            UPDATE habitante_de_calle
+            SET estado_caso = 'INACTIVO'
+            WHERE numero_identificacion = :id
+        """), {"id": usuario_sel})
+
+    st.success("Usuario inactivado")
+    st.rerun()
     # =====================================
     # 🔐 REGISTRO COMPLETO (ANTES TAB11)
     # =====================================
