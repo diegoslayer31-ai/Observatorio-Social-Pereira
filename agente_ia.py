@@ -2272,6 +2272,7 @@ with tab12:
     # =========================
     # PAI FORM
     # =========================
+
     st.subheader("🧠 PAI - Plan de Atención Individual")
 
     if cedula:
@@ -2316,6 +2317,44 @@ with tab12:
                 ["Alta", "Media", "Baja"]
             )
 
+            # =========================
+            # 🌍 ODS + IMPACTO + RIESGO
+            # =========================
+
+            ods_principal = st.selectbox(
+                "ODS relacionado",
+                [
+                    "ODS 1 - Fin de la pobreza",
+                    "ODS 3 - Salud y bienestar",
+                    "ODS 4 - Educación de calidad",
+                    "ODS 5 - Igualdad de género",
+                    "ODS 10 - Reducción de desigualdades",
+                    "ODS 16 - Paz y justicia",
+                    "No aplica"
+                ]
+            )
+
+            resultado_intervencion = st.selectbox(
+                "Resultado de la intervención",
+                [
+                    "Mejora significativa",
+                    "Mejora parcial",
+                    "Sin cambios",
+                    "Empeoramiento",
+                    "Pendiente seguimiento"
+                ]
+            )
+
+            nivel_riesgo = st.selectbox(
+                "Nivel de riesgo del caso",
+                [
+                    "Bajo",
+                    "Medio",
+                    "Alto",
+                    "Crítico"
+                ]
+            )
+
             guardar = st.form_submit_button("Guardar PAI")
 
         if guardar:
@@ -2323,15 +2362,39 @@ with tab12:
             with engine.begin() as conn:
                 conn.execute(text("""
                     INSERT INTO pai_intervenciones
-                    (documento_usuario, tipo_intervencion, patologia, profesional, descripcion, adherencia)
-                    VALUES (:doc, :tipo, :patologia, :prof, :desc, :adh)
+                    (
+                        documento_usuario,
+                        tipo_intervencion,
+                        patologia,
+                        profesional,
+                        descripcion,
+                        adherencia,
+                        ods_principal,
+                        resultado_intervencion,
+                        nivel_riesgo
+                    )
+                    VALUES
+                    (
+                        :doc,
+                        :tipo,
+                        :patologia,
+                        :prof,
+                        :desc,
+                        :adh,
+                        :ods,
+                        :resultado,
+                        :riesgo
+                    )
                 """), {
                     "doc": cedula,
                     "tipo": tipo_intervencion,
                     "patologia": patologia,
                     "prof": profesional,
                     "desc": descripcion,
-                    "adh": adherencia
+                    "adh": adherencia,
+                    "ods": ods_principal,
+                    "resultado": resultado_intervencion,
+                    "riesgo": nivel_riesgo
                 })
 
             st.success("PAI registrado correctamente")
