@@ -77,7 +77,7 @@ def formulario_registro():
                 conn.execute(text("""
                     INSERT INTO habitante_de_calle (
                         nombres, apellidos, sexo_al_nacer, edad,
-                        tipo_de_identificacion, numero_de_identificacion,
+                        tipo_de_identificacion, numero_identificacion,
                         grupos_etnicos_afro_indigena,
                         personas_con_discapacidad,
                         indicador_migracion,
@@ -411,7 +411,7 @@ elif st.session_state.page == "gestion_usuarios":
             conn.execute(text("""
                 INSERT INTO habitante_de_calle (
                     nombres, apellidos, sexo_al_nacer, edad,
-                    tipo_de_identificacion, numero_de_identificacion,
+                    tipo_de_identificacion, numero_identificacion,
                     grupos_etnicos_afro_indigena,
                     personas_con_discapacidad,
                     indicador_migracion,
@@ -461,7 +461,7 @@ elif st.session_state.page == "gestion_usuarios":
     st.subheader("🚫 Cambiar estado del usuario")
 
     df_lista = pd.read_sql("""
-        SELECT numero_de_identificacion, nombres, apellidos, estado_caso
+        SELECT numero_identificacion, nombres, apellidos, estado_caso
         FROM habitante_de_calle
     """, engine)
 
@@ -469,8 +469,8 @@ elif st.session_state.page == "gestion_usuarios":
 
     usuario_sel = st.selectbox(
         "Selecciona usuario",
-        df_lista["numero_de_identificacion"].tolist(),
-        format_func=lambda x: df_lista[df_lista["numero_de_identificacion"] == x]["nombre"].values[0]
+        df_lista["numero_identificacion"].tolist(),
+        format_func=lambda x: df_lista[df_lista["numero_identificacion"] == x]["nombre"].values[0]
     )
 
     nuevo_estado = st.selectbox("Nuevo estado", ["ACTIVO", "INACTIVO"])
@@ -481,7 +481,7 @@ elif st.session_state.page == "gestion_usuarios":
             conn.execute(text("""
                 UPDATE habitante_de_calle
                 SET estado_caso = :estado
-                WHERE numero_de_identificacion = :id
+                WHERE numero_identificacion = :id
             """), {
                 "estado": nuevo_estado,
                 "id": usuario_sel
@@ -1841,7 +1841,7 @@ with tab11:
                     sexo_al_nacer,
                     edad,
                     tipo_de_identificacion,
-                    numero_de_identificacion,
+                    numero_identificacion,
                     grupos_etnicos_afro_indigena,
                     personas_con_discapacidad,
                     indicador_migracion,
