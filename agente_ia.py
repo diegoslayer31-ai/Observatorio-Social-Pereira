@@ -272,7 +272,37 @@ with st.sidebar:
 
     if st.button("⚙️ Gestión usuarios"):
         st.session_state.page = "gestion_usuarios"
-        st.rerun()
+    st.subheader("📋 Usuarios activos")
+
+try:
+    df_usuarios = pd.read_sql("""
+        SELECT *
+        FROM habitante_de_calle
+    """, engine)
+
+    df_usuarios = df_usuarios[
+        df_usuarios["estado_caso"].astype(str).str.strip().str.upper() == "ACTIVO"
+    ]
+
+    df_usuarios["nombre"] = (
+        df_usuarios["nombres"].astype(str)
+        + " "
+        + df_usuarios["apellidos"].astype(str)
+    )
+
+    st.dataframe(
+        df_usuarios[[
+            "nombre",
+            "numero_identificacion",
+            "estado_caso"
+        ]],
+        use_container_width=True
+    )
+
+except Exception as e:
+    st.error("Error cargando usuarios")
+    st.code(str(e))
+    st.rerun()
 
 if st.session_state.page == "home":
     
