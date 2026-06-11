@@ -577,6 +577,9 @@ st.subheader("📊 Indicadores de Género, Diversidad y Salud")
 
 try:
 
+    # ==========================
+    # CARGA DE DATOS
+    # ==========================
     df_genero = pd.read_sql(
         """
         SELECT *
@@ -586,14 +589,15 @@ try:
     )
 
     # ==========================
-    # VALIDACIÓN BASE
+    # VALIDACIÓN
     # ==========================
     if df_genero.empty:
         st.warning("No hay registros aún en la base de datos.")
+
     else:
 
         # ==========================
-        # COLUMNAS MÉTRICAS BASE
+        # MÉTRICAS BASE
         # ==========================
         total = len(df_genero)
 
@@ -604,86 +608,75 @@ try:
         violencia_institucional = df_genero["violencia_institucional"].sum()
         activacion_vbg = df_genero["activacion_ruta_vbg"].sum()
 
-        vih_positivo = len(df_genero[df_genero["estado_vih"] == "Positivo"])
+        vih_positivo = len(
+            df_genero[df_genero["estado_vih"] == "Positivo"]
+        )
 
         uso_sustancias = df_genero["uso_sustancias"].sum()
-
         acceso_programas = df_genero["acceso_otros_programas"].sum()
 
         # ==========================
-        # UI METRICS
+        # INDICADORES PRINCIPALES
         # ==========================
         c1, c2, c3, c4 = st.columns(4)
 
         c1.metric("👥 Total caracterizaciones", total)
-
         c2.metric("⚠️ Discriminación", int(discriminacion))
-
         c3.metric("🚨 Violencia de género", int(violencia_genero))
-
         c4.metric("🧬 VIH positivo", vih_positivo)
 
         # ==========================
-        # SEGUNDA LÍNEA DE INDICADORES
+        # VIOLENCIAS
         # ==========================
+        st.markdown("### 🚨 Violencias")
+
         c5, c6, c7, c8 = st.columns(4)
 
         c5.metric("💥 Violencia física", int(violencia_fisica))
-
         c6.metric("🔥 Violencia sexual", int(violencia_sexual))
-
         c7.metric("🏛️ Violencia institucional", int(violencia_institucional))
-
         c8.metric("🛑 Ruta VBG activada", int(activacion_vbg))
 
         # ==========================
-        # TERCERA LÍNEA (SALUD Y SPA)
+        # SALUD Y PROGRAMAS
         # ==========================
+        st.markdown("### 🏥 Salud y programas")
+
         c9, c10 = st.columns(2)
 
         c9.metric("💊 Consumo de sustancias", int(uso_sustancias))
-
         c10.metric("📌 Acceso a otros programas", int(acceso_programas))
 
         # ==========================
-        # INDICADORES AVANZADOS
+        # ANÁLISIS PORCENTUAL
         # ==========================
-        st.markdown("### 📈 Análisis rápido")
+        st.markdown("### 📈 Análisis porcentual")
 
         col1, col2 = st.columns(2)
 
         with col1:
 
-            st.write("📊 % Discriminación")
+            st.write("📊 Discriminación")
+            st.progress(discriminacion / total if total else 0)
 
-            st.progress(discriminacion / total if total > 0 else 0)
-
-            st.write("📊 % Violencia de género")
-
-            st.progress(violencia_genero / total if total > 0 else 0)
+            st.write("📊 Violencia de género")
+            st.progress(violencia_genero / total if total else 0)
 
         with col2:
 
-            st.write("📊 % Consumo de sustancias")
+            st.write("📊 Consumo de sustancias")
+            st.progress(uso_sustancias / total if total else 0)
 
-            st.progress(uso_sustancias / total if total > 0 else 0)
-
-            st.write("📊 % Activación ruta VBG")
-
-            st.progress(activacion_vbg / total if total > 0 else 0)
+            st.write("📊 Activación ruta VBG")
+            st.progress(activacion_vbg / total if total else 0)
 
         # ==========================
-        # ORIENTACIÓN SEXUAL (DISTRIBUCIÓN)
+        # DISTRIBUCIONES
         # ==========================
         st.markdown("### 🧭 Orientación sexual")
-
         st.bar_chart(df_genero["orientacion_sexual"].value_counts())
 
-        # ==========================
-        # IDENTIDAD DE GÉNERO
-        # ==========================
         st.markdown("### 🧑‍🤝‍🧑 Identidad de género")
-
         st.bar_chart(df_genero["identidad_genero"].value_counts())
 
 except Exception as e:
