@@ -278,152 +278,19 @@ with st.sidebar:
     if st.button("♀️ Género y Diversidad"):
         st.session_state.page = "genero_diversidad"
         st.rerun()
+
+
+# =====================================
+# FUNCIÓN GÉNERO Y DIVERSIDAD
+# =====================================
+
 def formulario_genero_diversidad():
-    
-    
+
     st.header("♀️ Equidad de Género y Diversidad")
 
     with st.form("form_genero_diversidad"):
 
-        numero_identificacion = st.text_input(
-            "Número de identificación"
-        )
-
-        nombre_identitario = st.text_input(
-            "Nombre identitario"
-        )
-
-        identidad_genero = st.selectbox(
-            "Identidad de género",
-            [
-                "Mujer cisgénero",
-                "Mujer trans",
-                "Persona no binaria",
-                "Género fluido",
-                "Queer",
-                "Otra",
-                "Prefiere no responder"
-            ]
-        )
-
-        orientacion_sexual = st.selectbox(
-            "Orientación sexual",
-            [
-                "Heterosexual",
-                "Lesbiana",
-                "Bisexual",
-                "Pansexual",
-                "Asexual",
-                "Otra",
-                "Prefiere no responder"
-            ]
-        )
-
-        expresion_genero = st.selectbox(
-            "Expresión de género",
-            [
-                "Masculina",
-                "Femenina",
-                "Andrógina",
-                "Variable",
-                "Otra"
-            ]
-        )
-
-        discriminacion = st.checkbox(
-            "¿Ha sufrido discriminación?"
-        )
-
-        tipo_discriminacion = st.text_area(
-            "Tipo de discriminación"
-        )
-
-        violencia_genero = st.checkbox(
-            "Violencia basada en género"
-        )
-
-        violencia_fisica = st.checkbox(
-            "Violencia física"
-        )
-
-        violencia_sexual = st.checkbox(
-            "Violencia sexual"
-        )
-
-        violencia_institucional = st.checkbox(
-            "Violencia institucional"
-        )
-
-        trabajo_sexual = st.selectbox(
-            "Trabajo sexual",
-            [
-                "Nunca",
-                "Anteriormente",
-                "Actualmente"
-            ]
-        )
-
-        estado_vih = st.selectbox(
-            "Estado VIH",
-            [
-                "Negativo",
-                "Positivo",
-                "No conoce"
-            ]
-        )
-
-        tratamiento_vih = st.selectbox(
-            "Tratamiento VIH",
-            [
-                "Sí",
-                "No",
-                "No aplica"
-            ]
-        )
-
-        acceso_salud = st.selectbox(
-            "Acceso a salud",
-            [
-                "Sí",
-                "No",
-                "Parcial"
-            ]
-        )
-
-        regimen_salud = st.selectbox(
-            "Régimen de salud",
-            [
-                "Subsidiado",
-                "Contributivo",
-                "Especial",
-                "No afiliado"
-            ]
-        )
-
-        red_apoyo = st.selectbox(
-            "Red de apoyo",
-            [
-                "Sí",
-                "No",
-                "Parcial"
-            ]
-        )
-
-        amenazas = st.checkbox(
-            "¿Ha recibido amenazas?"
-        )
-
-        custodia_hijos = st.text_input(
-            "Situación de hijos"
-        )
-
-        fuente_ingresos = st.text_input(
-            "Fuente principal de ingresos"
-        )
-
-        necesidades_prioritarias = st.text_area(
-            "Necesidades prioritarias"
-        )
+        # TODOS LOS CAMPOS DEL FORMULARIO
 
         guardar_genero = st.form_submit_button(
             "💾 Guardar Caracterización"
@@ -436,73 +303,49 @@ def formulario_genero_diversidad():
             conn.execute(
                 text("""
                     INSERT INTO caracterizacion_genero_diversidad (
-
                         numero_identificacion,
                         identidad_genero,
                         orientacion_sexual,
                         expresion_genero,
                         nombre_identitario,
-
                         discriminacion,
                         tipo_discriminacion,
-
                         violencia_genero,
                         violencia_fisica,
                         violencia_sexual,
                         violencia_institucional,
-
                         trabajo_sexual,
-
                         estado_vih,
                         tratamiento_vih,
-
                         acceso_salud,
                         regimen_salud,
-
                         red_apoyo,
-
                         amenazas,
-
                         custodia_hijos,
-
                         fuente_ingresos,
-
                         necesidades_prioritarias
-
                     )
-
                     VALUES (
-
                         :numero_identificacion,
                         :identidad_genero,
                         :orientacion_sexual,
                         :expresion_genero,
                         :nombre_identitario,
-
                         :discriminacion,
                         :tipo_discriminacion,
-
                         :violencia_genero,
                         :violencia_fisica,
                         :violencia_sexual,
                         :violencia_institucional,
-
                         :trabajo_sexual,
-
                         :estado_vih,
                         :tratamiento_vih,
-
                         :acceso_salud,
                         :regimen_salud,
-
                         :red_apoyo,
-
                         :amenazas,
-
                         :custodia_hijos,
-
                         :fuente_ingresos,
-
                         :necesidades_prioritarias
                     )
                 """),
@@ -533,188 +376,46 @@ def formulario_genero_diversidad():
 
         st.success("✅ Caracterización guardada correctamente")
 
-        guardar_genero = st.form_submit_button(
-            "💾 Guardar Caracterización"
+    # =====================================
+    # INDICADORES
+    # =====================================
+
+    st.markdown("---")
+    st.subheader("📊 Indicadores de Género y Diversidad")
+
+    try:
+
+        df_genero = pd.read_sql(
+            """
+            SELECT *
+            FROM caracterizacion_genero_diversidad
+            """,
+            engine
         )
 
-    if guardar_genero:
+        c1, c2, c3, c4 = st.columns(4)
 
-        with engine.begin() as conn:
+        c1.metric("Caracterizaciones", len(df_genero))
 
-            conn.execute(
-                text("""
-                INSERT INTO caracterizacion_genero_diversidad (
-                    ...
-                )
-                VALUES (
-                    ...
-                )
-                """),
-                {
-                    # diccionario completo
-                }
-            )
-
-        st.success("✅ Caracterización guardada correctamente")
-# =====================================
-# INDICADORES
-# =====================================
-
-st.markdown("---")
-st.subheader("📊 Indicadores de Género y Diversidad")
-
-try:
-
-    df_genero = pd.read_sql(
-        """
-        SELECT *
-        FROM caracterizacion_genero_diversidad
-        """,
-        engine
-    )
-
-    c1, c2, c3, c4 = st.columns(4)
-
-    c1.metric(
-        "Caracterizaciones",
-        len(df_genero)
-    )
-
-    c2.metric(
-        "Discriminación",
-        int(df_genero["discriminacion"].sum())
-    )
-
-    c3.metric(
-        "Violencia de Género",
-        int(df_genero["violencia_genero"].sum())
-    )
-
-    c4.metric(
-        "VIH Positivo",
-        len(
-            df_genero[
-                df_genero["estado_vih"] == "Positivo"
-            ]
+        c2.metric(
+            "Discriminación",
+            int(df_genero["discriminacion"].sum())
         )
-    )
 
-except Exception as e:
-
-    st.warning(
-        "Aún no existen registros para indicadores."
-    )
-st.markdown("---")
-st.subheader("♀️ Identidad de Género")
-
-try:
-
-    identidad = (
-        df_genero["identidad_genero"]
-        .value_counts()
-        .reset_index()
-    )
-
-    identidad.columns = [
-        "Identidad",
-        "Cantidad"
-    ]
-
-    fig = px.bar(
-        identidad,
-        x="Identidad",
-        y="Cantidad",
-        title="Distribución por identidad de género"
-    )
-
-    st.plotly_chart(
-        fig,
-        use_container_width=True
-    )
-
-except:
-    pass
-
-st.subheader("🏳️‍🌈 Orientación Sexual")
-
-try:
-
-    orientacion = (
-        df_genero["orientacion_sexual"]
-        .value_counts()
-        .reset_index()
-    )
-
-    orientacion.columns = [
-        "Orientación",
-        "Cantidad"
-    ]
-
-    fig = px.pie(
-        orientacion,
-        names="Orientación",
-        values="Cantidad",
-        hole=0.4
-    )
-
-    st.plotly_chart(
-        fig,
-        use_container_width=True
-    )
-
-except:
-    pass
-st.subheader("⚠️ Violencias Reportadas")
-
-try:
-
-    violencia_df = pd.DataFrame({
-
-        "Tipo": [
+        c3.metric(
             "Violencia de Género",
-            "Violencia Física",
-            "Violencia Sexual",
-            "Violencia Institucional"
-        ],
+            int(df_genero["violencia_genero"].sum())
+        )
 
-        "Casos": [
+        c4.metric(
+            "VIH Positivo",
+            len(df_genero[df_genero["estado_vih"] == "Positivo"])
+        )
 
-            int(df_genero["violencia_genero"].sum()),
-            int(df_genero["violencia_fisica"].sum()),
-            int(df_genero["violencia_sexual"].sum()),
-            int(df_genero["violencia_institucional"].sum())
+    except:
+        st.warning("Aún no existen registros.")
 
-        ]
-    })
-
-    fig = px.bar(
-        violencia_df,
-        x="Tipo",
-        y="Casos",
-        title="Violencias reportadas"
-    )
-
-    st.plotly_chart(
-        fig,
-        use_container_width=True
-    )
-
-except:
-    pass
-st.subheader("🚨 Personas con Alto Riesgo Social")
-
-alto_riesgo = len(
-    df_genero[
-        (df_genero["violencia_sexual"] == True)
-        |
-        (df_genero["amenazas"] == True)
-    ]
-)
-
-st.metric(
-    "Casos Prioritarios",
-    alto_riesgo
-)
+    st.markdown("---")
 # =====================================
 # ROUTER
 # =====================================
