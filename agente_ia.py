@@ -248,9 +248,11 @@ p, label, span {
 
 </style>
 """, unsafe_allow_html=True)
+
 # =====================================
-# SIDEBAR (VA ARRIBA DEL ROUTER)
+# SIDEBAR
 # =====================================
+
 with st.sidebar:
 
     st.image("logo_acf.png", width=220)
@@ -265,24 +267,68 @@ with st.sidebar:
 
     st.markdown("---")
 
-    # BOTONES DE NAVEGACIÓN (IMPORTANTE)
     if st.button("🏠 Inicio"):
         st.session_state.page = "home"
         st.rerun()
 
     if st.button("⚙️ Gestión usuarios"):
         st.session_state.page = "gestion_usuarios"
-    
         st.rerun()
 
+    if st.button("♀️ Género y Diversidad"):
+        st.session_state.page = "genero_diversidad"
+        st.rerun()
+def formulario_genero_diversidad():
+    
+    st.title("♀️ Género y Diversidad")
+    st.header("♀️ Equidad de Género y Diversidad")
+
+    with st.form("form_genero_diversidad"):
+
+        # TODO TU FORMULARIO COMPLETO AQUÍ
+
+        guardar_genero = st.form_submit_button(
+            "💾 Guardar Caracterización"
+        )
+
+    if guardar_genero:
+
+        with engine.begin() as conn:
+
+            conn.execute(
+                text("""
+                INSERT INTO caracterizacion_genero_diversidad (
+                    ...
+                )
+                VALUES (
+                    ...
+                )
+                """),
+                {
+                    # diccionario completo
+                }
+            )
+
+        st.success("✅ Caracterización guardada correctamente")
+
+# =====================================
+# ROUTER
+# =====================================
+
 if st.session_state.page == "home":
-    
+
     st.title("🏠 Dashboard principal")
-    # TODO observatorio completo
+
 elif st.session_state.page == "gestion_usuarios":
-    
+
     st.title("⚙️ Gestión de usuarios")
 
+    st.markdown("---")
+
+elif st.session_state.page == "genero_diversidad":
+
+    formulario_genero_diversidad()
+    st.stop()
     st.markdown("---")
 
     # =========================
@@ -637,7 +683,7 @@ with st.sidebar:
 
     st.header("🏛️ Sistema de Atención")
 
-    # 🔥 CLAVE: recargar datos aquí
+   
     df = cargar_datos()
 
     # =========================
