@@ -719,53 +719,15 @@ st.metric(
 # ROUTER
 # =====================================
 
-if st.session_state.page == "home":
+if st.session_state.page == "gestion_usuarios":
 
-    st.title("🏠 Dashboard principal")
-
-elif st.session_state.page == "gestion_usuarios":
-
-    st.title("⚙️ Gestión de usuarios")
-
-    st.markdown("---")
+    formulario_registro()
+    st.stop()
 
 elif st.session_state.page == "genero_diversidad":
 
     formulario_genero_diversidad()
     st.stop()
-    st.markdown("---")
-
-    # =========================
-    # 1. CARGAR USUARIOS
-    # =========================
-    try:
-        df_usuarios = pd.read_sql("""
-            SELECT *
-            FROM habitante_de_calle
-        """, engine)
-
-        # normalizar estado por si viene con espacios
-        df_usuarios["estado_caso"] = (
-            df_usuarios["estado_caso"]
-            .astype(str)
-            .str.strip()
-            .str.upper()
-        )
-
-        # filtrar activos
-        df_activos = df_usuarios[df_usuarios["estado_caso"] == "ACTIVO"].copy()
-
-        # nombre completo
-        df_activos["nombre"] = (
-            df_activos["nombres"].astype(str) + " " +
-            df_activos["apellidos"].astype(str)
-        )
-
-    except Exception as e:
-        st.error("Error cargando usuarios")
-        st.caption(str(e))
-        st.stop()
-
     # =========================
     # 2. LISTA DE USUARIOS ACTIVOS
     # =========================
