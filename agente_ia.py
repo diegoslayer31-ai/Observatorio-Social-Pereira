@@ -2354,49 +2354,115 @@ with tab12:
                     "Crítico"
                 ]
             )
+            estado_post_consumo = st.selectbox(
+                "Consumo después de intervención",
+                ["No consumo", "Ocasional", "Frecuente", "Policonsumo"]
+            )
 
+            estado_post_salud = st.selectbox(
+                "Acceso a salud después",
+                ["No tiene acceso", "Parcial", "Total"]
+            )
+
+            estado_post_adherencia = st.selectbox(
+                "Adherencia después",
+                ["Alta", "Media", "Baja", "No aplica"]
+            )
+
+            estado_post_riesgo = st.selectbox(
+                "Riesgo después",
+                ["Bajo", "Medio", "Alto", "Crítico"]
+            )
+            # =========================
+            # 📊 ESTADO BASE (ANTES)
+            # =========================
+
+            estado_base_consumo = st.selectbox(
+                "Consumo de sustancias (estado actual)",
+                ["No consumo", "Ocasional", "Frecuente", "Policonsumo"]
+            )
+
+            estado_base_salud = st.selectbox(
+                "Acceso a salud (estado actual)",
+                ["No tiene acceso", "Parcial", "Total"]
+            )
+
+            estado_base_adherencia = st.selectbox(
+                "Adherencia tratamiento (estado actual)",
+                ["Alta", "Media", "Baja", "No aplica"]
+            )
+
+            estado_base_riesgo = st.selectbox(
+                "Nivel de riesgo actual",
+                ["Bajo", "Medio", "Alto", "Crítico"]
+            )
             guardar = st.form_submit_button("Guardar PAI")
 
         if guardar:
 
             with engine.begin() as conn:
                 conn.execute(text("""
-                    INSERT INTO pai_intervenciones
-                    (
-                        documento_usuario,
-                        tipo_intervencion,
-                        patologia,
-                        profesional,
-                        descripcion,
-                        adherencia,
-                        ods_principal,
-                        resultado_intervencion,
-                        nivel_riesgo
-                    )
-                    VALUES
-                    (
-                        :doc,
-                        :tipo,
-                        :patologia,
-                        :prof,
-                        :desc,
-                        :adh,
-                        :ods,
-                        :resultado,
-                        :riesgo
-                    )
-                """), {
-                    "doc": cedula,
-                    "tipo": tipo_intervencion,
-                    "patologia": patologia,
-                    "prof": profesional,
-                    "desc": descripcion,
-                    "adh": adherencia,
-                    "ods": ods_principal,
-                    "resultado": resultado_intervencion,
-                    "riesgo": nivel_riesgo
-                })
+            INSERT INTO pai_intervenciones (
+                documento_usuario,
+                tipo_intervencion,
+                patologia,
+                profesional,
+                descripcion,
+                adherencia,
+                ods_principal,
+                resultado_intervencion,
+                nivel_riesgo,
+                estado_base,
+                estado_post,
+                numero_sesiones,
+                intensidad_intervencion,
+                barreras
+            )
+            VALUES (
+                :doc,
+                :tipo,
+                :patologia,
+                :prof,
+                :desc,
+                :adh,
+                :ods,
+                :resultado,
+                :riesgo,
+                :base,
+                :post,
+                :sesiones,
+                :intensidad,
+                :barreras
+            )
+            """), {
+                "doc": cedula,
+                "tipo": tipo_intervencion,
+                "patologia": patologia,
+                "prof": profesional,
+                "desc": descripcion,
+                "adh": adherencia,
+                "ods": ods_principal,
+                "resultado": resultado_intervencion,
+                "riesgo": nivel_riesgo,
 
+                "base": {
+                    "consumo": estado_base_consumo,
+                    "salud": estado_base_salud,
+                    "adherencia": estado_base_adherencia,
+                    "riesgo": estado_base_riesgo
+                },
+
+                "post": {
+                    "consumo": estado_post_consumo,
+                    "salud": estado_post_salud,
+                    "adherencia": estado_post_adherencia,
+                    "riesgo": estado_post_riesgo
+                },
+
+                "sesiones": numero_sesiones,
+                "intensidad": intensidad_intervencion,
+                "barreras": barreras
+            })
             st.success("PAI registrado correctamente")
 
     st.divider()
