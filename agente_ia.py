@@ -2,20 +2,6 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 from sqlalchemy import create_engine, text
-
-st.set_page_config(
-    page_title="Observatorio Social Asociación Ciudad Futuro",
-    page_icon="📊",
-    layout="wide"
-)
-
-engine = create_engine(st.secrets["DATABASE_URL"])
-
-if "page" not in st.session_state:
-    st.session_state.page = "home"
-
-
-from sqlalchemy import create_engine, text
 #from ollama import Client
 
 from reportlab.platypus import (
@@ -27,465 +13,12 @@ from reportlab.platypus import (
 
 from reportlab.lib.styles import getSampleStyleSheet
 
-def formulario_registro():
-    
-    st.subheader("🔐 Registro de usuarios")
-
-    clave = st.text_input("Ingrese la contraseña", type="password")
-
-    if clave == "Pereira2026":
-
-        with st.form("registro_usuario"):
-
-            nombres = st.text_input("Nombres")
-            apellidos = st.text_input("Apellidos")
-
-            sexo = st.selectbox("Sexo al nacer", ["Masculino", "Femenino"])
-            edad = st.number_input("Edad", 0, 120, 18)
-
-            tipo_id = st.selectbox("Tipo ID", ["CC", "TI", "CE", "PEP", "Otro"])
-            numero_id = st.text_input("Número de identificación")
-
-            etnia = st.selectbox("Etnia", ["Ninguno", "Afrodescendiente", "Indígena", "Mestizo"])
-            discapacidad = st.selectbox("Discapacidad", ["No", "Sí"])
-
-            migracion = st.selectbox("Migración", ["NO", "SI"])
-
-            educacion = st.selectbox(
-                "Educación",
-                ["Ninguno", "Primaria", "Secundaria", "Técnico", "Tecnólogo", "Universitario"]
-            )
-
-            barrio = st.text_input("Barrio")
-            comuna = st.text_input("Comuna")
-            telefono = st.text_input("Teléfono")
-
-            consumo = st.selectbox(
-                "Consumo",
-                ["No", "Marihuana", "Cocaína", "Bazuco", "Alcohol", "Heroína", "Policonsumo"]
-            )
-
-            enfermedad = st.selectbox("Enfermedad mental", ["No", "Sí"])
-
-            modalidad = st.selectbox("Modalidad", ["GRANJA", "URBANO"])
-
-            guardar = st.form_submit_button("Guardar usuario")
-
-        if guardar:
-
-            with engine.begin() as conn:
-                conn.execute(text("""
-                    INSERT INTO habitante_de_calle (
-                        nombres, apellidos, sexo_al_nacer, edad,
-                        tipo_de_identificacion, numero_identificacion,
-                        grupos_etnicos_afro_indigena,
-                        personas_con_discapacidad,
-                        indicador_migracion,
-                        nivel_educativo_que_tiene_o_cursa,
-                        barrio_o_vereda_de_residencia,
-                        comuna_o_corregimiento_de_residencia,
-                        telefono_y_o_celular,
-                        tipo_de_consumo,
-                        enfermedad_mental,
-                        estado_caso,
-                        modalidad
-                    )
-                    VALUES (
-                        :nombres, :apellidos, :sexo, :edad,
-                        :tipo_id, :numero_id, :etnia,
-                        :discapacidad, :migracion, :educacion,
-                        :barrio, :comuna, :telefono,
-                        :consumo, :enfermedad,
-                        'ACTIVO', :modalidad
-                    )
-                """), locals())
-
-            st.success("Usuario registrado correctamente")
-
-    else:
-        st.info("Ingrese la contraseña para habilitar el formulario")
 # =========================
 # CONFIG
 # =========================
 st.set_page_config(
-    page_title="Observatorio Social Asociación Ciudad Futuro",
-    page_icon="📊",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
-# =========================
-# ESTILO INSTITUCIONAL
-# =========================
-st.markdown("""
-<style>
-
-/* =========================
-   STREAMLIT BASICO
-========================= */
-#MainMenu {visibility: hidden;}
-footer {visibility: hidden;}
-
-/* ⚠️ IMPORTANTE: NO romper header */
-header {visibility: visible !important;}
-
-/* =========================
-   APP DARK MODE
-========================= */
-.stApp {
-    background-color: #0B1220;
-    color: #E5E7EB;
-}
-
-/* =========================
-   SIDEBAR (FIJO Y VISIBLE)
-========================= */
-section[data-testid="stSidebar"] {
-    background-color: #0F172A !important;
-    width: 21rem !important;
-}
-
-/* texto sidebar */
-section[data-testid="stSidebar"] * {
-    color: #E5E7EB !important;
-}
-
-/* =========================
-   BOTÓN COLAPSE (OCULTAR)
-========================= */
-[data-testid="collapsedControl"] {
-    display: none !important;
-}
-
-/* =========================
-   CONTAINER PRINCIPAL
-========================= */
-.main .block-container {
-    max-width: 1500px;
-    padding-top: 1rem;
-}
-
-/* =========================
-   METRICAS
-========================= */
-div[data-testid="stMetric"] {
-    background: #111827;
-    border-radius: 14px;
-    padding: 16px;
-    border-left: 4px solid #3B82F6;
-}
-
-div[data-testid="stMetricValue"] {
-    color: #FFFFFF !important;
-    font-weight: 800;
-}
-
-div[data-testid="stMetricLabel"] {
-    color: #9CA3AF !important;
-}
-
-/* =========================
-   TABS
-========================= */
-button[data-baseweb="tab"] {
-    font-weight: 600;
-    color: #E5E7EB !important;
-}
-
-/* =========================
-   TABLAS
-========================= */
-[data-testid="stDataFrame"] {
-    background: #111827;
-    border-radius: 12px;
-    padding: 8px;
-    color: white;
-}
-
-/* =========================
-   GRAFICOS
-========================= */
-[data-testid="stPlotlyChart"] {
-    background: #111827;
-    border-radius: 12px;
-    padding: 10px;
-}
-
-/* =========================
-   TITULOS
-========================= */
-h1, h2, h3 {
-    color: #F9FAFB !important;
-}
-
-/* =========================
-   TEXTO
-========================= */
-p, label, span {
-    color: #D1D5DB;
-}
-
-/* =========================
-   BANNER
-========================= */
-.banner {
-    background: linear-gradient(90deg,#0F172A,#1E3A8A,#2563EB);
-    padding: 35px;
-    border-radius: 0 0 20px 20px;
-    margin-bottom: 25px;
-}
-
-.banner-title {
-    color: white;
-    font-size: 42px;
-    font-weight: 700;
-}
-
-.banner-subtitle {
-    color: #CBD5E1;
-    font-size: 18px;
-    margin-top: 10px;
-}
-
-</style>
-""", unsafe_allow_html=True)
-# =====================================
-# SIDEBAR (VA ARRIBA DEL ROUTER)
-# =====================================
-with st.sidebar:
-
-    st.image("logo_acf.png", width=220)
-
-    st.markdown("---")
-    st.markdown("### Asociación Ciudad Futuro")
-
-    st.caption("""
-    Sistema Integral de Atención,
-    Seguimiento y Observatorio Social
-    """)
-
-    st.markdown("---")
-
-    # BOTONES DE NAVEGACIÓN (IMPORTANTE)
-    if st.button("🏠 Inicio"):
-        st.session_state.page = "home"
-        st.rerun()
-
-    if st.button("⚙️ Gestión usuarios"):
-        st.session_state.page = "gestion_usuarios"
-    
-        st.rerun()
-
-if st.session_state.page == "home":
-    
-    st.title("🏠 Dashboard principal")
-    # TODO observatorio completo
-elif st.session_state.page == "gestion_usuarios":
-    
-    st.title("⚙️ Gestión de usuarios")
-
-    st.markdown("---")
-
-    # =========================
-    # 1. CARGAR USUARIOS
-    # =========================
-    try:
-        df_usuarios = pd.read_sql("""
-            SELECT *
-            FROM habitante_de_calle
-        """, engine)
-
-        # normalizar estado por si viene con espacios
-        df_usuarios["estado_caso"] = (
-            df_usuarios["estado_caso"]
-            .astype(str)
-            .str.strip()
-            .str.upper()
-        )
-
-        # filtrar activos
-        df_activos = df_usuarios[df_usuarios["estado_caso"] == "ACTIVO"].copy()
-
-        # nombre completo
-        df_activos["nombre"] = (
-            df_activos["nombres"].astype(str) + " " +
-            df_activos["apellidos"].astype(str)
-        )
-
-    except Exception as e:
-        st.error("Error cargando usuarios")
-        st.caption(str(e))
-        st.stop()
-
-    # =========================
-    # 2. LISTA DE USUARIOS ACTIVOS
-    # =========================
-    st.subheader("📋 Usuarios activos")
-
-    with st.container():
-        st.dataframe(
-            df_activos[[
-                "nombre",
-                "numero_identificacion",
-                "estado_caso"
-            ]],
-            use_container_width=True
-        )
-
-    st.markdown("---")
-
-
-    # =====================================
-    # 🔐 REGISTRO COMPLETO (ANTES TAB11)
-    # =====================================
-    st.subheader("➕ Registrar usuario (ficha social completa)")
-
-    with st.form("form_usuario_completo"):
-
-        nombres = st.text_input("Nombres")
-        apellidos = st.text_input("Apellidos")
-
-        sexo = st.selectbox("Sexo al nacer", ["Masculino", "Femenino"])
-        edad = st.number_input("Edad", 0, 120, 18)
-
-        tipo_id = st.selectbox("Tipo ID", ["CC", "TI", "CE", "PEP", "Otro"])
-        numero_id = st.text_input("Número de identificación")
-
-        etnia = st.selectbox("Etnia", ["Ninguno", "Afrodescendiente", "Indígena", "Mestizo"])
-        discapacidad = st.selectbox("Discapacidad", ["No", "Sí"])
-        migracion = st.selectbox("Migración", ["NO", "SI"])
-
-        educacion = st.selectbox(
-            "Educación",
-            ["Ninguno", "Primaria", "Secundaria", "Técnico", "Tecnólogo", "Universitario"]
-        )
-
-        barrio = st.text_input("Barrio")
-        comuna = st.text_input("Comuna")
-        telefono = st.text_input("Teléfono")
-
-        consumo = st.selectbox(
-            "Consumo",
-            ["No", "Marihuana", "Cocaína", "Bazuco", "Alcohol", "Heroína", "Policonsumo"]
-        )
-
-        enfermedad = st.selectbox("Enfermedad mental", ["No", "Sí"])
-        modalidad = st.selectbox("Modalidad", ["GRANJA", "URBANO"])
-
-        guardar = st.form_submit_button("Guardar usuario")
-
-    if guardar:
-
-        with engine.begin() as conn:
-            conn.execute(text("""
-                INSERT INTO habitante_de_calle (
-                    nombres, apellidos, sexo_al_nacer, edad,
-                    tipo_de_identificacion, numero_identificacion,
-                    grupos_etnicos_afro_indigena,
-                    personas_con_discapacidad,
-                    indicador_migracion,
-                    nivel_educativo_que_tiene_o_cursa,
-                    barrio_o_vereda_de_residencia,
-                    comuna_o_corregimiento_de_residencia,
-                    telefono_y_o_celular,
-                    tipo_de_consumo,
-                    enfermedad_mental,
-                    estado_caso,
-                    modalidad
-                )
-                VALUES (
-                    :nombres, :apellidos, :sexo, :edad,
-                    :tipo_id, :numero_id, :etnia,
-                    :discapacidad, :migracion, :educacion,
-                    :barrio, :comuna, :telefono,
-                    :consumo, :enfermedad,
-                    'ACTIVO', :modalidad
-                )
-            """), {
-                "nombres": nombres,
-                "apellidos": apellidos,
-                "sexo": sexo,
-                "edad": edad,
-                "tipo_id": tipo_id,
-                "numero_id": numero_id,
-                "etnia": etnia,
-                "discapacidad": discapacidad,
-                "migracion": migracion,
-                "educacion": educacion,
-                "barrio": barrio,
-                "comuna": comuna,
-                "telefono": telefono,
-                "consumo": consumo,
-                "enfermedad": enfermedad,
-                "modalidad": modalidad
-            })
-
-        st.success("Usuario registrado correctamente")
-
-    st.divider()
-
-    # =====================================
-    # 🚫 INACTIVAR / REACTIVAR
-    # =====================================
-    st.subheader("🚫 Cambiar estado del usuario")
-
-    df_lista = pd.read_sql("""
-        SELECT numero_identificacion, nombres, apellidos, estado_caso
-        FROM habitante_de_calle
-    """, engine)
-
-    df_lista["nombre"] = df_lista["nombres"] + " " + df_lista["apellidos"]
-
-    usuario_sel = st.selectbox(
-        "Selecciona usuario",
-        df_lista["numero_identificacion"].tolist(),
-        format_func=lambda x: df_lista[df_lista["numero_identificacion"] == x]["nombre"].values[0]
-    )
-
-    nuevo_estado = st.selectbox("Nuevo estado", ["ACTIVO", "INACTIVO"])
-
-    if st.button("Actualizar estado"):
-
-        with engine.begin() as conn:
-            conn.execute(text("""
-                UPDATE habitante_de_calle
-                SET estado_caso = :estado
-                WHERE numero_identificacion = :id
-            """), {
-                "estado": nuevo_estado,
-                "id": usuario_sel
-            })
-
-        st.success("Estado actualizado")
-        st.rerun()
-# =====================================
-# BANNER PRINCIPAL
-# =====================================
-st.markdown("""
-<div class="banner">
-
-<div class="banner-title">
-Sistema Integral de Atención y Seguimiento
-</div>
-
-<div class="banner-subtitle">
-Gestión integral de usuarios • Seguimiento profesional •
-Plan de Atención Individual (PAI) • Reducción de riesgos y daños •
-Adherencia al tratamiento • Indicadores de impacto social
-</div>
-
-</div>
-""", unsafe_allow_html=True)
-
-# =====================================
-# OLLAMA
-# =====================================
-# client = Client(host="http://localhost:11434")
-
-# =====================================
-# POSTGRESQL / SUPABASE
-# =====================================
-engine = create_engine(
-    st.secrets["DATABASE_URL"]
+    page_title="Observatorio Social IA",
+    layout="wide"
 )
 
 # =========================
@@ -508,7 +41,20 @@ st.title("🧠 Observatorio Social Habitante de Calle Pereira 2026")
 # CARGAR DATOS
 # =========================
 df = pd.read_sql("SELECT * FROM habitante_de_calle", engine)
+# =========================
+# CARGAR DATOS
+# =========================
+df = pd.read_sql("SELECT * FROM habitante_de_calle", engine)
 df = df.drop_duplicates()
+# 🔥 LIMPIEZA DE COLUMNAS (OBLIGATORIO)
+df.columns = (
+    df.columns
+    .str.strip()
+    .str.lower()
+    .str.replace("\n", " ")
+    .str.replace("  ", " ")
+    .str.replace(" ", "_")
+)
 # =========================
 # LIMPIEZA COLUMNAS
 # =========================
@@ -521,31 +67,6 @@ df.columns = (
     .str.replace(" ", "_")
 )
 
-# =========================
-# CUPOS EN TIEMPO REAL
-# =========================
-def cupos_actuales(df):
-
-    df["modalidad"] = df["modalidad"].astype(str).str.upper().str.strip()
-    df["estado_caso"] = df["estado_caso"].astype(str).str.upper().str.strip()
-
-    urbano_activos = len(
-        df[(df["modalidad"] == "URBANO") & (df["estado_caso"] == "ACTIVO")]
-    )
-
-    granja_activos = len(
-        df[(df["modalidad"] == "GRANJA") & (df["estado_caso"] == "ACTIVO")]
-    )
-
-    return urbano_activos, granja_activos
-def validar_cupos(df, modalidad):
-    
-    urbano, granja = cupos_actuales(df)
-
-    if modalidad == "URBANO" and urbano >= 100:
-        return False, "🚨 Urbano está en capacidad máxima"
-
-    return True, "OK"
 # =========================
 # FUNCIÓN CONSOLIDADA 
 # =========================
@@ -599,17 +120,7 @@ def generar_resumen(df):
         "consumo_top": consumo_top,
         "etnia_top": etnia_top
     }
-def cargar_datos():
-    df = pd.read_sql("SELECT * FROM habitante_de_calle", engine)
 
-    df["estado_caso"] = (
-        df["estado_caso"]
-        .astype(str)
-        .str.strip()
-        .str.upper()
-    )
-
-    return df
 # =========================
 # APLICAR PESO
 # =========================
@@ -633,60 +144,26 @@ if "sexo_al_nacer" in df.columns:
             }
         )
     )
-with st.sidebar:
 
-    st.header("🏛️ Sistema de Atención")
+# =========================
+# SIDEBAR
+# =========================
+st.sidebar.header("Filtros")
 
-    # 🔥 CLAVE: recargar datos aquí
-    df = cargar_datos()
-
-    # =========================
-    # CUPOS
-    # =========================
-    urbano, granja = cupos_actuales(df)
-
-    st.subheader("📊 Cupos en tiempo real")
-
-    st.metric("🏙️ Urbano (máx 100)", f"{urbano}/100")
-    st.metric("🌱 Granja", granja)
-
-    if urbano >= 100:
-        st.error("🚨 URBANO EN CAPACIDAD MÁXIMA")
-
-    st.divider()
-    # =========================
-    # USUARIOS URBANO
-    # =========================
-    with st.expander("🏙️ Usuarios URBANO activos"):
-
-        df_urbano = df[
-            (df["modalidad"] == "URBANO") &
-            (df["estado_caso"] == "ACTIVO")
-        ][["nombres", "apellidos", "numero_identificacion"]].copy()
-
-        df_urbano["nombre"] = (
-            df_urbano["nombres"].astype(str) + " " + df_urbano["apellidos"].astype(str)
-        )
-
-        st.dataframe(df_urbano[["nombre", "numero_identificacion"]], use_container_width=True)
-
-    # =========================
-    # USUARIOS GRANJA
-    # =========================
-    with st.expander("🌱 Usuarios GRANJA activos"):
-
-        df_granja = df[
-            (df["modalidad"] == "GRANJA") &
-            (df["estado_caso"] == "ACTIVO")
-        ][["nombres", "apellidos", "numero_identificacion"]].copy()
-
-        df_granja["nombre"] = (
-            df_granja["nombres"].astype(str) + " " + df_granja["apellidos"].astype(str)
-        )
-
-        st.dataframe(df_granja[["nombre", "numero_identificacion"]], use_container_width=True)
-
-    st.divider()
+if "sexo_al_nacer" in df.columns:
+    sexo = st.sidebar.multiselect(
+        "Sexo",
+        options=df["sexo_al_nacer"].dropna().unique(),
+        default=df["sexo_al_nacer"].dropna().unique(),
+    )
+    df = df[df["sexo_al_nacer"].isin(sexo)]
+if "comuna_o_corregimiento_de_residencia" in df.columns:
+    comuna = st.sidebar.multiselect(
+        "Comuna",
+        options=df["comuna_o_corregimiento_de_residencia"].dropna().unique(),
+        default=df["comuna_o_corregimiento_de_residencia"].dropna().unique(),
+    )
+    df = df[df["comuna_o_corregimiento_de_residencia"].isin(comuna)]
 # =========================
 # ÍNDICE DE VULNERABILIDAD
 # =========================
@@ -723,8 +200,25 @@ def color_riesgo(r):
 
 
 df["semáforo"] = df["nivel_riesgo"].apply(color_riesgo)
+st.subheader("🧠 ¿Cómo interpretar el Score de Vulnerabilidad?")
 
+st.info("""
+El Score de Vulnerabilidad mide el nivel de acumulación de factores de riesgo social.
 
+Se construye a partir de:
+- Consumo de sustancias
+- Salud mental
+- Discapacidad
+- Migración
+
+Escala:
+- 0–25 → Bajo riesgo
+- 26–50 → Riesgo medio
+- 51–75 → Alto riesgo
+- 76–100 → Riesgo crítico
+
+👉 A mayor score, mayor prioridad de intervención.
+""")
 # =========================
 # KPIs
 # =========================
@@ -756,7 +250,10 @@ col4.metric(
     len(df_kpi)
 )
 # KPIs
-tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10, tab11, tab12, tab13, tab14 = st.tabs([
+# =========================
+# TABS PRINCIPALES
+# =========================
+tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10, tab11, tab12 = st.tabs([
     "📊 General",
     "⚠️ Vulnerabilidad",
     "🚬 Consumo",
@@ -766,300 +263,172 @@ tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10, tab11, tab12, tab13
     "🚦 Semáforo",
     "🤖 IA",
     "🏆 Egresos e Impacto",
-    "📄 Reportes",
+    "📄 Reportes Institucionales",
     "➕ Nuevo Registro",
-    "📋 Seguimiento Profesional",
-    "📈 Seguimiento e Impacto",
-    "📥 Carga Activos"   # 👈 NUEVO
+    "📋 Seguimiento Profesional"
 ])
-
 # =========================
 # TAB GENERAL
 # =========================
 with tab1:
 
-    st.subheader("📊 Caracterización General")
+    st.subheader("📊 Caracterización general")
 
-    st.caption(
-        "Descripción sociodemográfica de la población atendida."
-    )
+    # =========================
+    # SEXO AL NACER
+    # =========================
+    if "sexo_al_nacer" in df.columns:
 
-    # =====================================
-    # SEXO Y EDAD
-    # =====================================
+        sexo_df = df["sexo_al_nacer"].value_counts().reset_index()
+        sexo_df.columns = ["sexo", "cantidad"]
 
-    col1, col2 = st.columns(2)
+        fig1 = px.pie(
+            sexo_df,
+            names="sexo",
+            values="cantidad",
+            title="Sexo al nacer"
+        )
 
-    with col1:
+        st.plotly_chart(fig1, use_container_width=True)
 
-        if "sexo_al_nacer" in df.columns:
+        sexo_top = sexo_df.iloc[0]
 
-            sexo_df = (
-                df["sexo_al_nacer"]
-                .value_counts()
-                .reset_index()
-            )
+        st.info(
+            f"Predomina el sexo {sexo_top['sexo']} con {sexo_top['cantidad']} registros."
+        )
 
-            sexo_df.columns = [
-                "sexo",
-                "cantidad"
-            ]
-
-            fig1 = px.pie(
-                sexo_df,
-                names="sexo",
-                values="cantidad",
-                title="Sexo al nacer"
-            )
-
-            st.plotly_chart(
-                fig1,
-                use_container_width=True
-            )
-
-            sexo_top = sexo_df.iloc[0]
-
-            st.info(
-                f"Predomina el sexo {sexo_top['sexo']} con {sexo_top['cantidad']} registros."
-            )
-
-    with col2:
-
-        if "edad" in df.columns:
-
-            df["edad"] = pd.to_numeric(
-                df["edad"],
-                errors="coerce"
-            )
-
-            fig2 = px.histogram(
-                df,
-                x="edad",
-                nbins=20,
-                title="Distribución de edades"
-            )
-
-            st.plotly_chart(
-                fig2,
-                use_container_width=True
-            )
-
-            edad_promedio = round(
-                df["edad"].mean(),
-                1
-            )
-
-            st.info(
-                f"Edad promedio de la población: {edad_promedio} años."
-            )
+    else:
+        st.warning("No existe la columna 'sexo_al_nacer'")
 
     st.markdown("---")
 
-    # =====================================
-    # GRUPO ETARIO
-    # =====================================
+    # =========================
+    # EDAD
+    # =========================
+    if "edad" in df.columns:
 
+        df["edad"] = pd.to_numeric(df["edad"], errors="coerce")
+
+        fig2 = px.histogram(
+            df,
+            x="edad",
+            nbins=20,
+            title="Distribución de edades"
+        )
+
+        st.plotly_chart(fig2, use_container_width=True)
+
+    else:
+        st.warning("No existe la columna 'edad'")
+
+    st.markdown("---")
+
+    # =========================
+    # GRUPO ETARIO
+    # =========================
     if "edad" in df.columns:
 
         df["grupo_etario"] = pd.cut(
             df["edad"],
-            bins=[18, 28, 59, 120],
-            labels=[
-                "Joven",
-                "Adulto",
-                "Adulto Mayor"
-            ]
+            bins=[0, 17, 28, 59, 120],
+            labels=["Adolescencia", "Joven", "Adulto", "Adulto mayor"]
         )
 
-        etario_df = (
-            df["grupo_etario"]
-            .value_counts()
-            .reset_index()
-        )
-
-        etario_df.columns = [
-            "grupo",
-            "cantidad"
-        ]
-
-        fig_etario = px.bar(
-            etario_df,
-            x="grupo",
-            y="cantidad",
-            text="cantidad",
-            title="Distribución por grupo etario"
-        )
-
-        st.plotly_chart(
-            fig_etario,
-            use_container_width=True
-        )
+        etario_df = df["grupo_etario"].value_counts().reset_index()
+        etario_df.columns = ["grupo", "cantidad"]
 
         grupo_top = etario_df.iloc[0]
 
-        st.success(
-            f"Grupo predominante: {grupo_top['grupo']} ({grupo_top['cantidad']} personas)"
+        st.info(
+            f"Grupo etario predominante: {grupo_top['grupo']} con {grupo_top['cantidad']} registros."
         )
 
-        total_personas = len(df)
-
-        porcentaje_grupo = round(
-            (grupo_top["cantidad"] / total_personas) * 100,
-            1
-        )
-
-        with st.expander(
-            "📘 Interpretación de la distribución por grupo etario"
-        ):
-
-            st.markdown(f"""
-### Resultado principal
-
-El grupo etario predominante corresponde a **{grupo_top['grupo']}**, con **{grupo_top['cantidad']} personas**, equivalente al **{porcentaje_grupo}%** de la población registrada.
-
-### Interpretación
-
-- **Joven (18-28 años):** requiere estrategias de inclusión social, formación para el trabajo y prevención de riesgos.
-
-- **Adulto (29-59 años):** demanda procesos de estabilización social, fortalecimiento de redes de apoyo y generación de ingresos.
-
-- **Adulto Mayor (60 años o más):** requiere atención integral en salud, protección social y acompañamiento permanente.
-
-            """)
+    else:
+        st.warning("No se puede calcular grupo etario sin la columna edad")
 
     st.markdown("---")
 
-    # =====================================
-    # RIESGOS POBLACIONALES
-    # =====================================
-
-    if (
-        "grupo_etario" in df.columns
-        and
-        "nivel_riesgo" in df.columns
-    ):
+    # =========================
+    # ADULTOS MAYORES EN RIESGO
+    # =========================
+    if "grupo_etario" in df.columns and "nivel_riesgo" in df.columns:
 
         adultos_criticos = len(
             df[
-                (df["grupo_etario"] == "Adulto Mayor")
-                &
-                (
-                    df["nivel_riesgo"]
-                    .isin(["Alto", "Crítico"])
-                )
+                (df["grupo_etario"] == "Adulto mayor") &
+                (df["nivel_riesgo"].isin(["Alto", "Crítico"]))
             ]
         )
 
-        jovenes_criticos = len(
-            df[
-                (df["grupo_etario"] == "Joven")
-                &
-                (
-                    df["nivel_riesgo"]
-                    .isin(["Alto", "Crítico"])
-                )
-            ]
+        adultos_total = len(df[df["grupo_etario"] == "Adulto mayor"])
+
+        st.error(
+            f"👴 Adultos mayores en alto/crítico riesgo: {adultos_criticos}"
         )
 
-        col1, col2 = st.columns(2)
+        st.warning(
+            f"Total adultos mayores: {adultos_total}"
+        )
 
-        with col1:
-
-            st.metric(
-                "👴 Adultos mayores en riesgo",
-                adultos_criticos
-            )
-
-        with col2:
-
-            st.metric(
-                "🧑 Jóvenes en riesgo",
-                jovenes_criticos
-            )
+    else:
+        st.info("No se puede calcular riesgo en adultos mayores")
 
     st.markdown("---")
 
-    # =====================================
-    # ETNIA VS CONSUMO
-    # =====================================
+    # =========================
+    # JÓVENES EN RIESGO
+    # =========================
+    if "grupo_etario" in df.columns and "nivel_riesgo" in df.columns:
 
+        jovenes_criticos = len(
+            df[
+                (df["grupo_etario"] == "Joven") &
+                (df["nivel_riesgo"].isin(["Alto", "Crítico"]))
+            ]
+        )
+
+        jovenes_total = len(df[df["grupo_etario"] == "Joven"])
+
+        if jovenes_total > 0:
+            porcentaje_jovenes_criticos = round(
+                (jovenes_criticos / jovenes_total) * 100,
+                2
+            )
+        else:
+            porcentaje_jovenes_criticos = 0
+
+        st.warning(
+            f"🧑 Jóvenes en alta vulnerabilidad: {jovenes_criticos} "
+            f"({porcentaje_jovenes_criticos}%)"
+        )
+
+    else:
+        st.info("No se puede calcular jóvenes en riesgo")
+
+    st.markdown("---")
+
+    # =========================
+    # ETNIA VS CONSUMO
+    # =========================
     st.subheader("💊 Etnia vs Consumo")
 
-    if (
-        "grupos_etnicos" in df.columns
-        and
-        "tipo_consumo" in df.columns
-    ):
+    if "grupos_etnicos" in df.columns and "tipo_consumo" in df.columns:
 
         tabla = pd.crosstab(
             df["grupos_etnicos"],
             df["tipo_consumo"]
         )
 
-        st.dataframe(
-            tabla,
-            use_container_width=True
-        )
+        st.dataframe(tabla)
 
     else:
-
-        st.warning(
-            "No existen columnas para etnia vs consumo."
-        )
-
-    st.markdown("---")
-
-    # =====================================
-    # DISTRIBUCIÓN TERRITORIAL
-    # =====================================
-
-    st.subheader("📍 Distribución Territorial")
-
-    if "departamento_procedencia" in df.columns:
-
-        territorio = (
-            df["departamento_procedencia"]
-            .fillna("Sin dato")
-            .value_counts()
-            .head(10)
-            .reset_index()
-        )
-
-        territorio.columns = [
-            "territorio",
-            "cantidad"
-        ]
-
-        fig_territorio = px.bar(
-            territorio,
-            x="cantidad",
-            y="territorio",
-            orientation="h",
-            title="Distribución por departamento de procedencia"
-        )
-
-        st.plotly_chart(
-            fig_territorio,
-            use_container_width=True
-        )
-
-        territorio_top = territorio.iloc[0]
-
-        st.info(
-            f"La mayor concentración de usuarios se encuentra en {territorio_top['territorio']} ({territorio_top['cantidad']} registros)."
-        )
-
-    else:
-
-        st.warning(
-            "No existe la columna departamento_procedencia."
-        )
+        st.warning("No existen columnas para etnia vs consumo")
 # =========================
 # TAB VULNERABILIDAD
 # =========================
 with tab2:
 
-    st.subheader("🚦 Distribución de Vulnerabilidad Social")
+    st.subheader("🚦 Distribución de vulnerabilidad")
 
     fig = px.histogram(
         df,
@@ -1073,93 +442,19 @@ with tab2:
         use_container_width=True
     )
 
-    # =========================
-    # RESUMEN EJECUTIVO
-    # =========================
+    # INTERPRETACIÓN
     criticos = len(
         df[df["nivel_riesgo"] == "Crítico"]
     )
 
     st.error(
-        f"⚠️ Se identifican {criticos} personas en nivel crítico de vulnerabilidad social."
+        f"Se identifican {criticos} personas en nivel crítico de vulnerabilidad social."
     )
 
-    # =========================
-    # METODOLOGÍA
-    # =========================
-    with st.expander("📘 Metodología del Score de Vulnerabilidad"):
-
-        st.markdown("""
-        ### ¿Qué mide este indicador?
-
-        El **Score de Vulnerabilidad Social** estima el nivel de acumulación de factores de riesgo presentes en cada persona atendida.
-
-        ### Variables consideradas
-
-        - Consumo de sustancias psicoactivas
-        - Enfermedad mental reportada
-        - Situación de discapacidad
-        - Condición migratoria
-
-        ### Escala de clasificación
-
-        | Puntaje | Nivel |
-        |----------|----------|
-        | 0 - 25 | 🟢 Bajo |
-        | 26 - 50 | 🟡 Medio |
-        | 51 - 75 | 🟠 Alto |
-        | 76 - 100 | 🔴 Crítico |
-
-        ### Interpretación
-
-        Un puntaje más alto indica una mayor acumulación de vulnerabilidades sociales y sanitarias, por lo que la persona requiere una prioridad superior en los procesos de intervención, seguimiento y acompañamiento institucional.
-
-        **Este indicador no constituye un diagnóstico clínico**, sino una herramienta de focalización para la toma de decisiones.
-        """)
-
-    # =========================
-    # TABLA RESUMEN
-    # =========================
-    st.subheader("📊 Distribución por nivel de riesgo")
-
-    resumen = (
-        df["nivel_riesgo"]
-        .value_counts()
-        .reset_index()
+    st.info(
+        "El score de vulnerabilidad refleja acumulación de riesgos sociales, sanitarios y territoriales."
     )
 
-    resumen.columns = ["Nivel", "Cantidad"]
-
-    st.dataframe(
-        resumen,
-        use_container_width=True
-    )
-    # =========================
-    # TOP 20 CASOS CRÍTICOS
-    # =========================
-    st.subheader("🚨 Casos Prioritarios")
-
-    top_criticos = df.sort_values(
-        "score_vulnerabilidad",
-        ascending=False
-    )
-
-    columnas_mostrar = [
-        "nombres",
-        "apellidos",
-        "score_vulnerabilidad",
-        "nivel_riesgo"
-    ]
-
-    columnas_existentes = [
-        c for c in columnas_mostrar
-        if c in top_criticos.columns
-    ]
-
-    st.dataframe(
-        top_criticos[columnas_existentes].head(20),
-        use_container_width=True
-    )
 # =========================
 # TAB CONSUMO
 # =========================
@@ -1719,7 +1014,6 @@ with tab10:
             )
 
         st.success("PDF generado correctamente")
-# =========================
 # NUEVO REGISTRO
 # =========================
 
@@ -1727,138 +1021,102 @@ with tab11:
 
     st.subheader("🔐 Acceso al formulario")
 
-    clave = st.text_input(
-        "Ingrese la contraseña",
-        type="password",
-        key="clave_registro"
-    )
+    clave = st.text_input("Ingrese la contraseña", type="password")
 
-    if clave == "Pereira2026":
+    if clave != "Pereira2026":
+        st.warning("Contraseña incorrecta")
+        st.stop()
 
-        st.success("✅ Acceso autorizado")
+    st.success("Acceso autorizado")
 
-        with st.form("registro_social"):
+    with st.form("registro_social"):
 
-            st.markdown("### Datos personales")
+        st.markdown("### Datos personales")
 
-            nombres = st.text_input("Nombres")
-            apellidos = st.text_input("Apellidos")
+        nombres = st.text_input("Nombres")
+        apellidos = st.text_input("Apellidos")
 
-            sexo = st.selectbox(
-                "Sexo al nacer",
-                ["Masculino", "Femenino"]
-            )
+        sexo = st.selectbox("Sexo al nacer", ["Masculino", "Femenino"])
+        edad = st.number_input("Edad", 0, 120, 18)
 
-            edad = st.number_input(
-                "Edad",
-                min_value=0,
-                max_value=120,
-                value=18
-            )
+        tipo_id = st.selectbox("Tipo ID", ["CC", "TI", "CE", "PEP", "Otro"])
 
-            tipo_id = st.selectbox(
-                "Tipo ID",
-                ["CC", "TI", "CE", "PEP", "Otro"]
-            )
+        numero_id = st.text_input("Número de identificación")
 
-            numero_id = st.text_input("Número de identificación")
+        etnia = st.selectbox("Grupo étnico", ["Ninguno", "Afrodescendiente", "Indígena", "Mestizo"])
 
-            etnia = st.selectbox(
-                "Grupo étnico",
-                ["Ninguno", "Afrodescendiente", "Indígena", "Mestizo"]
-            )
+        migracion_txt = st.selectbox("Migración", ["NO", "SI"])
+        migracion = 1 if migracion_txt == "SI" else 0
 
-            discapacidad = st.selectbox(
-                "Discapacidad",
-                ["No", "Sí"]
-            )
+        educacion = st.selectbox(
+            "Nivel educativo",
+            ["Ninguno", "Primaria", "Secundaria", "Técnico", "Tecnólogo", "Universitario"]
+        )
 
-            migracion_txt = st.selectbox(
-                "Migración",
-                ["NO", "SI"]
-            )
+        barrio = st.text_input("Barrio")
+        comuna = st.text_input("Comuna")
+        telefono = st.text_input("Teléfono")
 
-            migracion = 1 if migracion_txt == "SI" else 0
+        consumo = st.selectbox(
+            "Consumo",
+            ["No", "Marihuana", "Cocaína", "Bazuco", "Alcohol", "Heroína", "Policonsumo"]
+        )
 
-            educacion = st.selectbox(
-                "Nivel educativo",
-                ["Ninguno", "Primaria", "Secundaria", "Técnico", "Tecnólogo", "Universitario"]
-            )
+        enfermedad_mental = st.selectbox("Enfermedad mental", ["No", "Sí"])
 
-            barrio = st.text_input("Barrio")
-            comuna = st.text_input("Comuna")
-            telefono = st.text_input("Teléfono")
+        guardar = st.form_submit_button("💾 Guardar registro")
 
-            consumo = st.selectbox(
-                "Consumo",
-                ["No", "Marihuana", "Cocaína", "Bazuco", "Alcohol", "Heroína", "Policonsumo"]
-            )
+    
+    if guardar:
+        st.success("Formulario enviado correctamente")
 
-            enfermedad_mental = st.selectbox(
-                "Enfermedad mental",
-                ["No", "Sí"]
-            )
 
-            modalidad = st.selectbox(
-                "Modalidad",
-                ["GRANJA", "URBANO"]
-            )
+    sql = text("""
+        INSERT INTO habitante_calle
+        (
+            nombres,
+            apellidos,
+            sexo_al_nacer,
+            edad,
+            tipo_de_identificacion,
+            "numero_de_identidadficacion_____sin_puntos,_ni_rayas,el_registr",
+            grupos_etnicos_afro_indigena,
+            personas_con_discapacidad,
+            indicador_migracion,
+            nivel_educativo_que_tiene_o_cursa,
+            barrio_o_vereda_de_residencia,
+            comuna_o_corregimiento_de_residencia,
+            telefono_y_o_celular,
+            tipo_de_consumo,
+            enfermedad_mental
+        )
+        VALUES
+        (
+            :nombres,
+            :apellidos,
+            :sexo,
+            :edad,
+            :tipo_id,
+            :numero_id,
+            :etnia,
+            :discapacidad,
+            :migracion,
+            :educacion,
+            :barrio,
+            :comuna,
+            :telefono,
+            :consumo,
+            :enfermedad_mental
+        )
+        """)
 
-            estado_caso = "ACTIVO"
+    try:
 
-            guardar = st.form_submit_button("💾 Guardar registro")
+            with engine.begin() as conn:
 
-        # =========================
-        # 🔥 INSERT CORREGIDO
-        # =========================
-        if guardar:
-
-            sql = text("""
-                INSERT INTO habitante_de_calle
-                (
-                    nombres,
-                    apellidos,
-                    sexo_al_nacer,
-                    edad,
-                    tipo_de_identificacion,
-                    numero_identificacion,
-                    grupos_etnicos_afro_indigena,
-                    personas_con_discapacidad,
-                    indicador_migracion,
-                    nivel_educativo_que_tiene_o_cursa,
-                    barrio_o_vereda_de_residencia,
-                    comuna_o_corregimiento_de_residencia,
-                    telefono_y_o_celular,
-                    tipo_de_consumo,
-                    enfermedad_mental,
-                    estado_caso,
-                    modalidad
-                )
-                VALUES
-                (
-                    :nombres,
-                    :apellidos,
-                    :sexo,
-                    :edad,
-                    :tipo_id,
-                    :numero_id,
-                    :etnia,
-                    :discapacidad,
-                    :migracion,
-                    :educacion,
-                    :barrio,
-                    :comuna,
-                    :telefono,
-                    :consumo,
-                    :enfermedad_mental,
-                    :estado_caso,
-                    :modalidad
-                )
-            """)
-
-            try:
-                with engine.begin() as conn:
-                    conn.execute(sql, {
+                conn.execute(
+                    sql,
+                    {
                         "nombres": nombres,
                         "apellidos": apellidos,
                         "sexo": sexo,
@@ -1873,480 +1131,272 @@ with tab11:
                         "comuna": comuna,
                         "telefono": telefono,
                         "consumo": consumo,
-                        "enfermedad_mental": enfermedad_mental,
-                        "estado_caso": estado_caso,
-                        "modalidad": modalidad
-                    })
+                        "enfermedad_mental": enfermedad_mental
+                    }
+                )
 
-                st.success("✅ Registro guardado correctamente")
+            st.success("✅ Registro guardado correctamente")
 
-            except Exception as e:
-                st.error(f"Error al guardar: {e}")
+    except Exception as e:
 
-    else:
-        st.info("Ingrese la contraseña para habilitar el formulario.")
+            st.error(str(e))
+            
 # =====================================
-# TAB 12 - SEGUIMIENTO PROFESIONAL + PAI
+# SEGUIMIENTO PROFESIONAL
 # =====================================
 
 with tab12:
 
-    st.title("📋 Seguimiento Profesional - PAI (Plan de Atención Individual)")
 
-    # =========================
-    # PROFESIONALES
-    # =========================
-    try:
-        df_profesionales = pd.read_sql("""
-            SELECT nombre, rol
-            FROM profesionales
-            ORDER BY nombre
-        """, engine)
+    st.title("📋 SEGUIMIENTO PROFESIONAL FUNCIONANDO")
 
-        df_profesionales["label"] = (
-            df_profesionales["nombre"].astype(str)
-            + " (" + df_profesionales["rol"].astype(str) + ")"
-        )
+    st.success("Si ves este mensaje, la pestaña está cargando correctamente")
 
-    except:
-        df_profesionales = pd.DataFrame({
-            "label": ["Psicología", "Enfermería", "Trabajo Social", "Pedagogía"]
-        })
+    cedula = st.text_input("Número de identificación")
+    st.title("📋 Seguimiento Profesional")
 
-    # =========================
-    # USUARIO
-    # =========================
-    cedula = st.text_input("Documento del usuario (PAI)", key="pai_user")
+    cedula = st.text_input(
+        "Número de identificación del usuario"
+    )
 
     if cedula:
-        usuario = pd.read_sql(f"""
-            SELECT * FROM habitante_de_calle
+
+        usuario = pd.read_sql(
+            f"""
+            SELECT *
+            FROM habitante_de_calle
             WHERE numero_identificacion = '{cedula}'
-        """, engine)
+            """,
+            engine
+        )
 
-        if not usuario.empty:
-            datos = usuario.iloc[0]
-            st.success("Usuario encontrado")
+        if usuario.empty:
 
-            c1, c2, c3 = st.columns(3)
-            c1.metric("Nombre", f"{datos['nombres']} {datos['apellidos']}")
-            c2.metric("Edad", datos.get("edad", "N/A"))
-            c3.metric("Documento", cedula)
+            st.error("Usuario no encontrado")
+
         else:
-            st.warning("Usuario no encontrado")
 
-    st.divider()
-
-    # =========================
-    # PAI FORM
-    # =========================
-    st.subheader("🧠 PAI - Plan de Atención Individual")
-
-    if cedula:
-
-        with st.form("pai_form"):
-
-            tipo_intervencion = st.selectbox(
-                "Tipo de intervención",
-                [
-                    "Reducción de riesgos y daños",
-                    "Adherencia tratamiento",
-                    "Valoración enfermería",
-                    "Valoración psicología",
-                    "Seguimiento social"
-                ]
+            st.success(
+                f"Usuario: {usuario.iloc[0]['nombres']} "
+                f"{usuario.iloc[0]['apellidos']}"
             )
 
-            patologia = st.selectbox(
-                "Patología / condición",
-                [
-                    "Consumo de sustancias",
-                    "Ansiedad",
-                    "Depresión",
-                    "Trastorno mental severo",
-                    "VIH",
-                    "Tuberculosis",
-                    "Enfermedad infectocontagiosa",
-                    "Hipertensión",
-                    "Otra"
-                ]
-            )
-
-            profesional = st.selectbox(
-                "Profesional",
-                df_profesionales["label"].tolist()
-            )
-
-            descripcion = st.text_area("Descripción")
-
-            adherencia = st.selectbox(
-                "Nivel de adherencia",
-                ["Alta", "Media", "Baja"]
-            )
-
-            guardar = st.form_submit_button("Guardar PAI")
-
-        if guardar:
-
-            with engine.begin() as conn:
-                conn.execute(text("""
-                    INSERT INTO pai_intervenciones
-                    (documento_usuario, tipo_intervencion, patologia, profesional, descripcion, adherencia)
-                    VALUES (:doc, :tipo, :patologia, :prof, :desc, :adh)
-                """), {
-                    "doc": cedula,
-                    "tipo": tipo_intervencion,
-                    "patologia": patologia,
-                    "prof": profesional,
-                    "desc": descripcion,
-                    "adh": adherencia
-                })
-
-            st.success("PAI registrado correctamente")
-
-    st.divider()
-
-    # =========================
-    # ASISTENCIA
-    # =========================
-    st.subheader("📅 Asistencia a talleres")
-
-    df_activos = pd.read_sql("""
-        SELECT numero_identificacion, nombres, apellidos
-        FROM habitante_de_calle
-        WHERE estado_caso = 'ACTIVO'
-    """, engine)
-
-    df_activos["nombre"] = df_activos["nombres"] + " " + df_activos["apellidos"]
-
-    with st.form("asistencia"):
-
-        actividad = st.text_input("Actividad")
-
-        profesional_a = st.selectbox(
-            "Profesional",
-            df_profesionales["label"].tolist()
-        )
-
-        fecha = st.date_input("Fecha")
-
-        participantes = st.multiselect(
-            "Participantes",
-            df_activos["numero_identificacion"].tolist(),
-            format_func=lambda x: df_activos.loc[
-                df_activos["numero_identificacion"] == x, "nombre"
-            ].values[0]
-        )
-
-        estado = st.selectbox("Asistencia", ["Asistió", "No asistió"])
-        obs = st.text_area("Observaciones")
-
-        guardar2 = st.form_submit_button("Guardar")
-
-    if guardar2:
-
-        with engine.begin() as conn:
-            for doc in participantes:
-                conn.execute(text("""
-                    INSERT INTO asistencias
-                    (documento_usuario, fecha, asistencia, observaciones, profesional, actividad)
-                    VALUES (:doc, :fecha, :estado, :obs, :prof, :act)
-                """), {
-                    "doc": doc,
-                    "fecha": fecha,
-                    "estado": estado,
-                    "obs": obs,
-                    "prof": profesional_a,
-                    "act": actividad
-                })
-
-        st.success("Asistencia registrada")
-# =====================================
-# TAB 13 - SEGUIMIENTO E IMPACTO (PAI + REDUCCIÓN DE RIESGOS)
-# =====================================
-with tab13:
-
-    st.title("📈 Seguimiento e Impacto - Reducción de Riesgos y Daños")
-
-    # =========================
-    # 🔎 BASE ACTIVA NORMALIZADA (ESTO ARREGLA LOS 167 vs 124)
-    # =========================
-    df_base = pd.read_sql("""
-        SELECT *
-        FROM habitante_de_calle
-        WHERE LOWER(TRIM(estado_caso)) = 'activo'
-    """, engine)
-
-    df_base["numero_identificacion"] = (
-        df_base["numero_identificacion"]
-        .astype(str)
-        .str.strip()
-        .str.replace(".0", "", regex=False)
-    )
-
-    df_base["nombre"] = (
-        df_base["nombres"].astype(str) + " " + df_base["apellidos"].astype(str)
-    )
-
-    total_activos = len(df_base)
-
-    # =========================
-    # 🧠 PAI INTERVENCIONES
-    # =========================
-    try:
-        df_pai = pd.read_sql("""
-            SELECT *
-            FROM pai_intervenciones
-        """, engine)
-    except:
-        df_pai = pd.DataFrame(columns=[
-            "documento_usuario",
-            "adherencia",
-            "patologia"
-        ])
-
-    df_pai["documento_usuario"] = df_pai["documento_usuario"].astype(str).str.strip()
-
-    # =========================
-    # 🔗 CRUCE PAI VS ACTIVOS
-    # =========================
-    activos_ids = set(df_base["numero_identificacion"])
-    pai_ids = set(df_pai["documento_usuario"])
-
-    con_pai = activos_ids.intersection(pai_ids)
-    sin_pai = activos_ids.difference(pai_ids)
-
-    df_con_pai = df_base[df_base["numero_identificacion"].isin(con_pai)]
-    df_sin_pai = df_base[df_base["numero_identificacion"].isin(sin_pai)]
-
-    # =========================
-    # 📊 INDICADORES GENERALES
-    # =========================
-    st.subheader("📊 Indicadores generales")
-
-    c1, c2, c3 = st.columns(3)
-
-    c1.metric("Activos", total_activos)
-    c2.metric("Con PAI", len(df_con_pai))
-    c3.metric("Sin PAI", len(df_sin_pai))
-
-    st.divider()
-
-    # =========================
-    # 🚨 SIN PAI
-    # =========================
-    st.subheader("🚨 Personas sin PAI")
-
-    st.dataframe(
-        df_sin_pai[[
-            "nombre",
-            "numero_identificacion",
-            "modalidad"
-        ]] if len(df_sin_pai) > 0 else pd.DataFrame()
-    )
-
-    st.divider()
-
-    # =========================
-    # ✅ CON PAI
-    # =========================
-    st.subheader("✅ Personas con PAI")
-
-    st.dataframe(
-        df_con_pai[[
-            "nombre",
-            "numero_identificacion",
-            "modalidad"
-        ]] if len(df_con_pai) > 0 else pd.DataFrame()
-    )
-
-    st.divider()
-
-    # =========================
-    # 💊 ADHERENCIA POR PATOLOGÍA
-    # =========================
-    st.subheader("💊 Adherencia por patología")
-
-    if len(df_pai) > 0 and "patologia" in df_pai.columns:
-
-        tabla = pd.crosstab(
-            df_pai["patologia"],
-            df_pai["adherencia"]
-        )
-
-        st.dataframe(tabla)
-        st.bar_chart(tabla)
-
-    else:
-        st.warning("No hay datos suficientes de PAI")
-
-    st.divider()
-
-    # =========================
-    # 🧠 ÍNDICE DE ÉXITO
-    # =========================
-    st.subheader("🧠 Índice de éxito en reducción de riesgos")
-
-    if len(df_pai) > 0 and "adherencia" in df_pai.columns:
-
-        mapa = {"Alta": 2, "Media": 1, "Baja": 0}
-
-        df_pai["score"] = df_pai["adherencia"].map(mapa)
-
-        df_indice = df_pai.groupby("documento_usuario").agg(
-            score=("score", "mean")
-        ).reset_index()
-
-        df_indice["indice_exito"] = (df_indice["score"] / 2) * 100
-
-        def clasificar(x):
-            if x >= 75:
-                return "🟢 Estabilizado"
-            elif x >= 50:
-                return "🟡 En proceso"
-            elif x >= 25:
-                return "🟠 Riesgo"
-            else:
-                return "🔴 Crítico"
-
-        df_indice["estado"] = df_indice["indice_exito"].apply(clasificar)
-
-        df_final = df_indice.merge(
-            df_base[["numero_identificacion", "nombre", "modalidad"]],
-            left_on="documento_usuario",
-            right_on="numero_identificacion",
-            how="left"
-        )
-
-        st.dataframe(
-            df_final[[
-                "nombre",
-                "modalidad",
-                "indice_exito",
-                "estado"
-            ]]
-        )
-
-        st.bar_chart(df_final["estado"].value_counts())
-
-    else:
-        st.warning("No hay datos para calcular índice de éxito")
-
-    st.divider()
-
-    # =========================
-    # 🚦 ALERTAS
-    # =========================
-    st.subheader("🚨 Alertas")
-
-    if len(df_pai) > 0 and "adherencia" in df_pai.columns:
-
-        criticos = len(df_indice[df_indice["indice_exito"] < 25])
-        porcentaje = round((criticos / len(df_indice)) * 100, 2)
-
-        if porcentaje > 30:
-            st.error(f"⚠️ Alta población en riesgo crítico: {porcentaje}%")
-        elif porcentaje > 15:
-            st.warning(f"⚠️ Riesgo medio: {porcentaje}%")
-        else:
-            st.success(f"✔️ Situación controlada: {porcentaje}%")
-
-    st.divider()
-
-    # =========================
-    # 📋 HISTORIA INDIVIDUAL
-    # =========================
-    st.subheader("📋 Historia individual PAI")
-
-    cedula = st.text_input("Documento")
-
-    if cedula:
-
-        historia = pd.read_sql(f"""
-            SELECT *
-            FROM pai_intervenciones
-            WHERE documento_usuario = '{cedula}'
-        """, engine)
-
-        st.dataframe(historia)
-
-# =====================================
-# TAB 14 - CARGA MASIVA ACTUALIZADA
-# =====================================
-
-with tab14:
-
-    st.title("📥 Carga Masiva de Activos")
-
-    archivo = st.file_uploader(
-        "Sube archivo Excel",
-        type=["xlsx"],
-        key="upload_activos_tab14"
-    )
-
-    if archivo:
-
-        try:
-            df_activos = pd.read_excel(archivo)
-
-            df_activos.columns = (
-                df_activos.columns
-                .astype(str)
-                .str.strip()
-                .str.lower()
-                .str.replace(" ", "_")
-            )
-
-            st.write("📌 Columnas detectadas:", df_activos.columns.tolist())
-
-            required = ["numero_identificacion", "modalidad"]
-
-            missing = [c for c in required if c not in df_activos.columns]
-
-            if missing:
-                st.error(f"❌ Faltan columnas: {missing}")
-                st.stop()
-
-            df_activos["numero_identificacion"] = (
-                df_activos["numero_identificacion"].astype(str).str.strip()
-            )
-
-            df_activos["modalidad"] = (
-                df_activos["modalidad"].astype(str).str.upper().str.strip()
-            )
-
-            df_activos = df_activos.drop_duplicates(subset=["numero_identificacion"])
-
-            # resumen
-            st.subheader("📊 Modalidad")
-            resumen = df_activos["modalidad"].value_counts().reset_index()
-            resumen.columns = ["modalidad", "cantidad"]
-
-            st.dataframe(resumen)
-            st.bar_chart(resumen.set_index("modalidad"))
-
-            confirmar = st.checkbox("Confirmo actualización")
-
-            if confirmar and st.button("Actualizar base"):
-
-                with engine.begin() as conn:
-
-                    for _, row in df_activos.iterrows():
-
-                        doc = str(row["numero_identificacion"]).strip()
-                        modalidad = str(row["modalidad"]).strip().upper()
-
-                        conn.execute(text("""
-                            UPDATE habitante_de_calle
-                            SET estado_caso = 'ACTIVO',
-                                modalidad = :modalidad
-                            WHERE TRIM(CAST(numero_identificacion AS TEXT)) = :id
-                        """), {
-                            "modalidad": modalidad,
-                            "id": doc
-                        })
-
-                st.success("✅ Base actualizada correctamente")
-
-        except Exception as e:
-            st.error(f"❌ Error: {e}")
+            sub1, sub2, sub3, sub4 = st.tabs([
+                "📝 Acciones",
+                "📅 Asistencias",
+                "💊 Adherencia",
+                "📊 Valoraciones"
+            ])
+
+            # =========================
+            # ACCIONES PROFESIONALES
+            # =========================
+
+            with sub1:
+
+                st.subheader("Registro de acción profesional")
+
+                profesional = st.text_input(
+                    "Nombre del profesional"
+                )
+
+                cargo = st.selectbox(
+                    "Cargo",
+                    [
+                        "Psicólogo",
+                        "Trabajador Social",
+                        "Pedagogía",
+                        "Enfermería",
+                        "Coordinador"
+                    ]
+                )
+
+                tipo_accion = st.text_input(
+                    "Tipo de acción"
+                )
+
+                observaciones = st.text_area(
+                    "Observaciones"
+                )
+
+                compromisos = st.text_area(
+                    "Compromisos"
+                )
+
+                fecha_seguimiento = st.date_input(
+                    "Próximo seguimiento"
+                )
+
+                if st.button("Guardar Acción"):
+
+                    sql = """
+                    INSERT INTO acciones_profesionales
+                    (
+                        documento_usuario,
+                        profesional,
+                        cargo,
+                        tipo_accion,
+                        observaciones,
+                        compromisos,
+                        fecha_seguimiento
+                    )
+                    VALUES
+                    (%s,%s,%s,%s,%s,%s,%s)
+                    """
+
+                    with engine.begin() as conn:
+
+                        conn.exec_driver_sql(
+                            sql,
+                            (
+                                cedula,
+                                profesional,
+                                cargo,
+                                tipo_accion,
+                                observaciones,
+                                compromisos,
+                                fecha_seguimiento
+                            )
+                        )
+
+                    st.success("Acción registrada")
+
+                historial = pd.read_sql(
+                    f"""
+                    SELECT *
+                    FROM acciones_profesionales
+                    WHERE documento_usuario = '{cedula}'
+                    ORDER BY fecha DESC
+                    """,
+                    engine
+                )
+
+                st.dataframe(
+                    historial,
+                    use_container_width=True
+                )
+
+            # =========================
+            # ASISTENCIAS
+            # =========================
+
+            with sub2:
+
+                st.subheader("Registro de asistencia")
+
+                actividad = st.text_input(
+                    "Actividad"
+                )
+
+                profesional_asistencia = st.text_input(
+                    "Profesional responsable"
+                )
+
+                asistencia = st.selectbox(
+                    "Asistió",
+                    ["Sí", "No"]
+                )
+
+                observacion_asistencia = st.text_area(
+                    "Observaciones asistencia"
+                )
+
+                st.info(
+                    "Conectar a tabla asistencias."
+                )
+
+            # =========================
+            # ADHERENCIA
+            # =========================
+
+            with sub3:
+
+                st.subheader(
+                    "Adherencia al tratamiento"
+                )
+
+                tratamiento = st.text_input(
+                    "Tratamiento"
+                )
+
+                entidad = st.text_input(
+                    "Entidad"
+                )
+
+                adherencia = st.selectbox(
+                    "Nivel de adherencia",
+                    [
+                        "Alta",
+                        "Media",
+                        "Baja",
+                        "No adherente"
+                    ]
+                )
+
+                observacion_adherencia = st.text_area(
+                    "Observaciones"
+                )
+
+                st.info(
+                    "Conectar a tabla adherencia_tratamiento."
+                )
+
+            # =========================
+            # VALORACIONES
+            # =========================
+
+            with sub4:
+
+                st.subheader(
+                    "Valoración integral"
+                )
+
+                salud_fisica = st.slider(
+                    "Salud física",
+                    1,
+                    5,
+                    3
+                )
+
+                salud_mental = st.slider(
+                    "Salud mental",
+                    1,
+                    5,
+                    3
+                )
+
+                consumo_spa = st.slider(
+                    "Consumo SPA",
+                    1,
+                    5,
+                    3
+                )
+
+                redes_apoyo = st.slider(
+                    "Redes de apoyo",
+                    1,
+                    5,
+                    3
+                )
+
+                autonomia = st.slider(
+                    "Autonomía",
+                    1,
+                    5,
+                    3
+                )
+
+                empleabilidad = st.slider(
+                    "Empleabilidad",
+                    1,
+                    5,
+                    3
+                )
+
+                concepto = st.text_area(
+                    "Concepto profesional"
+                )
+
+                st.info(
+                    "Conectar a tabla valoraciones_integrales."
+                )
