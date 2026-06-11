@@ -290,11 +290,157 @@ def formulario_genero_diversidad():
 
     with st.form("form_genero_diversidad"):
 
-        # TODOS LOS CAMPOS DEL FORMULARIO
+        def formulario_genero_diversidad():
+    
+    st.title("♀️ Género y Diversidad")
+    st.header("♀️ Equidad de Género y Diversidad")
+
+    with st.form("form_genero_diversidad"):
+
+        numero_identificacion = st.text_input(
+            "Número de identificación"
+        )
+
+        nombre_identitario = st.text_input(
+            "Nombre identitario"
+        )
+
+        identidad_genero = st.selectbox(
+            "Identidad de género",
+            [
+                "Mujer cisgénero",
+                "Mujer trans",
+                "Persona no binaria",
+                "Género fluido",
+                "Queer",
+                "Otra",
+                "Prefiere no responder"
+            ]
+        )
+
+        orientacion_sexual = st.selectbox(
+            "Orientación sexual",
+            [
+                "Heterosexual",
+                "Lesbiana",
+                "Bisexual",
+                "Pansexual",
+                "Asexual",
+                "Otra",
+                "Prefiere no responder"
+            ]
+        )
+
+        expresion_genero = st.selectbox(
+            "Expresión de género",
+            [
+                "Masculina",
+                "Femenina",
+                "Andrógina",
+                "Variable",
+                "Otra"
+            ]
+        )
+
+        discriminacion = st.checkbox(
+            "¿Ha sufrido discriminación?"
+        )
+
+        tipo_discriminacion = st.text_area(
+            "Tipo de discriminación"
+        )
+
+        violencia_genero = st.checkbox(
+            "Violencia basada en género"
+        )
+
+        violencia_fisica = st.checkbox(
+            "Violencia física"
+        )
+
+        violencia_sexual = st.checkbox(
+            "Violencia sexual"
+        )
+
+        violencia_institucional = st.checkbox(
+            "Violencia institucional"
+        )
+
+        trabajo_sexual = st.selectbox(
+            "Trabajo sexual",
+            [
+                "Nunca",
+                "Anteriormente",
+                "Actualmente"
+            ]
+        )
+
+        estado_vih = st.selectbox(
+            "Estado VIH",
+            [
+                "Negativo",
+                "Positivo",
+                "No conoce"
+            ]
+        )
+
+        tratamiento_vih = st.selectbox(
+            "Tratamiento VIH",
+            [
+                "Sí",
+                "No",
+                "No aplica"
+            ]
+        )
+
+        acceso_salud = st.selectbox(
+            "Acceso a salud",
+            [
+                "Sí",
+                "No",
+                "Parcial"
+            ]
+        )
+
+        regimen_salud = st.selectbox(
+            "Régimen de salud",
+            [
+                "Subsidiado",
+                "Contributivo",
+                "Especial",
+                "No afiliado"
+            ]
+        )
+
+        red_apoyo = st.selectbox(
+            "Red de apoyo",
+            [
+                "Sí",
+                "No",
+                "Parcial"
+            ]
+        )
+
+        amenazas = st.checkbox(
+            "¿Ha recibido amenazas?"
+        )
+
+        custodia_hijos = st.text_input(
+            "Situación de hijos"
+        )
+
+        fuente_ingresos = st.text_input(
+            "Fuente principal de ingresos"
+        )
+
+        necesidades_prioritarias = st.text_area(
+            "Necesidades prioritarias"
+        )
 
         guardar_genero = st.form_submit_button(
             "💾 Guardar Caracterización"
         )
+
 
     if guardar_genero:
 
