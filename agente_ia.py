@@ -527,7 +527,7 @@ def formulario_genero_diversidad():
     try:
 
         df_genero = pd.read_sql(
-        st.dataframe(df_genero)
+
             """
             SELECT *
             FROM caracterizacion_genero_diversidad
@@ -553,7 +553,7 @@ def formulario_genero_diversidad():
             "VIH Positivo",
             len(df_genero[df_genero["estado_vih"] == "Positivo"])
         )
-
+            
     except:
         st.warning("Aún no existen registros.")
 
