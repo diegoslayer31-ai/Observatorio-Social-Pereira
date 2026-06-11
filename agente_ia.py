@@ -280,7 +280,7 @@ with st.sidebar:
         st.rerun()
 def formulario_genero_diversidad():
     
-    st.title("♀️ Género y Diversidad")
+    
     st.header("♀️ Equidad de Género y Diversidad")
 
     with st.form("form_genero_diversidad"):
@@ -556,7 +556,165 @@ def formulario_genero_diversidad():
             )
 
         st.success("✅ Caracterización guardada correctamente")
+# =====================================
+# INDICADORES
+# =====================================
 
+st.markdown("---")
+st.subheader("📊 Indicadores de Género y Diversidad")
+
+try:
+
+    df_genero = pd.read_sql(
+        """
+        SELECT *
+        FROM caracterizacion_genero_diversidad
+        """,
+        engine
+    )
+
+    c1, c2, c3, c4 = st.columns(4)
+
+    c1.metric(
+        "Caracterizaciones",
+        len(df_genero)
+    )
+
+    c2.metric(
+        "Discriminación",
+        int(df_genero["discriminacion"].sum())
+    )
+
+    c3.metric(
+        "Violencia de Género",
+        int(df_genero["violencia_genero"].sum())
+    )
+
+    c4.metric(
+        "VIH Positivo",
+        len(
+            df_genero[
+                df_genero["estado_vih"] == "Positivo"
+            ]
+        )
+    )
+
+except Exception as e:
+
+    st.warning(
+        "Aún no existen registros para indicadores."
+    )
+st.markdown("---")
+st.subheader("♀️ Identidad de Género")
+
+try:
+
+    identidad = (
+        df_genero["identidad_genero"]
+        .value_counts()
+        .reset_index()
+    )
+
+    identidad.columns = [
+        "Identidad",
+        "Cantidad"
+    ]
+
+    fig = px.bar(
+        identidad,
+        x="Identidad",
+        y="Cantidad",
+        title="Distribución por identidad de género"
+    )
+
+    st.plotly_chart(
+        fig,
+        use_container_width=True
+    )
+
+except:
+    pass
+
+st.subheader("🏳️‍🌈 Orientación Sexual")
+
+try:
+
+    orientacion = (
+        df_genero["orientacion_sexual"]
+        .value_counts()
+        .reset_index()
+    )
+
+    orientacion.columns = [
+        "Orientación",
+        "Cantidad"
+    ]
+
+    fig = px.pie(
+        orientacion,
+        names="Orientación",
+        values="Cantidad",
+        hole=0.4
+    )
+
+    st.plotly_chart(
+        fig,
+        use_container_width=True
+    )
+
+except:
+    pass
+st.subheader("⚠️ Violencias Reportadas")
+
+try:
+
+    violencia_df = pd.DataFrame({
+
+        "Tipo": [
+            "Violencia de Género",
+            "Violencia Física",
+            "Violencia Sexual",
+            "Violencia Institucional"
+        ],
+
+        "Casos": [
+
+            int(df_genero["violencia_genero"].sum()),
+            int(df_genero["violencia_fisica"].sum()),
+            int(df_genero["violencia_sexual"].sum()),
+            int(df_genero["violencia_institucional"].sum())
+
+        ]
+    })
+
+    fig = px.bar(
+        violencia_df,
+        x="Tipo",
+        y="Casos",
+        title="Violencias reportadas"
+    )
+
+    st.plotly_chart(
+        fig,
+        use_container_width=True
+    )
+
+except:
+    pass
+st.subheader("🚨 Personas con Alto Riesgo Social")
+
+alto_riesgo = len(
+    df_genero[
+        (df_genero["violencia_sexual"] == True)
+        |
+        (df_genero["amenazas"] == True)
+    ]
+)
+
+st.metric(
+    "Casos Prioritarios",
+    alto_riesgo
+)
 # =====================================
 # ROUTER
 # =====================================
