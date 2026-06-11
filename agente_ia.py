@@ -456,21 +456,6 @@ elif st.session_state.page == "gestion_usuarios":
     st.divider()
 
     # =====================================
-    # 📋 USUARIOS REGISTRADOS
-    # =====================================
-    st.subheader("📋 Usuarios registrados")
-
-    df_usuarios = pd.read_sql("""
-        SELECT *
-        FROM habitante_de_calle
-        ORDER BY id DESC
-    """, engine)
-
-    st.dataframe(df_usuarios, use_container_width=True)
-
-    st.divider()
-
-    # =====================================
     # 🚫 INACTIVAR / REACTIVAR
     # =====================================
     st.subheader("🚫 Cambiar estado del usuario")
