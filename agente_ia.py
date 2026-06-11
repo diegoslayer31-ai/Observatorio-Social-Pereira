@@ -572,119 +572,69 @@ def formulario_genero_diversidad():
 # INDICADORES
 # =====================================
 
-st.markdown("---")
-st.subheader("📊 Indicadores de Género, Diversidad y Salud")
+if st.session_state.page == "genero_diversidad":
 
-try:
+    st.markdown("---")
+    st.subheader("📊 Indicadores de Género, Diversidad y Salud")
 
-    # ==========================
-    # CARGA DE DATOS
-    # ==========================
-    df_genero = pd.read_sql(
-        """
-        SELECT *
-        FROM caracterizacion_genero_diversidad
-        """,
-        engine
-    )
+    try:
 
-    # ==========================
-    # VALIDACIÓN
-    # ==========================
-    if df_genero.empty:
-        st.warning("No hay registros aún en la base de datos.")
-
-    else:
-
-        # ==========================
-        # MÉTRICAS BASE
-        # ==========================
-        total = len(df_genero)
-
-        discriminacion = df_genero["discriminacion"].sum()
-        violencia_genero = df_genero["violencia_genero"].sum()
-        violencia_fisica = df_genero["violencia_fisica"].sum()
-        violencia_sexual = df_genero["violencia_sexual"].sum()
-        violencia_institucional = df_genero["violencia_institucional"].sum()
-        activacion_vbg = df_genero["activacion_ruta_vbg"].sum()
-
-        vih_positivo = len(
-            df_genero[df_genero["estado_vih"] == "Positivo"]
+        df_genero = pd.read_sql(
+            """
+            SELECT *
+            FROM caracterizacion_genero_diversidad
+            """,
+            engine
         )
 
-        uso_sustancias = df_genero["uso_sustancias"].sum()
-        acceso_programas = df_genero["acceso_otros_programas"].sum()
+        if df_genero.empty:
+            st.warning("No hay registros aún en la base de datos.")
 
-        # ==========================
-        # INDICADORES PRINCIPALES
-        # ==========================
-        c1, c2, c3, c4 = st.columns(4)
+        else:
 
-        c1.metric("👥 Total caracterizaciones", total)
-        c2.metric("⚠️ Discriminación", int(discriminacion))
-        c3.metric("🚨 Violencia de género", int(violencia_genero))
-        c4.metric("🧬 VIH positivo", vih_positivo)
+            total = len(df_genero)
 
-        # ==========================
-        # VIOLENCIAS
-        # ==========================
-        st.markdown("### 🚨 Violencias")
+            discriminacion = df_genero["discriminacion"].sum()
+            violencia_genero = df_genero["violencia_genero"].sum()
+            violencia_fisica = df_genero["violencia_fisica"].sum()
+            violencia_sexual = df_genero["violencia_sexual"].sum()
+            violencia_institucional = df_genero["violencia_institucional"].sum()
+            activacion_vbg = df_genero["activacion_ruta_vbg"].sum()
 
-        c5, c6, c7, c8 = st.columns(4)
+            vih_positivo = len(
+                df_genero[df_genero["estado_vih"] == "Positivo"]
+            )
 
-        c5.metric("💥 Violencia física", int(violencia_fisica))
-        c6.metric("🔥 Violencia sexual", int(violencia_sexual))
-        c7.metric("🏛️ Violencia institucional", int(violencia_institucional))
-        c8.metric("🛑 Ruta VBG activada", int(activacion_vbg))
+            uso_sustancias = df_genero["uso_sustancias"].sum()
+            acceso_programas = df_genero["acceso_otros_programas"].sum()
 
-        # ==========================
-        # SALUD Y PROGRAMAS
-        # ==========================
-        st.markdown("### 🏥 Salud y programas")
+            c1, c2, c3, c4 = st.columns(4)
 
-        c9, c10 = st.columns(2)
+            c1.metric("👥 Total caracterizaciones", total)
+            c2.metric("⚠️ Discriminación", int(discriminacion))
+            c3.metric("🚨 Violencia de género", int(violencia_genero))
+            c4.metric("🧬 VIH positivo", vih_positivo)
 
-        c9.metric("💊 Consumo de sustancias", int(uso_sustancias))
-        c10.metric("📌 Acceso a otros programas", int(acceso_programas))
+            st.markdown("### 🚨 Violencias")
 
-        # ==========================
-        # ANÁLISIS PORCENTUAL
-        # ==========================
-        st.markdown("### 📈 Análisis porcentual")
+            c5, c6, c7, c8 = st.columns(4)
 
-        col1, col2 = st.columns(2)
+            c5.metric("💥 Violencia física", int(violencia_fisica))
+            c6.metric("🔥 Violencia sexual", int(violencia_sexual))
+            c7.metric("🏛️ Violencia institucional", int(violencia_institucional))
+            c8.metric("🛑 Ruta VBG activada", int(activacion_vbg))
 
-        with col1:
+            st.markdown("### 🏥 Salud y programas")
 
-            st.write("📊 Discriminación")
-            st.progress(discriminacion / total if total else 0)
+            c9, c10 = st.columns(2)
 
-            st.write("📊 Violencia de género")
-            st.progress(violencia_genero / total if total else 0)
+            c9.metric("💊 Consumo de sustancias", int(uso_sustancias))
+            c10.metric("📌 Acceso a otros programas", int(acceso_programas))
 
-        with col2:
+    except Exception as e:
 
-            st.write("📊 Consumo de sustancias")
-            st.progress(uso_sustancias / total if total else 0)
-
-            st.write("📊 Activación ruta VBG")
-            st.progress(activacion_vbg / total if total else 0)
-
-        # ==========================
-        # DISTRIBUCIONES
-        # ==========================
-        st.markdown("### 🧭 Orientación sexual")
-        st.bar_chart(df_genero["orientacion_sexual"].value_counts())
-
-        st.markdown("### 🧑‍🤝‍🧑 Identidad de género")
-        st.bar_chart(df_genero["identidad_genero"].value_counts())
-
-except Exception as e:
-
-    st.warning("Aún no existen registros o hay un error en los datos.")
-    st.caption(str(e))
-
-st.markdown("---")
+        st.warning("Error cargando indicadores")
+        st.caption(str(e))
 # =====================================
 # ROUTER
 # =====================================
