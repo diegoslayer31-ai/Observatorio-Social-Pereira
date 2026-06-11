@@ -280,10 +280,11 @@ with st.sidebar:
         st.rerun()
 
 # =====================================
-# FUNCIÓN GÉNERO Y DIVERSIDAD
+# FUNCIÓN GÉNERO Y DIVERSIDAD (ACTUALIZADA)
 # =====================================
+
 def formulario_genero_diversidad():
-    
+
     st.header("♀️ Equidad de Género y Diversidad")
 
     with st.form("form_genero_diversidad"):
@@ -296,11 +297,18 @@ def formulario_genero_diversidad():
             "Nombre identitario"
         )
 
+        sexo_al_nacer = st.selectbox(
+            "Sexo al nacer",
+            ["Masculino", "Femenino", "Intersex", "Prefiere no responder"]
+        )
+
         identidad_genero = st.selectbox(
             "Identidad de género",
             [
                 "Mujer cisgénero",
                 "Mujer trans",
+                "Hombre cisgénero",
+                "Hombre trans",
                 "Persona no binaria",
                 "Género fluido",
                 "Queer",
@@ -313,6 +321,7 @@ def formulario_genero_diversidad():
             "Orientación sexual",
             [
                 "Heterosexual",
+                "Homosexual",
                 "Lesbiana",
                 "Bisexual",
                 "Pansexual",
@@ -428,14 +437,39 @@ def formulario_genero_diversidad():
             "Necesidades prioritarias"
         )
 
+        # 🔹 NUEVOS CAMPOS SPA Y PROGRAMAS
+        uso_sustancias = st.checkbox(
+            "¿Consumo de sustancias psicoactivas?"
+        )
+
+        sustancias_consumidas = st.multiselect(
+            "Sustancias consumidas",
+            [
+                "Marihuana",
+                "Tusi",
+                "Heroína",
+                "Bazuco",
+                "Alcohol",
+                "Cocaína",
+                "Otra"
+            ]
+        )
+
+        acceso_otros_programas = st.checkbox(
+            "¿Ha accedido a otros programas?"
+        )
+
+        activacion_ruta_vbg = st.checkbox(
+            "¿Ha activado ruta de atención en VBG?"
+        )
+
         guardar_genero = st.form_submit_button(
             "💾 Guardar Caracterización"
         )
 
-    if guardar_genero:
-
-        st.success("Formulario enviado")
-
+    # ==========================
+    # GUARDAR EN BASE DE DATOS
+    # ==========================
 
     if guardar_genero:
 
@@ -449,6 +483,7 @@ def formulario_genero_diversidad():
                         orientacion_sexual,
                         expresion_genero,
                         nombre_identitario,
+                        sexo_al_nacer,
                         discriminacion,
                         tipo_discriminacion,
                         violencia_genero,
@@ -464,7 +499,12 @@ def formulario_genero_diversidad():
                         amenazas,
                         custodia_hijos,
                         fuente_ingresos,
-                        necesidades_prioritarias
+                        necesidades_prioritarias,
+                        uso_sustancias,
+                        sustancias_consumidas,
+                        acceso_otros_programas,
+                        activacion_ruta_vbg,
+                        fecha_registro
                     )
                     VALUES (
                         :numero_identificacion,
@@ -472,6 +512,7 @@ def formulario_genero_diversidad():
                         :orientacion_sexual,
                         :expresion_genero,
                         :nombre_identitario,
+                        :sexo_al_nacer,
                         :discriminacion,
                         :tipo_discriminacion,
                         :violencia_genero,
@@ -487,7 +528,12 @@ def formulario_genero_diversidad():
                         :amenazas,
                         :custodia_hijos,
                         :fuente_ingresos,
-                        :necesidades_prioritarias
+                        :necesidades_prioritarias,
+                        :uso_sustancias,
+                        :sustancias_consumidas,
+                        :acceso_otros_programas,
+                        :activacion_ruta_vbg,
+                        NOW()
                     )
                 """),
                 {
@@ -496,6 +542,7 @@ def formulario_genero_diversidad():
                     "orientacion_sexual": orientacion_sexual,
                     "expresion_genero": expresion_genero,
                     "nombre_identitario": nombre_identitario,
+                    "sexo_al_nacer": sexo_al_nacer,
                     "discriminacion": discriminacion,
                     "tipo_discriminacion": tipo_discriminacion,
                     "violencia_genero": violencia_genero,
@@ -511,53 +558,140 @@ def formulario_genero_diversidad():
                     "amenazas": amenazas,
                     "custodia_hijos": custodia_hijos,
                     "fuente_ingresos": fuente_ingresos,
-                    "necesidades_prioritarias": necesidades_prioritarias
+                    "necesidades_prioritarias": necesidades_prioritarias,
+                    "uso_sustancias": uso_sustancias,
+                    "sustancias_consumidas": sustancias_consumidas,
+                    "acceso_otros_programas": acceso_otros_programas,
+                    "activacion_ruta_vbg": activacion_ruta_vbg
                 }
             )
 
         st.success("✅ Caracterización guardada correctamente")
 
-    # =====================================
-    # INDICADORES
-    # =====================================
+# =====================================
+# INDICADORES
+# =====================================
 
-    st.markdown("---")
-    st.subheader("📊 Indicadores de Género y Diversidad")
+st.markdown("---")
+st.subheader("📊 Indicadores de Género, Diversidad y Salud")
 
-    try:
+try:
 
-        df_genero = pd.read_sql(
+    df_genero = pd.read_sql(
+        """
+        SELECT *
+        FROM caracterizacion_genero_diversidad
+        """,
+        engine
+    )
 
-            """
-            SELECT *
-            FROM caracterizacion_genero_diversidad
-            """,
-            engine
-        )
+    # ==========================
+    # VALIDACIÓN BASE
+    # ==========================
+    if df_genero.empty:
+        st.warning("No hay registros aún en la base de datos.")
+    else:
 
+        # ==========================
+        # COLUMNAS MÉTRICAS BASE
+        # ==========================
+        total = len(df_genero)
+
+        discriminacion = df_genero["discriminacion"].sum()
+        violencia_genero = df_genero["violencia_genero"].sum()
+        violencia_fisica = df_genero["violencia_fisica"].sum()
+        violencia_sexual = df_genero["violencia_sexual"].sum()
+        violencia_institucional = df_genero["violencia_institucional"].sum()
+        activacion_vbg = df_genero["activacion_ruta_vbg"].sum()
+
+        vih_positivo = len(df_genero[df_genero["estado_vih"] == "Positivo"])
+
+        uso_sustancias = df_genero["uso_sustancias"].sum()
+
+        acceso_programas = df_genero["acceso_otros_programas"].sum()
+
+        # ==========================
+        # UI METRICS
+        # ==========================
         c1, c2, c3, c4 = st.columns(4)
 
-        c1.metric("Caracterizaciones", len(df_genero))
+        c1.metric("👥 Total caracterizaciones", total)
 
-        c2.metric(
-            "Discriminación",
-            int(df_genero["discriminacion"].sum())
-        )
+        c2.metric("⚠️ Discriminación", int(discriminacion))
 
-        c3.metric(
-            "Violencia de Género",
-            int(df_genero["violencia_genero"].sum())
-        )
+        c3.metric("🚨 Violencia de género", int(violencia_genero))
 
-        c4.metric(
-            "VIH Positivo",
-            len(df_genero[df_genero["estado_vih"] == "Positivo"])
-        )
-            
-    except:
-        st.warning("Aún no existen registros.")
+        c4.metric("🧬 VIH positivo", vih_positivo)
 
-    st.markdown("---")
+        # ==========================
+        # SEGUNDA LÍNEA DE INDICADORES
+        # ==========================
+        c5, c6, c7, c8 = st.columns(4)
+
+        c5.metric("💥 Violencia física", int(violencia_fisica))
+
+        c6.metric("🔥 Violencia sexual", int(violencia_sexual))
+
+        c7.metric("🏛️ Violencia institucional", int(violencia_institucional))
+
+        c8.metric("🛑 Ruta VBG activada", int(activacion_vbg))
+
+        # ==========================
+        # TERCERA LÍNEA (SALUD Y SPA)
+        # ==========================
+        c9, c10 = st.columns(2)
+
+        c9.metric("💊 Consumo de sustancias", int(uso_sustancias))
+
+        c10.metric("📌 Acceso a otros programas", int(acceso_programas))
+
+        # ==========================
+        # INDICADORES AVANZADOS
+        # ==========================
+        st.markdown("### 📈 Análisis rápido")
+
+        col1, col2 = st.columns(2)
+
+        with col1:
+
+            st.write("📊 % Discriminación")
+
+            st.progress(discriminacion / total if total > 0 else 0)
+
+            st.write("📊 % Violencia de género")
+
+            st.progress(violencia_genero / total if total > 0 else 0)
+
+        with col2:
+
+            st.write("📊 % Consumo de sustancias")
+
+            st.progress(uso_sustancias / total if total > 0 else 0)
+
+            st.write("📊 % Activación ruta VBG")
+
+            st.progress(activacion_vbg / total if total > 0 else 0)
+
+        # ==========================
+        # ORIENTACIÓN SEXUAL (DISTRIBUCIÓN)
+        # ==========================
+        st.markdown("### 🧭 Orientación sexual")
+
+        st.bar_chart(df_genero["orientacion_sexual"].value_counts())
+
+        # ==========================
+        # IDENTIDAD DE GÉNERO
+        # ==========================
+        st.markdown("### 🧑‍🤝‍🧑 Identidad de género")
+
+        st.bar_chart(df_genero["identidad_genero"].value_counts())
+
+except Exception as e:
+
+    st.warning("Aún no existen registros o hay un error en los datos.")
+    st.caption(str(e))
+
+st.markdown("---")
 # =====================================
 # ROUTER
 # =====================================
