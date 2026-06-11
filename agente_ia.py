@@ -4,7 +4,7 @@ import plotly.express as px
 from sqlalchemy import create_engine, text
 
 st.set_page_config(
-    page_title="Observatorio Social Asociación Ciudad Futuro",
+    page_title="Observatorio Social",
     page_icon="📊",
     layout="wide"
 )
@@ -249,61 +249,43 @@ p, label, span {
 </style>
 """, unsafe_allow_html=True)
 # =========================
-# SIDEBAR
-# =========================
-with st.sidebar:
-
-    st.image("logo_acf.png", width=220)
-
-    if st.button("🏠 Inicio"):
-        st.session_state.page = "home"
-        st.rerun()
-
-    if st.button("⚙️ Gestión usuarios"):
-        st.session_state.page = "gestion_usuarios"
-        st.rerun()
-
-
-# =========================
 # ROUTER PRINCIPAL
 # =========================
 
-if "page" not in st.session_state:
-    st.session_state.page = "home"
-
-
+# =========================
+# HOME
+# =========================
 if st.session_state.page == "home":
 
     st.title("🏠 Dashboard principal")
-    st.subheader("Sistema de Atención Integral")  # SOLO AQUÍ
+    st.subheader("Sistema de Atención Integral")
 
+    df = pd.read_sql("SELECT * FROM habitante_de_calle", engine)
+
+    st.success("Bienvenido al sistema")
+
+# =========================
+# GESTIÓN USUARIOS
+# =========================
 elif st.session_state.page == "gestion_usuarios":
 
     st.title("⚙️ Gestión de usuarios")
 
-    # TODO: aquí va TODO el módulo usuarios
-
     # =========================
-    # 1. CARGAR USUARIOS
+    # CARGA DE DATOS
     # =========================
     try:
-        df_usuarios = pd.read_sql("""
-            SELECT *
-            FROM habitante_de_calle
-        """, engine)
+        df = pd.read_sql("SELECT * FROM habitante_de_calle", engine)
 
-        # normalizar estado por si viene con espacios
-        df_usuarios["estado_caso"] = (
-            df_usuarios["estado_caso"]
+        df["estado_caso"] = (
+            df["estado_caso"]
             .astype(str)
             .str.strip()
             .str.upper()
         )
 
-        # filtrar activos
-        df_activos = df_usuarios[df_usuarios["estado_caso"] == "ACTIVO"].copy()
+        df_activos = df[df["estado_caso"] == "ACTIVO"].copy()
 
-        # nombre completo
         df_activos["nombre"] = (
             df_activos["nombres"].astype(str) + " " +
             df_activos["apellidos"].astype(str)
@@ -315,42 +297,34 @@ elif st.session_state.page == "gestion_usuarios":
         st.stop()
 
     # =========================
-    # 2. LISTA DE USUARIOS ACTIVOS
+    # LISTA ACTIVOS
     # =========================
     st.subheader("📋 Usuarios activos")
 
-    with st.container():
-        st.dataframe(
-            df_activos[[
-                "nombre",
-                "numero_identificacion",
-                "estado_caso"
-            ]],
-            use_container_width=True
-        )
+    st.dataframe(
+        df_activos[["nombre", "numero_identificacion", "estado_caso"]],
+        use_container_width=True
+    )
 
-    st.markdown("---")
+    st.divider()
 
     # =========================
-    # 3. INACTIVAR USUARIO
+    # INACTIVAR USUARIO
     # =========================
     st.subheader("🚫 Inactivar usuario")
 
-    if len(df_activos) == 0:
-        st.info("No hay usuarios activos")
-        st.stop()
+    if len(df_activos) > 0:
 
-    usuario_sel = st.selectbox(
-        "Selecciona usuario",
-        df_activos["numero_identificacion"].tolist(),
-        format_func=lambda x: df_activos[
-            df_activos["numero_identificacion"] == x
-        ]["nombre"].values[0]
-    )
+        usuario_sel = st.selectbox(
+            "Selecciona usuario",
+            df_activos["numero_identificacion"],
+            format_func=lambda x: df_activos.loc[
+                df_activos["numero_identificacion"] == x, "nombre"
+            ].values[0]
+        )
 
-    if st.button("Inactivar usuario"):
+        if st.button("Inactivar usuario"):
 
-        try:
             with engine.begin() as conn:
                 conn.execute(text("""
                     UPDATE habitante_de_calle
@@ -358,23 +332,25 @@ elif st.session_state.page == "gestion_usuarios":
                     WHERE numero_identificacion = :id
                 """), {"id": usuario_sel})
 
-            st.success("Usuario inactivado correctamente")
+            st.success("Usuario inactivado")
             st.rerun()
 
-        except Exception as e:
-            st.error("Error inactivando usuario")
-            st.caption(str(e))
-    # =====================================
-    # 🔐 REGISTRO COMPLETO (ANTES TAB11)
-    # =====================================
-    st.subheader("➕ Registrar usuario (ficha social completa)")
+    else:
+        st.info("No hay usuarios activos")
 
-    with st.form("form_usuario_completo"):
+    st.divider()
+
+    # =========================
+    # REGISTRO DE USUARIO
+    # =========================
+    st.subheader("➕ Registrar usuario")
+
+    with st.form("form_usuario"):
 
         nombres = st.text_input("Nombres")
         apellidos = st.text_input("Apellidos")
 
-        sexo = st.selectbox("Sexo al nacer", ["Masculino", "Femenino"])
+        sexo = st.selectbox("Sexo", ["Masculino", "Femenino"])
         edad = st.number_input("Edad", 0, 120, 18)
 
         tipo_id = st.selectbox("Tipo ID", ["CC", "TI", "CE", "PEP", "Otro"])
@@ -450,25 +426,31 @@ elif st.session_state.page == "gestion_usuarios":
             })
 
         st.success("Usuario registrado correctamente")
+        st.rerun()
 
     st.divider()
 
-    # =====================================
-    # 🚫 INACTIVAR / REACTIVAR
-    # =====================================
-    st.subheader("🚫 Cambiar estado del usuario")
+    # =========================
+    # CAMBIAR ESTADO
+    # =========================
+    st.subheader("🔁 Cambiar estado")
 
     df_lista = pd.read_sql("""
         SELECT numero_identificacion, nombres, apellidos, estado_caso
         FROM habitante_de_calle
     """, engine)
 
-    df_lista["nombre"] = df_lista["nombres"] + " " + df_lista["apellidos"]
+    df_lista["nombre"] = (
+        df_lista["nombres"].astype(str) + " " +
+        df_lista["apellidos"].astype(str)
+    )
 
     usuario_sel = st.selectbox(
         "Selecciona usuario",
-        df_lista["numero_identificacion"].tolist(),
-        format_func=lambda x: df_lista[df_lista["numero_identificacion"] == x]["nombre"].values[0]
+        df_lista["numero_identificacion"],
+        format_func=lambda x: df_lista.loc[
+            df_lista["numero_identificacion"] == x, "nombre"
+        ].values[0]
     )
 
     nuevo_estado = st.selectbox("Nuevo estado", ["ACTIVO", "INACTIVO"])
