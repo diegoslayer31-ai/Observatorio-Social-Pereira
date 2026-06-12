@@ -2275,376 +2275,176 @@ with tab12:
             st.warning("Usuario no encontrado")
 
         st.divider()
+st.subheader("🌍 PAI - Seguimiento con Enfoque ODS")
+
+if cedula:
+
+    with st.form(f"pai_ods_{cedula}"):
 
         # =========================
-        # 🧠 PAI FORM
+        # 🔵 INTERVENCIÓN
         # =========================
-        with st.form(f"pai_form_{cedula or 'nuevo'}"):
+        tipo_intervencion = st.selectbox(
+            "Tipo de intervención",
+            [
+                "Reducción de riesgos",
+                "Acompañamiento psicosocial",
+                "Rehabilitación",
+                "Inclusión social",
+                "Seguimiento integral"
+            ]
+        )
 
-            tipo_intervencion = st.selectbox(
-                "Tipo de intervención",
-                [
-                    "Reducción de riesgos y daños",
-                    "Adherencia tratamiento",
-                    "Valoración psicosocial",
-                    "Seguimiento social",
-                    "Gestión de caso"
-                ]
-            )
-
-            profesional = st.selectbox(
-                "Profesional",
-                df_profesionales["label"].tolist()
-            )
-
-            descripcion = st.text_area("Descripción de la intervención")
-
-            consumo = st.selectbox(
-                "Consumo de sustancias (estado actual)",
-                ["No consumo", "Ocasional", "Frecuente", "Policonsumo"]
-            )
-
-            salud = st.selectbox(
-                "Acceso a salud",
-                ["Sin acceso", "Parcial", "Total"]
-            )
-
-            adherencia = st.selectbox(
-                "Adherencia a tratamiento",
-                ["Alta", "Media", "Baja", "No aplica"]
-            )
-
-            red_apoyo = st.selectbox(
-                "Red de apoyo",
-                ["Nula", "Débil", "Fuerte"]
-            )
-
-            documento = st.selectbox(
-                "Documento de identidad",
-                ["No tiene", "En trámite", "Tiene documento"]
-            )
-
-            resultado = st.selectbox(
-                "Resultado de la intervención",
-                ["Mejora significativa", "Mejora parcial", "Sin cambios", "Empeoramiento"]
-            )
-
-            egreso = st.selectbox(
-                "Estado del proceso",
-                ["Activo", "Egreso exitoso", "Egreso no exitoso", "En seguimiento"]
-            )
-
-            riesgo = st.selectbox(
-                "Nivel de riesgo",
-                ["Bajo", "Medio", "Alto", "Crítico"]
-            )
-
-            guardar = st.form_submit_button("💾 Guardar PAI")
-
-        if guardar:
-
-            with engine.begin() as conn:
-                conn.execute(text("""
-                    INSERT INTO pai_intervenciones (
-                        documento_usuario,
-                        tipo_intervencion,
-                        profesional,
-                        descripcion,
-                        consumo,
-                        salud,
-                        adherencia,
-                        red_apoyo,
-                        documento,
-                        resultado,
-                        egreso,
-                        riesgo
-                    )
-                    VALUES (
-                        :doc,
-                        :tipo,
-                        :prof,
-                        :desc,
-                        :consumo,
-                        :salud,
-                        :adherencia,
-                        :red_apoyo,
-                        :documento,
-                        :resultado,
-                        :egreso,
-                        :riesgo
-                    )
-                """), {
-                    "doc": cedula,
-                    "tipo": tipo_intervencion,
-                    "prof": profesional,
-                    "desc": descripcion,
-                    "consumo": consumo,
-                    "salud": salud,
-                    "adherencia": adherencia,
-                    "red_apoyo": red_apoyo,
-                    "documento": documento,
-                    "resultado": resultado,
-                    "egreso": egreso,
-                    "riesgo": riesgo
-                })
-
-            st.success("✅ PAI registrado correctamente")
-
-    st.divider()
-
-    # =========================
-    # PAI FORM
-    # =========================
-
-    st.subheader("🧠 PAI - Plan de Atención Individual")
-
-    if cedula:
-
-        with st.form("pai_form"):
-
-            tipo_intervencion = st.selectbox(
-                "Tipo de intervención",
-                [
-                    "Reducción de riesgos y daños",
-                    "Adherencia tratamiento",
-                    "Valoración enfermería",
-                    "Valoración psicología",
-                    "Seguimiento social"
-                ]
-            )
-
-            patologia = st.selectbox(
-                "Patología / condición",
-                [
-                    "Consumo de sustancias",
-                    "Ansiedad",
-                    "Depresión",
-                    "Trastorno mental severo",
-                    "VIH",
-                    "Tuberculosis",
-                    "Enfermedad infectocontagiosa",
-                    "Hipertensión",
-                    "Otra"
-                ]
-            )
-
-            profesional = st.selectbox(
-                "Profesional",
-                df_profesionales["label"].tolist()
-            )
-
-            descripcion = st.text_area("Descripción")
-
-            adherencia = st.selectbox(
-                "Nivel de adherencia",
-                ["Alta", "Media", "Baja"]
-            )
-
-            # =========================
-            # 🌍 ODS + IMPACTO + RIESGO
-            # =========================
-
-            ods_principal = st.selectbox(
-                "ODS relacionado",
-                [
-                    "ODS 1 - Fin de la pobreza",
-                    "ODS 3 - Salud y bienestar",
-                    "ODS 4 - Educación de calidad",
-                    "ODS 5 - Igualdad de género",
-                    "ODS 10 - Reducción de desigualdades",
-                    "ODS 16 - Paz y justicia",
-                    "No aplica"
-                ]
-            )
-
-            resultado_intervencion = st.selectbox(
-                "Resultado de la intervención",
-                [
-                    "Mejora significativa",
-                    "Mejora parcial",
-                    "Sin cambios",
-                    "Empeoramiento",
-                    "Pendiente seguimiento"
-                ]
-            )
-
-            nivel_riesgo = st.selectbox(
-                "Nivel de riesgo del caso",
-                [
-                    "Bajo",
-                    "Medio",
-                    "Alto",
-                    "Crítico"
-                ]
-            )
-            estado_post_consumo = st.selectbox(
-                "Consumo después de intervención",
-                ["No consumo", "Ocasional", "Frecuente", "Policonsumo"]
-            )
-
-            estado_post_salud = st.selectbox(
-                "Acceso a salud después",
-                ["No tiene acceso", "Parcial", "Total"]
-            )
-
-            estado_post_adherencia = st.selectbox(
-                "Adherencia después",
-                ["Alta", "Media", "Baja", "No aplica"]
-            )
-
-            estado_post_riesgo = st.selectbox(
-                "Riesgo después",
-                ["Bajo", "Medio", "Alto", "Crítico"]
-            )
-            # =========================
-            # 📊 ESTADO BASE (ANTES)
-            # =========================
-
-            estado_base_consumo = st.selectbox(
-                "Consumo de sustancias (estado actual)",
-                ["No consumo", "Ocasional", "Frecuente", "Policonsumo"]
-            )
-
-            estado_base_salud = st.selectbox(
-                "Acceso a salud (estado actual)",
-                ["No tiene acceso", "Parcial", "Total"]
-            )
-
-            estado_base_adherencia = st.selectbox(
-                "Adherencia tratamiento (estado actual)",
-                ["Alta", "Media", "Baja", "No aplica"]
-            )
-
-            estado_base_riesgo = st.selectbox(
-                "Nivel de riesgo actual",
-                ["Bajo", "Medio", "Alto", "Crítico"]
-            )
-            guardar = st.form_submit_button("Guardar PAI")
-
-        if guardar:
-
-            with engine.begin() as conn:
-                conn.execute(text("""
-            INSERT INTO pai_intervenciones (
-                documento_usuario,
-                tipo_intervencion,
-                patologia,
-                profesional,
-                descripcion,
-                adherencia,
-                ods_principal,
-                resultado_intervencion,
-                nivel_riesgo,
-                estado_base,
-                estado_post,
-                numero_sesiones,
-                intensidad_intervencion,
-                barreras
-            )
-            VALUES (
-                :doc,
-                :tipo,
-                :patologia,
-                :prof,
-                :desc,
-                :adh,
-                :ods,
-                :resultado,
-                :riesgo,
-                :base,
-                :post,
-                :sesiones,
-                :intensidad,
-                :barreras
-            )
-            """), {
-                "doc": cedula,
-                "tipo": tipo_intervencion,
-                "patologia": patologia,
-                "prof": profesional,
-                "desc": descripcion,
-                "adh": adherencia,
-                "ods": ods_principal,
-                "resultado": resultado_intervencion,
-                "riesgo": nivel_riesgo,
-
-                "base": {
-                    "consumo": estado_base_consumo,
-                    "salud": estado_base_salud,
-                    "adherencia": estado_base_adherencia,
-                    "riesgo": estado_base_riesgo
-                },
-
-                "post": {
-                    "consumo": estado_post_consumo,
-                    "salud": estado_post_salud,
-                    "adherencia": estado_post_adherencia,
-                    "riesgo": estado_post_riesgo
-                },
-
-                "sesiones": numero_sesiones,
-                "intensidad": intensidad_intervencion,
-                "barreras": barreras
-            })
-            st.success("PAI registrado correctamente")
-
-    st.divider()
-
-    # =========================
-    # ASISTENCIA
-    # =========================
-    st.subheader("📅 Asistencia a talleres")
-
-    df_activos = pd.read_sql("""
-        SELECT numero_identificacion, nombres, apellidos
-        FROM habitante_de_calle
-        WHERE estado_caso = 'ACTIVO'
-    """, engine)
-
-    df_activos["nombre"] = df_activos["nombres"] + " " + df_activos["apellidos"]
-
-    with st.form("asistencia"):
-
-        actividad = st.text_input("Actividad")
-
-        profesional_a = st.selectbox(
+        profesional = st.selectbox(
             "Profesional",
             df_profesionales["label"].tolist()
         )
 
-        fecha = st.date_input("Fecha")
+        # =========================
+        # 🟡 ODS - ACCESO (CONDICIONES)
+        # =========================
 
-        participantes = st.multiselect(
-            "Participantes",
-            df_activos["numero_identificacion"].tolist(),
-            format_func=lambda x: df_activos.loc[
-                df_activos["numero_identificacion"] == x, "nombre"
-            ].values[0]
+        agua = st.selectbox("Acceso a agua potable", ["No", "Parcial", "Sí"])
+
+        comedor = st.selectbox("Acceso a comedor", ["No", "Ocasional", "Frecuente"])
+
+        educacion = st.selectbox(
+            "Escolarización",
+            ["No", "Primaria", "Secundaria", "Técnica", "Superior"]
         )
 
-        estado = st.selectbox("Asistencia", ["Asistió", "No asistió"])
-        obs = st.text_area("Observaciones")
+        formacion_empleo = st.selectbox(
+            "Formación para empleo",
+            ["No", "En proceso", "Finalizada"]
+        )
 
-        guardar2 = st.form_submit_button("Guardar")
+        # =========================
+        # 🟢 ODS - PARTICIPACIÓN SOCIAL
+        # =========================
 
-    if guardar2:
+        genero_participacion = st.selectbox(
+            "Participación poblacional",
+            ["Mujer cis", "Mujer trans", "Hombre cis", "Hombre trans", "No binario"]
+        )
+
+        red_apoyo = st.selectbox(
+            "Red de apoyo",
+            ["Nula", "Débil", "Fuerte"]
+        )
+
+        # =========================
+        # 🔵 ODS - SALUD
+        # =========================
+
+        consumo = st.selectbox(
+            "Consumo de sustancias",
+            ["Activo", "Reducido", "Abstinencia"]
+        )
+
+        vih = st.selectbox(
+            "Estado VIH",
+            ["Negativo", "Positivo", "Indetectable"]
+        )
+
+        salud_mental = st.selectbox(
+            "Estado salud mental",
+            ["Estable", "En tratamiento", "Bipolar compensado", "Inestable"]
+        )
+
+        # =========================
+        # 🟢 ODS - RESULTADOS DE VIDA
+        # =========================
+
+        empleo = st.selectbox(
+            "Acceso a empleo/ingreso",
+            ["No", "Informal", "Formal"]
+        )
+
+        documento = st.selectbox(
+            "Documento de identidad",
+            ["No tiene", "En trámite", "Tiene"]
+        )
+
+        egreso = st.selectbox(
+            "Egreso del albergue",
+            ["Activo", "Exitoso", "No exitoso"]
+        )
+
+        guardar = st.form_submit_button("💾 Guardar PAI-ODS")
+
+    # =========================
+    # GUARDAR
+    # =========================
+
+    if guardar:
 
         with engine.begin() as conn:
-            for doc in participantes:
-                conn.execute(text("""
-                    INSERT INTO asistencias
-                    (documento_usuario, fecha, asistencia, observaciones, profesional, actividad)
-                    VALUES (:doc, :fecha, :estado, :obs, :prof, :act)
-                """), {
-                    "doc": doc,
-                    "fecha": fecha,
-                    "estado": estado,
-                    "obs": obs,
-                    "prof": profesional_a,
-                    "act": actividad
-                })
+            conn.execute(text("""
+                INSERT INTO pai_intervenciones (
+                    documento_usuario,
+                    tipo_intervencion,
+                    profesional,
 
-        st.success("Asistencia registrada")
+                    agua,
+                    comedor,
+                    educacion,
+                    formacion_empleo,
+
+                    genero_participacion,
+                    red_apoyo,
+
+                    consumo,
+                    vih,
+                    salud_mental,
+
+                    empleo,
+                    documento,
+                    egreso
+                )
+                VALUES (
+                    :doc,
+                    :tipo,
+                    :prof,
+
+                    :agua,
+                    :comedor,
+                    :educacion,
+                    :formacion_empleo,
+
+                    :genero_participacion,
+                    :red_apoyo,
+
+                    :consumo,
+                    :vih,
+                    :salud_mental,
+
+                    :empleo,
+                    :documento,
+                    :egreso
+                )
+            """), {
+                "doc": cedula,
+                "tipo": tipo_intervencion,
+                "prof": profesional,
+
+                "agua": agua,
+                "comedor": comedor,
+                "educacion": educacion,
+                "formacion_empleo": formacion_empleo,
+
+                "genero_participacion": genero_participacion,
+                "red_apoyo": red_apoyo,
+
+                "consumo": consumo,
+                "vih": vih,
+                "salud_mental": salud_mental,
+
+                "empleo": empleo,
+                "documento": documento,
+                "egreso": egreso
+            })
+
+        st.success("✅ PAI-ODS registrado correctamente")
 # =====================================
 # TAB 13 - SEGUIMIENTO E IMPACTO (PAI + REDUCCIÓN DE RIESGOS)
 # =====================================
