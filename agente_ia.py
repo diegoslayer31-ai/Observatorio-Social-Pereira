@@ -2318,68 +2318,68 @@ with tab12:
         + " (" + df_profesionales["rol"].astype(str) + ")"
     )
 
-st.subheader("🔎 Búsqueda de usuario")
+    st.subheader("🔎 Búsqueda de usuario")
 
-busqueda = st.text_input("Buscar por nombre o documento")
+    busqueda = st.text_input("Buscar por nombre o documento")
 
-df_busqueda = df.copy()
+    df_busqueda = df.copy()
 
-if busqueda:
-    df_busqueda = df[
-        df["nombres"].astype(str).str.contains(busqueda, case=False, na=False) |
-        df["apellidos"].astype(str).str.contains(busqueda, case=False, na=False) |
-        df["numero_identificacion"].astype(str).str.contains(busqueda, na=False)
-    ]
+    if busqueda:
+        df_busqueda = df[
+            df["nombres"].astype(str).str.contains(busqueda, case=False, na=False) |
+            df["apellidos"].astype(str).str.contains(busqueda, case=False, na=False) |
+            df["numero_identificacion"].astype(str).str.contains(busqueda, na=False)
+        ]
 
-usuario_sel = None
+    usuario_sel = None
 
-if not df_busqueda.empty:
-    usuario_sel = st.selectbox(
-        "Seleccione usuario",
-        df_busqueda["numero_identificacion"].tolist(),
-        format_func=lambda x: (
-            df_busqueda[df_busqueda["numero_identificacion"] == x]
-            [["nombres", "apellidos"]]
-            .astype(str)
-            .agg(" ".join, axis=1)
-            .values[0]
+    if not df_busqueda.empty:
+        usuario_sel = st.selectbox(
+            "Seleccione usuario",
+            df_busqueda["numero_identificacion"].tolist(),
+            format_func=lambda x: (
+                df_busqueda[df_busqueda["numero_identificacion"] == x]
+                [["nombres", "apellidos"]]
+                .astype(str)
+                .agg(" ".join, axis=1)
+                .values[0]
+            )
         )
-    )
-else:
-    st.info("No hay coincidencias")
+    else:
+        st.info("No hay coincidencias")
 
-st.divider()
+    st.divider()
 
-# ====================================
-# 🔥 TODO EL PAI FUERA DEL ELSE
-# ====================================
+    # ====================================
+    # 🔥 TODO EL PAI FUERA DEL ELSE
+    # ====================================
 
-if usuario_sel:
+    if usuario_sel:
 
-    usuario = pd.read_sql(f"""
-        SELECT * FROM habitante_de_calle
-        WHERE numero_identificacion = '{usuario_sel}'
-    """, engine)
+        usuario = pd.read_sql(f"""
+            SELECT * FROM habitante_de_calle
+            WHERE numero_identificacion = '{usuario_sel}'
+        """, engine)
 
-    if not usuario.empty:
-        datos = usuario.iloc[0]
+        if not usuario.empty:
+            datos = usuario.iloc[0]
 
-        st.success("Usuario encontrado")
+            st.success("Usuario encontrado")
 
-        c1, c2, c3 = st.columns(3)
-        c1.metric("Nombre", f"{datos['nombres']} {datos['apellidos']}")
-        c2.metric("Edad", datos.get("edad", "N/A"))
-        c3.metric("Documento", usuario_sel)
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Nombre", f"{datos['nombres']} {datos['apellidos']}")
+            c2.metric("Edad", datos.get("edad", "N/A"))
+            c3.metric("Documento", usuario_sel)
 
-st.markdown("## 🌍 PAI - Seguimiento con Enfoque ODS")
+    st.markdown("## 🌍 PAI - Seguimiento con Enfoque ODS")
 
-with st.form(f"pai_ods_{usuario_sel}"):
+    with st.form(f"pai_ods_{usuario_sel}"):
 
     # =====================================
     # DATOS DE INTERVENCIÓN
     # =====================================
 
-    tipo_intervencion = st.selectbox(
+        tipo_intervencion = st.selectbox(
         "Tipo de intervención",
         [
             "Reducción de riesgos",
@@ -2587,219 +2587,219 @@ with st.form(f"pai_ods_{usuario_sel}"):
         "💾 Guardar PAI-ODS"
     )
 
-# =====================================
-# GUARDAR EN BASE DE DATOS
-# =====================================
+    # =====================================
+    # GUARDAR EN BASE DE DATOS
+    # =====================================
 
-if guardar:
+    if guardar:
 
-    with engine.begin() as conn:
+        with engine.begin() as conn:
 
-        conn.execute(text("""
-            INSERT INTO pai_intervenciones (
+            conn.execute(text("""
+                INSERT INTO pai_intervenciones (
 
-                documento_usuario,
-                tipo_intervencion,
-                profesional,
-                descripcion,
+                    documento_usuario,
+                    tipo_intervencion,
+                    profesional,
+                    descripcion,
 
-                consumo,
-                consumo_tipo,
-                consumo_frecuencia,
-                consumo_via,
+                    consumo,
+                    consumo_tipo,
+                    consumo_frecuencia,
+                    consumo_via,
 
-                salud,
-                salud_detalle,
+                    salud,
+                    salud_detalle,
 
-                red_apoyo,
-                red_apoyo_detalle,
-                red_apoyo_contacto,
+                    red_apoyo,
+                    red_apoyo_detalle,
+                    red_apoyo_contacto,
 
-                empleo_estado,
-                empleo_detalle,
+                    empleo_estado,
+                    empleo_detalle,
 
-                documento,
-                egreso,
+                    documento,
+                    egreso,
 
-                observaciones,
-                seguimiento,
+                    observaciones,
+                    seguimiento,
 
-                fecha
+                    fecha
 
-            )
-            VALUES (
+                )
+                VALUES (
 
-                :documento_usuario,
-                :tipo_intervencion,
-                :profesional,
-                :descripcion,
+                    :documento_usuario,
+                    :tipo_intervencion,
+                    :profesional,
+                    :descripcion,
 
-                :consumo,
-                :consumo_tipo,
-                :consumo_frecuencia,
-                :consumo_via,
+                    :consumo,
+                    :consumo_tipo,
+                    :consumo_frecuencia,
+                    :consumo_via,
 
-                :salud,
-                :salud_detalle,
+                    :salud,
+                    :salud_detalle,
 
-                :red_apoyo,
-                :red_apoyo_detalle,
-                :red_apoyo_contacto,
+                    :red_apoyo,
+                    :red_apoyo_detalle,
+                    :red_apoyo_contacto,
 
-                :empleo_estado,
-                :empleo_detalle,
+                    :empleo_estado,
+                    :empleo_detalle,
 
-                :documento,
-                :egreso,
+                    :documento,
+                    :egreso,
 
-                :observaciones,
-                :seguimiento,
+                    :observaciones,
+                    :seguimiento,
 
-                NOW()
+                    NOW()
 
-            )
-        """), {
+                )
+            """), {
 
-            "documento_usuario": usuario_sel,
+                "documento_usuario": usuario_sel,
 
-            "tipo_intervencion": tipo_intervencion,
-            "profesional": profesional,
-            "descripcion": descripcion,
+                "tipo_intervencion": tipo_intervencion,
+                "profesional": profesional,
+                "descripcion": descripcion,
 
-            "consumo": consumo,
-            "consumo_tipo": consumo_tipo,
-            "consumo_frecuencia": consumo_frecuencia,
-            "consumo_via": consumo_via,
+                "consumo": consumo,
+                "consumo_tipo": consumo_tipo,
+                "consumo_frecuencia": consumo_frecuencia,
+                "consumo_via": consumo_via,
 
-            "salud": salud,
-            "salud_detalle": salud_detalle,
+                "salud": salud,
+                "salud_detalle": salud_detalle,
 
-            "red_apoyo": red_apoyo,
-            "red_apoyo_detalle": red_apoyo_detalle,
-            "red_apoyo_contacto": red_apoyo_contacto,
+                "red_apoyo": red_apoyo,
+                "red_apoyo_detalle": red_apoyo_detalle,
+                "red_apoyo_contacto": red_apoyo_contacto,
 
-            "empleo_estado": empleo_estado,
-            "empleo_detalle": empleo_detalle,
+                "empleo_estado": empleo_estado,
+                "empleo_detalle": empleo_detalle,
 
-            "documento": documento,
-            "egreso": egreso,
+                "documento": documento,
+                "egreso": egreso,
 
-            "observaciones": observaciones,
-            "seguimiento": seguimiento
+                "observaciones": observaciones,
+                "seguimiento": seguimiento
 
-        })
+            })
 
-    st.success("✅ Seguimiento PAI registrado correctamente")
-# =====================================
-# ODS IMPACTADOS AUTOMÁTICAMENTE
-# =====================================
+        st.success("✅ Seguimiento PAI registrado correctamente")
+    # =====================================
+    # ODS IMPACTADOS AUTOMÁTICAMENTE
+    # =====================================
 
-ods_detectados = []
+    ods_detectados = []
 
-# ODS 2 - Hambre Cero
-if comedor in ["Ocasional", "Frecuente"]:
-    ods_detectados.append("ODS 2 - Hambre Cero")
+    # ODS 2 - Hambre Cero
+    if comedor in ["Ocasional", "Frecuente"]:
+        ods_detectados.append("ODS 2 - Hambre Cero")
 
-# ODS 3 - Salud y Bienestar
-if consumo in ["Reducido", "Abstinencia"]:
-    ods_detectados.append("ODS 3 - Salud y Bienestar")
-
-if vih in ["Positivo", "Indetectable"]:
-    if "ODS 3 - Salud y Bienestar" not in ods_detectados:
+    # ODS 3 - Salud y Bienestar
+    if consumo in ["Reducido", "Abstinencia"]:
         ods_detectados.append("ODS 3 - Salud y Bienestar")
 
-if salud in ["Estable", "Compensado", "En tratamiento"]:
-    if "ODS 3 - Salud y Bienestar" not in ods_detectados:
-        ods_detectados.append("ODS 3 - Salud y Bienestar")
+    if vih in ["Positivo", "Indetectable"]:
+        if "ODS 3 - Salud y Bienestar" not in ods_detectados:
+            ods_detectados.append("ODS 3 - Salud y Bienestar")
 
-# ODS 4 - Educación de Calidad
-if educacion != "No":
-    ods_detectados.append("ODS 4 - Educación de Calidad")
+    if salud in ["Estable", "Compensado", "En tratamiento"]:
+        if "ODS 3 - Salud y Bienestar" not in ods_detectados:
+            ods_detectados.append("ODS 3 - Salud y Bienestar")
 
-if formacion_empleo == "Finalizada":
-    if "ODS 4 - Educación de Calidad" not in ods_detectados:
+    # ODS 4 - Educación de Calidad
+    if educacion != "No":
         ods_detectados.append("ODS 4 - Educación de Calidad")
 
-# ODS 5 - Igualdad de Género
-if genero_participacion in ["Mujer cis", "Mujer trans", "No binario"]:
-    ods_detectados.append("ODS 5 - Igualdad de Género")
+    if formacion_empleo == "Finalizada":
+        if "ODS 4 - Educación de Calidad" not in ods_detectados:
+            ods_detectados.append("ODS 4 - Educación de Calidad")
 
-# ODS 6 - Agua Limpia y Saneamiento
-if agua == "Sí":
-    ods_detectados.append("ODS 6 - Agua Limpia y Saneamiento")
+    # ODS 5 - Igualdad de Género
+    if genero_participacion in ["Mujer cis", "Mujer trans", "No binario"]:
+        ods_detectados.append("ODS 5 - Igualdad de Género")
 
-# ODS 8 - Trabajo Decente
-if empleo_estado in ["Formal", "Emprendimiento"]:
-    ods_detectados.append("ODS 8 - Trabajo Decente y Crecimiento Económico")
+    # ODS 6 - Agua Limpia y Saneamiento
+    if agua == "Sí":
+        ods_detectados.append("ODS 6 - Agua Limpia y Saneamiento")
 
-# ODS 10 - Reducción de las Desigualdades
-if red_apoyo in ["Moderada", "Fuerte"]:
-    ods_detectados.append("ODS 10 - Reducción de las Desigualdades")
+    # ODS 8 - Trabajo Decente
+    if empleo_estado in ["Formal", "Emprendimiento"]:
+        ods_detectados.append("ODS 8 - Trabajo Decente y Crecimiento Económico")
 
-# ODS 16 - Paz, Justicia e Instituciones Sólidas
-if documento == "Tiene":
-    ods_detectados.append("ODS 16 - Identidad y Acceso a Derechos")
+    # ODS 10 - Reducción de las Desigualdades
+    if red_apoyo in ["Moderada", "Fuerte"]:
+        ods_detectados.append("ODS 10 - Reducción de las Desigualdades")
 
-# Eliminar duplicados
-ods_detectados = list(set(ods_detectados))
-# =====================================
-# ODS IMPACTADOS AUTOMÁTICAMENTE
-# =====================================
+    # ODS 16 - Paz, Justicia e Instituciones Sólidas
+    if documento == "Tiene":
+        ods_detectados.append("ODS 16 - Identidad y Acceso a Derechos")
 
-ods_detectados = []
+    # Eliminar duplicados
+    ods_detectados = list(set(ods_detectados))
+    # =====================================
+    # ODS IMPACTADOS AUTOMÁTICAMENTE
+    # =====================================
 
-# ODS 2 - Hambre Cero
-if comedor in ["Ocasional", "Frecuente"]:
-    ods_detectados.append("ODS 2 - Hambre Cero")
+    ods_detectados = []
 
-# ODS 3 - Salud y Bienestar
-if consumo in ["Reducido", "Abstinencia"]:
-    ods_detectados.append("ODS 3 - Salud y Bienestar")
+    # ODS 2 - Hambre Cero
+    if comedor in ["Ocasional", "Frecuente"]:
+        ods_detectados.append("ODS 2 - Hambre Cero")
 
-if vih in ["Positivo", "Indetectable"]:
-    if "ODS 3 - Salud y Bienestar" not in ods_detectados:
+    # ODS 3 - Salud y Bienestar
+    if consumo in ["Reducido", "Abstinencia"]:
         ods_detectados.append("ODS 3 - Salud y Bienestar")
 
-if salud in ["Estable", "Compensado", "En tratamiento"]:
-    if "ODS 3 - Salud y Bienestar" not in ods_detectados:
-        ods_detectados.append("ODS 3 - Salud y Bienestar")
+    if vih in ["Positivo", "Indetectable"]:
+        if "ODS 3 - Salud y Bienestar" not in ods_detectados:
+            ods_detectados.append("ODS 3 - Salud y Bienestar")
 
-# ODS 4 - Educación de Calidad
-if educacion != "No":
-    ods_detectados.append("ODS 4 - Educación de Calidad")
+    if salud in ["Estable", "Compensado", "En tratamiento"]:
+        if "ODS 3 - Salud y Bienestar" not in ods_detectados:
+            ods_detectados.append("ODS 3 - Salud y Bienestar")
 
-if formacion_empleo == "Finalizada":
-    if "ODS 4 - Educación de Calidad" not in ods_detectados:
+    # ODS 4 - Educación de Calidad
+    if educacion != "No":
         ods_detectados.append("ODS 4 - Educación de Calidad")
 
-# ODS 5 - Igualdad de Género
-if genero_participacion in ["Mujer cis", "Mujer trans", "No binario"]:
-    ods_detectados.append("ODS 5 - Igualdad de Género")
+    if formacion_empleo == "Finalizada":
+        if "ODS 4 - Educación de Calidad" not in ods_detectados:
+            ods_detectados.append("ODS 4 - Educación de Calidad")
 
-# ODS 6 - Agua Limpia y Saneamiento
-if agua == "Sí":
-    ods_detectados.append("ODS 6 - Agua Limpia y Saneamiento")
+    # ODS 5 - Igualdad de Género
+    if genero_participacion in ["Mujer cis", "Mujer trans", "No binario"]:
+        ods_detectados.append("ODS 5 - Igualdad de Género")
 
-# ODS 8 - Trabajo Decente
-if empleo_estado in ["Formal", "Emprendimiento"]:
-    ods_detectados.append("ODS 8 - Trabajo Decente y Crecimiento Económico")
+    # ODS 6 - Agua Limpia y Saneamiento
+    if agua == "Sí":
+        ods_detectados.append("ODS 6 - Agua Limpia y Saneamiento")
 
-# ODS 10 - Reducción de las Desigualdades
-if red_apoyo in ["Moderada", "Fuerte"]:
-    ods_detectados.append("ODS 10 - Reducción de las Desigualdades")
+    # ODS 8 - Trabajo Decente
+    if empleo_estado in ["Formal", "Emprendimiento"]:
+        ods_detectados.append("ODS 8 - Trabajo Decente y Crecimiento Económico")
 
-# ODS 16 - Paz, Justicia e Instituciones Sólidas
-if documento == "Tiene":
-    ods_detectados.append("ODS 16 - Identidad y Acceso a Derechos")
+    # ODS 10 - Reducción de las Desigualdades
+    if red_apoyo in ["Moderada", "Fuerte"]:
+        ods_detectados.append("ODS 10 - Reducción de las Desigualdades")
 
-# Eliminar duplicados
-ods_detectados = list(set(ods_detectados))
-if ods_detectados:
-    
-    st.markdown("### 🌍 ODS impactados en este seguimiento")
+    # ODS 16 - Paz, Justicia e Instituciones Sólidas
+    if documento == "Tiene":
+        ods_detectados.append("ODS 16 - Identidad y Acceso a Derechos")
 
-    for ods in sorted(ods_detectados):
-        st.success(ods)
+    # Eliminar duplicados
+    ods_detectados = list(set(ods_detectados))
+    if ods_detectados:
+        
+        st.markdown("### 🌍 ODS impactados en este seguimiento")
+
+        for ods in sorted(ods_detectados):
+            st.success(ods)
 # =====================================
 # TAB 13 - SEGUIMIENTO E IMPACTO (PAI + REDUCCIÓN DE RIESGOS)
 # =====================================
