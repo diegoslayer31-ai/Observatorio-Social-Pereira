@@ -2250,7 +2250,13 @@ with tab12:
     # =========================
     cedula = st.text_input("Documento del usuario (PAI)", key="pai_user")
 
+    st.subheader("🧠 PAI - Plan de Atención Individual (Optimizado)")
+
+    # =========================
+    # USUARIO INFO
+    # =========================
     if cedula:
+
         usuario = pd.read_sql(f"""
             SELECT * FROM habitante_de_calle
             WHERE numero_identificacion = '{cedula}'
@@ -2264,8 +2270,125 @@ with tab12:
             c1.metric("Nombre", f"{datos['nombres']} {datos['apellidos']}")
             c2.metric("Edad", datos.get("edad", "N/A"))
             c3.metric("Documento", cedula)
+
         else:
             st.warning("Usuario no encontrado")
+
+        st.divider()
+
+        # =========================
+        # 🧠 PAI FORM
+        # =========================
+        with st.form("pai_form"):
+
+            tipo_intervencion = st.selectbox(
+                "Tipo de intervención",
+                [
+                    "Reducción de riesgos y daños",
+                    "Adherencia tratamiento",
+                    "Valoración psicosocial",
+                    "Seguimiento social",
+                    "Gestión de caso"
+                ]
+            )
+
+            profesional = st.selectbox(
+                "Profesional",
+                df_profesionales["label"].tolist()
+            )
+
+            descripcion = st.text_area("Descripción de la intervención")
+
+            consumo = st.selectbox(
+                "Consumo de sustancias (estado actual)",
+                ["No consumo", "Ocasional", "Frecuente", "Policonsumo"]
+            )
+
+            salud = st.selectbox(
+                "Acceso a salud",
+                ["Sin acceso", "Parcial", "Total"]
+            )
+
+            adherencia = st.selectbox(
+                "Adherencia a tratamiento",
+                ["Alta", "Media", "Baja", "No aplica"]
+            )
+
+            red_apoyo = st.selectbox(
+                "Red de apoyo",
+                ["Nula", "Débil", "Fuerte"]
+            )
+
+            documento = st.selectbox(
+                "Documento de identidad",
+                ["No tiene", "En trámite", "Tiene documento"]
+            )
+
+            resultado = st.selectbox(
+                "Resultado de la intervención",
+                ["Mejora significativa", "Mejora parcial", "Sin cambios", "Empeoramiento"]
+            )
+
+            egreso = st.selectbox(
+                "Estado del proceso",
+                ["Activo", "Egreso exitoso", "Egreso no exitoso", "En seguimiento"]
+            )
+
+            riesgo = st.selectbox(
+                "Nivel de riesgo",
+                ["Bajo", "Medio", "Alto", "Crítico"]
+            )
+
+            guardar = st.form_submit_button("💾 Guardar PAI")
+
+        if guardar:
+
+            with engine.begin() as conn:
+                conn.execute(text("""
+                    INSERT INTO pai_intervenciones (
+                        documento_usuario,
+                        tipo_intervencion,
+                        profesional,
+                        descripcion,
+                        consumo,
+                        salud,
+                        adherencia,
+                        red_apoyo,
+                        documento,
+                        resultado,
+                        egreso,
+                        riesgo
+                    )
+                    VALUES (
+                        :doc,
+                        :tipo,
+                        :prof,
+                        :desc,
+                        :consumo,
+                        :salud,
+                        :adherencia,
+                        :red_apoyo,
+                        :documento,
+                        :resultado,
+                        :egreso,
+                        :riesgo
+                    )
+                """), {
+                    "doc": cedula,
+                    "tipo": tipo_intervencion,
+                    "prof": profesional,
+                    "desc": descripcion,
+                    "consumo": consumo,
+                    "salud": salud,
+                    "adherencia": adherencia,
+                    "red_apoyo": red_apoyo,
+                    "documento": documento,
+                    "resultado": resultado,
+                    "egreso": egreso,
+                    "riesgo": riesgo
+                })
+
+            st.success("✅ PAI registrado correctamente")
 
     st.divider()
 
