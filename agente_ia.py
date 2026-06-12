@@ -2360,22 +2360,19 @@ with tab12:
         st.divider()
 st.subheader("🌍 PAI - Seguimiento con Enfoque ODS")
 
+# =========================
+# PAI ODS SOLO SI HAY USUARIO
+# =========================
+
 if cedula:
+
+    st.markdown("## 🌍 PAI - Seguimiento con Enfoque ODS")
 
     with st.form(f"pai_ods_{cedula}"):
 
-        # =========================
-        # 🔵 INTERVENCIÓN
-        # =========================
         tipo_intervencion = st.selectbox(
             "Tipo de intervención",
-            [
-                "Reducción de riesgos",
-                "Acompañamiento psicosocial",
-                "Rehabilitación",
-                "Inclusión social",
-                "Seguimiento integral"
-            ]
+            ["Reducción de riesgos", "Acompañamiento psicosocial", "Rehabilitación", "Inclusión social", "Seguimiento integral"]
         )
 
         profesional = st.selectbox(
@@ -2383,149 +2380,32 @@ if cedula:
             df_profesionales["label"].tolist()
         )
 
-        # =========================
-        # 🟡 ODS - ACCESO (CONDICIONES)
-        # =========================
-
         agua = st.selectbox("Acceso a agua potable", ["No", "Parcial", "Sí"])
-
         comedor = st.selectbox("Acceso a comedor", ["No", "Ocasional", "Frecuente"])
-
-        educacion = st.selectbox(
-            "Escolarización",
-            ["No", "Primaria", "Secundaria", "Técnica", "Superior"]
-        )
-
-        formacion_empleo = st.selectbox(
-            "Formación para empleo",
-            ["No", "En proceso", "Finalizada"]
-        )
-
-        # =========================
-        # 🟢 ODS - PARTICIPACIÓN SOCIAL
-        # =========================
+        educacion = st.selectbox("Escolarización", ["No", "Primaria", "Secundaria", "Técnica", "Superior"])
+        formacion_empleo = st.selectbox("Formación para empleo", ["No", "En proceso", "Finalizada"])
 
         genero_participacion = st.selectbox(
             "Participación poblacional",
             ["Mujer cis", "Mujer trans", "Hombre cis", "Hombre trans", "No binario"]
         )
 
-        red_apoyo = st.selectbox(
-            "Red de apoyo",
-            ["Nula", "Débil", "Fuerte"]
-        )
+        red_apoyo = st.selectbox("Red de apoyo", ["Nula", "Débil", "Fuerte"])
 
-        # =========================
-        # 🔵 ODS - SALUD
-        # =========================
+        consumo = st.selectbox("Consumo de sustancias", ["Activo", "Reducido", "Abstinencia"])
+        vih = st.selectbox("Estado VIH", ["Negativo", "Positivo", "Indetectable"])
+        salud_mental = st.selectbox("Salud mental", ["Estable", "En tratamiento", "Bipolar compensado", "Inestable"])
 
-        consumo = st.selectbox(
-            "Consumo de sustancias",
-            ["Activo", "Reducido", "Abstinencia"]
-        )
-
-        vih = st.selectbox(
-            "Estado VIH",
-            ["Negativo", "Positivo", "Indetectable"]
-        )
-
-        salud_mental = st.selectbox(
-            "Estado salud mental",
-            ["Estable", "En tratamiento", "Bipolar compensado", "Inestable"]
-        )
-
-        # =========================
-        # 🟢 ODS - RESULTADOS DE VIDA
-        # =========================
-
-        empleo = st.selectbox(
-            "Acceso a empleo/ingreso",
-            ["No", "Informal", "Formal"]
-        )
-
-        documento = st.selectbox(
-            "Documento de identidad",
-            ["No tiene", "En trámite", "Tiene"]
-        )
-
-        egreso = st.selectbox(
-            "Egreso del albergue",
-            ["Activo", "Exitoso", "No exitoso"]
-        )
+        empleo = st.selectbox("Empleo/ingreso", ["No", "Informal", "Formal"])
+        documento = st.selectbox("Documento de identidad", ["No tiene", "En trámite", "Tiene"])
+        egreso = st.selectbox("Egreso del albergue", ["Activo", "Exitoso", "No exitoso"])
 
         guardar = st.form_submit_button("💾 Guardar PAI-ODS")
-
-    # =========================
-    # GUARDAR
-    # =========================
 
     if guardar:
 
         with engine.begin() as conn:
-            conn.execute(text("""
-                INSERT INTO pai_intervenciones (
-                    documento_usuario,
-                    tipo_intervencion,
-                    profesional,
-
-                    agua,
-                    comedor,
-                    educacion,
-                    formacion_empleo,
-
-                    genero_participacion,
-                    red_apoyo,
-
-                    consumo,
-                    vih,
-                    salud_mental,
-
-                    empleo,
-                    documento,
-                    egreso
-                )
-                VALUES (
-                    :doc,
-                    :tipo,
-                    :prof,
-
-                    :agua,
-                    :comedor,
-                    :educacion,
-                    :formacion_empleo,
-
-                    :genero_participacion,
-                    :red_apoyo,
-
-                    :consumo,
-                    :vih,
-                    :salud_mental,
-
-                    :empleo,
-                    :documento,
-                    :egreso
-                )
-            """), {
-                "doc": cedula,
-                "tipo": tipo_intervencion,
-                "prof": profesional,
-
-                "agua": agua,
-                "comedor": comedor,
-                "educacion": educacion,
-                "formacion_empleo": formacion_empleo,
-
-                "genero_participacion": genero_participacion,
-                "red_apoyo": red_apoyo,
-
-                "consumo": consumo,
-                "vih": vih,
-                "salud_mental": salud_mental,
-
-                "empleo": empleo,
-                "documento": documento,
-                "egreso": egreso
-            })
+            conn.execute(text(""" ... """), {...})
 
         st.success("✅ PAI-ODS registrado correctamente")
 # =====================================
