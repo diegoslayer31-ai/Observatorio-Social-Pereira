@@ -2586,15 +2586,108 @@ with st.form(f"pai_ods_{usuario_sel}"):
     guardar = st.form_submit_button(
         "💾 Guardar PAI-ODS"
     )
+guardar = st.form_submit_button(
+    "💾 Guardar PAI-ODS"
+)
 
+if guardar:
 
-    if guardar:
-        with engine.begin() as conn:
-            conn.execute(text("""..."""), {...})
+    with engine.begin() as conn:
 
-        st.success("✅ PAI-ODS registrado correctamente")
+        conn.execute(text("""
+            INSERT INTO pai_intervenciones (
+                documento_usuario,
+                tipo_intervencion,
+                profesional,
+                descripcion,
 
-    else:
+                consumo,
+                consumo_tipo,
+                consumo_frecuencia,
+                consumo_via,
+
+                salud,
+                salud_detalle,
+
+                red_apoyo,
+                red_apoyo_detalle,
+                red_apoyo_contacto,
+
+                empleo_estado,
+                empleo_detalle,
+
+                documento,
+                egreso,
+
+                observaciones,
+                seguimiento,
+
+                fecha
+            )
+
+            VALUES (
+                :documento_usuario,
+                :tipo_intervencion,
+                :profesional,
+                :descripcion,
+
+                :consumo,
+                :consumo_tipo,
+                :consumo_frecuencia,
+                :consumo_via,
+
+                :salud,
+                :salud_detalle,
+
+                :red_apoyo,
+                :red_apoyo_detalle,
+                :red_apoyo_contacto,
+
+                :empleo_estado,
+                :empleo_detalle,
+
+                :documento,
+                :egreso,
+
+                :observaciones,
+                :seguimiento,
+
+                NOW()
+            )
+        """), {
+
+            "documento_usuario": usuario_sel,
+
+            "tipo_intervencion": tipo_intervencion,
+            "profesional": profesional,
+            "descripcion": descripcion,
+
+            "consumo": consumo,
+            "consumo_tipo": consumo_tipo,
+            "consumo_frecuencia": consumo_frecuencia,
+            "consumo_via": consumo_via,
+
+            "salud": salud,
+            "salud_detalle": salud_detalle,
+
+            "red_apoyo": red_apoyo,
+            "red_apoyo_detalle": red_apoyo_detalle,
+            "red_apoyo_contacto": red_apoyo_contacto,
+
+            "empleo_estado": empleo_estado,
+            "empleo_detalle": empleo_detalle,
+
+            "documento": documento,
+            "egreso": egreso,
+
+            "observaciones": observaciones,
+            "seguimiento": seguimiento
+
+        })
+
+    st.success("✅ Seguimiento PAI registrado correctamente")
+
+else:
         st.info("Seleccione un usuario para activar el PAI")
 # =====================================
 # TAB 13 - SEGUIMIENTO E IMPACTO (PAI + REDUCCIÓN DE RIESGOS)
