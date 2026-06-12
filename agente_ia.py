@@ -2318,7 +2318,7 @@ with tab12:
         + " (" + df_profesionales["rol"].astype(str) + ")"
     )
 
- st.subheader("🔎 Búsqueda de usuario")
+st.subheader("🔎 Búsqueda de usuario")
 
 busqueda = st.text_input("Buscar por nombre o documento")
 
