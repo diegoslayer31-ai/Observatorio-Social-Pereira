@@ -2395,6 +2395,81 @@ with tab12:
 
     else:
         st.info("Ingrese un documento para activar el PAI")
+    # =========================
+# 🧩 ACTIVIDADES GRUPALES
+# =========================
+
+st.markdown("## 🧑‍🤝‍🧑 Registro de Actividades Grupales")
+
+with st.expander("➕ Registrar actividad grupal"):
+
+    with st.form("form_actividades_grupales"):
+
+        tipo_actividad = st.selectbox(
+            "Tipo de actividad",
+            [
+                "Taller psicosocial",
+                "Actividad deportiva",
+                "Arte y cultura",
+                "Formación laboral",
+                "Espiritualidad",
+                "Integración comunitaria"
+            ]
+        )
+
+        facilitador = st.selectbox(
+            "Facilitador",
+            df_profesionales["label"].tolist()
+        )
+
+        fecha = st.date_input("Fecha de actividad")
+
+        participantes = st.number_input(
+            "Número de participantes",
+            min_value=1,
+            max_value=200,
+            value=10
+        )
+
+        descripcion = st.text_area("Descripción de la actividad")
+
+        impacto = st.selectbox(
+            "Nivel de impacto percibido",
+            ["Bajo", "Medio", "Alto"]
+        )
+
+        guardar_actividad = st.form_submit_button("💾 Guardar actividad")
+
+    if guardar_actividad:
+
+        with engine.begin() as conn:
+            conn.execute(text("""
+                INSERT INTO actividades_grupales (
+                    tipo_actividad,
+                    facilitador,
+                    fecha,
+                    participantes,
+                    descripcion,
+                    impacto
+                )
+                VALUES (
+                    :tipo,
+                    :facilitador,
+                    :fecha,
+                    :participantes,
+                    :descripcion,
+                    :impacto
+                )
+            """), {
+                "tipo": tipo_actividad,
+                "facilitador": facilitador,
+                "fecha": fecha,
+                "participantes": participantes,
+                "descripcion": descripcion,
+                "impacto": impacto
+            })
+
+        st.success("✅ Actividad grupal registrada correctamente")
 # =====================================
 # TAB 13 - SEGUIMIENTO E IMPACTO (PAI + REDUCCIÓN DE RIESGOS)
 # =====================================
