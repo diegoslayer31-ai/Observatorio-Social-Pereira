@@ -2279,7 +2279,7 @@ with tab12:
         # =========================
         # 🧠 PAI FORM
         # =========================
-        with st.form("pai_form"):
+        with st.form(f"pai_form_{cedula or 'nuevo'}"):
 
             tipo_intervencion = st.selectbox(
                 "Tipo de intervención",
