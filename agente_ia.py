@@ -2363,7 +2363,7 @@ st.subheader("🌍 PAI - Seguimiento con Enfoque ODS")
 # =========================
 # PAI ODS SOLO SI HAY USUARIO
 # =========================
-
+st.write("DEBUG PAI ODS EJECUTÁNDOSE")
 if cedula:
 
     st.markdown("## 🌍 PAI - Seguimiento con Enfoque ODS")
