@@ -2371,14 +2371,23 @@ if usuario_sel:
         c2.metric("Edad", datos.get("edad", "N/A"))
         c3.metric("Documento", usuario_sel)
 
-    st.markdown("## 🌍 PAI - Seguimiento con Enfoque ODS")
+st.markdown("## 🌍 PAI - Seguimiento con Enfoque ODS")
 
-    with st.form(f"pai_ods_{usuario_sel}"):
+with st.form(f"pai_ods_{usuario_sel}"):
+
+    # =====================================
+    # DATOS DE INTERVENCIÓN
+    # =====================================
 
     tipo_intervencion = st.selectbox(
         "Tipo de intervención",
-        ["Reducción de riesgos", "Acompañamiento psicosocial",
-         "Rehabilitación", "Inclusión social", "Seguimiento integral"]
+        [
+            "Reducción de riesgos",
+            "Acompañamiento psicosocial",
+            "Rehabilitación",
+            "Inclusión social",
+            "Seguimiento integral"
+        ]
     )
 
     profesional = st.selectbox(
@@ -2386,67 +2395,198 @@ if usuario_sel:
         df_profesionales["label"].tolist()
     )
 
-    agua = st.selectbox("Acceso a agua potable", ["No", "Parcial", "Sí"])
-    comedor = st.selectbox("Acceso a comedor", ["No", "Ocasional", "Frecuente"])
-    educacion = st.selectbox("Escolarización", ["No", "Primaria", "Secundaria", "Técnica", "Superior"])
-    formacion_empleo = st.selectbox("Formación para empleo", ["No", "En proceso", "Finalizada"])
+    descripcion = st.text_area(
+        "Descripción de la intervención realizada"
+    )
+
+    # =====================================
+    # ODS - CONDICIONES DE VIDA
+    # =====================================
+
+    agua = st.selectbox(
+        "Acceso a agua potable",
+        ["No", "Parcial", "Sí"]
+    )
+
+    comedor = st.selectbox(
+        "Acceso a alimentación/comedor",
+        ["No", "Ocasional", "Frecuente"]
+    )
+
+    educacion = st.selectbox(
+        "Escolarización",
+        ["No", "Primaria", "Secundaria", "Técnica", "Superior"]
+    )
+
+    formacion_empleo = st.selectbox(
+        "Formación para empleo",
+        ["No", "En proceso", "Finalizada"]
+    )
+
+    # =====================================
+    # PARTICIPACIÓN E INCLUSIÓN
+    # =====================================
 
     genero_participacion = st.selectbox(
         "Participación poblacional",
-        ["Mujer cis", "Mujer trans", "Hombre cis", "Hombre trans", "No binario"]
+        [
+            "Mujer cis",
+            "Mujer trans",
+            "Hombre cis",
+            "Hombre trans",
+            "No binario"
+        ]
     )
 
-    # =========================
-    # 🔥 RED DE APOYO MEJORADA
-    # =========================
+    # =====================================
+    # RED DE APOYO
+    # =====================================
+
     red_apoyo = st.selectbox(
-    "Nivel de red de apoyo",
-    ["Nula", "Débil", "Moderada", "Fuerte"]
+        "Nivel de red de apoyo",
+        [
+            "Nula",
+            "Débil",
+            "Moderada",
+            "Fuerte"
+        ]
     )
 
     red_apoyo_detalle = st.text_area(
-        "Nombre, parentesco y datos de contacto de la red de apoyo"
+        "Nombre, parentesco y descripción de la red de apoyo"
     )
 
     red_apoyo_contacto = st.text_input(
-        "Teléfono de contacto"
-    )   
+        "Teléfono de contacto de la red de apoyo"
+    )
 
-    # =========================
-    # 🔥 CONSUMO (CLÍNICO REAL)
-    # =========================
-    consumo_nivel = st.selectbox(
+    # =====================================
+    # CONSUMO
+    # =====================================
+
+    consumo = st.selectbox(
         "Nivel de consumo",
-        ["Activo", "Reducido", "Abstinencia"]
+        [
+            "Activo",
+            "Reducido",
+            "Abstinencia"
+        ]
     )
 
-    consumo_tipo = st.text_area(
-        "¿Qué sustancias consume o consumía?"
+    consumo_tipo = st.text_input(
+        "Sustancia(s) consumida(s)"
     )
 
-    vih = st.selectbox("Estado VIH", ["Negativo", "Positivo", "Indetectable"])
+    consumo_frecuencia = st.selectbox(
+        "Frecuencia de consumo",
+        [
+            "Diario",
+            "Varias veces por semana",
+            "Semanal",
+            "Ocasional",
+            "Sin consumo actual"
+        ]
+    )
 
-    # =========================
-    # 🧠 SALUD MENTAL TIPO HISTORIA CLÍNICA
-    # =========================
-    salud_mental = st.text_area("Estado de salud mental (descripción clínica)")
+    consumo_via = st.selectbox(
+        "Vía de consumo",
+        [
+            "Fumada",
+            "Inhalada",
+            "Oral",
+            "Inyectada",
+            "Múltiple"
+        ]
+    )
 
-    # =========================
-    # 💼 EMPLEO DESCRIPTIVO
-    # =========================
-    empleo_estado = st.selectbox("Situación laboral", ["No trabaja", "Informal", "Formal"])
-    empleo_detalle = st.text_area("Descripción del empleo o ingresos")
+    # =====================================
+    # VIH Y SALUD
+    # =====================================
 
-    documento = st.selectbox("Documento de identidad", ["No tiene", "En trámite", "Tiene"])
-    egreso = st.selectbox("Egreso del albergue", ["Activo", "Exitoso", "No exitoso"])
+    vih = st.selectbox(
+        "Estado VIH",
+        [
+            "Negativo",
+            "Positivo",
+            "Indetectable"
+        ]
+    )
 
-    # =========================
-    # 🧠 NUEVO: EVOLUCIÓN CLÍNICA
-    # =========================
-    observaciones = st.text_area("Observaciones del profesional")
-    seguimiento = st.text_area("Evolución / seguimiento del caso")
+    salud = st.selectbox(
+        "Estado de salud mental",
+        [
+            "Estable",
+            "En tratamiento",
+            "Compensado",
+            "Inestable"
+        ]
+    )
 
-    guardar = st.form_submit_button("💾 Guardar PAI-ODS")
+    salud_detalle = st.text_area(
+        "Descripción clínica de salud mental"
+    )
+
+    # =====================================
+    # EMPLEO
+    # =====================================
+
+    empleo_estado = st.selectbox(
+        "Situación laboral",
+        [
+            "Desempleado",
+            "Informal",
+            "Formal",
+            "Emprendimiento",
+            "Incapacidad"
+        ]
+    )
+
+    empleo_detalle = st.text_area(
+        "Descripción del empleo, ocupación o ingresos"
+    )
+
+    # =====================================
+    # DOCUMENTACIÓN
+    # =====================================
+
+    documento = st.selectbox(
+        "Documento de identidad",
+        [
+            "No tiene",
+            "En trámite",
+            "Tiene"
+        ]
+    )
+
+    # =====================================
+    # EGRESO
+    # =====================================
+
+    egreso = st.selectbox(
+        "Estado frente al albergue",
+        [
+            "Activo",
+            "Exitoso",
+            "No exitoso"
+        ]
+    )
+
+    # =====================================
+    # EVOLUCIÓN PROFESIONAL
+    # =====================================
+
+    observaciones = st.text_area(
+        "Observaciones profesionales"
+    )
+
+    seguimiento = st.text_area(
+        "Evolución y seguimiento del caso"
+    )
+
+    guardar = st.form_submit_button(
+        "💾 Guardar PAI-ODS"
+    )
+
 
     if guardar:
         with engine.begin() as conn:
@@ -2454,8 +2594,8 @@ if usuario_sel:
 
         st.success("✅ PAI-ODS registrado correctamente")
 
-else:
-    st.info("Seleccione un usuario para activar el PAI")
+    else:
+        st.info("Seleccione un usuario para activar el PAI")
 # =====================================
 # TAB 13 - SEGUIMIENTO E IMPACTO (PAI + REDUCCIÓN DE RIESGOS)
 # =====================================
