@@ -2586,9 +2586,10 @@ with st.form(f"pai_ods_{usuario_sel}"):
     guardar = st.form_submit_button(
         "💾 Guardar PAI-ODS"
     )
-guardar = st.form_submit_button(
-    "💾 Guardar PAI-ODS"
-)
+
+# =====================================
+# GUARDAR EN BASE DE DATOS
+# =====================================
 
 if guardar:
 
@@ -2596,6 +2597,7 @@ if guardar:
 
         conn.execute(text("""
             INSERT INTO pai_intervenciones (
+
                 documento_usuario,
                 tipo_intervencion,
                 profesional,
@@ -2623,9 +2625,10 @@ if guardar:
                 seguimiento,
 
                 fecha
-            )
 
+            )
             VALUES (
+
                 :documento_usuario,
                 :tipo_intervencion,
                 :profesional,
@@ -2653,6 +2656,7 @@ if guardar:
                 :seguimiento,
 
                 NOW()
+
             )
         """), {
 
@@ -2686,9 +2690,6 @@ if guardar:
         })
 
     st.success("✅ Seguimiento PAI registrado correctamente")
-
-else:
-        st.info("Seleccione un usuario para activar el PAI")
 # =====================================
 # TAB 13 - SEGUIMIENTO E IMPACTO (PAI + REDUCCIÓN DE RIESGOS)
 # =====================================
