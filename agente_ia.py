@@ -2318,7 +2318,7 @@ with tab12:
         + " (" + df_profesionales["rol"].astype(str) + ")"
     )
 
-    # =========================
+ # =========================
     # USUARIO
     # =========================
     st.subheader("🔎 Búsqueda de usuario (híbrida)")
@@ -2334,8 +2334,9 @@ if busqueda:
         df["numero_identificacion"].astype(str).str.contains(busqueda, na=False)
     ]
 
-if not df_busqueda.empty:
+usuario_sel = None
 
+if not df_busqueda.empty:
     usuario_sel = st.selectbox(
         "Seleccione usuario",
         df_busqueda["numero_identificacion"].tolist(),
@@ -2347,16 +2348,10 @@ if not df_busqueda.empty:
             .values[0]
         )
     )
-
 else:
-    usuario_sel = None
     st.info("No hay coincidencias")
 
     st.divider()
-
-    # =========================
-    # SOLO SI HAY CÉDULA
-    # =========================
     if usuario_sel:
 
         usuario = pd.read_sql(f"""
