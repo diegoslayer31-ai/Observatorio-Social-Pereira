@@ -2690,6 +2690,59 @@ if guardar:
         })
 
     st.success("✅ Seguimiento PAI registrado correctamente")
+
+# =====================================
+# ODS IMPACTADOS AUTOMÁTICAMENTE
+# =====================================
+
+ods_detectados = []
+
+# ODS 2 - Hambre Cero
+if comedor in ["Ocasional", "Frecuente"]:
+    ods_detectados.append("ODS 2 - Hambre Cero")
+
+# ODS 3 - Salud y Bienestar
+if consumo in ["Reducido", "Abstinencia"]:
+    ods_detectados.append("ODS 3 - Salud y Bienestar")
+
+if vih in ["Positivo", "Indetectable"]:
+    if "ODS 3 - Salud y Bienestar" not in ods_detectados:
+        ods_detectados.append("ODS 3 - Salud y Bienestar")
+
+if salud in ["Estable", "Compensado", "En tratamiento"]:
+    if "ODS 3 - Salud y Bienestar" not in ods_detectados:
+        ods_detectados.append("ODS 3 - Salud y Bienestar")
+
+# ODS 4 - Educación de Calidad
+if educacion != "No":
+    ods_detectados.append("ODS 4 - Educación de Calidad")
+
+if formacion_empleo == "Finalizada":
+    if "ODS 4 - Educación de Calidad" not in ods_detectados:
+        ods_detectados.append("ODS 4 - Educación de Calidad")
+
+# ODS 5 - Igualdad de Género
+if genero_participacion in ["Mujer cis", "Mujer trans", "No binario"]:
+    ods_detectados.append("ODS 5 - Igualdad de Género")
+
+# ODS 6 - Agua Limpia y Saneamiento
+if agua == "Sí":
+    ods_detectados.append("ODS 6 - Agua Limpia y Saneamiento")
+
+# ODS 8 - Trabajo Decente
+if empleo_estado in ["Formal", "Emprendimiento"]:
+    ods_detectados.append("ODS 8 - Trabajo Decente y Crecimiento Económico")
+
+# ODS 10 - Reducción de las Desigualdades
+if red_apoyo in ["Moderada", "Fuerte"]:
+    ods_detectados.append("ODS 10 - Reducción de las Desigualdades")
+
+# ODS 16 - Paz, Justicia e Instituciones Sólidas
+if documento == "Tiene":
+    ods_detectados.append("ODS 16 - Identidad y Acceso a Derechos")
+
+# Eliminar duplicados
+ods_detectados = list(set(ods_detectados))
 # =====================================
 # TAB 13 - SEGUIMIENTO E IMPACTO (PAI + REDUCCIÓN DE RIESGOS)
 # =====================================
