@@ -2300,43 +2300,33 @@ def calcular_indice_ods(salud, empleo, inclusion, derechos):
 
     indice = (total / 4) * 100
 
-# =====================================
-# TAB 12 - SEGUIMIENTO PROFESIONAL + PAI
-# =====================================
-
 with tab12:
 
-    st.title("📋 Seguimiento Profesional - PAI (Plan de Atención Individual)")
+    st.title("📋 Seguimiento Profesional - PAI")
 
     # =========================
     # PROFESIONALES
     # =========================
-    try:
-        df_profesionales = pd.read_sql("""
-            SELECT nombre, rol
-            FROM profesionales
-            ORDER BY nombre
-        """, engine)
+    df_profesionales = pd.read_sql("""
+        SELECT nombre, rol
+        FROM profesionales
+        ORDER BY nombre
+    """, engine)
 
-        df_profesionales["label"] = (
-            df_profesionales["nombre"].astype(str)
-            + " (" + df_profesionales["rol"].astype(str) + ")"
-        )
-
-    except:
-        df_profesionales = pd.DataFrame({
-            "label": ["Psicología", "Enfermería", "Trabajo Social", "Pedagogía"]
-        })
+    df_profesionales["label"] = (
+        df_profesionales["nombre"].astype(str)
+        + " (" + df_profesionales["rol"].astype(str) + ")"
+    )
 
     # =========================
     # USUARIO
     # =========================
     cedula = st.text_input("Documento del usuario (PAI)", key="pai_user")
 
-    st.subheader("🧠 PAI - Plan de Atención Individual (Optimizado)")
+    st.divider()
 
     # =========================
-    # USUARIO INFO
+    # SOLO SI HAY CÉDULA
     # =========================
     if cedula:
 
@@ -2347,6 +2337,7 @@ with tab12:
 
         if not usuario.empty:
             datos = usuario.iloc[0]
+
             st.success("Usuario encontrado")
 
             c1, c2, c3 = st.columns(3)
@@ -2357,57 +2348,53 @@ with tab12:
         else:
             st.warning("Usuario no encontrado")
 
-        st.divider()
-st.subheader("🌍 PAI - Seguimiento con Enfoque ODS")
+        st.markdown("## 🌍 PAI - Seguimiento con Enfoque ODS")
 
-# =========================
-# PAI ODS SOLO SI HAY USUARIO
-# =========================
-st.write("DEBUG PAI ODS EJECUTÁNDOSE")
-if cedula:
+        with st.form(f"pai_ods_{cedula}"):
 
-    st.markdown("## 🌍 PAI - Seguimiento con Enfoque ODS")
+            tipo_intervencion = st.selectbox(
+                "Tipo de intervención",
+                ["Reducción de riesgos", "Acompañamiento psicosocial",
+                 "Rehabilitación", "Inclusión social", "Seguimiento integral"]
+            )
 
-    with st.form(f"pai_ods_{cedula}"):
+            profesional = st.selectbox(
+                "Profesional",
+                df_profesionales["label"].tolist()
+            )
 
-        tipo_intervencion = st.selectbox(
-            "Tipo de intervención",
-            ["Reducción de riesgos", "Acompañamiento psicosocial", "Rehabilitación", "Inclusión social", "Seguimiento integral"]
-        )
+            agua = st.selectbox("Acceso a agua potable", ["No", "Parcial", "Sí"])
+            comedor = st.selectbox("Acceso a comedor", ["No", "Ocasional", "Frecuente"])
+            educacion = st.selectbox("Escolarización", ["No", "Primaria", "Secundaria", "Técnica", "Superior"])
+            formacion_empleo = st.selectbox("Formación para empleo", ["No", "En proceso", "Finalizada"])
 
-        profesional = st.selectbox(
-            "Profesional",
-            df_profesionales["label"].tolist()
-        )
+            genero_participacion = st.selectbox(
+                "Participación poblacional",
+                ["Mujer cis", "Mujer trans", "Hombre cis", "Hombre trans", "No binario"]
+            )
 
-        agua = st.selectbox("Acceso a agua potable", ["No", "Parcial", "Sí"])
-        comedor = st.selectbox("Acceso a comedor", ["No", "Ocasional", "Frecuente"])
-        educacion = st.selectbox("Escolarización", ["No", "Primaria", "Secundaria", "Técnica", "Superior"])
-        formacion_empleo = st.selectbox("Formación para empleo", ["No", "En proceso", "Finalizada"])
+            red_apoyo = st.selectbox("Red de apoyo", ["Nula", "Débil", "Fuerte"])
 
-        genero_participacion = st.selectbox(
-            "Participación poblacional",
-            ["Mujer cis", "Mujer trans", "Hombre cis", "Hombre trans", "No binario"]
-        )
+            consumo = st.selectbox("Consumo de sustancias", ["Activo", "Reducido", "Abstinencia"])
+            vih = st.selectbox("Estado VIH", ["Negativo", "Positivo", "Indetectable"])
+            salud_mental = st.selectbox("Salud mental", ["Estable", "En tratamiento", "Bipolar compensado", "Inestable"])
 
-        red_apoyo = st.selectbox("Red de apoyo", ["Nula", "Débil", "Fuerte"])
+            empleo = st.selectbox("Empleo/ingreso", ["No", "Informal", "Formal"])
+            documento = st.selectbox("Documento de identidad", ["No tiene", "En trámite", "Tiene"])
+            egreso = st.selectbox("Egreso del albergue", ["Activo", "Exitoso", "No exitoso"])
 
-        consumo = st.selectbox("Consumo de sustancias", ["Activo", "Reducido", "Abstinencia"])
-        vih = st.selectbox("Estado VIH", ["Negativo", "Positivo", "Indetectable"])
-        salud_mental = st.selectbox("Salud mental", ["Estable", "En tratamiento", "Bipolar compensado", "Inestable"])
+            guardar = st.form_submit_button("💾 Guardar PAI-ODS")
 
-        empleo = st.selectbox("Empleo/ingreso", ["No", "Informal", "Formal"])
-        documento = st.selectbox("Documento de identidad", ["No tiene", "En trámite", "Tiene"])
-        egreso = st.selectbox("Egreso del albergue", ["Activo", "Exitoso", "No exitoso"])
+        if guardar:
+            with engine.begin() as conn:
+                conn.execute(text("""
+                    INSERT INTO pai_intervenciones (...)
+                """), {...})
 
-        guardar = st.form_submit_button("💾 Guardar PAI-ODS")
+            st.success("✅ PAI-ODS registrado correctamente")
 
-    if guardar:
-
-        with engine.begin() as conn:
-            conn.execute(text(""" ... """), {...})
-
-        st.success("✅ PAI-ODS registrado correctamente")
+    else:
+        st.info("Ingrese un documento para activar el PAI")
 # =====================================
 # TAB 13 - SEGUIMIENTO E IMPACTO (PAI + REDUCCIÓN DE RIESGOS)
 # =====================================
