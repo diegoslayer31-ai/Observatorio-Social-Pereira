@@ -2318,10 +2318,7 @@ with tab12:
         + " (" + df_profesionales["rol"].astype(str) + ")"
     )
 
- # =========================
-    # USUARIO
-    # =========================
-    st.subheader("🔎 Búsqueda de usuario (híbrida)")
+ st.subheader("🔎 Búsqueda de usuario")
 
 busqueda = st.text_input("Buscar por nombre o documento")
 
@@ -2351,75 +2348,77 @@ if not df_busqueda.empty:
 else:
     st.info("No hay coincidencias")
 
-    st.divider()
-    if usuario_sel:
+st.divider()
 
-        usuario = pd.read_sql(f"""
-            SELECT * FROM habitante_de_calle
-            WHERE numero_identificacion = '{usuario_sel}'
-        """, engine)
+# ====================================
+# 🔥 TODO EL PAI FUERA DEL ELSE
+# ====================================
 
-        if not usuario.empty:
-            datos = usuario.iloc[0]
+if usuario_sel:
 
-            st.success("Usuario encontrado")
+    usuario = pd.read_sql(f"""
+        SELECT * FROM habitante_de_calle
+        WHERE numero_identificacion = '{usuario_sel}'
+    """, engine)
 
-            c1, c2, c3 = st.columns(3)
-            c1.metric("Nombre", f"{datos['nombres']} {datos['apellidos']}")
-            c2.metric("Edad", datos.get("edad", "N/A"))
-            c3.metric("Documento", usuario_sel)
+    if not usuario.empty:
+        datos = usuario.iloc[0]
 
-        else:
-            st.warning("Usuario no encontrado")
+        st.success("Usuario encontrado")
 
-        st.markdown("## 🌍 PAI - Seguimiento con Enfoque ODS")
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Nombre", f"{datos['nombres']} {datos['apellidos']}")
+        c2.metric("Edad", datos.get("edad", "N/A"))
+        c3.metric("Documento", usuario_sel)
 
-        with st.form(f"pai_ods_{usuario_sel}"):
+    st.markdown("## 🌍 PAI - Seguimiento con Enfoque ODS")
 
-            tipo_intervencion = st.selectbox(
-                "Tipo de intervención",
-                ["Reducción de riesgos", "Acompañamiento psicosocial",
-                 "Rehabilitación", "Inclusión social", "Seguimiento integral"]
-            )
+    with st.form(f"pai_ods_{usuario_sel}"):
 
-            profesional = st.selectbox(
-                "Profesional",
-                df_profesionales["label"].tolist()
-            )
+        tipo_intervencion = st.selectbox(
+            "Tipo de intervención",
+            ["Reducción de riesgos", "Acompañamiento psicosocial",
+             "Rehabilitación", "Inclusión social", "Seguimiento integral"]
+        )
 
-            agua = st.selectbox("Acceso a agua potable", ["No", "Parcial", "Sí"])
-            comedor = st.selectbox("Acceso a comedor", ["No", "Ocasional", "Frecuente"])
-            educacion = st.selectbox("Escolarización", ["No", "Primaria", "Secundaria", "Técnica", "Superior"])
-            formacion_empleo = st.selectbox("Formación para empleo", ["No", "En proceso", "Finalizada"])
+        profesional = st.selectbox(
+            "Profesional",
+            df_profesionales["label"].tolist()
+        )
 
-            genero_participacion = st.selectbox(
-                "Participación poblacional",
-                ["Mujer cis", "Mujer trans", "Hombre cis", "Hombre trans", "No binario"]
-            )
+        agua = st.selectbox("Acceso a agua potable", ["No", "Parcial", "Sí"])
+        comedor = st.selectbox("Acceso a comedor", ["No", "Ocasional", "Frecuente"])
+        educacion = st.selectbox("Escolarización", ["No", "Primaria", "Secundaria", "Técnica", "Superior"])
+        formacion_empleo = st.selectbox("Formación para empleo", ["No", "En proceso", "Finalizada"])
 
-            red_apoyo = st.selectbox("Red de apoyo", ["Nula", "Débil", "Fuerte"])
+        genero_participacion = st.selectbox(
+            "Participación poblacional",
+            ["Mujer cis", "Mujer trans", "Hombre cis", "Hombre trans", "No binario"]
+        )
 
-            consumo = st.selectbox("Consumo de sustancias", ["Activo", "Reducido", "Abstinencia"])
-            vih = st.selectbox("Estado VIH", ["Negativo", "Positivo", "Indetectable"])
-            salud_mental = st.selectbox("Salud mental", ["Estable", "En tratamiento", "Bipolar compensado", "Inestable"])
+        # 🔥 MEJORA IMPORTANTE
+        red_apoyo = st.text_input("Red de apoyo (nombre + teléfono)")
 
-            empleo = st.selectbox("Empleo/ingreso", ["No", "Informal", "Formal"])
-            documento = st.selectbox("Documento de identidad", ["No tiene", "En trámite", "Tiene"])
-            egreso = st.selectbox("Egreso del albergue", ["Activo", "Exitoso", "No exitoso"])
+        consumo = st.selectbox("Consumo de sustancias", ["Activo", "Reducido", "Abstinencia"])
+        vih = st.selectbox("Estado VIH", ["Negativo", "Positivo", "Indetectable"])
 
-            guardar = st.form_submit_button("💾 Guardar PAI-ODS")
+        salud_mental = st.text_area("Salud mental (descripción)")
 
-        if guardar:
-            with engine.begin() as conn:
-                conn.execute(text("""
-                    INSERT INTO pai_intervenciones (...)
-                """), {...})
+        empleo = st.text_area("Empleo/ingreso (descriptivo)")
 
-            st.success("✅ PAI-ODS registrado correctamente")
+        documento = st.selectbox("Documento de identidad", ["No tiene", "En trámite", "Tiene"])
+        egreso = st.selectbox("Egreso del albergue", ["Activo", "Exitoso", "No exitoso"])
 
-    else:
-        st.info("Ingrese un documento para activar el PAI")
-    
+        guardar = st.form_submit_button("💾 Guardar PAI-ODS")
+
+    if guardar:
+        with engine.begin() as conn:
+            conn.execute(text("""..."""), {...})
+
+        st.success("✅ PAI-ODS registrado correctamente")
+
+else:
+    st.info("Seleccione un usuario para activar el PAI")
 # =====================================
 # TAB 13 - SEGUIMIENTO E IMPACTO (PAI + REDUCCIÓN DE RIESGOS)
 # =====================================
