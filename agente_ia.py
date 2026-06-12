@@ -2689,7 +2689,7 @@ with tab12:
 
             })
 
-        st.success("✅ Seguimiento PAI registrado correctamente")
+    st.success("✅ Seguimiento PAI registrado correctamente")
     # =====================================
     # ODS IMPACTADOS AUTOMÁTICAMENTE
     # =====================================
