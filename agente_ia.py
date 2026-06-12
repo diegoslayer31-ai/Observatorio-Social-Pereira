@@ -2321,18 +2321,47 @@ with tab12:
     # =========================
     # USUARIO
     # =========================
-    cedula = st.text_input("Documento del usuario (PAI)", key="pai_user")
+    st.subheader("🔎 Búsqueda de usuario (híbrida)")
+
+busqueda = st.text_input("Buscar por nombre o documento")
+
+df_busqueda = df.copy()
+
+if busqueda:
+    df_busqueda = df[
+        df["nombres"].astype(str).str.contains(busqueda, case=False, na=False) |
+        df["apellidos"].astype(str).str.contains(busqueda, case=False, na=False) |
+        df["numero_identificacion"].astype(str).str.contains(busqueda, na=False)
+    ]
+
+if not df_busqueda.empty:
+
+    usuario_sel = st.selectbox(
+        "Seleccione usuario",
+        df_busqueda["numero_identificacion"].tolist(),
+        format_func=lambda x: (
+            df_busqueda[df_busqueda["numero_identificacion"] == x]
+            [["nombres", "apellidos"]]
+            .astype(str)
+            .agg(" ".join, axis=1)
+            .values[0]
+        )
+    )
+
+else:
+    usuario_sel = None
+    st.info("No hay coincidencias")
 
     st.divider()
 
     # =========================
     # SOLO SI HAY CÉDULA
     # =========================
-    if cedula:
+    if usuario_sel:
 
         usuario = pd.read_sql(f"""
             SELECT * FROM habitante_de_calle
-            WHERE numero_identificacion = '{cedula}'
+            WHERE numero_identificacion = '{usuario_sel}'
         """, engine)
 
         if not usuario.empty:
@@ -2343,14 +2372,14 @@ with tab12:
             c1, c2, c3 = st.columns(3)
             c1.metric("Nombre", f"{datos['nombres']} {datos['apellidos']}")
             c2.metric("Edad", datos.get("edad", "N/A"))
-            c3.metric("Documento", cedula)
+            c3.metric("Documento", usuario_sel)
 
         else:
             st.warning("Usuario no encontrado")
 
         st.markdown("## 🌍 PAI - Seguimiento con Enfoque ODS")
 
-        with st.form(f"pai_ods_{cedula}"):
+        with st.form(f"pai_ods_{usuario_sel}"):
 
             tipo_intervencion = st.selectbox(
                 "Tipo de intervención",
