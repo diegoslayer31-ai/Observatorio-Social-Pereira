@@ -1815,267 +1815,267 @@ with tab8:
     else:
 
         st.warning("No se encontraron usuarios")
-# =====================================
-# REGISTRO DIARIO DE ENFERMERÍA
-# =====================================
+    # =====================================
+    # REGISTRO DIARIO DE ENFERMERÍA
+    # =====================================
 
-if usuario_sel:
+    if usuario_sel:
 
-    st.divider()
-    st.markdown("### 🏥 Registro Diario de Enfermería")
+        st.divider()
+        st.markdown("### 🏥 Registro Diario de Enfermería")
 
-    categoria = st.selectbox(
-        "Categoría",
-        sorted(df_catalogo["categoria"].dropna().unique()),
-        key="tab8_categoria"
-    )
-
-    actividades_categoria = df_catalogo[
-        df_catalogo["categoria"] == categoria
-    ]["actividad"].tolist()
-
-    actividad = st.selectbox(
-        "Actividad",
-        actividades_categoria,
-        key="tab8_actividad"
-    )
-
-    resultado = st.selectbox(
-        "Resultado",
-        ["Realizado", "Pendiente", "Rechazado", "Remitido", "En seguimiento"],
-        key="tab8_resultado"
-    )
-
-    estado_usuario = st.selectbox(
-        "Estado del usuario",
-        ["Estable", "Mejorando", "Deterioro", "Hospitalizado", "Ausente"],
-        key="tab8_estado"
-    )
-
-    cantidad = st.number_input(
-        "Cantidad",
-        min_value=1,
-        value=1,
-        key="tab8_cantidad"
-    )
-
-    # =========================
-    # 🧠 NUEVOS CAMPOS CLÍNICOS
-    # =========================
-
-    st.markdown("#### ❤️ Signos vitales")
-
-    presion_arterial = st.text_input("Presión arterial", key="tab8_pa")
-    frecuencia_cardiaca = st.number_input("Frecuencia cardíaca", min_value=0, key="tab8_fc")
-    temperatura = st.number_input("Temperatura °C", min_value=30.0, max_value=45.0, step=0.1, key="tab8_temp")
-    saturacion = st.number_input("Saturación O2 %", min_value=0, max_value=100, key="tab8_sat")
-
-    st.markdown("#### 🍽 Estado nutricional")
-
-    peso = st.number_input("Peso (kg)", min_value=0.0, key="tab8_peso")
-    talla = st.number_input("Talla (m)", min_value=0.0, step=0.01, key="tab8_talla")
-    apetito = st.selectbox("Apetito", ["Adecuado", "Disminuido", "Aumentado"], key="tab8_apetito")
-
-    st.markdown("#### 🚬 Consumo de sustancias")
-
-    consumo_actual = st.selectbox("Consumo actual", ["Sí", "No"], key="tab8_consume")
-    sustancia = st.text_input("Sustancia consumida", key="tab8_sustancia")
-    ultima_vez = st.text_input("Último consumo", key="tab8_ultima")
-
-    st.markdown("#### 💊 Tratamiento")
-
-    tratamiento = st.selectbox("Tiene tratamiento", ["Sí", "No"], key="tab8_tratamiento")
-    adherencia = st.selectbox("Adherencia", ["Completa", "Parcial", "Nula"], key="tab8_adherencia")
-    medicamentos = st.text_area("Medicamentos formulados", key="tab8_meds")
-
-    st.markdown("#### 🩹 Curaciones")
-
-    heridas = st.selectbox("Presenta heridas", ["Sí", "No"], key="tab8_heridas")
-    ubicacion_herida = st.text_area("Ubicación y descripción", key="tab8_ubi_herida")
-    curacion_realizada = st.selectbox("Curación realizada", ["Sí", "No"], key="tab8_curacion")
-
-    st.markdown("#### 🧠 Estado mental")
-
-    estado_animo = st.selectbox(
-        "Estado de ánimo",
-        ["Adecuado", "Ansioso", "Triste", "Irritable", "Desorientado"],
-        key="tab8_animo"
-    )
-
-    riesgo = st.selectbox(
-        "Nivel de riesgo",
-        ["Bajo", "Medio", "Alto"],
-        key="tab8_riesgo"
-    )
-
-    st.markdown("#### 🚑 Remisiones")
-
-    remision = st.selectbox("Requiere remisión", ["Sí", "No"], key="tab8_remision")
-
-    tipo_remision = st.selectbox(
-        "Tipo de remisión",
-        ["Urgencias", "Hospital", "Psiquiatría", "Medicina General", "Trabajo Social", "Otro"],
-        key="tab8_tipo_remision"
-    )
-
-    observacion = st.text_area(
-        "Observaciones",
-        key="tab8_observacion"
-    )
-
-    ods_principal = st.selectbox(
-        "ODS relacionado",
-        [
-            "ODS 3 - Salud y Bienestar",
-            "ODS 1 - Fin de la pobreza",
-            "ODS 5 - Igualdad de género",
-            "ODS 10 - Reducción de desigualdades",
-            "ODS 16 - Paz, justicia e instituciones sólidas"
-        ],
-        key="tab8_ods"
-    )
-
-    guardar_enfermeria = st.button(
-        "💾 Guardar actividad de enfermería",
-        key="tab8_guardar"
-    )
-
-    if guardar_enfermeria:
-
-        with engine.begin() as conn:
-
-            conn.execute(text("""
-                INSERT INTO enfermeria_actividades (
-
-                    fecha,
-                    documento_usuario,
-                    nombre_usuario,
-                    actividad,
-                    categoria,
-                    observacion,
-                    resultado,
-                    ods_principal,
-                    estado_usuario,
-                    cantidad,
-
-                    presion_arterial,
-                    frecuencia_cardiaca,
-                    temperatura,
-                    saturacion,
-
-                    peso,
-                    talla,
-                    apetito,
-
-                    consumo_actual,
-                    sustancia,
-                    ultima_vez,
-
-                    tratamiento,
-                    adherencia,
-                    medicamentos,
-
-                    heridas,
-                    ubicacion_herida,
-                    curacion_realizada,
-
-                    estado_animo,
-                    riesgo,
-
-                    remision,
-                    tipo_remision
-
-                )
-
-                VALUES (
-
-                    NOW(),
-                    :documento_usuario,
-                    :nombre_usuario,
-                    :actividad,
-                    :categoria,
-                    :observacion,
-                    :resultado,
-                    :ods_principal,
-                    :estado_usuario,
-                    :cantidad,
-
-                    :presion_arterial,
-                    :frecuencia_cardiaca,
-                    :temperatura,
-                    :saturacion,
-
-                    :peso,
-                    :talla,
-                    :apetito,
-
-                    :consumo_actual,
-                    :sustancia,
-                    :ultima_vez,
-
-                    :tratamiento,
-                    :adherencia,
-                    :medicamentos,
-
-                    :heridas,
-                    :ubicacion_herida,
-                    :curacion_realizada,
-
-                    :estado_animo,
-                    :riesgo,
-
-                    :remision,
-                    :tipo_remision
-
-                )
-            """), {
-
-                "documento_usuario": str(usuario_sel),
-                "nombre_usuario": usuario_label,
-
-                "actividad": actividad,
-                "categoria": categoria,
-                "observacion": observacion,
-                "resultado": resultado,
-                "ods_principal": ods_principal,
-                "estado_usuario": estado_usuario,
-                "cantidad": int(cantidad),
-
-                "presion_arterial": presion_arterial,
-                "frecuencia_cardiaca": frecuencia_cardiaca,
-                "temperatura": temperatura,
-                "saturacion": saturacion,
-
-                "peso": peso,
-                "talla": talla,
-                "apetito": apetito,
-
-                "consumo_actual": consumo_actual,
-                "sustancia": sustancia,
-                "ultima_vez": ultima_vez,
-
-                "tratamiento": tratamiento,
-                "adherencia": adherencia,
-                "medicamentos": medicamentos,
-
-                "heridas": heridas,
-                "ubicacion_herida": ubicacion_herida,
-                "curacion_realizada": curacion_realizada,
-
-                "estado_animo": estado_animo,
-                "riesgo": riesgo,
-
-                "remision": remision,
-                "tipo_remision": tipo_remision
-            })
-
-        st.success("✅ Actividad de enfermería registrada correctamente")
-
-    else:
-
-        st.info(
-            "Seleccione un usuario para registrar actividades de enfermería"
+        categoria = st.selectbox(
+            "Categoría",
+            sorted(df_catalogo["categoria"].dropna().unique()),
+            key="tab8_categoria"
         )
+
+        actividades_categoria = df_catalogo[
+            df_catalogo["categoria"] == categoria
+        ]["actividad"].tolist()
+
+        actividad = st.selectbox(
+            "Actividad",
+            actividades_categoria,
+            key="tab8_actividad"
+        )
+
+        resultado = st.selectbox(
+            "Resultado",
+            ["Realizado", "Pendiente", "Rechazado", "Remitido", "En seguimiento"],
+            key="tab8_resultado"
+        )
+
+        estado_usuario = st.selectbox(
+            "Estado del usuario",
+            ["Estable", "Mejorando", "Deterioro", "Hospitalizado", "Ausente"],
+            key="tab8_estado"
+        )
+
+        cantidad = st.number_input(
+            "Cantidad",
+            min_value=1,
+            value=1,
+            key="tab8_cantidad"
+        )
+
+        # =========================
+        # 🧠 NUEVOS CAMPOS CLÍNICOS
+        # =========================
+
+        st.markdown("#### ❤️ Signos vitales")
+
+        presion_arterial = st.text_input("Presión arterial", key="tab8_pa")
+        frecuencia_cardiaca = st.number_input("Frecuencia cardíaca", min_value=0, key="tab8_fc")
+        temperatura = st.number_input("Temperatura °C", min_value=30.0, max_value=45.0, step=0.1, key="tab8_temp")
+        saturacion = st.number_input("Saturación O2 %", min_value=0, max_value=100, key="tab8_sat")
+
+        st.markdown("#### 🍽 Estado nutricional")
+
+        peso = st.number_input("Peso (kg)", min_value=0.0, key="tab8_peso")
+        talla = st.number_input("Talla (m)", min_value=0.0, step=0.01, key="tab8_talla")
+        apetito = st.selectbox("Apetito", ["Adecuado", "Disminuido", "Aumentado"], key="tab8_apetito")
+
+        st.markdown("#### 🚬 Consumo de sustancias")
+
+        consumo_actual = st.selectbox("Consumo actual", ["Sí", "No"], key="tab8_consume")
+        sustancia = st.text_input("Sustancia consumida", key="tab8_sustancia")
+        ultima_vez = st.text_input("Último consumo", key="tab8_ultima")
+
+        st.markdown("#### 💊 Tratamiento")
+
+        tratamiento = st.selectbox("Tiene tratamiento", ["Sí", "No"], key="tab8_tratamiento")
+        adherencia = st.selectbox("Adherencia", ["Completa", "Parcial", "Nula"], key="tab8_adherencia")
+        medicamentos = st.text_area("Medicamentos formulados", key="tab8_meds")
+
+        st.markdown("#### 🩹 Curaciones")
+
+        heridas = st.selectbox("Presenta heridas", ["Sí", "No"], key="tab8_heridas")
+        ubicacion_herida = st.text_area("Ubicación y descripción", key="tab8_ubi_herida")
+        curacion_realizada = st.selectbox("Curación realizada", ["Sí", "No"], key="tab8_curacion")
+
+        st.markdown("#### 🧠 Estado mental")
+
+        estado_animo = st.selectbox(
+            "Estado de ánimo",
+            ["Adecuado", "Ansioso", "Triste", "Irritable", "Desorientado"],
+            key="tab8_animo"
+        )
+
+        riesgo = st.selectbox(
+            "Nivel de riesgo",
+            ["Bajo", "Medio", "Alto"],
+            key="tab8_riesgo"
+        )
+
+        st.markdown("#### 🚑 Remisiones")
+
+        remision = st.selectbox("Requiere remisión", ["Sí", "No"], key="tab8_remision")
+
+        tipo_remision = st.selectbox(
+            "Tipo de remisión",
+            ["Urgencias", "Hospital", "Psiquiatría", "Medicina General", "Trabajo Social", "Otro"],
+            key="tab8_tipo_remision"
+        )
+
+        observacion = st.text_area(
+            "Observaciones",
+            key="tab8_observacion"
+        )
+
+        ods_principal = st.selectbox(
+            "ODS relacionado",
+            [
+                "ODS 3 - Salud y Bienestar",
+                "ODS 1 - Fin de la pobreza",
+                "ODS 5 - Igualdad de género",
+                "ODS 10 - Reducción de desigualdades",
+                "ODS 16 - Paz, justicia e instituciones sólidas"
+            ],
+            key="tab8_ods"
+        )
+
+        guardar_enfermeria = st.button(
+            "💾 Guardar actividad de enfermería",
+            key="tab8_guardar"
+        )
+
+        if guardar_enfermeria:
+
+            with engine.begin() as conn:
+
+                conn.execute(text("""
+                    INSERT INTO enfermeria_actividades (
+
+                        fecha,
+                        documento_usuario,
+                        nombre_usuario,
+                        actividad,
+                        categoria,
+                        observacion,
+                        resultado,
+                        ods_principal,
+                        estado_usuario,
+                        cantidad,
+
+                        presion_arterial,
+                        frecuencia_cardiaca,
+                        temperatura,
+                        saturacion,
+
+                        peso,
+                        talla,
+                        apetito,
+
+                        consumo_actual,
+                        sustancia,
+                        ultima_vez,
+
+                        tratamiento,
+                        adherencia,
+                        medicamentos,
+
+                        heridas,
+                        ubicacion_herida,
+                        curacion_realizada,
+
+                        estado_animo,
+                        riesgo,
+
+                        remision,
+                        tipo_remision
+
+                    )
+
+                    VALUES (
+
+                        NOW(),
+                        :documento_usuario,
+                        :nombre_usuario,
+                        :actividad,
+                        :categoria,
+                        :observacion,
+                        :resultado,
+                        :ods_principal,
+                        :estado_usuario,
+                        :cantidad,
+
+                        :presion_arterial,
+                        :frecuencia_cardiaca,
+                        :temperatura,
+                        :saturacion,
+
+                        :peso,
+                        :talla,
+                        :apetito,
+
+                        :consumo_actual,
+                        :sustancia,
+                        :ultima_vez,
+
+                        :tratamiento,
+                        :adherencia,
+                        :medicamentos,
+
+                        :heridas,
+                        :ubicacion_herida,
+                        :curacion_realizada,
+
+                        :estado_animo,
+                        :riesgo,
+
+                        :remision,
+                        :tipo_remision
+
+                    )
+                """), {
+
+                    "documento_usuario": str(usuario_sel),
+                    "nombre_usuario": usuario_label,
+
+                    "actividad": actividad,
+                    "categoria": categoria,
+                    "observacion": observacion,
+                    "resultado": resultado,
+                    "ods_principal": ods_principal,
+                    "estado_usuario": estado_usuario,
+                    "cantidad": int(cantidad),
+
+                    "presion_arterial": presion_arterial,
+                    "frecuencia_cardiaca": frecuencia_cardiaca,
+                    "temperatura": temperatura,
+                    "saturacion": saturacion,
+
+                    "peso": peso,
+                    "talla": talla,
+                    "apetito": apetito,
+
+                    "consumo_actual": consumo_actual,
+                    "sustancia": sustancia,
+                    "ultima_vez": ultima_vez,
+
+                    "tratamiento": tratamiento,
+                    "adherencia": adherencia,
+                    "medicamentos": medicamentos,
+
+                    "heridas": heridas,
+                    "ubicacion_herida": ubicacion_herida,
+                    "curacion_realizada": curacion_realizada,
+
+                    "estado_animo": estado_animo,
+                    "riesgo": riesgo,
+
+                    "remision": remision,
+                    "tipo_remision": tipo_remision
+                })
+
+            st.success("✅ Actividad de enfermería registrada correctamente")
+
+        else:
+
+            st.info(
+                "Seleccione un usuario para registrar actividades de enfermería"
+            )
 with tab9:
 
     st.title("🏆 Egresos e Impacto")
