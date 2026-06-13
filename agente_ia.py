@@ -1815,89 +1815,9 @@ with tab8:
     else:
 
         st.warning("No se encontraron usuarios")
-with tab8:
-
-    st.title("🏥 Módulo de Enfermería")
-
-    # ==========================
-    # CATÁLOGO DE ACTIVIDADES
-    # ==========================
-
-    df_catalogo = pd.read_sql("""
-        SELECT *
-        FROM catalogo_enfermeria
-        ORDER BY categoria, actividad
-    """, engine)
-
-    # ==========================
-    # BÚSQUEDA DE USUARIO
-    # ==========================
-
-    st.subheader("🔎 Buscar usuario")
-
-    busqueda = st.text_input(
-        "Buscar por nombre o documento",
-        key="enfermeria_busqueda"
-    )
-
-    df_busqueda = df.copy()
-
-    if busqueda:
-
-        df_busqueda = df[
-            df["nombres"].astype(str).str.contains(
-                busqueda,
-                case=False,
-                na=False
-            )
-            |
-            df["apellidos"].astype(str).str.contains(
-                busqueda,
-                case=False,
-                na=False
-            )
-            |
-            df["numero_identificacion"].astype(str).str.contains(
-                busqueda,
-                na=False
-            )
-        ]
-
-    usuario_sel = None
-    usuario_label = None
-
-    if not df_busqueda.empty:
-
-        usuario_sel = st.selectbox(
-            "Seleccione usuario",
-            df_busqueda["numero_identificacion"].tolist(),
-            format_func=lambda x:
-                df_busqueda[
-                    df_busqueda["numero_identificacion"] == x
-                ]["nombres"].iloc[0]
-                + " "
-                +
-                df_busqueda[
-                    df_busqueda["numero_identificacion"] == x
-                ]["apellidos"].iloc[0]
-        )
-
-        fila_usuario = df_busqueda[
-            df_busqueda["numero_identificacion"] == usuario_sel
-        ].iloc[0]
-
-        usuario_label = (
-            f"{fila_usuario['nombres']} "
-            f"{fila_usuario['apellidos']}"
-        )
-
-    else:
-
-        st.info("Busque un usuario para continuar")
-
-    # ==========================
-    # REGISTRO
-    # ==========================
+    # =====================================
+    # REGISTRO DIARIO DE ENFERMERÍA
+    # =====================================
 
     if usuario_sel:
 
@@ -1907,13 +1827,8 @@ with tab8:
 
         categoria = st.selectbox(
             "Categoría",
-            sorted(
-                df_catalogo["categoria"]
-                .dropna()
-                .unique()
-                .tolist()
-            ),
-            key="enf_categoria"
+            sorted(df_catalogo["categoria"].dropna().unique()),
+            key="tab8_categoria"
         )
 
         actividades_categoria = df_catalogo[
@@ -1923,7 +1838,7 @@ with tab8:
         actividad = st.selectbox(
             "Actividad",
             actividades_categoria,
-            key="enf_actividad"
+            key="tab8_actividad"
         )
 
         resultado = st.selectbox(
@@ -1935,7 +1850,7 @@ with tab8:
                 "Remitido",
                 "En seguimiento"
             ],
-            key="enf_resultado"
+            key="tab8_resultado"
         )
 
         estado_usuario = st.selectbox(
@@ -1947,19 +1862,19 @@ with tab8:
                 "Hospitalizado",
                 "Ausente"
             ],
-            key="enf_estado"
+            key="tab8_estado"
         )
 
         cantidad = st.number_input(
             "Cantidad",
             min_value=1,
             value=1,
-            key="enf_cantidad"
+            key="tab8_cantidad"
         )
 
         observacion = st.text_area(
             "Observaciones",
-            key="enf_observacion"
+            key="tab8_observacion"
         )
 
         ods_principal = st.selectbox(
@@ -1971,11 +1886,12 @@ with tab8:
                 "ODS 10 - Reducción de desigualdades",
                 "ODS 16 - Paz, justicia e instituciones sólidas"
             ],
-            key="enf_ods"
+            key="tab8_ods"
         )
 
         guardar_enfermeria = st.button(
-            "💾 Guardar actividad de enfermería"
+            "💾 Guardar actividad de enfermería",
+            key="tab8_guardar"
         )
 
         if guardar_enfermeria:
@@ -2014,21 +1930,35 @@ with tab8:
                     )
                 """), {
 
-                    "documento_usuario": usuario_sel,
+                    "documento_usuario": str(usuario_sel),
+
                     "nombre_usuario": usuario_label,
+
                     "actividad": actividad,
+
                     "categoria": categoria,
+
                     "observacion": observacion,
+
                     "resultado": resultado,
+
                     "ods_principal": ods_principal,
+
                     "estado_usuario": estado_usuario,
-                    "cantidad": cantidad
+
+                    "cantidad": int(cantidad)
 
                 })
 
             st.success(
                 "✅ Actividad de enfermería registrada correctamente"
             )
+
+    else:
+
+        st.info(
+            "Seleccione un usuario para registrar actividades de enfermería"
+        )
 with tab9:
 
     st.title("🏆 Egresos e Impacto")
