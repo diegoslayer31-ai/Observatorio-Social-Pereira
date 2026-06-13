@@ -1815,137 +1815,220 @@ with tab8:
     else:
 
         st.warning("No se encontraron usuarios")
-        
-# =====================================
-# REGISTRO DIARIO DE ENFERMERÍA
-# =====================================
+with tab8:
 
-st.divider()
+    st.title("🏥 Módulo de Enfermería")
 
-st.markdown("### 🏥 Registro Diario de Enfermería")
+    # ==========================
+    # CATÁLOGO DE ACTIVIDADES
+    # ==========================
 
+    df_catalogo = pd.read_sql("""
+        SELECT *
+        FROM catalogo_enfermeria
+        ORDER BY categoria, actividad
+    """, engine)
 
-actividades_categoria = df_catalogo[
-    df_catalogo["categoria"] == categoria
-]["actividad"].tolist()
+    # ==========================
+    # BÚSQUEDA DE USUARIO
+    # ==========================
 
-actividad = st.selectbox(
-    "Actividad",
-    actividades_categoria,
-    key="enf_actividad"
-)
+    st.subheader("🔎 Buscar usuario")
 
-resultado = st.selectbox(
-    "Resultado",
-    [
-        "Realizado",
-        "Pendiente",
-        "Rechazado",
-        "Remitido",
-        "En seguimiento"
-    ],
-    key="enf_resultado"
-)
-
-estado_usuario = st.selectbox(
-    "Estado del usuario",
-    [
-        "Estable",
-        "Mejorando",
-        "Deterioro",
-        "Hospitalizado",
-        "Ausente"
-    ],
-    key="enf_estado"
-)
-
-cantidad = st.number_input(
-    "Cantidad",
-    min_value=1,
-    value=1,
-    key="enf_cantidad"
-)
-
-observacion = st.text_area(
-    "Observaciones",
-    key="enf_observacion"
-)
-
-ods_principal = st.selectbox(
-    "ODS relacionado",
-    [
-        "ODS 3 - Salud y Bienestar",
-        "ODS 1 - Fin de la pobreza",
-        "ODS 5 - Igualdad de género",
-        "ODS 10 - Reducción de desigualdades",
-        "ODS 16 - Paz, justicia e instituciones sólidas"
-    ],
-    key="enf_ods"
-)
-
-guardar_enfermeria = st.button(
-    "💾 Guardar actividad de enfermería"
-)
-
-if guardar_enfermeria:
-
-    with engine.begin() as conn:
-
-        conn.execute(text("""
-            INSERT INTO enfermeria_actividades (
-
-                fecha,
-                documento_usuario,
-                nombre_usuario,
-                actividad,
-                categoria,
-                observacion,
-                resultado,
-                ods_principal,
-                estado_usuario,
-                cantidad
-
-            )
-
-            VALUES (
-
-                NOW(),
-                :documento_usuario,
-                :nombre_usuario,
-                :actividad,
-                :categoria,
-                :observacion,
-                :resultado,
-                :ods_principal,
-                :estado_usuario,
-                :cantidad
-
-            )
-        """), {
-
-            "documento_usuario": usuario_sel,
-
-            "nombre_usuario": usuario_label,
-
-            "actividad": actividad,
-
-            "categoria": categoria,
-
-            "observacion": observacion,
-
-            "resultado": resultado,
-
-            "ods_principal": ods_principal,
-
-            "estado_usuario": estado_usuario,
-
-            "cantidad": cantidad
-
-        })
-
-    st.success(
-        "✅ Actividad de enfermería registrada correctamente"
+    busqueda = st.text_input(
+        "Buscar por nombre o documento",
+        key="enfermeria_busqueda"
     )
+
+    df_busqueda = df.copy()
+
+    if busqueda:
+
+        df_busqueda = df[
+            df["nombres"].astype(str).str.contains(
+                busqueda,
+                case=False,
+                na=False
+            )
+            |
+            df["apellidos"].astype(str).str.contains(
+                busqueda,
+                case=False,
+                na=False
+            )
+            |
+            df["numero_identificacion"].astype(str).str.contains(
+                busqueda,
+                na=False
+            )
+        ]
+
+    usuario_sel = None
+    usuario_label = None
+
+    if not df_busqueda.empty:
+
+        usuario_sel = st.selectbox(
+            "Seleccione usuario",
+            df_busqueda["numero_identificacion"].tolist(),
+            format_func=lambda x:
+                df_busqueda[
+                    df_busqueda["numero_identificacion"] == x
+                ]["nombres"].iloc[0]
+                + " "
+                +
+                df_busqueda[
+                    df_busqueda["numero_identificacion"] == x
+                ]["apellidos"].iloc[0]
+        )
+
+        fila_usuario = df_busqueda[
+            df_busqueda["numero_identificacion"] == usuario_sel
+        ].iloc[0]
+
+        usuario_label = (
+            f"{fila_usuario['nombres']} "
+            f"{fila_usuario['apellidos']}"
+        )
+
+    else:
+
+        st.info("Busque un usuario para continuar")
+
+    # ==========================
+    # REGISTRO
+    # ==========================
+
+    if usuario_sel:
+
+        st.divider()
+
+        st.markdown("### 🏥 Registro Diario de Enfermería")
+
+        categoria = st.selectbox(
+            "Categoría",
+            sorted(
+                df_catalogo["categoria"]
+                .dropna()
+                .unique()
+                .tolist()
+            ),
+            key="enf_categoria"
+        )
+
+        actividades_categoria = df_catalogo[
+            df_catalogo["categoria"] == categoria
+        ]["actividad"].tolist()
+
+        actividad = st.selectbox(
+            "Actividad",
+            actividades_categoria,
+            key="enf_actividad"
+        )
+
+        resultado = st.selectbox(
+            "Resultado",
+            [
+                "Realizado",
+                "Pendiente",
+                "Rechazado",
+                "Remitido",
+                "En seguimiento"
+            ],
+            key="enf_resultado"
+        )
+
+        estado_usuario = st.selectbox(
+            "Estado del usuario",
+            [
+                "Estable",
+                "Mejorando",
+                "Deterioro",
+                "Hospitalizado",
+                "Ausente"
+            ],
+            key="enf_estado"
+        )
+
+        cantidad = st.number_input(
+            "Cantidad",
+            min_value=1,
+            value=1,
+            key="enf_cantidad"
+        )
+
+        observacion = st.text_area(
+            "Observaciones",
+            key="enf_observacion"
+        )
+
+        ods_principal = st.selectbox(
+            "ODS relacionado",
+            [
+                "ODS 3 - Salud y Bienestar",
+                "ODS 1 - Fin de la pobreza",
+                "ODS 5 - Igualdad de género",
+                "ODS 10 - Reducción de desigualdades",
+                "ODS 16 - Paz, justicia e instituciones sólidas"
+            ],
+            key="enf_ods"
+        )
+
+        guardar_enfermeria = st.button(
+            "💾 Guardar actividad de enfermería"
+        )
+
+        if guardar_enfermeria:
+
+            with engine.begin() as conn:
+
+                conn.execute(text("""
+                    INSERT INTO enfermeria_actividades (
+
+                        fecha,
+                        documento_usuario,
+                        nombre_usuario,
+                        actividad,
+                        categoria,
+                        observacion,
+                        resultado,
+                        ods_principal,
+                        estado_usuario,
+                        cantidad
+
+                    )
+
+                    VALUES (
+
+                        NOW(),
+                        :documento_usuario,
+                        :nombre_usuario,
+                        :actividad,
+                        :categoria,
+                        :observacion,
+                        :resultado,
+                        :ods_principal,
+                        :estado_usuario,
+                        :cantidad
+
+                    )
+                """), {
+
+                    "documento_usuario": usuario_sel,
+                    "nombre_usuario": usuario_label,
+                    "actividad": actividad,
+                    "categoria": categoria,
+                    "observacion": observacion,
+                    "resultado": resultado,
+                    "ods_principal": ods_principal,
+                    "estado_usuario": estado_usuario,
+                    "cantidad": cantidad
+
+                })
+
+            st.success(
+                "✅ Actividad de enfermería registrada correctamente"
+            )
 with tab9:
 
     st.title("🏆 Egresos e Impacto")
