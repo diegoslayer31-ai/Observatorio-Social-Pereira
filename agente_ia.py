@@ -1824,21 +1824,6 @@ st.divider()
 
 st.markdown("### 🏥 Registro Diario de Enfermería")
 
-profesional = st.selectbox(
-    "Profesional responsable",
-    df_profesionales["label"].tolist(),
-    key="enf_profesional"
-)
-
-categoria = st.selectbox(
-    "Categoría",
-    sorted(
-        df_catalogo["categoria"]
-        .dropna()
-        .unique()
-    ),
-    key="enf_categoria"
-)
 
 actividades_categoria = df_catalogo[
     df_catalogo["categoria"] == categoria
@@ -1912,7 +1897,6 @@ if guardar_enfermeria:
                 fecha,
                 documento_usuario,
                 nombre_usuario,
-                profesional,
                 actividad,
                 categoria,
                 observacion,
@@ -1928,7 +1912,6 @@ if guardar_enfermeria:
                 NOW(),
                 :documento_usuario,
                 :nombre_usuario,
-                :profesional,
                 :actividad,
                 :categoria,
                 :observacion,
@@ -1943,8 +1926,6 @@ if guardar_enfermeria:
             "documento_usuario": usuario_sel,
 
             "nombre_usuario": usuario_label,
-
-            "profesional": profesional,
 
             "actividad": actividad,
 
