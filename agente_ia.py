@@ -1750,7 +1750,51 @@ with tab7:
 with tab8:
 
     st.subheader("� Enfermería")
+    df_catalogo = pd.read_sql("""
+        SELECT *
+        FROM catalogo_enfermeria
+        ORDER BY categoria, actividad
+    """, engine)
+    st.subheader("🔎 Buscar usuario")
 
+    busqueda = st.text_input(
+    "Buscar por nombre o documento",
+    key="enfermeria_busqueda"
+    )
+    df_busqueda = df.copy()
+
+if busqueda:
+
+    df_busqueda = df[
+        df["nombres"].astype(str).str.contains(
+            busqueda,
+            case=False,
+            na=False
+        )
+
+        |
+
+        df["apellidos"].astype(str).str.contains(
+            busqueda,
+            case=False,
+            na=False
+        )
+
+        |
+
+        df["numero_identificacion"].astype(str).str.contains(
+            busqueda,
+            na=False
+        )
+    ]
+    usuario_sel = None
+
+if not df_busqueda.empty:
+
+    usuario_sel = st.selectbox(
+        "Seleccione usuario",
+        df_busqueda["numero_identificacion"].tolist()
+    )
 with tab9:
 
     st.title("🏆 Egresos e Impacto")
