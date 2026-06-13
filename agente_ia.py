@@ -1749,52 +1749,72 @@ with tab7:
 # =========================
 with tab8:
 
-    st.subheader("� Enfermería")
+    st.subheader("🏥 Enfermería")
+
     df_catalogo = pd.read_sql("""
         SELECT *
         FROM catalogo_enfermeria
         ORDER BY categoria, actividad
     """, engine)
+
     st.subheader("🔎 Buscar usuario")
 
     busqueda = st.text_input(
-    "Buscar por nombre o documento",
-    key="enfermeria_busqueda"
+        "Buscar por nombre o documento",
+        key="enfermeria_busqueda"
     )
+
     df_busqueda = df.copy()
 
-if busqueda:
+    if busqueda:
 
-    df_busqueda = df[
-        df["nombres"].astype(str).str.contains(
-            busqueda,
-            case=False,
-            na=False
-        )
+        df_busqueda = df[
+            df["nombres"].astype(str).str.contains(
+                busqueda,
+                case=False,
+                na=False
+            )
+            |
+            df["apellidos"].astype(str).str.contains(
+                busqueda,
+                case=False,
+                na=False
+            )
+            |
+            df["numero_identificacion"].astype(str).str.contains(
+                busqueda,
+                na=False
+            )
+        ]
 
-        |
-
-        df["apellidos"].astype(str).str.contains(
-            busqueda,
-            case=False,
-            na=False
-        )
-
-        |
-
-        df["numero_identificacion"].astype(str).str.contains(
-            busqueda,
-            na=False
-        )
-    ]
     usuario_sel = None
 
-if not df_busqueda.empty:
+    if not df_busqueda.empty:
 
-    usuario_sel = st.selectbox(
-        "Seleccione usuario",
-        df_busqueda["numero_identificacion"].tolist()
-    )
+        # Etiqueta amigable
+        df_busqueda["usuario_label"] = (
+            df_busqueda["nombres"].fillna("")
+            + " "
+            + df_busqueda["apellidos"].fillna("")
+            + " - CC: "
+            + df_busqueda["numero_identificacion"].astype(str)
+        )
+
+        usuario_label = st.selectbox(
+            "Seleccione usuario",
+            df_busqueda["usuario_label"].tolist()
+        )
+
+        usuario_sel = df_busqueda.loc[
+            df_busqueda["usuario_label"] == usuario_label,
+            "numero_identificacion"
+        ].values[0]
+
+        st.success(f"Usuario seleccionado: {usuario_label}")
+
+    else:
+
+        st.warning("No se encontraron usuarios")
 with tab9:
 
     st.title("🏆 Egresos e Impacto")
