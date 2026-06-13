@@ -1815,6 +1815,156 @@ with tab8:
     else:
 
         st.warning("No se encontraron usuarios")
+        
+# =====================================
+# REGISTRO DIARIO DE ENFERMERÍA
+# =====================================
+
+st.divider()
+
+st.markdown("### 🏥 Registro Diario de Enfermería")
+
+profesional = st.selectbox(
+    "Profesional responsable",
+    df_profesionales["label"].tolist(),
+    key="enf_profesional"
+)
+
+categoria = st.selectbox(
+    "Categoría",
+    sorted(
+        df_catalogo["categoria"]
+        .dropna()
+        .unique()
+    ),
+    key="enf_categoria"
+)
+
+actividades_categoria = df_catalogo[
+    df_catalogo["categoria"] == categoria
+]["actividad"].tolist()
+
+actividad = st.selectbox(
+    "Actividad",
+    actividades_categoria,
+    key="enf_actividad"
+)
+
+resultado = st.selectbox(
+    "Resultado",
+    [
+        "Realizado",
+        "Pendiente",
+        "Rechazado",
+        "Remitido",
+        "En seguimiento"
+    ],
+    key="enf_resultado"
+)
+
+estado_usuario = st.selectbox(
+    "Estado del usuario",
+    [
+        "Estable",
+        "Mejorando",
+        "Deterioro",
+        "Hospitalizado",
+        "Ausente"
+    ],
+    key="enf_estado"
+)
+
+cantidad = st.number_input(
+    "Cantidad",
+    min_value=1,
+    value=1,
+    key="enf_cantidad"
+)
+
+observacion = st.text_area(
+    "Observaciones",
+    key="enf_observacion"
+)
+
+ods_principal = st.selectbox(
+    "ODS relacionado",
+    [
+        "ODS 3 - Salud y Bienestar",
+        "ODS 1 - Fin de la pobreza",
+        "ODS 5 - Igualdad de género",
+        "ODS 10 - Reducción de desigualdades",
+        "ODS 16 - Paz, justicia e instituciones sólidas"
+    ],
+    key="enf_ods"
+)
+
+guardar_enfermeria = st.button(
+    "💾 Guardar actividad de enfermería"
+)
+
+if guardar_enfermeria:
+
+    with engine.begin() as conn:
+
+        conn.execute(text("""
+            INSERT INTO enfermeria_actividades (
+
+                fecha,
+                documento_usuario,
+                nombre_usuario,
+                profesional,
+                actividad,
+                categoria,
+                observacion,
+                resultado,
+                ods_principal,
+                estado_usuario,
+                cantidad
+
+            )
+
+            VALUES (
+
+                NOW(),
+                :documento_usuario,
+                :nombre_usuario,
+                :profesional,
+                :actividad,
+                :categoria,
+                :observacion,
+                :resultado,
+                :ods_principal,
+                :estado_usuario,
+                :cantidad
+
+            )
+        """), {
+
+            "documento_usuario": usuario_sel,
+
+            "nombre_usuario": usuario_label,
+
+            "profesional": profesional,
+
+            "actividad": actividad,
+
+            "categoria": categoria,
+
+            "observacion": observacion,
+
+            "resultado": resultado,
+
+            "ods_principal": ods_principal,
+
+            "estado_usuario": estado_usuario,
+
+            "cantidad": cantidad
+
+        })
+
+    st.success(
+        "✅ Actividad de enfermería registrada correctamente"
+    )
 with tab9:
 
     st.title("🏆 Egresos e Impacto")
