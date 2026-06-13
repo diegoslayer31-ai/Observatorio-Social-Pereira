@@ -1097,7 +1097,7 @@ tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10, tab11, tab12, tab13
     "🌎 Territorio",
     "🎓 Educación",
     "🚦 Semáforo",
-    "🤖 IA",
+    "🩺 Enfermería",
     "🏆 Egresos e Impacto",
     "📄 Reportes",
     "➕ Nuevo Registro",
@@ -1745,18 +1745,12 @@ with tab7:
         "🔴 Crítico = atención inmediata | 🟠 Alto = intervención prioritaria"
     )
 # =========================
-# TAB IA
+# TAB ENFERMERÍA
 # =========================
 with tab8:
 
-    st.subheader("🤖 Agente IA")
+    st.subheader("� Enfermería")
 
-    st.warning("""
-    El módulo de Inteligencia Artificial se encuentra
-    temporalmente deshabilitado en la versión web.
-
-    Esta funcionalidad requiere un servidor Ollama local.
-    """)
 with tab9:
 
     st.title("🏆 Egresos e Impacto")
