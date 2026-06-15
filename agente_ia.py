@@ -2748,149 +2748,74 @@ with tab6:
 
     }
 
-                with st.form("crear_objetivo"):
+    with st.form("crear_objetivo"):
 
-                    objetivo_tipo = st.selectbox(
+        objetivo_tipo = st.selectbox(
+        "Objetivo PAI",
+        list(mapa_politica.keys())
+    )
 
-                        "Objetivo PAI",
+    linea_politica = mapa_politica.get(objetivo_tipo)
 
-                        list(mapa_politica.keys())
+    ods_asociados = mapa_ods.get(objetivo_tipo, [])
 
-                    )
+    st.info(f"🏛️ Política pública: {linea_politica}")
+    st.info(f"🌍 ODS: {', '.join(ods_asociados)}")
 
-                    linea_politica = mapa_politica.get(
+    objetivo_descripcion = st.text_area("Descripción del objetivo")
 
-                        objetivo_tipo
+    fecha_meta = st.date_input("Fecha meta")
 
-                    )
+    guardar_objetivo = st.form_submit_button("💾 Guardar objetivo")
 
-                    ods_asociados = mapa_ods.get(
+    # 👇 TODO dentro del form (ESTO ES LO IMPORTANTE)
+    if guardar_objetivo:
 
-                        objetivo_tipo,
+        with engine.begin() as conn:
 
-                        []
-
-                    )
-
-                    st.info(
-
-                        f"🏛️ Política pública: {linea_politica}"
-
-                    )
-
-                    st.info(
-
-                        f"🌍 ODS: {', '.join(ods_asociados)}"
-
-                    )
-
-                    objetivo_descripcion = st.text_area(
-
-                        "Descripción del objetivo"
-
-                    )
-
-                    fecha_meta = st.date_input(
-
-                        "Fecha meta"
-
-                    )
-
-                    guardar_objetivo = st.form_submit_button(
-
-                        "💾 Guardar objetivo"
-
-                    )
-            if guardar_objetivo:
-        
-                with engine.begin() as conn:
-
-                    # Guardar objetivo
-
-                    resultado = conn.execute(text("""
-
-                        INSERT INTO pai_objetivos(
-
-                            documento_usuario,
-
-                            objetivo_tipo,
-
-                            objetivo_descripcion,
-
-                            fecha_meta,
-
-                            linea_politica
-
-                        )
-
-                        VALUES(
-
-                            :documento_usuario,
-
-                            :objetivo_tipo,
-
-                            :objetivo_descripcion,
-
-                            :fecha_meta,
-
-                            :linea_politica
-
-                        )
-
-                        RETURNING id
-
-                    """), {
-
-                        "documento_usuario": usuario_sel,
-
-                        "objetivo_tipo": objetivo_tipo,
-
-                        "objetivo_descripcion": objetivo_descripcion,
-
-                        "fecha_meta": fecha_meta,
-
-                        "linea_politica": linea_politica
-
-                    })
-
-                    id_objetivo = resultado.scalar()
-
-                    # Guardar ODS asociados
-
-                    for ods in ods_asociados:
-
-                        conn.execute(text("""
-
-                            INSERT INTO pai_objetivo_ods(
-
-                                id_objetivo,
-
-                                ods
-
-                            )
-
-                            VALUES(
-
-                                :id_objetivo,
-
-                                :ods
-
-                            )
-
-                        """), {
-
-                            "id_objetivo": id_objetivo,
-
-                            "ods": ods
-
-                        })
-
-                st.success(
-                    "✅ Objetivo creado correctamente"
+            resultado = conn.execute(text("""
+                INSERT INTO pai_objetivos(
+                    documento_usuario,
+                    objetivo_tipo,
+                    objetivo_descripcion,
+                    fecha_meta,
+                    linea_politica
                 )
+                VALUES(
+                    :documento_usuario,
+                    :objetivo_tipo,
+                    :objetivo_descripcion,
+                    :fecha_meta,
+                    :linea_politica
+                )
+                RETURNING id
+            """), {
+                "documento_usuario": usuario_sel,
+                "objetivo_tipo": objetivo_tipo,
+                "objetivo_descripcion": objetivo_descripcion,
+                "fecha_meta": fecha_meta,
+                "linea_politica": linea_politica
+            })
 
-                st.rerun()
+            id_objetivo = resultado.scalar()
 
+            for ods in ods_asociados:
+                conn.execute(text("""
+                    INSERT INTO pai_objetivo_ods(
+                        id_objetivo,
+                        ods
+                    )
+                    VALUES(
+                        :id_objetivo,
+                        :ods
+                    )
+                """), {
+                    "id_objetivo": id_objetivo,
+                    "ods": ods
+                })
+
+        st.success("✅ Objetivo creado correctamente")
+        st.rerun()
     else:
 
         st.info(
