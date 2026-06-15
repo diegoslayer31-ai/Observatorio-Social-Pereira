@@ -2571,173 +2571,64 @@ if usuario_sel:
                 )
 
                 st.divider()
-                        # ==========================
-                # CREAR OBJETIVO
-                # ==========================
-
-                st.markdown("## ➕ Crear objetivo PAI")
-
-                # Política pública automática
-
-                mapa_politica = {
-
-                    "Documentación y ciudadanía":"Restablecimiento de derechos",
-
-                    "Cedulación":"Restablecimiento de derechos",
-
-                    "Aseguramiento en salud":"Atención integral en salud",
-
-                    "Salud mental":"Atención integral en salud",
-
-                    "Tratamiento consumo SPA":"Reducción de riesgos y daños",
-
-                    "Reducción de riesgos y daños":"Reducción de riesgos y daños",
-
-                    "Vinculación familiar":"Fortalecimiento familiar",
-
-                    "Inclusión social":"Inclusión social",
-
-                    "Empleabilidad":"Inclusión laboral y generación de ingresos",
-
-                    "Generación de ingresos":"Inclusión laboral y generación de ingresos",
-
-                    "Educación":"Educación",
-
-                    "Vivienda":"Habitabilidad y vivienda",
-
-                    "Proyecto de vida":"Inclusión social",
-
-                    "Participación comunitaria":"Participación ciudadana",
-
-                    "Justicia y acceso a derechos":"Restablecimiento de derechos",
-
-                    "Otro":"Restablecimiento de derechos"
-
-                }
-
-                # ODS automáticos
-
-                mapa_ods = {
-
-        "Documentación y ciudadanía":[
-
-            "ODS 16"
-
-        ],
-
-        "Cedulación":[
-
-            "ODS 16"
-
-        ],
-
-        "Aseguramiento en salud":[
-
-            "ODS 3",
-
-            "ODS 10"
-
-        ],
-
-        "Salud mental":[
-
-            "ODS 3"
-
-        ],
-
-        "Tratamiento consumo SPA":[
-
-            "ODS 3"
-
-        ],
-
-        "Reducción de riesgos y daños":[
-
-            "ODS 3"
-
-        ],
-
-        "Vinculación familiar":[
-
-            "ODS 10",
-
-            "ODS 16"
-
-        ],
-
-        "Inclusión social":[
-
-            "ODS 10",
-
-            "ODS 16"
-
-        ],
-
-        "Empleabilidad":[
-
-            "ODS 8",
-
-            "ODS 10"
-
-        ],
-
-        "Generación de ingresos":[
-
-            "ODS 8",
-
-            "ODS 10"
-
-        ],
-
-        "Educación":[
-
-            "ODS 4"
-
-        ],
-
-        "Vivienda":[
-
-            "ODS 11"
-
-        ],
-
-        "Proyecto de vida":[
-
-            "ODS 3",
-
-            "ODS 10"
-
-        ],
-
-        "Participación comunitaria":[
-
-            "ODS 16"
-
-        ],
-
-        "Justicia y acceso a derechos":[
-
-            "ODS 16"
-
-        ],
-
-        "Otro":[
-
-            "ODS 10"
-
-        ]
-
-    }
-
-    with st.form("crear_objetivo"):
-
-        objetivo_tipo = st.selectbox(
+# ==========================
+# CREAR OBJETIVO
+# ==========================
+
+st.markdown("## ➕ Crear objetivo PAI")
+
+# Política pública automática
+mapa_politica = {
+    "Documentación y ciudadanía": "Restablecimiento de derechos",
+    "Cedulación": "Restablecimiento de derechos",
+    "Aseguramiento en salud": "Atención integral en salud",
+    "Salud mental": "Atención integral en salud",
+    "Tratamiento consumo SPA": "Reducción de riesgos y daños",
+    "Reducción de riesgos y daños": "Reducción de riesgos y daños",
+    "Vinculación familiar": "Fortalecimiento familiar",
+    "Inclusión social": "Inclusión social",
+    "Empleabilidad": "Inclusión laboral y generación de ingresos",
+    "Generación de ingresos": "Inclusión laboral y generación de ingresos",
+    "Educación": "Educación",
+    "Vivienda": "Habitabilidad y vivienda",
+    "Proyecto de vida": "Inclusión social",
+    "Participación comunitaria": "Participación ciudadana",
+    "Justicia y acceso a derechos": "Restablecimiento de derechos",
+    "Otro": "Restablecimiento de derechos"
+}
+
+# ODS automáticos
+mapa_ods = {
+    "Documentación y ciudadanía": ["ODS 16"],
+    "Cedulación": ["ODS 16"],
+    "Aseguramiento en salud": ["ODS 3", "ODS 10"],
+    "Salud mental": ["ODS 3"],
+    "Tratamiento consumo SPA": ["ODS 3"],
+    "Reducción de riesgos y daños": ["ODS 3"],
+    "Vinculación familiar": ["ODS 10", "ODS 16"],
+    "Inclusión social": ["ODS 10", "ODS 16"],
+    "Empleabilidad": ["ODS 8", "ODS 10"],
+    "Generación de ingresos": ["ODS 8", "ODS 10"],
+    "Educación": ["ODS 4"],
+    "Vivienda": ["ODS 11"],
+    "Proyecto de vida": ["ODS 3", "ODS 10"],
+    "Participación comunitaria": ["ODS 16"],
+    "Justicia y acceso a derechos": ["ODS 16"],
+    "Otro": ["ODS 10"]
+}
+
+# ==========================
+# FORMULARIO (TODO DENTRO)
+# ==========================
+
+with st.form("crear_objetivo"):
+
+    objetivo_tipo = st.selectbox(
         "Objetivo PAI",
         list(mapa_politica.keys())
     )
 
     linea_politica = mapa_politica.get(objetivo_tipo)
-
     ods_asociados = mapa_ods.get(objetivo_tipo, [])
 
     st.info(f"🏛️ Política pública: {linea_politica}")
@@ -2749,7 +2640,58 @@ if usuario_sel:
 
     guardar_objetivo = st.form_submit_button("💾 Guardar objetivo")
 
-    # 👇 TODO dentro del form (ESTO ES LO IMPORTANTE)
+    # ==========================
+    # LÓGICA DEL FORMULARIO
+    # ==========================
+
+    if guardar_objetivo:
+
+        with engine.begin() as conn:
+
+            resultado = conn.execute(text("""
+                INSERT INTO pai_objetivos(
+                    documento_usuario,
+                    objetivo_tipo,
+                    objetivo_descripcion,
+                    fecha_meta,
+                    linea_politica
+                )
+                VALUES(
+                    :documento_usuario,
+                    :objetivo_tipo,
+                    :objetivo_descripcion,
+                    :fecha_meta,
+                    :linea_politica
+                )
+                RETURNING id
+            """), {
+                "documento_usuario": usuario_sel,
+                "objetivo_tipo": objetivo_tipo,
+                "objetivo_descripcion": objetivo_descripcion,
+                "fecha_meta": fecha_meta,
+                "linea_politica": linea_politica
+            })
+
+            id_objetivo = resultado.scalar()
+
+            for ods in ods_asociados:
+                conn.execute(text("""
+                    INSERT INTO pai_objetivo_ods(
+                        id_objetivo,
+                        ods
+                    )
+                    VALUES(
+                        :id_objetivo,
+                        :ods
+                    )
+                """), {
+                    "id_objetivo": id_objetivo,
+                    "ods": ods
+                })
+
+        st.success("✅ Objetivo creado correctamente")
+        st.rerun()
+
     if guardar_objetivo:
 
         with engine.begin() as conn:
