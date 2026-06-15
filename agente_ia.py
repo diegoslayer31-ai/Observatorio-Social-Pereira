@@ -1089,13 +1089,9 @@ col4.metric(
     len(df_kpi)
 )
 # KPIs
-tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10, tab11, tab12, tab13, tab14 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10 = st.tabs([
     "📊 General",
     "⚠️ Vulnerabilidad",
-    "🚬 Consumo",
-    "🧠 Salud Mental",
-    "🌎 Territorio",
-    "🎓 Educación",
     "🚦 Semáforo",
     "🩺 Enfermería",
     "🏆 Egresos e Impacto",
@@ -1693,7 +1689,7 @@ with tab2:
 # =========================
 # TAB SEMÁFORO SOCIAL
 # =========================
-with tab7:
+with tab3:
 
     st.subheader("👥 Semáforo social")
 
@@ -1762,7 +1758,7 @@ with tab7:
 # =========================
 # TAB ENFERMERÍA
 # =========================
-with tab8:
+with tab4:
 
     st.subheader("🏥 Enfermería")
 
@@ -2091,7 +2087,7 @@ with tab8:
             st.info(
                 "Seleccione un usuario para registrar actividades de enfermería"
             )
-with tab9:
+with tab5:
 
     st.title("🏆 Egresos e Impacto")
 
@@ -2169,7 +2165,7 @@ with tab9:
     st.plotly_chart(px.histogram(df_impacto, x="edad", nbins=10, title="Edad"))
 
     st.info(f"Total egresados: {total_egresados} | Tasa: {tasa_egreso}%")
-with tab10:
+with tab6:
 
     st.title("📄 Reportes Institucionales")
     st.write("Consolidado analítico del Observatorio Social")
@@ -2386,172 +2382,172 @@ with tab10:
             )
 
         st.success("PDF generado correctamente")
-# =========================
-# NUEVO REGISTRO
-# =========================
+    # =========================
+    # NUEVO REGISTRO
+    # =========================
 
-with tab11:
+    with tab6:
 
-    st.subheader("🔐 Acceso al formulario")
+        st.subheader("🔐 Acceso al formulario")
 
-    clave = st.text_input(
-        "Ingrese la contraseña",
-        type="password",
-        key="clave_registro"
-    )
+        clave = st.text_input(
+            "Ingrese la contraseña",
+            type="password",
+            key="clave_registro"
+        )
 
-    if clave == "Pereira2026":
+        if clave == "Pereira2026":
 
-        st.success("✅ Acceso autorizado")
+            st.success("✅ Acceso autorizado")
 
-        with st.form("registro_social"):
+            with st.form("registro_social"):
 
-            st.markdown("### Datos personales")
+                st.markdown("### Datos personales")
 
-            nombres = st.text_input("Nombres")
-            apellidos = st.text_input("Apellidos")
+                nombres = st.text_input("Nombres")
+                apellidos = st.text_input("Apellidos")
 
-            sexo = st.selectbox(
-                "Sexo al nacer",
-                ["Masculino", "Femenino"]
-            )
-
-            edad = st.number_input(
-                "Edad",
-                min_value=0,
-                max_value=120,
-                value=18
-            )
-
-            tipo_id = st.selectbox(
-                "Tipo ID",
-                ["CC", "TI", "CE", "PEP", "Otro"]
-            )
-
-            numero_id = st.text_input("Número de identificación")
-
-            etnia = st.selectbox(
-                "Grupo étnico",
-                ["Ninguno", "Afrodescendiente", "Indígena", "Mestizo"]
-            )
-
-            discapacidad = st.selectbox(
-                "Discapacidad",
-                ["No", "Sí"]
-            )
-
-            migracion_txt = st.selectbox(
-                "Migración",
-                ["NO", "SI"]
-            )
-
-            migracion = 1 if migracion_txt == "SI" else 0
-
-            educacion = st.selectbox(
-                "Nivel educativo",
-                ["Ninguno", "Primaria", "Secundaria", "Técnico", "Tecnólogo", "Universitario"]
-            )
-
-            barrio = st.text_input("Barrio")
-            comuna = st.text_input("Comuna")
-            telefono = st.text_input("Teléfono")
-
-            consumo = st.selectbox(
-                "Consumo",
-                ["No", "Marihuana", "Cocaína", "Bazuco", "Alcohol", "Heroína", "Policonsumo"]
-            )
-
-            enfermedad_mental = st.selectbox(
-                "Enfermedad mental",
-                ["No", "Sí"]
-            )
-
-            modalidad = st.selectbox(
-                "Modalidad",
-                ["GRANJA", "URBANO"]
-            )
-
-            estado_caso = "ACTIVO"
-
-            guardar = st.form_submit_button("💾 Guardar registro")
-
-        # =========================
-        # 🔥 INSERT CORREGIDO
-        # =========================
-        if guardar:
-
-            sql = text("""
-                INSERT INTO habitante_de_calle
-                (
-                    nombres,
-                    apellidos,
-                    sexo_al_nacer,
-                    edad,
-                    tipo_de_identificacion,
-                    numero_identificacion,
-                    grupos_etnicos_afro_indigena,
-                    personas_con_discapacidad,
-                    indicador_migracion,
-                    nivel_educativo_que_tiene_o_cursa,
-                    barrio_o_vereda_de_residencia,
-                    comuna_o_corregimiento_de_residencia,
-                    telefono_y_o_celular,
-                    tipo_de_consumo,
-                    enfermedad_mental,
-                    estado_caso,
-                    modalidad
+                sexo = st.selectbox(
+                    "Sexo al nacer",
+                    ["Masculino", "Femenino"]
                 )
-                VALUES
-                (
-                    :nombres,
-                    :apellidos,
-                    :sexo,
-                    :edad,
-                    :tipo_id,
-                    :numero_id,
-                    :etnia,
-                    :discapacidad,
-                    :migracion,
-                    :educacion,
-                    :barrio,
-                    :comuna,
-                    :telefono,
-                    :consumo,
-                    :enfermedad_mental,
-                    :estado_caso,
-                    :modalidad
+
+                edad = st.number_input(
+                    "Edad",
+                    min_value=0,
+                    max_value=120,
+                    value=18
                 )
-            """)
 
-            try:
-                with engine.begin() as conn:
-                    conn.execute(sql, {
-                        "nombres": nombres,
-                        "apellidos": apellidos,
-                        "sexo": sexo,
-                        "edad": edad,
-                        "tipo_id": tipo_id,
-                        "numero_id": numero_id,
-                        "etnia": etnia,
-                        "discapacidad": discapacidad,
-                        "migracion": migracion,
-                        "educacion": educacion,
-                        "barrio": barrio,
-                        "comuna": comuna,
-                        "telefono": telefono,
-                        "consumo": consumo,
-                        "enfermedad_mental": enfermedad_mental,
-                        "estado_caso": estado_caso,
-                        "modalidad": modalidad
-                    })
+                tipo_id = st.selectbox(
+                    "Tipo ID",
+                    ["CC", "TI", "CE", "PEP", "Otro"]
+                )
 
-                st.success("✅ Registro guardado correctamente")
+                numero_id = st.text_input("Número de identificación")
 
-            except Exception as e:
-                st.error(f"Error al guardar: {e}")
+                etnia = st.selectbox(
+                    "Grupo étnico",
+                    ["Ninguno", "Afrodescendiente", "Indígena", "Mestizo"]
+                )
 
-    else:
-        st.info("Ingrese la contraseña para habilitar el formulario.")
+                discapacidad = st.selectbox(
+                    "Discapacidad",
+                    ["No", "Sí"]
+                )
+
+                migracion_txt = st.selectbox(
+                    "Migración",
+                    ["NO", "SI"]
+                )
+
+                migracion = 1 if migracion_txt == "SI" else 0
+
+                educacion = st.selectbox(
+                    "Nivel educativo",
+                    ["Ninguno", "Primaria", "Secundaria", "Técnico", "Tecnólogo", "Universitario"]
+                )
+
+                barrio = st.text_input("Barrio")
+                comuna = st.text_input("Comuna")
+                telefono = st.text_input("Teléfono")
+
+                consumo = st.selectbox(
+                    "Consumo",
+                    ["No", "Marihuana", "Cocaína", "Bazuco", "Alcohol", "Heroína", "Policonsumo"]
+                )
+
+                enfermedad_mental = st.selectbox(
+                    "Enfermedad mental",
+                    ["No", "Sí"]
+                )
+
+                modalidad = st.selectbox(
+                    "Modalidad",
+                    ["GRANJA", "URBANO"]
+                )
+
+                estado_caso = "ACTIVO"
+
+                guardar = st.form_submit_button("💾 Guardar registro")
+
+            # =========================
+            # 🔥 INSERT CORREGIDO
+            # =========================
+            if guardar:
+
+                sql = text("""
+                    INSERT INTO habitante_de_calle
+                    (
+                        nombres,
+                        apellidos,
+                        sexo_al_nacer,
+                        edad,
+                        tipo_de_identificacion,
+                        numero_identificacion,
+                        grupos_etnicos_afro_indigena,
+                        personas_con_discapacidad,
+                        indicador_migracion,
+                        nivel_educativo_que_tiene_o_cursa,
+                        barrio_o_vereda_de_residencia,
+                        comuna_o_corregimiento_de_residencia,
+                        telefono_y_o_celular,
+                        tipo_de_consumo,
+                        enfermedad_mental,
+                        estado_caso,
+                        modalidad
+                    )
+                    VALUES
+                    (
+                        :nombres,
+                        :apellidos,
+                        :sexo,
+                        :edad,
+                        :tipo_id,
+                        :numero_id,
+                        :etnia,
+                        :discapacidad,
+                        :migracion,
+                        :educacion,
+                        :barrio,
+                        :comuna,
+                        :telefono,
+                        :consumo,
+                        :enfermedad_mental,
+                        :estado_caso,
+                        :modalidad
+                    )
+                """)
+
+                try:
+                    with engine.begin() as conn:
+                        conn.execute(sql, {
+                            "nombres": nombres,
+                            "apellidos": apellidos,
+                            "sexo": sexo,
+                            "edad": edad,
+                            "tipo_id": tipo_id,
+                            "numero_id": numero_id,
+                            "etnia": etnia,
+                            "discapacidad": discapacidad,
+                            "migracion": migracion,
+                            "educacion": educacion,
+                            "barrio": barrio,
+                            "comuna": comuna,
+                            "telefono": telefono,
+                            "consumo": consumo,
+                            "enfermedad_mental": enfermedad_mental,
+                            "estado_caso": estado_caso,
+                            "modalidad": modalidad
+                        })
+
+                    st.success("✅ Registro guardado correctamente")
+
+                except Exception as e:
+                    st.error(f"Error al guardar: {e}")
+
+        else:
+            st.info("Ingrese la contraseña para habilitar el formulario.")
 
 # =====================================
 # 🌍 MOTOR DE SCORING ODS - PAI
@@ -2667,7 +2663,7 @@ mapa_politica = {
 
 }
 
-with tab12:
+with tab7:
 
     st.title("📋 Seguimiento Profesional - PAI")
 
@@ -3929,7 +3925,7 @@ with tab12:
 # =====================================
 # TAB 13 - SEGUIMIENTO E IMPACTO (PAI + REDUCCIÓN DE RIESGOS)
 # =====================================
-with tab13:
+with tab8:
 
     st.title("📈 Seguimiento e Impacto - Reducción de Riesgos y Daños")
 
@@ -4139,7 +4135,7 @@ with tab13:
 # TAB 14 - CARGA MASIVA ACTUALIZADA
 # =====================================
 
-with tab14:
+with tab9:
 
     st.title("📥 Carga Masiva de Activos")
 
