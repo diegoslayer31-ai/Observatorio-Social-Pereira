@@ -879,35 +879,6 @@ def validar_cupos(df, modalidad):
         return False, "🚨 Urbano está en capacidad máxima"
 
     return True, "OK"
-# =========================
-# FUNCIÓN CONSOLIDADA 
-# =========================
-
-def peso_consumo(x):
-    x = str(x).lower().strip()
-
-    if x in ["no", "ninguno", "nan", ""]:
-        return 0
-
-    if "heroina" in x or "heroína" in x:
-        return 5
-    elif "policonsumo" in x:
-        return 4
-    elif "bazuco" in x:
-        return 4
-    elif "alcohol" in x:
-        return 4
-    elif "coca" in x:
-        return 3
-    elif "marihuana" in x:
-        return 1
-    else:
-        return 1
-# =========================
-# LIMPIEZA / FEATURES
-# =========================
-df["score_vulnerabilidad"] = ...
-df["nivel_riesgo"] = ...
 
 # =========================
 # FUNCIONES AUXILIARES 
@@ -943,11 +914,7 @@ def cargar_datos():
     )
 
     return df
-# =========================
-# APLICAR PESO
-# =========================
 
-df["v_consumo"] = df["tipo_consumo"].fillna("no").astype(str).apply(peso_consumo)
 # =========================
 # LIMPIAR SEXO
 # =========================
@@ -1020,109 +987,12 @@ with st.sidebar:
         st.dataframe(df_granja[["nombre", "numero_identificacion"]], use_container_width=True)
 
     st.divider()
-# =========================
-# ÍNDICE DE VULNERABILIDAD
-# =========================
-
-# 1. Asegurar que todas las variables existan
-for col in [
-    "v_salud",
-    "v_discapacidad",
-    "v_edad",
-    "v_mujer",
-    "v_trans_diversa",
-    "v_red_apoyo",
-    "v_migracion",
-    "v_its"
-]:
-    if col not in df.columns:
-        df[col] = 0
 
 
-# 2. Consumo (sin diferenciar tipo, según tu decisión)
-df["v_consumo"] = df["tipo_consumo"].apply(
-    lambda x: 2 if str(x).lower().strip() not in ["no", "ninguno", "nan", ""] else 0
-)
 
-
-# 3. Índice de vulnerabilidad (suma ponderada simple)
-df["indice_vulnerabilidad"] = (
-    df["v_salud"] +
-    df["v_discapacidad"] +
-    df["v_edad"] +
-    df["v_mujer"] +
-    df["v_trans_diversa"] +
-    df["v_red_apoyo"] +
-    df["v_migracion"] +
-    df["v_consumo"] +
-    df["v_its"]
-)
-
-
-df["score_vulnerabilidad"] = (
-    df["indice_vulnerabilidad"].rank(pct=True) * 100
-)
-
-# 5. Clasificación de riesgo
-df["nivel_riesgo"] = pd.cut(
-    df["score_vulnerabilidad"],
-    bins=[0, 25, 50, 75, 100],
-    labels=["Bajo", "Medio", "Alto", "Crítico"]
-)
-
-
-# 6. Semáforo visual
-def color_riesgo(r):
-    if r == "Crítico":
-        return "🔴 Crítico"
-    elif r == "Alto":
-        return "🟠 Alto"
-    elif r == "Medio":
-        return "🟡 Medio"
-    else:
-        return "🟢 Bajo"
-
-
-df["semáforo"] = df["nivel_riesgo"].apply(color_riesgo)
-# =========================
-# KPIs
-# =========================
-st.header("📊 Indicadores Clave")
-
-# Asegúrate de usar SOLO un dataframe base
-df_kpi = df.copy()
-
-col1, col2, col3 = st.columns(3)
-col4, col5, col6 = st.columns(3)
-
-col1.metric(
-    "Score promedio",
-    round(df_kpi["score_vulnerabilidad"].mean(), 2)
-)
-
-col2.metric(
-    "Índice promedio",
-    round(df_kpi["indice_vulnerabilidad"].mean(), 2)
-)
-
-col3.metric(
-    "Casos críticos",
-    len(df_kpi[df_kpi["nivel_riesgo"] == "Crítico"])
-)
-
-col4.metric(
-    "Total registros",
-    len(df_kpi)
-)
-# KPIs
-
-tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10, tab11 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9 = st.tabs([
 
     "📊 General",
-
-    "⚠️ Vulnerabilidad",
-
-    "🚦 Semáforo",
 
     "🩺 Enfermería",
 
@@ -1619,189 +1489,11 @@ El grupo etario predominante corresponde a **{grupo_top['grupo']}**, con **{grup
             "No existe la columna 'nivel_educativo' en el dataset"
 
         )
-# =========================
-# TAB VULNERABILIDAD
-# =========================
-with tab2:
 
-    st.subheader("🚦 Distribución de Vulnerabilidad Social")
-
-    # =========================
-    # HISTOGRAMA
-    # =========================
-    fig = px.histogram(
-        df,
-        x="score_vulnerabilidad",
-        nbins=20,
-        color="nivel_riesgo"
-    )
-
-    st.plotly_chart(
-        fig,
-        use_container_width=True
-    )
-
-    # =========================
-    # RESUMEN EJECUTIVO
-    # =========================
-    criticos = len(df[df["nivel_riesgo"] == "Crítico"])
-
-    st.error(
-        f"⚠️ Se identifican {criticos} personas en nivel crítico de vulnerabilidad social."
-    )
-
-    # =========================
-    # METODOLOGÍA
-    # =========================
-    with st.expander("📘 Metodología del Score de Vulnerabilidad"):
-
-        st.markdown("""
-        ### ¿Qué mide este indicador?
-
-        El **Score de Vulnerabilidad Social** estima la posición relativa de cada persona dentro del conjunto poblacional evaluado.
-
-        ### Variables consideradas
-
-        - Consumo de sustancias psicoactivas
-        - Enfermedad mental reportada
-        - Situación de discapacidad
-        - Condición de edad (adulto mayor)
-        - Enfoque diferencial (mujer / población diversa)
-        - Red de apoyo
-        - Condición migratoria
-        - ITS
-
-        ### Escala de clasificación (percentiles)
-
-        | Percentil | Nivel |
-        |----------|----------|
-        | 0 - 20 | 🟢 Bajo |
-        | 21 - 50 | 🟡 Medio |
-        | 51 - 80 | 🟠 Alto |
-        | 81 - 100 | 🔴 Crítico |
-
-        ### Interpretación
-
-        El puntaje representa la posición relativa de vulnerabilidad dentro de la población evaluada. No es un diagnóstico clínico, sino una herramienta de priorización para intervención social.
-        """)
-
-    # =========================
-    # TABLA RESUMEN
-    # =========================
-    st.subheader("📊 Distribución por nivel de riesgo")
-
-    resumen = (
-        df["nivel_riesgo"]
-        .value_counts()
-        .reset_index()
-    )
-
-    resumen.columns = ["Nivel", "Cantidad"]
-
-    st.dataframe(
-        resumen,
-        use_container_width=True
-    )
-
-    # =========================
-    # TOP CASOS CRÍTICOS
-    # =========================
-    st.subheader("🚨 Casos Prioritarios")
-
-    top_criticos = df.sort_values(
-        "score_vulnerabilidad",
-        ascending=False
-    )
-
-    columnas_mostrar = [
-        "nombres",
-        "apellidos",
-        "score_vulnerabilidad",
-        "nivel_riesgo"
-    ]
-
-    columnas_existentes = [
-        c for c in columnas_mostrar
-        if c in top_criticos.columns
-    ]
-
-    st.dataframe(
-        top_criticos[columnas_existentes].head(20),
-        use_container_width=True
-    )
-# =========================
-# TAB SEMÁFORO SOCIAL
-# =========================
-with tab3:
-
-    st.subheader("👥 Semáforo social")
-
-    # =========================
-    # NOMBRE COMPLETO
-    # =========================
-    df["nombre_completo"] = (
-        df["nombres"].astype(str).str.strip()
-        + " "
-        + df["apellidos"].astype(str).str.strip()
-    )
-
-    # =========================
-    # NORMALIZAR SEMÁFORO
-    # =========================
-    if "semáforo" not in df.columns and "semaforo" in df.columns:
-        df["semáforo"] = df["semaforo"]
-
-    # =========================
-    # MAPEO REAL DE COLUMNAS 
-    # =========================
-    columnas = [
-        "semáforo",
-        "score_vulnerabilidad",
-        "nombre_completo",
-        "sexo_al_nacer",
-        "edad",
-        "tipo_consumo",
-        "nivel_educativo",
-        "barrio_vereda"
-    ]
-
-    # =========================
-    # FILTRO
-    # =========================
-    columnas_existentes = [c for c in columnas if c in df.columns]
-
-    # =========================
-    # VALIDACIÓN SEGURA
-    # =========================
-    if columnas_existentes:
-
-        st.dataframe(
-            df[columnas_existentes]
-            .sort_values(
-                by="score_vulnerabilidad",
-                ascending=False
-            ),
-            use_container_width=True
-        )
-
-    else:
-        st.warning("No se encontraron columnas para el semáforo social")
-        st.write("Columnas disponibles:", df.columns.tolist())
-
-    # =========================
-    # INTERPRETACIÓN
-    # =========================
-    st.info(
-        "El semáforo social prioriza personas con mayor acumulación de riesgos."
-    )
-
-    st.error(
-        "🔴 Crítico = atención inmediata | 🟠 Alto = intervención prioritaria"
-    )
 # =========================
 # TAB ENFERMERÍA
 # =========================
-with tab4:
+with tab2:
 
     st.subheader("🏥 Enfermería")
 
@@ -2130,7 +1822,7 @@ with tab4:
             st.info(
                 "Seleccione un usuario para registrar actividades de enfermería"
             )
-with tab5:
+with tab3:
 
     st.title("🏆 Egresos e Impacto")
 
@@ -2208,7 +1900,7 @@ with tab5:
     st.plotly_chart(px.histogram(df_impacto, x="edad", nbins=10, title="Edad"))
 
     st.info(f"Total egresados: {total_egresados} | Tasa: {tasa_egreso}%")
-with tab6:
+with tab4:
 
     st.title("📄 Reportes Institucionales")
     st.write("Consolidado analítico del Observatorio Social")
@@ -2429,7 +2121,7 @@ with tab6:
     # NUEVO REGISTRO
     # =========================
 
-with tab7:
+with tab5:
 
         st.subheader("🔐 Acceso al formulario")
 
@@ -2706,7 +2398,7 @@ mapa_politica = {
 
 }
 
-with tab8:
+with tab6:
 
     st.title("📋 Seguimiento Profesional - PAI")
 
@@ -3968,7 +3660,7 @@ with tab8:
 # =====================================
 # TAB 9 - SEGUIMIENTO E IMPACTO (PAI + REDUCCIÓN DE RIESGOS)
 # =====================================
-with tab9:
+with tab7:
 
     st.title("📈 Seguimiento e Impacto - Reducción de Riesgos y Daños")
 
@@ -4173,7 +3865,7 @@ with tab9:
         """, engine)
 
         st.dataframe(historia)
-with tab10:
+with tab8:
 
     st.header("📄 Informes Gerenciales")
 
@@ -4903,10 +4595,10 @@ with tab10:
             """
         )
 # =====================================
-# TAB 11 - CARGA MASIVA ACTUALIZADA
+# TAB 9 - CARGA MASIVA ACTUALIZADA
 # =====================================
 
-with tab11:
+with tab9:
 
     st.title("📥 Carga Masiva de Activos")
 
