@@ -1518,11 +1518,6 @@ with tab2:
         top_criticos[columnas_existentes].head(20),
         use_container_width=True
     )
-# =========================
-# TAB SALUD MENTAL
-# =========================
-with tab4:
-
     st.subheader("🧠 Salud mental")
 
     mental_df = (
@@ -1555,54 +1550,7 @@ with tab4:
     st.warning(
         "La presencia de salud mental puede aumentar la permanencia en calle y la vulnerabilidad social."
     )
-# =========================
-# TAB TERRITORIO
-# =========================
-with tab5:
 
-    st.subheader("📍 Departamento de procedencia")
-
-    if "departamento_procedencia" in df.columns:
-
-        # =========================
-        # LIMPIEZA BÁSICA
-        # =========================
-        dep_df = (
-            df["departamento_procedencia"]
-            .fillna("Sin dato")
-            .astype(str)
-            .str.strip()
-            .value_counts()
-            .reset_index()
-        )
-
-        dep_df.columns = ["departamento", "cantidad"]
-
-        # =========================
-        # GRÁFICA (BARRAS)
-        # =========================
-        fig_dep = px.bar(
-            dep_df,
-            x="departamento",
-            y="cantidad",
-            color="cantidad",
-            text="cantidad",
-            title="🌍 Personas por departamento de procedencia"
-        )
-
-        fig_dep.update_traces(textposition="outside")
-        fig_dep.update_layout(xaxis_tickangle=-45)
-
-        st.plotly_chart(fig_dep, use_container_width=True)
-
-        # =========================
-        # TABLA OPCIONAL
-        # =========================
-        with st.expander("📋 Ver tabla detallada"):
-            st.dataframe(dep_df)
-
-    else:
-        st.warning("No existe la columna 'departamento_procedencia' en el dataset")
 # =========================
 # TAB EDUCACIÓN
 # =========================
