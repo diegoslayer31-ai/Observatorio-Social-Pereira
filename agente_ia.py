@@ -2702,314 +2702,672 @@ with tab12:
 
     st.divider()
     # ====================================
-# PAI
-# ====================================
+    # PAI
+    # ====================================
 
-if usuario_sel:
+    if usuario_sel:
 
-    usuario = pd.read_sql(f"""
-        SELECT *
-        FROM habitante_de_calle
-        WHERE numero_identificacion = '{usuario_sel}'
-    """, engine)
-
-    if not usuario.empty:
-
-        datos = usuario.iloc[0]
-
-        st.success("Usuario encontrado")
-
-        c1, c2, c3 = st.columns(3)
-
-        c1.metric(
-            "Nombre",
-            f"{datos['nombres']} {datos['apellidos']}"
-        )
-
-        c2.metric(
-            "Edad",
-            datos.get("edad", "N/A")
-        )
-
-        c3.metric(
-            "Documento",
-            usuario_sel
-        )
-
-        st.divider()
-
-        # ==========================
-        # OBJETIVOS PAI
-        # ==========================
-
-        st.markdown("## 🎯 Objetivos PAI")
-
-        objetivos = pd.read_sql(f"""
+        usuario = pd.read_sql(f"""
             SELECT *
-            FROM pai_objetivos
-            WHERE documento_usuario = '{usuario_sel}'
-            ORDER BY fecha_apertura DESC
+            FROM habitante_de_calle
+            WHERE numero_identificacion = '{usuario_sel}'
         """, engine)
 
-        if objetivos.empty:
+        if not usuario.empty:
 
-            st.info(
-                "Este usuario aún no tiene objetivos PAI creados."
+            datos = usuario.iloc[0]
+
+            st.success("Usuario encontrado")
+
+            c1, c2, c3 = st.columns(3)
+
+            c1.metric(
+                "Nombre",
+                f"{datos['nombres']} {datos['apellidos']}"
             )
 
-        else:
+            c2.metric(
+                "Edad",
+                datos.get("edad", "N/A")
+            )
 
-            for _, obj in objetivos.iterrows():
+            c3.metric(
+                "Documento",
+                usuario_sel
+            )
 
-                st.markdown(
-                    f"### {obj['objetivo_tipo']}"
-                )
+            st.divider()
 
-                st.write(
-                    obj["objetivo_descripcion"]
-                )
+            # ==========================
+            # OBJETIVOS PAI
+            # ==========================
 
-                st.progress(
-                    obj["porcentaje_avance"] / 100
-                )
+            st.markdown("## 🎯 Objetivos PAI")
 
-                c1, c2, c3 = st.columns(3)
+            objetivos = pd.read_sql(f"""
 
-                c1.metric(
-                    "Avance",
-                    f"{obj['porcentaje_avance']}%"
-                )
+                SELECT *
 
-                c2.metric(
-                    "Estado",
-                    obj["estado"]
-                )
+                FROM pai_objetivos
 
-                c3.metric(
-                     "Fecha meta",
-                    str(obj["fecha_meta"])
-                )
+                WHERE documento_usuario = '{usuario_sel}'
 
-                st.divider()
+                ORDER BY fecha_apertura DESC
 
-        # ==========================
-        # CREAR OBJETIVO
-        # ==========================
+            """, engine)
 
-        st.markdown("## ➕ Crear objetivo PAI")
-        mapa_politica = {
-
-            "Cedulación":"Restablecimiento de derechos",
-
-            "Aseguramiento en salud":"Atención integral en salud",
-
-            "Vinculación familiar":"Fortalecimiento familiar",
-
-            "Reducción de riesgos y daños":"Reducción de riesgos y daños",
-
-            "Tratamiento consumo SPA":"Reducción de riesgos y daños",
-
-            "Salud mental":"Atención integral en salud",
-
-            "Inclusión social":"Inclusión social",
-
-            "Empleabilidad":"Inclusión laboral y generación de ingresos",
-
-            "Generación de ingresos":"Inclusión laboral y generación de ingresos",
-
-            "Educación":"Educación",
-
-            "Vivienda":"Habitabilidad y vivienda",
-
-            "Proyecto de vida":"Inclusión social",
-
-            "Participación comunitaria":"Participación ciudadana",
-
-            "Otro":"Restablecimiento de derechos"
-
-        }
-        
-        with st.form("crear_objetivo"):
-
-                objetivo_tipo = st.selectbox(
-
-                    "Objetivo PAI",
-
-                    [
-
-                        "Cedulación",
-
-                        "Aseguramiento en salud",
-
-                        "Vinculación familiar",
-
-                        "Reducción de riesgos y daños",
-
-                        "Tratamiento consumo SPA",
-
-                        "Salud mental",
-
-                        "Inclusión social",
-
-                        "Empleabilidad",
-
-                        "Generación de ingresos",
-
-                        "Educación",
-
-                        "Vivienda",
-
-                        "Proyecto de vida",
-
-                        "Participación comunitaria",
-
-                        "Otro"
-
-                    ]
-
-                )
-
-                # Se calcula automáticamente
-
-                linea_politica = mapa_politica.get(objetivo_tipo)
-
-                # Se muestra al profesional
+            if objetivos.empty:
 
                 st.info(
-                    f"🏛️ Política pública asociada: {linea_politica}"
+                    "Este usuario aún no tiene objetivos PAI creados."
                 )
 
-                objetivo_descripcion = st.text_area(
-                    "Descripción del objetivo"
-                )
+            else:
 
-                fecha_meta = st.date_input(
-                    "Fecha meta"
-                )
+                for _, obj in objetivos.iterrows():
 
-                guardar_objetivo = st.form_submit_button(
-                    "💾 Guardar objetivo"
-                )
-        linea_politica = mapa_politica.get(objetivo_tipo)
+                    # =====================
+                    # Variables seguras
+                    # =====================
 
-        if guardar_objetivo:
+                    avance = obj["porcentaje_avance"]
 
-            with engine.begin() as conn:
+                    if avance is None:
 
-                conn.execute(text("""
-                    INSERT INTO pai_objetivos(
+                        avance = 0
 
-                    documento_usuario,
+                    fecha_meta = obj["fecha_meta"]
 
-                    objetivo_tipo,
+                    if fecha_meta:
 
-                    objetivo_descripcion,
-
-                    fecha_meta,
-
-                    linea_politica
-
-                    )
-
-                    )
-
-                    VALUES(
-
-                       VALUES(
-
-                    :documento_usuario,
-
-                    :objetivo_tipo,
-
-                    :objetivo_descripcion,
-
-                    :fecha_meta,
-
-                    :linea_politica
-
-                    )
-                """), {
-
-                    "documento_usuario": usuario_sel,
-
-                    "objetivo_tipo": objetivo_tipo,
-
-                    "objetivo_descripcion": objetivo_descripcion,
-
-                    "fecha_meta": fecha_meta,
-                    "linea_politica": linea_politica
-
-                })
-            id_objetivo = conn.execute(text("""
-
-                    SELECT currval(
-                        pg_get_serial_sequence(
-                            'pai_objetivos',
-                            'id'
+                        fecha_meta = fecha_meta.strftime(
+                            "%d/%m/%Y"
                         )
+
+                    else:
+
+                        fecha_meta = "Sin fecha"
+
+                    # =====================
+                    # Título objetivo
+                    # =====================
+
+                    st.markdown(
+                        f"### 🎯 {obj['objetivo_tipo']}"
                     )
 
-                    """)).scalar()
+                    # Política pública
 
-            conn.execute(text("""
+                    if obj["linea_politica"]:
 
-                    INSERT INTO pai_objetivo_ods(
+                        st.caption(
+                            f"🏛️ {obj['linea_politica']}"
+                        )
 
-                    id_objetivo,
+                    # Descripción
 
-                    ods
+                    st.write(
+                        obj["objetivo_descripcion"]
+                    )
+
+                    # Barra de progreso
+
+                    st.progress(
+                        avance / 100
+                    )
+
+                    # Métricas
+
+                    c1, c2, c3 = st.columns(3)
+
+                    c1.metric(
+                        "Avance",
+                        f"{avance}%"
+                    )
+
+                    c2.metric(
+                        "Estado",
+                        obj["estado"]
+                    )
+
+                    c3.metric(
+                        "Fecha meta",
+                        fecha_meta
+                    )
+
+                    st.divider()
+
+                        # ==========================
+                # CREAR OBJETIVO
+                # ==========================
+
+                st.markdown("## ➕ Crear objetivo PAI")
+
+                # Política pública automática
+
+                mapa_politica = {
+
+                    "Documentación y ciudadanía":"Restablecimiento de derechos",
+
+                    "Cedulación":"Restablecimiento de derechos",
+
+                    "Aseguramiento en salud":"Atención integral en salud",
+
+                    "Salud mental":"Atención integral en salud",
+
+                    "Tratamiento consumo SPA":"Reducción de riesgos y daños",
+
+                    "Reducción de riesgos y daños":"Reducción de riesgos y daños",
+
+                    "Vinculación familiar":"Fortalecimiento familiar",
+
+                    "Inclusión social":"Inclusión social",
+
+                    "Empleabilidad":"Inclusión laboral y generación de ingresos",
+
+                    "Generación de ingresos":"Inclusión laboral y generación de ingresos",
+
+                    "Educación":"Educación",
+
+                    "Vivienda":"Habitabilidad y vivienda",
+
+                    "Proyecto de vida":"Inclusión social",
+
+                    "Participación comunitaria":"Participación ciudadana",
+
+                    "Justicia y acceso a derechos":"Restablecimiento de derechos",
+
+                    "Otro":"Restablecimiento de derechos"
+
+                }
+
+                # ODS automáticos
+
+                mapa_ods = {
+
+        "Documentación y ciudadanía":[
+
+            "ODS 16"
+
+        ],
+
+        "Cedulación":[
+
+            "ODS 16"
+
+        ],
+
+        "Aseguramiento en salud":[
+
+            "ODS 3",
+
+            "ODS 10"
+
+        ],
+
+        "Salud mental":[
+
+            "ODS 3"
+
+        ],
+
+        "Tratamiento consumo SPA":[
+
+            "ODS 3"
+
+        ],
+
+        "Reducción de riesgos y daños":[
+
+            "ODS 3"
+
+        ],
+
+        "Vinculación familiar":[
+
+            "ODS 10",
+
+            "ODS 16"
+
+        ],
+
+        "Inclusión social":[
+
+            "ODS 10",
+
+            "ODS 16"
+
+        ],
+
+        "Empleabilidad":[
+
+            "ODS 8",
+
+            "ODS 10"
+
+        ],
+
+        "Generación de ingresos":[
+
+            "ODS 8",
+
+            "ODS 10"
+
+        ],
+
+        "Educación":[
+
+            "ODS 4"
+
+        ],
+
+        "Vivienda":[
+
+            "ODS 11"
+
+        ],
+
+        "Proyecto de vida":[
+
+            "ODS 3",
+
+            "ODS 10"
+
+        ],
+
+        "Participación comunitaria":[
+
+            "ODS 16"
+
+        ],
+
+        "Justicia y acceso a derechos":[
+
+            "ODS 16"
+
+        ],
+
+        "Otro":[
+
+            "ODS 10"
+
+        ]
+
+    }
+
+                with st.form("crear_objetivo"):
+
+                    objetivo_tipo = st.selectbox(
+
+                        "Objetivo PAI",
+
+                        list(mapa_politica.keys())
 
                     )
 
-                    VALUES(
+                    linea_politica = mapa_politica.get(
 
-                    :id_objetivo,
-
-                    :ods
+                        objetivo_tipo
 
                     )
 
-                    """),{
+                    ods_asociados = mapa_ods.get(
 
-                    "id_objetivo": id_objetivo,
+                        objetivo_tipo,
 
-                    "ods": ods
+                        []
+
+                    )
+
+                    st.info(
+
+                        f"🏛️ Política pública: {linea_politica}"
+
+                    )
+
+                    st.info(
+
+                        f"🌍 ODS: {', '.join(ods_asociados)}"
+
+                    )
+
+                    objetivo_descripcion = st.text_area(
+
+                        "Descripción del objetivo"
+
+                    )
+
+                    fecha_meta = st.date_input(
+
+                        "Fecha meta"
+
+                    )
+
+                    guardar_objetivo = st.form_submit_button(
+
+                        "💾 Guardar objetivo"
+
+                    )
+            if guardar_objetivo:
+        
+                with engine.begin() as conn:
+
+                    # Guardar objetivo
+
+                    resultado = conn.execute(text("""
+
+                        INSERT INTO pai_objetivos(
+
+                            documento_usuario,
+
+                            objetivo_tipo,
+
+                            objetivo_descripcion,
+
+                            fecha_meta,
+
+                            linea_politica
+
+                        )
+
+                        VALUES(
+
+                            :documento_usuario,
+
+                            :objetivo_tipo,
+
+                            :objetivo_descripcion,
+
+                            :fecha_meta,
+
+                            :linea_politica
+
+                        )
+
+                        RETURNING id
+
+                    """), {
+
+                        "documento_usuario": usuario_sel,
+
+                        "objetivo_tipo": objetivo_tipo,
+
+                        "objetivo_descripcion": objetivo_descripcion,
+
+                        "fecha_meta": fecha_meta,
+
+                        "linea_politica": linea_politica
 
                     })
 
-            st.success(
-                "✅ Objetivo creado correctamente"
-            )
+                    id_objetivo = resultado.scalar()
 
-else:
+                    # Guardar ODS asociados
 
-    st.info(
-        "Seleccione un usuario"
-    )
+                    for ods in ods_asociados:
+
+                        conn.execute(text("""
+
+                            INSERT INTO pai_objetivo_ods(
+
+                                id_objetivo,
+
+                                ods
+
+                            )
+
+                            VALUES(
+
+                                :id_objetivo,
+
+                                :ods
+
+                            )
+
+                        """), {
+
+                            "id_objetivo": id_objetivo,
+
+                            "ods": ods
+
+                        })
+
+                st.success(
+                    "✅ Objetivo creado correctamente"
+                )
+
+                st.rerun()
+
+    else:
+
+        st.info(
+            "Seleccione un usuario"
+        )
+        
+    # ==========================
+    # REGISTRAR NOVEDAD
+    # ==========================
+
     st.divider()
 
     st.markdown("## 📝 Registrar novedad")
+
     objetivos_activos = pd.read_sql(f"""
 
         SELECT
 
-        id,
+            id,
 
-        objetivo_tipo,
+            objetivo_tipo,
 
-        porcentaje_avance
+            porcentaje_avance
 
         FROM pai_objetivos
 
         WHERE documento_usuario = '{usuario_sel}'
 
-        AND estado='Activo'
+        AND estado = 'Activo'
 
         ORDER BY fecha_apertura DESC
 
-        """, engine)
-    if not objetivos_activos.empty:
-    
+    """, engine)
+
+    # Hitos automáticos
+
+    mapa_hitos = {
+
+            "Documentación y ciudadanía":[
+
+                "Documentos identificados",
+
+                "Trámite iniciado",
+
+                "Gestión institucional",
+
+                "Documentación obtenida"
+
+            ],
+
+            "Cedulación":[
+
+                "Solicitud iniciada",
+
+                "Cita asignada",
+
+                "Trámite radicado",
+
+                "Documento entregado"
+
+            ],
+
+            "Aseguramiento en salud":[
+
+                "Verificación realizada",
+
+                "Documentos reunidos",
+
+                "Afiliación radicada",
+
+                "Afiliación activa"
+
+            ],
+
+            "Salud mental":[
+
+                "Valoración realizada",
+
+                "Intervención iniciada",
+
+                "Seguimiento continuo",
+
+                "Estabilización"
+
+            ],
+
+            "Tratamiento consumo SPA":[
+
+                "Acepta intervención",
+
+                "Inicia tratamiento",
+
+                "Mantiene adherencia",
+
+                "Estabilización"
+
+            ],
+
+            "Reducción de riesgos y daños":[
+
+                "Acepta acompañamiento",
+
+                "Identifica riesgos",
+
+                "Implementa autocuidado",
+
+                "Reduce prácticas de riesgo"
+
+            ],
+
+            "Vinculación familiar":[
+
+                "Familiar identificado",
+
+                "Primer contacto",
+
+                "Encuentro realizado",
+
+                "Reintegración lograda"
+
+            ],
+
+            "Inclusión social":[
+
+                "Participa en actividades",
+
+                "Fortalece habilidades",
+
+                "Amplía redes de apoyo",
+
+                "Integración comunitaria"
+
+            ],
+
+            "Empleabilidad":[
+
+                "Perfil ocupacional construido",
+
+                "Capacitación realizada",
+
+                "Remisión laboral",
+
+                "Vinculación laboral"
+
+            ],
+
+            "Generación de ingresos":[
+
+                "Identifica capacidades",
+
+                "Fortalece competencias",
+
+                "Genera ingresos",
+
+                "Sostiene ingresos"
+
+            ],
+
+            "Educación":[
+
+                "Diagnóstico educativo",
+
+                "Inscripción realizada",
+
+                "Participación activa",
+
+                "Proceso culminado"
+
+            ],
+
+            "Vivienda":[
+
+                "Diagnóstico realizado",
+
+                "Ruta definida",
+
+                "Gestión institucional",
+
+                "Acceso a vivienda"
+
+            ],
+
+            "Proyecto de vida":[
+
+                "Identifica intereses",
+
+                "Define metas",
+
+                "Implementa acciones",
+
+                "Consolida proyecto"
+
+            ],
+
+            "Participación comunitaria":[
+
+                "Participa en actividades",
+
+                "Asume responsabilidades",
+
+                "Fortalece liderazgo",
+
+                "Participación consolidada"
+
+            ],
+
+            "Justicia y acceso a derechos":[
+
+                "Necesidad identificada",
+
+                "Orientación brindada",
+
+                "Ruta activada",
+
+                "Derecho restablecido"
+
+            ]
+
+        }
+
+    if objetivos_activos.empty:
+
+        st.info(
+
+            "No hay objetivos activos para este usuario."
+
+        )
+
+    else:
+
         with st.form("registrar_novedad"):
 
             objetivo_seleccionado = st.selectbox(
@@ -3023,6 +3381,40 @@ else:
                 objetivos_activos[
                     objetivos_activos["id"] == x
                 ]["objetivo_tipo"].values[0]
+
+            )
+
+            objetivo_actual = objetivos_activos[
+
+                objetivos_activos["id"]
+
+                == objetivo_seleccionado
+
+            ]["objetivo_tipo"].values[0]
+
+            hitos = mapa_hitos.get(
+
+                objetivo_actual,
+
+                [
+
+                    "Inicio",
+
+                    "Seguimiento",
+
+                    "Avance",
+
+                    "Cumplimiento"
+
+                ]
+
+            )
+
+            hito = st.selectbox(
+
+                "Hito alcanzado",
+
+                hitos
 
             )
 
@@ -3040,18 +3432,6 @@ else:
 
             )
 
-            avance_generado = st.slider(
-
-                "Avance logrado (%)",
-
-                0,
-
-                100,
-
-                10
-
-            )
-
             observacion_novedad = st.text_area(
 
                 "Observaciones"
@@ -3063,494 +3443,474 @@ else:
                 "💾 Guardar novedad"
 
             )
-    if guardar_novedad:
-    
-        with engine.begin() as conn:
 
-            conn.execute(text("""
+        avance_generado = int(
 
-            INSERT INTO pai_novedades(
+            (
 
-                id_objetivo,
+                (hitos.index(hito)+1)
 
-                profesional,
+                / len(hitos)
 
-                descripcion,
+            )*100
 
-                avance_generado,
-
-                observaciones
-
-            )
-
-            VALUES(
-
-                :id_objetivo,
-
-                :profesional,
-
-                :descripcion,
-
-                :avance_generado,
-
-                :observaciones
-
-            )
-
-            """), {
-
-                "id_objetivo": objetivo_seleccionado,
-
-                "profesional": profesional_novedad,
-
-                "descripcion": descripcion_novedad,
-
-                "avance_generado": avance_generado,
-
-                "observaciones": observacion_novedad
-
-            })
-    if guardar_novedad:
-    
-        with engine.begin() as conn:
-
-        # Guardar la novedad
-
-            conn.execute(text("""
-
-            INSERT INTO pai_novedades(
-
-                id_objetivo,
-
-                profesional,
-
-                descripcion,
-
-                avance_generado,
-
-                observaciones
-
-            )
-
-            VALUES(
-
-                :id_objetivo,
-
-                :profesional,
-
-                :descripcion,
-
-                :avance_generado,
-
-                :observaciones
-
-            )
-
-        """), {
-
-            "id_objetivo": objetivo_seleccionado,
-
-            "profesional": profesional_novedad,
-
-            "descripcion": descripcion_novedad,
-
-            "avance_generado": avance_generado,
-
-            "observaciones": observacion_novedad
-
-        })
-
-        # Calcular el avance acumulado
-
-        avance_total = conn.execute(text("""
-
-            SELECT COALESCE(
-
-                SUM(avance_generado),
-
-                0
-
-            )
-
-            FROM pai_novedades
-
-            WHERE id_objetivo = :id_objetivo
-
-        """), {
-
-            "id_objetivo": objetivo_seleccionado
-
-        }).scalar()
-
-        # Evitar superar el 100%
-
-        avance_total = min(avance_total, 100)
-
-        # Determinar estado
-
-        estado_objetivo = "Activo"
-
-        if avance_total >= 100:
-
-            estado_objetivo = "Cumplido"
-
-        # Actualizar el objetivo
-
-        conn.execute(text("""
-
-            UPDATE pai_objetivos
-
-            SET
-
-                porcentaje_avance = :avance,
-
-                estado = :estado
-
-            WHERE id = :id_objetivo
-
-        """), {
-
-            "avance": avance_total,
-
-            "estado": estado_objetivo,
-
-            "id_objetivo": objetivo_seleccionado
-
-        })
-
-    st.success("✅ Novedad registrada y objetivo actualizado")
-   
-
-    st.markdown("## 🌍 Seguimiento Individual con Enfoque ODS")
-
-    with st.form(f"pai_ods_{usuario_sel}"):
-
-            # =====================================
-            # ACOMPAÑAMIENTO REALIZADO
-            # =====================================
-
-            tipo_intervencion = st.selectbox(
-                "Tipo de acompañamiento",
-                [
-                    "Reducción de riesgos",
-                    "Acompañamiento psicosocial",
-                    "Rehabilitación",
-                    "Inclusión social",
-                    "Seguimiento integral"
-                ]
-            )
-
-            profesional = st.selectbox(
-                "Profesional responsable",
-                df_profesionales["label"].tolist()
-            )
-
-            descripcion = st.text_area(
-                "Descripción del acompañamiento realizado"
-            )
-
-            # =====================================
-            # CONDICIONES DE VIDA
-            # =====================================
-
-            agua = st.selectbox(
-                "Acceso a agua potable",
-                ["No", "Parcial", "Sí"]
-            )
-
-            comedor = st.selectbox(
-                "Acceso a alimentación",
-                ["No", "Ocasional", "Frecuente"]
-            )
-
-            educacion = st.selectbox(
-                "Escolarización",
-                ["No", "Primaria", "Secundaria", "Técnica", "Superior"]
-            )
-
-            formacion_empleo = st.selectbox(
-                "Formación para empleo",
-                ["No", "En proceso", "Finalizada"]
-            )
-
-            genero_participacion = st.selectbox(
-                "Participación poblacional",
-                [
-                    "Mujer cis",
-                    "Mujer trans",
-                    "Hombre cis",
-                    "Hombre trans",
-                    "No binario"
-                ]
-            )
-
-            # =====================================
-            # RED DE APOYO
-            # =====================================
-
-            red_apoyo = st.selectbox(
-                "Nivel de red de apoyo",
-                ["Nula", "Débil", "Moderada", "Fuerte"]
-            )
-
-            red_apoyo_detalle = st.text_area(
-                "Descripción de la red de apoyo"
-            )
-
-            red_apoyo_contacto = st.text_input(
-                "Teléfono de contacto"
-            )
-
-            # =====================================
-            # CONSUMO
-            # =====================================
-
-            consumo = st.selectbox(
-                "Nivel de consumo",
-                ["Activo", "Reducido", "Abstinencia"]
-            )
-
-            consumo_tipo = st.text_input(
-                "Sustancia(s) consumida(s)"
-            )
-
-            consumo_frecuencia = st.selectbox(
-                "Frecuencia",
-                [
-                    "Diario",
-                    "Varias veces por semana",
-                    "Semanal",
-                    "Ocasional",
-                    "Sin consumo actual"
-                ]
-            )
-
-            consumo_via = st.selectbox(
-                "Vía de consumo",
-                [
-                    "Fumada",
-                    "Inhalada",
-                    "Oral",
-                    "Inyectada",
-                    "Múltiple"
-                ]
-            )
-
-            # =====================================
-            # SALUD
-            # =====================================
-
-            vih = st.selectbox(
-                "Estado VIH",
-                ["Negativo", "Positivo", "Indetectable"]
-            )
-
-            salud = st.selectbox(
-                "Estado de salud mental",
-                [
-                    "Estable",
-                    "En tratamiento",
-                    "Compensado",
-                    "Inestable"
-                ]
-            )
-
-            salud_detalle = st.text_area(
-                "Descripción de salud mental"
-            )
-
-            # =====================================
-            # EMPLEO
-            # =====================================
-
-            empleo_estado = st.selectbox(
-                "Situación laboral",
-                [
-                    "Desempleado",
-                    "Informal",
-                    "Formal",
-                    "Emprendimiento",
-                    "Incapacidad"
-                ]
-            )
-
-            empleo_detalle = st.text_area(
-                "Descripción laboral"
-            )
-
-            # =====================================
-            # DOCUMENTACIÓN
-            # =====================================
-
-            documento = st.selectbox(
-                "Documento de identidad",
-                [
-                    "No tiene",
-                    "En trámite",
-                    "Tiene"
-                ]
-            )
-
-            # =====================================
-            # EGRESO
-            # =====================================
-
-            egreso = st.selectbox(
-                "Estado frente al programa",
-                [
-                    "Activo",
-                    "Exitoso",
-                    "No exitoso"
-                ]
-            )
-
-            observaciones = st.text_area(
-                "Observaciones profesionales"
-            )
-
-            seguimiento = st.text_area(
-                "Evolución y seguimiento"
-            )
-
-            guardar = st.form_submit_button(
-                "💾 Guardar seguimiento"
-            )
-
-    if guardar:
-
+        )
+                
+            
+        if guardar_novedad:
+        
             with engine.begin() as conn:
 
+                # Guardar la novedad
+
                 conn.execute(text("""
-                    INSERT INTO pai_intervenciones(
-                        documento_usuario,
-                        tipo_intervencion,
+
+                    INSERT INTO pai_novedades(
+
+                        id_objetivo,
+
                         profesional,
+
                         descripcion,
-                        consumo,
-                        consumo_tipo,
-                        consumo_frecuencia,
-                        consumo_via,
-                        salud,
-                        salud_detalle,
-                        red_apoyo,
-                        red_apoyo_detalle,
-                        red_apoyo_contacto,
-                        empleo_estado,
-                        empleo_detalle,
-                        documento,
-                        egreso,
-                        observaciones,
-                        seguimiento,
-                        fecha
+
+                        avance_generado,
+
+                        observaciones
+
                     )
+
                     VALUES(
-                        :documento_usuario,
-                        :tipo_intervencion,
+
+                        :id_objetivo,
+
                         :profesional,
+
                         :descripcion,
-                        :consumo,
-                        :consumo_tipo,
-                        :consumo_frecuencia,
-                        :consumo_via,
-                        :salud,
-                        :salud_detalle,
-                        :red_apoyo,
-                        :red_apoyo_detalle,
-                        :red_apoyo_contacto,
-                        :empleo_estado,
-                        :empleo_detalle,
-                        :documento,
-                        :egreso,
-                        :observaciones,
-                        :seguimiento,
-                        NOW()
+
+                        :avance_generado,
+
+                        :observaciones
+
                     )
+
                 """), {
-                    "documento_usuario": usuario_sel,
-                    "tipo_intervencion": tipo_intervencion,
-                    "profesional": profesional,
-                    "descripcion": descripcion,
-                    "consumo": consumo,
-                    "consumo_tipo": consumo_tipo,
-                    "consumo_frecuencia": consumo_frecuencia,
-                    "consumo_via": consumo_via,
-                    "salud": salud,
-                    "salud_detalle": salud_detalle,
-                    "red_apoyo": red_apoyo,
-                    "red_apoyo_detalle": red_apoyo_detalle,
-                    "red_apoyo_contacto": red_apoyo_contacto,
-                    "empleo_estado": empleo_estado,
-                    "empleo_detalle": empleo_detalle,
-                    "documento": documento,
-                    "egreso": egreso,
-                    "observaciones": observaciones,
-                    "seguimiento": seguimiento
+
+                    "id_objetivo": objetivo_seleccionado,
+
+                    "profesional": profesional_novedad,
+
+                    "descripcion": descripcion_novedad,
+
+                    "avance_generado": avance_generado,
+
+                    "observaciones": observacion_novedad
+
                 })
 
-            st.success("✅ Seguimiento registrado correctamente")
+                # Calcular avance acumulado
 
-    else:
+                avance_total = conn.execute(text("""
 
-        st.info("Seleccione un usuario para activar el seguimiento")
-    
-    # =====================================
-    # ODS IMPACTADOS AUTOMÁTICAMENTE
-    # =====================================
+                    SELECT
 
-    ods_detectados = []
+                        COALESCE(
 
-    # ODS 2 - Hambre Cero
-    if comedor in ["Ocasional", "Frecuente"]:
-        ods_detectados.append("ODS 2 - Hambre Cero")
+                            SUM(avance_generado),
 
-    # ODS 3 - Salud y Bienestar
-    if consumo in ["Reducido", "Abstinencia"]:
-        ods_detectados.append("ODS 3 - Salud y Bienestar")
+                            0
 
-    if vih in ["Positivo", "Indetectable"]:
-        if "ODS 3 - Salud y Bienestar" not in ods_detectados:
+                        )
+
+                    FROM pai_novedades
+
+                    WHERE id_objetivo = :id_objetivo
+
+                """), {
+
+                    "id_objetivo": objetivo_seleccionado
+
+                }).scalar()
+
+                # No permitir más del 100%
+
+                avance_total = min(
+
+                    avance_total,
+
+                    100
+
+                )
+
+                # Estado
+
+                estado_objetivo = "Activo"
+
+                if avance_total >= 100:
+
+                    estado_objetivo = "Cumplido"
+
+                # Actualizar objetivo
+
+                conn.execute(text("""
+
+                    UPDATE pai_objetivos
+
+                    SET
+
+                        porcentaje_avance = :avance,
+
+                        estado = :estado
+
+                    WHERE id = :id_objetivo
+
+                """), {
+
+                    "avance": avance_total,
+
+                    "estado": estado_objetivo,
+
+                    "id_objetivo": objetivo_seleccionado
+
+                })
+
+            st.success(
+
+                "✅ Novedad registrada y objetivo actualizado"
+
+            )
+
+            st.rerun()
+
+        st.markdown("## 🌍 Seguimiento Individual con Enfoque ODS")
+
+        with st.form(f"pai_ods_{usuario_sel}"):
+
+                # =====================================
+                # ACOMPAÑAMIENTO REALIZADO
+                # =====================================
+
+                tipo_intervencion = st.selectbox(
+                    "Tipo de acompañamiento",
+                    [
+                        "Reducción de riesgos",
+                        "Acompañamiento psicosocial",
+                        "Rehabilitación",
+                        "Inclusión social",
+                        "Seguimiento integral"
+                    ]
+                )
+
+                profesional = st.selectbox(
+                    "Profesional responsable",
+                    df_profesionales["label"].tolist()
+                )
+
+                descripcion = st.text_area(
+                    "Descripción del acompañamiento realizado"
+                )
+
+                # =====================================
+                # CONDICIONES DE VIDA
+                # =====================================
+
+                agua = st.selectbox(
+                    "Acceso a agua potable",
+                    ["No", "Parcial", "Sí"]
+                )
+
+                comedor = st.selectbox(
+                    "Acceso a alimentación",
+                    ["No", "Ocasional", "Frecuente"]
+                )
+
+                educacion = st.selectbox(
+                    "Escolarización",
+                    ["No", "Primaria", "Secundaria", "Técnica", "Superior"]
+                )
+
+                formacion_empleo = st.selectbox(
+                    "Formación para empleo",
+                    ["No", "En proceso", "Finalizada"]
+                )
+
+                genero_participacion = st.selectbox(
+                    "Participación poblacional",
+                    [
+                        "Mujer cis",
+                        "Mujer trans",
+                        "Hombre cis",
+                        "Hombre trans",
+                        "No binario"
+                    ]
+                )
+
+                # =====================================
+                # RED DE APOYO
+                # =====================================
+
+                red_apoyo = st.selectbox(
+                    "Nivel de red de apoyo",
+                    ["Nula", "Débil", "Moderada", "Fuerte"]
+                )
+
+                red_apoyo_detalle = st.text_area(
+                    "Descripción de la red de apoyo"
+                )
+
+                red_apoyo_contacto = st.text_input(
+                    "Teléfono de contacto"
+                )
+
+                # =====================================
+                # CONSUMO
+                # =====================================
+
+                consumo = st.selectbox(
+                    "Nivel de consumo",
+                    ["Activo", "Reducido", "Abstinencia"]
+                )
+
+                consumo_tipo = st.text_input(
+                    "Sustancia(s) consumida(s)"
+                )
+
+                consumo_frecuencia = st.selectbox(
+                    "Frecuencia",
+                    [
+                        "Diario",
+                        "Varias veces por semana",
+                        "Semanal",
+                        "Ocasional",
+                        "Sin consumo actual"
+                    ]
+                )
+
+                consumo_via = st.selectbox(
+                    "Vía de consumo",
+                    [
+                        "Fumada",
+                        "Inhalada",
+                        "Oral",
+                        "Inyectada",
+                        "Múltiple"
+                    ]
+                )
+
+                # =====================================
+                # SALUD
+                # =====================================
+
+                vih = st.selectbox(
+                    "Estado VIH",
+                    ["Negativo", "Positivo", "Indetectable"]
+                )
+
+                salud = st.selectbox(
+                    "Estado de salud mental",
+                    [
+                        "Estable",
+                        "En tratamiento",
+                        "Compensado",
+                        "Inestable"
+                    ]
+                )
+
+                salud_detalle = st.text_area(
+                    "Descripción de salud mental"
+                )
+
+                # =====================================
+                # EMPLEO
+                # =====================================
+
+                empleo_estado = st.selectbox(
+                    "Situación laboral",
+                    [
+                        "Desempleado",
+                        "Informal",
+                        "Formal",
+                        "Emprendimiento",
+                        "Incapacidad"
+                    ]
+                )
+
+                empleo_detalle = st.text_area(
+                    "Descripción laboral"
+                )
+
+                # =====================================
+                # DOCUMENTACIÓN
+                # =====================================
+
+                documento = st.selectbox(
+                    "Documento de identidad",
+                    [
+                        "No tiene",
+                        "En trámite",
+                        "Tiene"
+                    ]
+                )
+
+                # =====================================
+                # EGRESO
+                # =====================================
+
+                egreso = st.selectbox(
+                    "Estado frente al programa",
+                    [
+                        "Activo",
+                        "Exitoso",
+                        "No exitoso"
+                    ]
+                )
+
+                observaciones = st.text_area(
+                    "Observaciones profesionales"
+                )
+
+                seguimiento = st.text_area(
+                    "Evolución y seguimiento"
+                )
+
+                guardar = st.form_submit_button(
+                    "💾 Guardar seguimiento"
+                )
+
+        if guardar:
+
+                with engine.begin() as conn:
+
+                    conn.execute(text("""
+                        INSERT INTO pai_intervenciones(
+                            documento_usuario,
+                            tipo_intervencion,
+                            profesional,
+                            descripcion,
+                            consumo,
+                            consumo_tipo,
+                            consumo_frecuencia,
+                            consumo_via,
+                            salud,
+                            salud_detalle,
+                            red_apoyo,
+                            red_apoyo_detalle,
+                            red_apoyo_contacto,
+                            empleo_estado,
+                            empleo_detalle,
+                            documento,
+                            egreso,
+                            observaciones,
+                            seguimiento,
+                            fecha
+                        )
+                        VALUES(
+                            :documento_usuario,
+                            :tipo_intervencion,
+                            :profesional,
+                            :descripcion,
+                            :consumo,
+                            :consumo_tipo,
+                            :consumo_frecuencia,
+                            :consumo_via,
+                            :salud,
+                            :salud_detalle,
+                            :red_apoyo,
+                            :red_apoyo_detalle,
+                            :red_apoyo_contacto,
+                            :empleo_estado,
+                            :empleo_detalle,
+                            :documento,
+                            :egreso,
+                            :observaciones,
+                            :seguimiento,
+                            NOW()
+                        )
+                    """), {
+                        "documento_usuario": usuario_sel,
+                        "tipo_intervencion": tipo_intervencion,
+                        "profesional": profesional,
+                        "descripcion": descripcion,
+                        "consumo": consumo,
+                        "consumo_tipo": consumo_tipo,
+                        "consumo_frecuencia": consumo_frecuencia,
+                        "consumo_via": consumo_via,
+                        "salud": salud,
+                        "salud_detalle": salud_detalle,
+                        "red_apoyo": red_apoyo,
+                        "red_apoyo_detalle": red_apoyo_detalle,
+                        "red_apoyo_contacto": red_apoyo_contacto,
+                        "empleo_estado": empleo_estado,
+                        "empleo_detalle": empleo_detalle,
+                        "documento": documento,
+                        "egreso": egreso,
+                        "observaciones": observaciones,
+                        "seguimiento": seguimiento
+                    })
+
+                st.success("✅ Seguimiento registrado correctamente")
+
+        else:
+
+            st.info("Seleccione un usuario para activar el seguimiento")
+        
+        # =====================================
+        # ODS IMPACTADOS AUTOMÁTICAMENTE
+        # =====================================
+
+        ods_detectados = []
+
+        # ODS 2 - Hambre Cero
+        if comedor in ["Ocasional", "Frecuente"]:
+            ods_detectados.append("ODS 2 - Hambre Cero")
+
+        # ODS 3 - Salud y Bienestar
+        if consumo in ["Reducido", "Abstinencia"]:
             ods_detectados.append("ODS 3 - Salud y Bienestar")
 
-    if salud in ["Estable", "Compensado", "En tratamiento"]:
-        if "ODS 3 - Salud y Bienestar" not in ods_detectados:
-            ods_detectados.append("ODS 3 - Salud y Bienestar")
+        if vih in ["Positivo", "Indetectable"]:
+            if "ODS 3 - Salud y Bienestar" not in ods_detectados:
+                ods_detectados.append("ODS 3 - Salud y Bienestar")
 
-    # ODS 4 - Educación de Calidad
-    if educacion != "No":
-        ods_detectados.append("ODS 4 - Educación de Calidad")
+        if salud in ["Estable", "Compensado", "En tratamiento"]:
+            if "ODS 3 - Salud y Bienestar" not in ods_detectados:
+                ods_detectados.append("ODS 3 - Salud y Bienestar")
 
-    if formacion_empleo == "Finalizada":
-        if "ODS 4 - Educación de Calidad" not in ods_detectados:
+        # ODS 4 - Educación de Calidad
+        if educacion != "No":
             ods_detectados.append("ODS 4 - Educación de Calidad")
 
-    # ODS 5 - Igualdad de Género
-    if genero_participacion in ["Mujer cis", "Mujer trans", "No binario"]:
-        ods_detectados.append("ODS 5 - Igualdad de Género")
+        if formacion_empleo == "Finalizada":
+            if "ODS 4 - Educación de Calidad" not in ods_detectados:
+                ods_detectados.append("ODS 4 - Educación de Calidad")
 
-    # ODS 6 - Agua Limpia y Saneamiento
-    if agua == "Sí":
-        ods_detectados.append("ODS 6 - Agua Limpia y Saneamiento")
+        # ODS 5 - Igualdad de Género
+        if genero_participacion in ["Mujer cis", "Mujer trans", "No binario"]:
+            ods_detectados.append("ODS 5 - Igualdad de Género")
 
-    # ODS 8 - Trabajo Decente
-    if empleo_estado in ["Formal", "Emprendimiento"]:
-        ods_detectados.append("ODS 8 - Trabajo Decente y Crecimiento Económico")
+        # ODS 6 - Agua Limpia y Saneamiento
+        if agua == "Sí":
+            ods_detectados.append("ODS 6 - Agua Limpia y Saneamiento")
 
-    # ODS 10 - Reducción de las Desigualdades
-    if red_apoyo in ["Moderada", "Fuerte"]:
-        ods_detectados.append("ODS 10 - Reducción de las Desigualdades")
+        # ODS 8 - Trabajo Decente
+        if empleo_estado in ["Formal", "Emprendimiento"]:
+            ods_detectados.append("ODS 8 - Trabajo Decente y Crecimiento Económico")
 
-    # ODS 16 - Paz, Justicia e Instituciones Sólidas
-    if documento == "Tiene":
-        ods_detectados.append("ODS 16 - Identidad y Acceso a Derechos")
+        # ODS 10 - Reducción de las Desigualdades
+        if red_apoyo in ["Moderada", "Fuerte"]:
+            ods_detectados.append("ODS 10 - Reducción de las Desigualdades")
 
-    # Eliminar duplicados
-    ods_detectados = list(set(ods_detectados))
-    if ods_detectados:
-        
-        st.markdown("### 🌍 ODS impactados en este seguimiento")
+        # ODS 16 - Paz, Justicia e Instituciones Sólidas
+        if documento == "Tiene":
+            ods_detectados.append("ODS 16 - Identidad y Acceso a Derechos")
 
-        for ods in sorted(ods_detectados):
-            st.success(ods)
+        # Eliminar duplicados
+        ods_detectados = list(set(ods_detectados))
+        if ods_detectados:
+            
+            st.markdown("### 🌍 ODS impactados en este seguimiento")
+
+            for ods in sorted(ods_detectados):
+                st.success(ods)
 # =====================================
 # TAB 13 - SEGUIMIENTO E IMPACTO (PAI + REDUCCIÓN DE RIESGOS)
 # =====================================
