@@ -1313,36 +1313,6 @@ El grupo etario predominante corresponde a **{grupo_top['grupo']}**, con **{grup
     st.markdown("---")
 
     # =====================================
-    # ETNIA VS CONSUMO
-    # =====================================
-
-    st.subheader("💊 Etnia vs Consumo")
-
-    if (
-        "grupos_etnicos" in df.columns
-        and
-        "tipo_consumo" in df.columns
-    ):
-
-        tabla = pd.crosstab(
-            df["grupos_etnicos"],
-            df["tipo_consumo"]
-        )
-
-        st.dataframe(
-            tabla,
-            use_container_width=True
-        )
-
-    else:
-
-        st.warning(
-            "No existen columnas para etnia vs consumo."
-        )
-
-    st.markdown("---")
-
-    # =====================================
     # DISTRIBUCIÓN TERRITORIAL
     # =====================================
 
@@ -1387,6 +1357,61 @@ El grupo etario predominante corresponde a **{grupo_top['grupo']}**, con **{grup
         st.warning(
             "No existe la columna departamento_procedencia."
         )
+    st.subheader("💊 Tipos de consumo")
+
+    consumo_df = (
+
+        df["tipo_consumo"]
+
+        .value_counts()
+
+        .reset_index()
+
+    )
+
+    consumo_df.columns = [
+
+        "consumo",
+
+        "cantidad"
+
+    ]
+
+    fig = px.bar(
+
+        consumo_df,
+
+        x="consumo",
+
+        y="cantidad",
+
+        color="cantidad"
+
+    )
+
+    st.plotly_chart(
+
+        fig,
+
+        use_container_width=True
+
+    )
+
+    # INTERPRETACIÓN
+
+    principal_consumo = consumo_df.iloc[0]
+
+    st.warning(
+
+        f"La principal sustancia reportada es {principal_consumo['consumo']}."
+
+    )
+
+    st.info(
+
+        "Los patrones de consumo permiten identificar niveles de complejidad social y sanitaria."
+
+    )
 # =========================
 # TAB VULNERABILIDAD
 # =========================
