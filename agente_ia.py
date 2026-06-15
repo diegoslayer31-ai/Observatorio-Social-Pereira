@@ -1089,7 +1089,7 @@ col4.metric(
     len(df_kpi)
 )
 # KPIs
-tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10, tab11 = st.tabs([
     "📊 General",
     "⚠️ Vulnerabilidad",
     "🚦 Semáforo",
@@ -1099,6 +1099,7 @@ tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10 = st.tabs([
     "➕ Nuevo Registro",
     "📋 Seguimiento Profesional",
     "📈 Seguimiento e Impacto",
+    "📄 Informes"
     "📥 Carga Activos"
 ])
 
@@ -3923,7 +3924,7 @@ with tab8:
             for ods in sorted(ods_detectados):
                 st.success(ods)
 # =====================================
-# TAB 13 - SEGUIMIENTO E IMPACTO (PAI + REDUCCIÓN DE RIESGOS)
+# TAB 9 - SEGUIMIENTO E IMPACTO (PAI + REDUCCIÓN DE RIESGOS)
 # =====================================
 with tab9:
 
@@ -4130,19 +4131,276 @@ with tab9:
         """, engine)
 
         st.dataframe(historia)
-
-# =====================================
-# TAB 9 - CARGA MASIVA ACTUALIZADA
-# =====================================
-
 with tab10:
+
+    st.header("📄 Informes Gerenciales")
+
+    st.markdown(
+        "Seguimiento institucional del Plan de Atención Individual (PAI)"
+    )
+
+    st.divider()
+
+    # ==========================
+    # FILTROS
+    # ==========================
+
+    st.subheader("⚙️ Filtros")
+
+    c1, c2, c3 = st.columns(3)
+
+    with c1:
+
+        fecha_inicio = st.date_input(
+
+            "Fecha inicial"
+
+        )
+
+    with c2:
+
+        fecha_fin = st.date_input(
+
+            "Fecha final"
+
+        )
+
+    with c3:
+
+        profesionales = pd.read_sql("""
+
+            SELECT DISTINCT
+
+            profesional_referente
+
+            FROM pai_objetivos
+
+            WHERE profesional_referente IS NOT NULL
+
+            ORDER BY profesional_referente
+
+        """, engine)
+
+        lista_profesionales = (
+
+            ["Todos"]
+
+            +
+
+            profesionales[
+                "profesional_referente"
+            ].tolist()
+
+        )
+
+        profesional = st.selectbox(
+
+            "Profesional",
+
+            lista_profesionales
+
+        )
+        # ==========================
+    # CONSULTA PRINCIPAL
+    # ==========================
+
+    if profesional == "Todos":
+
+        consulta = pd.read_sql(f"""
+
+            SELECT
+
+                o.id,
+
+                o.documento_usuario,
+
+                o.objetivo_tipo,
+
+                o.estado,
+
+                o.porcentaje_avance,
+
+                o.linea_politica,
+
+                o.ods_principal,
+
+                o.profesional_referente,
+
+                n.profesional,
+
+                n.fecha,
+
+                n.descripcion
+
+            FROM pai_objetivos o
+
+            LEFT JOIN pai_novedades n
+
+            ON o.id = n.id_objetivo
+
+            WHERE n.fecha
+
+            BETWEEN
+
+            '{fecha_inicio}'
+
+            AND
+
+            '{fecha_fin}'
+
+        """, engine)
+
+    else:
+
+        consulta = pd.read_sql(f"""
+
+            SELECT
+
+                o.id,
+
+                o.documento_usuario,
+
+                o.objetivo_tipo,
+
+                o.estado,
+
+                o.porcentaje_avance,
+
+                o.linea_politica,
+
+                o.ods_principal,
+
+                o.profesional_referente,
+
+                n.profesional,
+
+                n.fecha,
+
+                n.descripcion
+
+            FROM pai_objetivos o
+
+            LEFT JOIN pai_novedades n
+
+            ON o.id = n.id_objetivo
+
+            WHERE o.profesional_referente = '{profesional}'
+
+            AND n.fecha
+
+            BETWEEN
+
+            '{fecha_inicio}'
+
+            AND
+
+            '{fecha_fin}'
+
+        """, engine)
+        # ==========================
+    # INDICADORES GENERALES
+    # ==========================
+
+    if consulta.empty:
+
+        st.warning(
+
+            "No hay información disponible."
+
+        )
+
+    else:
+
+        st.subheader(
+
+            "📊 Indicadores generales"
+
+        )
+
+        usuarios = consulta[
+
+            "documento_usuario"
+
+        ].nunique()
+
+        objetivos = consulta[
+
+            "id"
+
+        ].nunique()
+
+        cumplidos = (
+
+            consulta[
+                consulta["estado"]
+
+                == "Cumplido"
+
+            ]["id"]
+
+            .nunique()
+
+        )
+
+        avance = round(
+
+            consulta[
+
+                "porcentaje_avance"
+
+            ].mean(),
+
+            1
+
+        )
+
+        c1, c2, c3, c4 = st.columns(4)
+
+        c1.metric(
+
+            "Usuarios",
+
+            usuarios
+
+        )
+
+        c2.metric(
+
+            "Objetivos",
+
+            objetivos
+
+        )
+
+        c3.metric(
+
+            "Cumplidos",
+
+            cumplidos
+
+        )
+
+        c4.metric(
+
+            "Avance promedio",
+
+            f"{avance}%"
+
+        )
+
+        st.divider()
+# =====================================
+# TAB 11 - CARGA MASIVA ACTUALIZADA
+# =====================================
+
+with tab11:
 
     st.title("📥 Carga Masiva de Activos")
 
     archivo = st.file_uploader(
         "Sube archivo Excel",
         type=["xlsx"],
-        key="upload_activos_tab14"
+        key="upload_activos_tab11"
     )
 
     if archivo:
