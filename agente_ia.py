@@ -2454,142 +2454,123 @@ with tab6:
         st.info("No hay coincidencias")
 
     st.divider()
-    # ====================================
-    # PAI
-    # ====================================
+# ====================================
+# PAI
+# ====================================
 
-    if usuario_sel:
+if usuario_sel:
 
-        usuario = pd.read_sql(f"""
+    usuario = pd.read_sql(f"""
+        SELECT *
+        FROM habitante_de_calle
+        WHERE numero_identificacion = '{usuario_sel}'
+    """, engine)
+
+    if not usuario.empty:
+
+        datos = usuario.iloc[0]
+
+        st.success("Usuario encontrado")
+
+        c1, c2, c3 = st.columns(3)
+
+        c1.metric(
+            "Nombre",
+            f"{datos['nombres']} {datos['apellidos']}"
+        )
+
+        c2.metric(
+            "Edad",
+            datos.get("edad", "N/A")
+        )
+
+        c3.metric(
+            "Documento",
+            usuario_sel
+        )
+
+        st.divider()
+
+        # ==========================
+        # OBJETIVOS PAI
+        # ==========================
+
+        st.markdown("## 🎯 Objetivos PAI")
+
+        objetivos = pd.read_sql(f"""
             SELECT *
-            FROM habitante_de_calle
-            WHERE numero_identificacion = '{usuario_sel}'
+            FROM pai_objetivos
+            WHERE documento_usuario = '{usuario_sel}'
+            ORDER BY fecha_apertura DESC
         """, engine)
 
-        if not usuario.empty:
+        if objetivos.empty:
 
-            datos = usuario.iloc[0]
-
-            st.success("Usuario encontrado")
-
-            c1, c2, c3 = st.columns(3)
-
-            c1.metric(
-                "Nombre",
-                f"{datos['nombres']} {datos['apellidos']}"
+            st.info(
+                "Este usuario aún no tiene objetivos PAI creados."
             )
 
-            c2.metric(
-                "Edad",
-                datos.get("edad", "N/A")
-            )
+        else:
 
-            c3.metric(
-                "Documento",
-                usuario_sel
-            )
+            for _, obj in objetivos.iterrows():
 
-            st.divider()
+                # =====================
+                # Variables seguras
+                # =====================
 
-            # ==========================
-            # OBJETIVOS PAI
-            # ==========================
+                avance = obj["porcentaje_avance"]
 
-            st.markdown("## 🎯 Objetivos PAI")
+                if avance is None:
+                    avance = 0
 
-            objetivos = pd.read_sql(f"""
+                fecha_meta = obj["fecha_meta"]
 
-                SELECT *
+                if fecha_meta:
+                    fecha_meta = fecha_meta.strftime("%d/%m/%Y")
+                else:
+                    fecha_meta = "Sin fecha"
 
-                FROM pai_objetivos
+                # =====================
+                # Título objetivo
+                # =====================
 
-                WHERE documento_usuario = '{usuario_sel}'
-
-                ORDER BY fecha_apertura DESC
-
-            """, engine)
-
-            if objetivos.empty:
-
-                st.info(
-                    "Este usuario aún no tiene objetivos PAI creados."
+                st.markdown(
+                    f"### 🎯 {obj['objetivo_tipo']}"
                 )
 
-            else:
-
-                for _, obj in objetivos.iterrows():
-
-                    # =====================
-                    # Variables seguras
-                    # =====================
-
-                    avance = obj["porcentaje_avance"]
-
-                    if avance is None:
-
-                        avance = 0
-
-                    fecha_meta = obj["fecha_meta"]
-
-                    if fecha_meta:
-
-                        fecha_meta = fecha_meta.strftime(
-                            "%d/%m/%Y"
-                        )
-
-                    else:
-
-                        fecha_meta = "Sin fecha"
-
-                    # =====================
-                    # Título objetivo
-                    # =====================
-
-                    st.markdown(
-                        f"### 🎯 {obj['objetivo_tipo']}"
+                # Política pública
+                if obj["linea_politica"]:
+                    st.caption(
+                        f"🏛️ {obj['linea_politica']}"
                     )
 
-                    # Política pública
+                # Descripción
+                st.write(
+                    obj["objetivo_descripcion"]
+                )
 
-                    if obj["linea_politica"]:
+                # Barra de progreso
+                st.progress(avance / 100)
 
-                        st.caption(
-                            f"🏛️ {obj['linea_politica']}"
-                        )
+                # Métricas
+                c1, c2, c3 = st.columns(3)
 
-                    # Descripción
+                c1.metric(
+                    "Avance",
+                    f"{avance}%"
+                )
 
-                    st.write(
-                        obj["objetivo_descripcion"]
-                    )
+                c2.metric(
+                    "Estado",
+                    obj["estado"]
+                )
 
-                    # Barra de progreso
+                c3.metric(
+                    "Fecha meta",
+                    fecha_meta
+                )
 
-                    st.progress(
-                        avance / 100
-                    )
-
-                    # Métricas
-
-                    c1, c2, c3 = st.columns(3)
-
-                    c1.metric(
-                        "Avance",
-                        f"{avance}%"
-                    )
-
-                    c2.metric(
-                        "Estado",
-                        obj["estado"]
-                    )
-
-                    c3.metric(
-                        "Fecha meta",
-                        fecha_meta
-                    )
-
-                    st.divider()
-
+                st.divider()
                         # ==========================
                 # CREAR OBJETIVO
                 # ==========================
