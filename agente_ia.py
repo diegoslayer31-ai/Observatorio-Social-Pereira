@@ -1472,6 +1472,117 @@ El grupo etario predominante corresponde a **{grupo_top['grupo']}**, con **{grup
         "La presencia de problemas de salud mental puede aumentar la permanencia en calle y la vulnerabilidad social."
 
     )
+    st.subheader("📚 Nivel educativo")
+
+    df_local = df.copy()
+
+    if "nivel_educativo" in df_local.columns:
+
+        # =========================
+        # LIMPIEZA Y AGRUPACIÓN
+        # =========================
+
+        edu = (
+
+            df_local["nivel_educativo"]
+
+            .fillna("Sin dato")
+
+            .astype(str)
+
+            .str.strip()
+
+            .value_counts()
+
+            .reset_index()
+
+        )
+
+        edu.columns = [
+
+            "nivel",
+
+            "conteo"
+
+        ]
+
+        # =========================
+        # GRÁFICA DE BARRAS
+        # =========================
+
+        fig_edu = px.bar(
+
+            edu,
+
+            x="nivel",
+
+            y="conteo",
+
+            color="conteo",
+
+            text="conteo",
+
+            title="📚 Distribución del nivel educativo"
+
+        )
+
+        fig_edu.update_traces(
+
+            textposition="outside"
+
+        )
+
+        fig_edu.update_layout(
+
+            xaxis_tickangle=-45
+
+        )
+
+        st.plotly_chart(
+
+            fig_edu,
+
+            use_container_width=True
+
+        )
+
+        # =========================
+        # HALLAZGO AUTOMÁTICO
+        # =========================
+
+        edu_top = edu.iloc[0]
+
+        st.info(
+
+            f"El nivel educativo predominante es: **{edu_top['nivel']}** "
+
+            f"con {edu_top['conteo']} registros."
+
+        )
+
+        # =========================
+        # TABLA OPCIONAL
+        # =========================
+
+        with st.expander(
+
+            "📋 Ver tabla detallada"
+
+        ):
+
+            st.dataframe(
+
+                edu
+
+            )
+
+    else:
+
+        st.warning(
+
+            "No existe la columna 'nivel_educativo' en el dataset"
+
+        )
 # =========================
 # TAB VULNERABILIDAD
 # =========================
@@ -1579,66 +1690,6 @@ with tab2:
         use_container_width=True
     )
 
-# =========================
-# TAB EDUCACIÓN
-# =========================
-with tab6:
-
-    st.subheader("📚 Nivel educativo")
-
-    df_local = df.copy()
-
-    if "nivel_educativo" in df_local.columns:
-
-        # =========================
-        # LIMPIEZA Y AGRUPACIÓN
-        # =========================
-        edu = (
-            df_local["nivel_educativo"]
-            .fillna("Sin dato")
-            .astype(str)
-            .str.strip()
-            .value_counts()
-            .reset_index()
-        )
-
-        edu.columns = ["nivel", "conteo"]
-
-        # =========================
-        # GRÁFICA DE BARRAS
-        # =========================
-        fig_edu = px.bar(
-            edu,
-            x="nivel",
-            y="conteo",
-            color="conteo",
-            text="conteo",
-            title="📚 Distribución del nivel educativo"
-        )
-
-        fig_edu.update_traces(textposition="outside")
-        fig_edu.update_layout(xaxis_tickangle=-45)
-
-        st.plotly_chart(fig_edu, use_container_width=True)
-
-        # =========================
-        # HALLAZGO AUTOMÁTICO
-        # =========================
-        edu_top = edu.iloc[0]
-
-        st.info(
-            f"El nivel educativo predominante es: **{edu_top['nivel']}** "
-            f"con {edu_top['conteo']} registros."
-        )
-
-        # =========================
-        # TABLA OPCIONAL
-        # =========================
-        with st.expander("📋 Ver tabla detallada"):
-            st.dataframe(edu)
-
-    else:
-        st.warning("No existe la columna 'nivel_educativo' en el dataset")
 # =========================
 # TAB SEMÁFORO SOCIAL
 # =========================
