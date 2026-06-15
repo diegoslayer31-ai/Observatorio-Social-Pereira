@@ -4402,6 +4402,151 @@ with tab10:
         )
 
         st.divider()
+        st.divider()
+
+        # ==========================
+        # GESTIÓN POR PROFESIONAL
+        # ==========================
+
+        st.subheader(
+            "👨‍⚕️ Gestión por profesional"
+        )
+
+        profesional_df = (
+
+            consulta["profesional_referente"]
+
+            .fillna("Sin asignar")
+
+            .value_counts()
+
+            .reset_index()
+
+        )
+
+        profesional_df.columns = [
+
+            "profesional",
+
+            "cantidad"
+
+        ]
+
+        fig = px.bar(
+
+            profesional_df,
+
+            x="profesional",
+
+            y="cantidad",
+
+            color="cantidad",
+
+            text="cantidad",
+
+            title="Objetivos asignados por profesional"
+
+        )
+
+        fig.update_traces(
+
+            textposition="outside"
+
+        )
+
+        st.plotly_chart(
+
+            fig,
+
+            use_container_width=True
+
+        )
+
+        if not profesional_df.empty:
+
+            top_profesional = profesional_df.iloc[0]
+
+            st.info(
+
+                f"El profesional con mayor carga es "
+
+                f"**{top_profesional['profesional']}** "
+
+                f"con **{top_profesional['cantidad']} objetivos**."
+
+            )
+
+        st.divider()
+
+        # ==========================
+        # OBJETIVOS PAI
+        # ==========================
+
+        st.subheader(
+
+            "🎯 Objetivos PAI"
+
+        )
+
+        objetivos_df = (
+
+            consulta["objetivo_tipo"]
+
+            .value_counts()
+
+            .reset_index()
+
+        )
+
+        objetivos_df.columns = [
+
+            "objetivo",
+
+            "cantidad"
+
+        ]
+
+        fig = px.bar(
+
+            objetivos_df,
+
+            x="objetivo",
+
+            y="cantidad",
+
+            color="cantidad",
+
+            text="cantidad",
+
+            title="Distribución de objetivos PAI"
+
+        )
+
+        fig.update_traces(
+
+            textposition="outside"
+
+        )
+
+        st.plotly_chart(
+
+            fig,
+
+            use_container_width=True
+
+        )
+
+        if not objetivos_df.empty:
+
+            top_objetivo = objetivos_df.iloc[0]
+
+            st.success(
+
+                f"El objetivo más frecuente es "
+
+                f"**{top_objetivo['objetivo']}**."
+
+            )
 # =====================================
 # TAB 11 - CARGA MASIVA ACTUALIZADA
 # =====================================
