@@ -4547,6 +4547,332 @@ with tab10:
                 f"**{top_objetivo['objetivo']}**."
 
             )
+            st.divider()
+
+        # ==========================
+        # GESTIÓN POR PROFESIONAL
+        # ==========================
+
+        st.subheader(
+            "👨‍⚕️ Gestión por profesional"
+        )
+
+        profesional_df = (
+
+            consulta["profesional_referente"]
+
+            .fillna("Sin asignar")
+
+            .value_counts()
+
+            .reset_index()
+
+        )
+
+        profesional_df.columns = [
+
+            "profesional",
+
+            "cantidad"
+
+        ]
+
+        fig = px.bar(
+
+            profesional_df,
+
+            x="profesional",
+
+            y="cantidad",
+
+            color="cantidad",
+
+            text="cantidad",
+
+            title="Objetivos asignados por profesional"
+
+        )
+
+        fig.update_traces(
+
+            textposition="outside"
+
+        )
+
+        st.plotly_chart(
+
+            fig,
+
+            use_container_width=True
+
+        )
+        st.divider()
+
+        # ==========================
+        # OBJETIVOS PAI
+        # ==========================
+
+        st.subheader(
+            "🎯 Objetivos PAI"
+        )
+
+        objetivos_df = (
+
+            consulta["objetivo_tipo"]
+
+            .value_counts()
+
+            .reset_index()
+
+        )
+
+        objetivos_df.columns = [
+
+            "objetivo",
+
+            "cantidad"
+
+        ]
+
+        fig = px.bar(
+
+            objetivos_df,
+
+            x="objetivo",
+
+            y="cantidad",
+
+            color="cantidad",
+
+            text="cantidad",
+
+            title="Distribución de objetivos PAI"
+
+        )
+
+        fig.update_traces(
+
+            textposition="outside"
+
+        )
+
+        st.plotly_chart(
+
+            fig,
+
+            use_container_width=True
+
+        )
+        st.divider()
+
+        # ==========================
+        # POLÍTICA PÚBLICA
+        # ==========================
+
+        st.subheader(
+            "🏛️ Política pública"
+        )
+
+        politica_df = (
+
+            consulta["linea_politica"]
+
+            .fillna("Sin asignar")
+
+            .value_counts()
+
+            .reset_index()
+
+        )
+
+        politica_df.columns = [
+
+            "linea",
+
+            "cantidad"
+
+        ]
+
+        fig = px.pie(
+
+            politica_df,
+
+            names="linea",
+
+            values="cantidad",
+
+            title="Distribución por línea de política pública"
+
+        )
+
+        st.plotly_chart(
+
+            fig,
+
+            use_container_width=True
+
+        )
+        st.divider()
+
+        # ==========================
+        # ODS
+        # ==========================
+
+        st.subheader(
+            "🌍 Objetivos de Desarrollo Sostenible"
+        )
+
+        ods_df = (
+
+            consulta["ods_principal"]
+
+            .fillna("Sin asignar")
+
+            .value_counts()
+
+            .reset_index()
+
+        )
+
+        ods_df.columns = [
+
+            "ods",
+
+            "cantidad"
+
+        ]
+
+        fig = px.bar(
+
+            ods_df,
+
+            x="ods",
+
+            y="cantidad",
+
+            color="cantidad",
+
+            text="cantidad",
+
+            title="Distribución por ODS"
+
+        )
+
+        fig.update_traces(
+
+            textposition="outside"
+
+        )
+
+        st.plotly_chart(
+
+            fig,
+
+            use_container_width=True
+
+        )
+        st.divider()
+
+        # ==========================
+        # TENDENCIA MENSUAL
+        # ==========================
+
+        st.subheader(
+            "📅 Tendencia mensual"
+        )
+
+        tendencia = pd.read_sql("""
+
+            SELECT
+
+                DATE_TRUNC(
+
+                    'month',
+
+                    fecha
+
+                ) AS mes,
+
+                COUNT(*) AS cantidad
+
+            FROM pai_novedades
+
+            GROUP BY mes
+
+            ORDER BY mes
+
+        """, engine)
+
+        if not tendencia.empty:
+
+            fig = px.line(
+
+                tendencia,
+
+                x="mes",
+
+                y="cantidad",
+
+                markers=True,
+
+                title="Novedades registradas por mes"
+
+            )
+
+            st.plotly_chart(
+
+                fig,
+
+                use_container_width=True
+
+            )
+
+        else:
+
+            st.info(
+
+                "La tendencia mensual aparecerá cuando existan novedades."
+
+            )
+        st.divider()
+
+        # ==========================
+        # DETALLE OPERATIVO
+        # ==========================
+
+        st.subheader(
+            "📋 Detalle operativo"
+        )
+
+        st.dataframe(
+
+            consulta,
+
+            use_container_width=True
+
+        )
+        st.divider()
+
+        st.subheader(
+            "📥 Exportación"
+        )
+
+        st.info(
+            """
+            Próximamente este módulo permitirá exportar:
+
+            • Informe mensual
+
+            • Informe por profesional
+
+            • Informe institucional
+
+            • Informe por línea de política pública
+
+            • Informe por ODS
+
+            """
+        )
 # =====================================
 # TAB 11 - CARGA MASIVA ACTUALIZADA
 # =====================================
