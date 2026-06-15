@@ -1397,81 +1397,81 @@ El grupo etario predominante corresponde a **{grupo_top['grupo']}**, con **{grup
 
     )
 
-# INTERPRETACIÓN
+    # INTERPRETACIÓN
 
-principal_consumo = consumo_df.iloc[0]
+    principal_consumo = consumo_df.iloc[0]
 
-st.warning(
+    st.warning(
 
-    f"La principal sustancia reportada es {principal_consumo['consumo']}."
+        f"La principal sustancia reportada es {principal_consumo['consumo']}."
 
-)
+    )
 
-st.info(
+    st.info(
 
-    "Los patrones de consumo permiten identificar niveles de complejidad social y sanitaria."
+        "Los patrones de consumo permiten identificar niveles de complejidad social y sanitaria."
 
-)
+    )
 
-# ==========================
-# SALUD MENTAL
-# ==========================
+    # ==========================
+    # SALUD MENTAL
+    # ==========================
 
-st.subheader("🧠 Salud mental")
+    st.subheader("🧠 Salud mental")
 
-mental_df = (
+    mental_df = (
 
-    df["enfermedad_mental"]
+        df["enfermedad_mental"]
 
-    .value_counts()
+        .value_counts()
 
-    .reset_index()
+        .reset_index()
 
-)
+    )
 
-mental_df.columns = [
+    mental_df.columns = [
 
-    "condicion",
+        "condicion",
 
-    "cantidad"
+        "cantidad"
 
-]
+    ]
 
-fig = px.bar(
+    fig = px.bar(
 
-    mental_df,
+        mental_df,
 
-    x="condicion",
+        x="condicion",
 
-    y="cantidad",
+        y="cantidad",
 
-    color="cantidad"
+        color="cantidad"
 
-)
+    )
 
-st.plotly_chart(
+    st.plotly_chart(
 
-    fig,
+        fig,
 
-    use_container_width=True
+        use_container_width=True
 
-)
+    )
 
-# INTERPRETACIÓN
+    # INTERPRETACIÓN
 
-mental_top = mental_df.iloc[0]
+    mental_top = mental_df.iloc[0]
 
-st.info(
+    st.info(
 
-    f"La condición más frecuente registrada es: {mental_top['condicion']}."
+        f"La condición más frecuente registrada es: {mental_top['condicion']}."
 
-)
+    )
 
-st.warning(
+    st.warning(
 
-    "La presencia de problemas de salud mental puede aumentar la permanencia en calle y la vulnerabilidad social."
+        "La presencia de problemas de salud mental puede aumentar la permanencia en calle y la vulnerabilidad social."
 
-)
+    )
 # =========================
 # TAB VULNERABILIDAD
 # =========================
