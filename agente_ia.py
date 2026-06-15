@@ -881,28 +881,32 @@ def validar_cupos(df, modalidad):
     return True, "OK"
 
 # =========================
-# FUNCIONES AUXILIARES 
+# FUNCIONES AUXILIARES
 # =========================
+
 def generar_resumen(df):
 
     total = len(df)
-    score = round(df["score_vulnerabilidad"].mean(), 2)
-    criticos = len(df[df["nivel_riesgo"] == "Crítico"])
-    alto = len(df[df["nivel_riesgo"] == "Alto"])
-    medio = len(df[df["nivel_riesgo"] == "Medio"])
 
-    consumo_top = df["tipo_consumo"].value_counts().idxmax()
-    etnia_top = df["grupos_etnicos_afro_indigena"].value_counts().idxmax()
+    consumo_top = (
+        df["tipo_consumo"].value_counts().idxmax()
+        if "tipo_consumo" in df.columns and len(df) > 0
+        else None
+    )
+
+    etnia_top = (
+        df["grupos_etnicos_afro_indigena"].value_counts().idxmax()
+        if "grupos_etnicos_afro_indigena" in df.columns and len(df) > 0
+        else None
+    )
 
     return {
         "total": total,
-        "score": score,
-        "criticos": criticos,
-        "alto": alto,
-        "medio": medio,
         "consumo_top": consumo_top,
         "etnia_top": etnia_top
     }
+
+
 def cargar_datos():
     df = pd.read_sql("SELECT * FROM habitante_de_calle", engine)
 
@@ -913,31 +917,34 @@ def cargar_datos():
         .str.upper()
     )
 
-    return df
-
-# =========================
-# LIMPIAR SEXO
-# =========================
-if "sexo_al_nacer" in df.columns:
-    df["sexo_al_nacer"] = (
-        df["sexo_al_nacer"]
-        .astype(str)
-        .str.strip()
-        .str.upper()
-        .replace(
-            {
+    # Limpieza de sexo (bien ubicada aquí)
+    if "sexo_al_nacer" in df.columns:
+        df["sexo_al_nacer"] = (
+            df["sexo_al_nacer"]
+            .astype(str)
+            .str.strip()
+            .str.upper()
+            .replace({
                 "M": "Masculino",
                 "F": "Femenino",
                 "MASCULINO": "Masculino",
                 "FEMENINO": "Femenino",
-            }
+            })
         )
-    )
+
+    return df
+
+# =========================
+# SIDEBAR
+# =========================
+
 with st.sidebar:
 
     st.header("🏛️ Sistema de Atención")
 
-   
+    # =========================
+    # CARGA DE DATOS
+    # =========================
     df = cargar_datos()
 
     # =========================
@@ -954,6 +961,7 @@ with st.sidebar:
         st.error("🚨 URBANO EN CAPACIDAD MÁXIMA")
 
     st.divider()
+
     # =========================
     # USUARIOS URBANO
     # =========================
@@ -965,10 +973,14 @@ with st.sidebar:
         ][["nombres", "apellidos", "numero_identificacion"]].copy()
 
         df_urbano["nombre"] = (
-            df_urbano["nombres"].astype(str) + " " + df_urbano["apellidos"].astype(str)
+            df_urbano["nombres"].astype(str) + " " +
+            df_urbano["apellidos"].astype(str)
         )
 
-        st.dataframe(df_urbano[["nombre", "numero_identificacion"]], use_container_width=True)
+        st.dataframe(
+            df_urbano[["nombre", "numero_identificacion"]],
+            use_container_width=True
+        )
 
     # =========================
     # USUARIOS GRANJA
@@ -981,14 +993,16 @@ with st.sidebar:
         ][["nombres", "apellidos", "numero_identificacion"]].copy()
 
         df_granja["nombre"] = (
-            df_granja["nombres"].astype(str) + " " + df_granja["apellidos"].astype(str)
+            df_granja["nombres"].astype(str) + " " +
+            df_granja["apellidos"].astype(str)
         )
 
-        st.dataframe(df_granja[["nombre", "numero_identificacion"]], use_container_width=True)
+        st.dataframe(
+            df_granja[["nombre", "numero_identificacion"]],
+            use_container_width=True
+        )
 
     st.divider()
-
-
 
 tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9 = st.tabs([
 
