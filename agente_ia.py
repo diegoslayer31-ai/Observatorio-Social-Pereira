@@ -1024,26 +1024,59 @@ with st.sidebar:
 # ÍNDICE DE VULNERABILIDAD
 # =========================
 
-df["v_consumo"] = df["tipo_consumo"].notna().astype(int)
-df["v_salud"] = (df["enfermedad_mental"] != "No").astype(int)
-df["v_discapacidad"] = (
-    df["personas_con_discapacidad"].isin(["SI", "Sí", "Si"]).astype(int)
-)
-df["v_migracion"] = df["indicador_migracion"].notna().astype(int)
+# 1. Asegurar que todas las variables existan
+for col in [
+    "v_salud",
+    "v_discapacidad",
+    "v_edad",
+    "v_mujer",
+    "v_trans_diversa",
+    "v_red_apoyo",
+    "v_migracion",
+    "v_its"
+]:
+    if col not in df.columns:
+        df[col] = 0
 
+
+# 2. Consumo (sin diferenciar tipo, según tu decisión)
+df["v_consumo"] = df["tipo_consumo"].apply(
+    lambda x: 2 if str(x).lower().strip() not in ["no", "ninguno", "nan", ""] else 0
+)
+
+
+# 3. Índice de vulnerabilidad (suma ponderada simple)
 df["indice_vulnerabilidad"] = (
-    df["v_consumo"] + df["v_salud"] + df["v_discapacidad"] + df["v_migracion"]
+    df["v_salud"] +
+    df["v_discapacidad"] +
+    df["v_edad"] +
+    df["v_mujer"] +
+    df["v_trans_diversa"] +
+    df["v_red_apoyo"] +
+    df["v_migracion"] +
+    df["v_consumo"] +
+    df["v_its"]
 )
 
-df["score_vulnerabilidad"] = (df["indice_vulnerabilidad"] / 4) * 100
 
+# 4. Score normalizado (evita división por 0)
+max_val = df["indice_vulnerabilidad"].max()
+
+df["score_vulnerabilidad"] = (
+    (df["indice_vulnerabilidad"] / max_val) * 100
+    if max_val > 0 else 0
+)
+
+
+# 5. Clasificación de riesgo
 df["nivel_riesgo"] = pd.cut(
     df["score_vulnerabilidad"],
     bins=[0, 25, 50, 75, 100],
-    labels=["Bajo", "Medio", "Alto", "Crítico"],
+    labels=["Bajo", "Medio", "Alto", "Crítico"]
 )
 
 
+# 6. Semáforo visual
 def color_riesgo(r):
     if r == "Crítico":
         return "🔴 Crítico"
@@ -1056,8 +1089,6 @@ def color_riesgo(r):
 
 
 df["semáforo"] = df["nivel_riesgo"].apply(color_riesgo)
-
-
 # =========================
 # KPIs
 # =========================
