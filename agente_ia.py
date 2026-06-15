@@ -1059,14 +1059,9 @@ df["indice_vulnerabilidad"] = (
 )
 
 
-# 4. Score normalizado (evita división por 0)
-max_val = df["indice_vulnerabilidad"].max()
-
 df["score_vulnerabilidad"] = (
-    (df["indice_vulnerabilidad"] / max_val) * 100
-    if max_val > 0 else 0
+    df["indice_vulnerabilidad"].rank(pct=True) * 100
 )
-
 
 # 5. Clasificación de riesgo
 df["nivel_riesgo"] = pd.cut(
@@ -1631,6 +1626,9 @@ with tab2:
 
     st.subheader("🚦 Distribución de Vulnerabilidad Social")
 
+    # =========================
+    # HISTOGRAMA
+    # =========================
     fig = px.histogram(
         df,
         x="score_vulnerabilidad",
@@ -1646,9 +1644,7 @@ with tab2:
     # =========================
     # RESUMEN EJECUTIVO
     # =========================
-    criticos = len(
-        df[df["nivel_riesgo"] == "Crítico"]
-    )
+    criticos = len(df[df["nivel_riesgo"] == "Crítico"])
 
     st.error(
         f"⚠️ Se identifican {criticos} personas en nivel crítico de vulnerabilidad social."
@@ -1662,29 +1658,31 @@ with tab2:
         st.markdown("""
         ### ¿Qué mide este indicador?
 
-        El **Score de Vulnerabilidad Social** estima el nivel de acumulación de factores de riesgo presentes en cada persona atendida.
+        El **Score de Vulnerabilidad Social** estima la posición relativa de cada persona dentro del conjunto poblacional evaluado.
 
         ### Variables consideradas
 
         - Consumo de sustancias psicoactivas
         - Enfermedad mental reportada
         - Situación de discapacidad
+        - Condición de edad (adulto mayor)
+        - Enfoque diferencial (mujer / población diversa)
+        - Red de apoyo
         - Condición migratoria
+        - ITS
 
-        ### Escala de clasificación
+        ### Escala de clasificación (percentiles)
 
-        | Puntaje | Nivel |
+        | Percentil | Nivel |
         |----------|----------|
-        | 0 - 25 | 🟢 Bajo |
-        | 26 - 50 | 🟡 Medio |
-        | 51 - 75 | 🟠 Alto |
-        | 76 - 100 | 🔴 Crítico |
+        | 0 - 20 | 🟢 Bajo |
+        | 21 - 50 | 🟡 Medio |
+        | 51 - 80 | 🟠 Alto |
+        | 81 - 100 | 🔴 Crítico |
 
         ### Interpretación
 
-        Un puntaje más alto indica una mayor acumulación de vulnerabilidades sociales y sanitarias, por lo que la persona requiere una prioridad superior en los procesos de intervención, seguimiento y acompañamiento institucional.
-
-        **Este indicador no constituye un diagnóstico clínico**, sino una herramienta de focalización para la toma de decisiones.
+        El puntaje representa la posición relativa de vulnerabilidad dentro de la población evaluada. No es un diagnóstico clínico, sino una herramienta de priorización para intervención social.
         """)
 
     # =========================
@@ -1704,8 +1702,9 @@ with tab2:
         resumen,
         use_container_width=True
     )
+
     # =========================
-    # TOP 20 CASOS CRÍTICOS
+    # TOP CASOS CRÍTICOS
     # =========================
     st.subheader("🚨 Casos Prioritarios")
 
@@ -1730,7 +1729,6 @@ with tab2:
         top_criticos[columnas_existentes].head(20),
         use_container_width=True
     )
-
 # =========================
 # TAB SEMÁFORO SOCIAL
 # =========================
