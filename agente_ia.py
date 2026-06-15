@@ -2386,7 +2386,7 @@ with tab6:
     # NUEVO REGISTRO
     # =========================
 
-    with tab6:
+with tab7:
 
         st.subheader("🔐 Acceso al formulario")
 
