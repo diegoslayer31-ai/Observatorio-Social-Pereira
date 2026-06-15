@@ -2676,7 +2676,7 @@ with tab6:
 
             if not objetivos_activos.empty:
 
-                with st.form("registrar_novedad"):
+                with st.form(f"registrar_novedad_{usuario_sel}"):
 
                     objetivo_seleccionado = st.selectbox(
                         "Objetivo",
