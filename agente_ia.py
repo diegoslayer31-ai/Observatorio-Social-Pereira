@@ -1519,43 +1519,6 @@ with tab2:
         use_container_width=True
     )
 # =========================
-# TAB CONSUMO
-# =========================
-with tab3:
-
-    st.subheader("💊 Tipos de consumo")
-
-    consumo_df = (
-        df["tipo_consumo"]
-        .value_counts()
-        .reset_index()
-    )
-
-    consumo_df.columns = ["consumo", "cantidad"]
-
-    fig = px.bar(
-        consumo_df,
-        x="consumo",
-        y="cantidad",
-        color="cantidad"
-    )
-
-    st.plotly_chart(
-        fig,
-        use_container_width=True
-    )
-
-    # INTERPRETACIÓN
-    principal_consumo = consumo_df.iloc[0]
-
-    st.warning(
-        f"La principal sustancia reportada es {principal_consumo['consumo']}."
-    )
-
-    st.info(
-        "Los patrones de consumo permiten identificar niveles de complejidad social y sanitaria."
-    )
-# =========================
 # TAB SALUD MENTAL
 # =========================
 with tab4:
