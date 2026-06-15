@@ -2668,45 +2668,185 @@ with tab12:
         st.info("No hay coincidencias")
 
     st.divider()
-
-        # ====================================
-    # PAI
     # ====================================
+# PAI
+# ====================================
 
-    if usuario_sel:
+if usuario_sel:
 
-        usuario = pd.read_sql(f"""
+    usuario = pd.read_sql(f"""
+        SELECT *
+        FROM habitante_de_calle
+        WHERE numero_identificacion = '{usuario_sel}'
+    """, engine)
+
+    if not usuario.empty:
+
+        datos = usuario.iloc[0]
+
+        st.success("Usuario encontrado")
+
+        c1, c2, c3 = st.columns(3)
+
+        c1.metric(
+            "Nombre",
+            f"{datos['nombres']} {datos['apellidos']}"
+        )
+
+        c2.metric(
+            "Edad",
+            datos.get("edad", "N/A")
+        )
+
+        c3.metric(
+            "Documento",
+            usuario_sel
+        )
+
+        st.divider()
+
+        # ==========================
+        # OBJETIVOS PAI
+        # ==========================
+
+        st.markdown("## 🎯 Objetivos PAI")
+
+        objetivos = pd.read_sql(f"""
             SELECT *
-            FROM habitante_de_calle
-            WHERE numero_identificacion = '{usuario_sel}'
+            FROM pai_objetivos
+            WHERE documento_usuario = '{usuario_sel}'
+            ORDER BY fecha_apertura DESC
         """, engine)
 
-        if not usuario.empty:
+        if objetivos.empty:
 
-            datos = usuario.iloc[0]
-
-            st.success("Usuario encontrado")
-
-            c1, c2, c3 = st.columns(3)
-
-            c1.metric(
-                "Nombre",
-                f"{datos['nombres']} {datos['apellidos']}"
+            st.info(
+                "Este usuario aún no tiene objetivos PAI creados."
             )
 
-            c2.metric(
-                "Edad",
-                datos.get("edad", "N/A")
+        else:
+
+            for _, obj in objetivos.iterrows():
+
+                st.markdown(
+                    f"### {obj['objetivo_tipo']}"
+                )
+
+                st.write(
+                    obj["objetivo_descripcion"]
+                )
+
+                st.progress(
+                    obj["porcentaje_avance"] / 100
+                )
+
+                c1, c2, c3 = st.columns(3)
+
+                c1.metric(
+                    "Avance",
+                    f"{obj['porcentaje_avance']}%"
+                )
+
+                c2.metric(
+                    "Estado",
+                    obj["estado"]
+                )
+
+                c3.metric(
+                    "Fecha meta",
+                    obj["fecha_meta"]
+                )
+
+                st.divider()
+
+        # ==========================
+        # CREAR OBJETIVO
+        # ==========================
+
+        st.markdown("## ➕ Crear objetivo PAI")
+
+        with st.form("crear_objetivo"):
+
+            objetivo_tipo = st.selectbox(
+                "Seleccione el objetivo",
+                [
+                    "Restablecimiento de derechos",
+                    "Aseguramiento en salud",
+                    "Cedulación",
+                    "Vinculación familiar",
+                    "Empleabilidad",
+                    "Reducción de riesgos y daños",
+                    "Vivienda",
+                    "Otro"
+                ]
             )
 
-            c3.metric(
-                "Documento",
-                usuario_sel
+            objetivo_descripcion = st.text_area(
+                "Descripción del objetivo"
             )
 
-        st.markdown("## 🌍 Seguimiento Individual con Enfoque ODS")
+            fecha_meta = st.date_input(
+                "Fecha meta"
+            )
 
-        with st.form(f"pai_ods_{usuario_sel}"):
+            guardar_objetivo = st.form_submit_button(
+                "💾 Guardar objetivo"
+            )
+
+        if guardar_objetivo:
+
+            with engine.begin() as conn:
+
+                conn.execute(text("""
+                    INSERT INTO pai_objetivos(
+
+                        documento_usuario,
+
+                        objetivo_tipo,
+
+                        objetivo_descripcion,
+
+                        fecha_meta
+
+                    )
+
+                    VALUES(
+
+                        :documento_usuario,
+
+                        :objetivo_tipo,
+
+                        :objetivo_descripcion,
+
+                        :fecha_meta
+
+                    )
+                """), {
+
+                    "documento_usuario": usuario_sel,
+
+                    "objetivo_tipo": objetivo_tipo,
+
+                    "objetivo_descripcion": objetivo_descripcion,
+
+                    "fecha_meta": fecha_meta
+
+                })
+
+            st.success(
+                "✅ Objetivo creado correctamente"
+            )
+
+else:
+
+    st.info(
+        "Seleccione un usuario"
+    )
+   
+
+    st.markdown("## 🌍 Seguimiento Individual con Enfoque ODS")
+
+    with st.form(f"pai_ods_{usuario_sel}"):
 
             # =====================================
             # ACOMPAÑAMIENTO REALIZADO
@@ -2899,7 +3039,7 @@ with tab12:
                 "💾 Guardar seguimiento"
             )
 
-        if guardar:
+    if guardar:
 
             with engine.begin() as conn:
 
