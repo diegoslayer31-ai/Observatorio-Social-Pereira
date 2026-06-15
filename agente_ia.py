@@ -2663,7 +2663,7 @@ mapa_politica = {
 
 }
 
-with tab7:
+with tab8:
 
     st.title("📋 Seguimiento Profesional - PAI")
 
@@ -3925,7 +3925,7 @@ with tab7:
 # =====================================
 # TAB 13 - SEGUIMIENTO E IMPACTO (PAI + REDUCCIÓN DE RIESGOS)
 # =====================================
-with tab8:
+with tab9:
 
     st.title("📈 Seguimiento e Impacto - Reducción de Riesgos y Daños")
 
@@ -4132,10 +4132,10 @@ with tab8:
         st.dataframe(historia)
 
 # =====================================
-# TAB 14 - CARGA MASIVA ACTUALIZADA
+# TAB 9 - CARGA MASIVA ACTUALIZADA
 # =====================================
 
-with tab9:
+with tab10:
 
     st.title("📥 Carga Masiva de Activos")
 
