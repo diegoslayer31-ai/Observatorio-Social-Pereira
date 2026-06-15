@@ -2619,6 +2619,39 @@ def calcular_indice_ods(salud, empleo, inclusion, derechos):
 
     indice = (total / 4) * 100
 
+
+mapa_politica = {
+
+    "Cedulación":"Restablecimiento de derechos",
+
+    "Aseguramiento en salud":"Atención integral en salud",
+
+    "Vinculación familiar":"Fortalecimiento familiar",
+
+    "Reducción de riesgos y daños":"Reducción de riesgos y daños",
+
+    "Tratamiento consumo SPA":"Reducción de riesgos y daños",
+
+    "Salud mental":"Atención integral en salud",
+
+    "Inclusión social":"Inclusión social",
+
+    "Empleabilidad":"Inclusión laboral y generación de ingresos",
+
+    "Generación de ingresos":"Inclusión laboral y generación de ingresos",
+
+    "Educación":"Educación",
+
+    "Vivienda":"Habitabilidad y vivienda",
+
+    "Proyecto de vida":"Inclusión social",
+
+    "Participación comunitaria":"Participación ciudadana",
+
+    "Otro":"Restablecimiento de derechos"
+
+}
+
 with tab12:
 
     st.title("📋 Seguimiento Profesional - PAI")
@@ -2764,34 +2797,100 @@ if usuario_sel:
         # ==========================
 
         st.markdown("## ➕ Crear objetivo PAI")
+        mapa_politica = {
 
+            "Cedulación":"Restablecimiento de derechos",
+
+            "Aseguramiento en salud":"Atención integral en salud",
+
+            "Vinculación familiar":"Fortalecimiento familiar",
+
+            "Reducción de riesgos y daños":"Reducción de riesgos y daños",
+
+            "Tratamiento consumo SPA":"Reducción de riesgos y daños",
+
+            "Salud mental":"Atención integral en salud",
+
+            "Inclusión social":"Inclusión social",
+
+            "Empleabilidad":"Inclusión laboral y generación de ingresos",
+
+            "Generación de ingresos":"Inclusión laboral y generación de ingresos",
+
+            "Educación":"Educación",
+
+            "Vivienda":"Habitabilidad y vivienda",
+
+            "Proyecto de vida":"Inclusión social",
+
+            "Participación comunitaria":"Participación ciudadana",
+
+            "Otro":"Restablecimiento de derechos"
+
+        }
+        
         with st.form("crear_objetivo"):
 
-            objetivo_tipo = st.selectbox(
-                "Seleccione el objetivo",
-                [
-                    "Restablecimiento de derechos",
-                    "Aseguramiento en salud",
-                    "Cedulación",
-                    "Vinculación familiar",
-                    "Empleabilidad",
-                    "Reducción de riesgos y daños",
-                    "Vivienda",
-                    "Otro"
-                ]
-            )
+                objetivo_tipo = st.selectbox(
 
-            objetivo_descripcion = st.text_area(
-                "Descripción del objetivo"
-            )
+                    "Objetivo PAI",
 
-            fecha_meta = st.date_input(
-                "Fecha meta"
-            )
+                    [
 
-            guardar_objetivo = st.form_submit_button(
-                "💾 Guardar objetivo"
-            )
+                        "Cedulación",
+
+                        "Aseguramiento en salud",
+
+                        "Vinculación familiar",
+
+                        "Reducción de riesgos y daños",
+
+                        "Tratamiento consumo SPA",
+
+                        "Salud mental",
+
+                        "Inclusión social",
+
+                        "Empleabilidad",
+
+                        "Generación de ingresos",
+
+                        "Educación",
+
+                        "Vivienda",
+
+                        "Proyecto de vida",
+
+                        "Participación comunitaria",
+
+                        "Otro"
+
+                    ]
+
+                )
+
+                # Se calcula automáticamente
+
+                linea_politica = mapa_politica.get(objetivo_tipo)
+
+                # Se muestra al profesional
+
+                st.info(
+                    f"🏛️ Política pública asociada: {linea_politica}"
+                )
+
+                objetivo_descripcion = st.text_area(
+                    "Descripción del objetivo"
+                )
+
+                fecha_meta = st.date_input(
+                    "Fecha meta"
+                )
+
+                guardar_objetivo = st.form_submit_button(
+                    "💾 Guardar objetivo"
+                )
+        linea_politica = mapa_politica.get(objetivo_tipo)
 
         if guardar_objetivo:
 
@@ -2800,25 +2899,33 @@ if usuario_sel:
                 conn.execute(text("""
                     INSERT INTO pai_objetivos(
 
-                        documento_usuario,
+                    documento_usuario,
 
-                        objetivo_tipo,
+                    objetivo_tipo,
 
-                        objetivo_descripcion,
+                    objetivo_descripcion,
 
-                        fecha_meta
+                    fecha_meta,
+
+                    linea_politica
+
+                    )
 
                     )
 
                     VALUES(
 
-                        :documento_usuario,
+                       VALUES(
 
-                        :objetivo_tipo,
+                    :documento_usuario,
 
-                        :objetivo_descripcion,
+                    :objetivo_tipo,
 
-                        :fecha_meta
+                    :objetivo_descripcion,
+
+                    :fecha_meta,
+
+                    :linea_politica
 
                     )
                 """), {
@@ -2829,9 +2936,46 @@ if usuario_sel:
 
                     "objetivo_descripcion": objetivo_descripcion,
 
-                    "fecha_meta": fecha_meta
+                    "fecha_meta": fecha_meta,
+                    "linea_politica": linea_politica
 
                 })
+            id_objetivo = conn.execute(text("""
+
+                    SELECT currval(
+                        pg_get_serial_sequence(
+                            'pai_objetivos',
+                            'id'
+                        )
+                    )
+
+                    """)).scalar()
+
+            conn.execute(text("""
+
+                    INSERT INTO pai_objetivo_ods(
+
+                    id_objetivo,
+
+                    ods
+
+                    )
+
+                    VALUES(
+
+                    :id_objetivo,
+
+                    :ods
+
+                    )
+
+                    """),{
+
+                    "id_objetivo": id_objetivo,
+
+                    "ods": ods
+
+                    })
 
             st.success(
                 "✅ Objetivo creado correctamente"
@@ -2842,6 +2986,239 @@ else:
     st.info(
         "Seleccione un usuario"
     )
+    st.divider()
+
+    st.markdown("## 📝 Registrar novedad")
+    objetivos_activos = pd.read_sql(f"""
+
+        SELECT
+
+        id,
+
+        objetivo_tipo,
+
+        porcentaje_avance
+
+        FROM pai_objetivos
+
+        WHERE documento_usuario = '{usuario_sel}'
+
+        AND estado='Activo'
+
+        ORDER BY fecha_apertura DESC
+
+        """, engine)
+    if not objetivos_activos.empty:
+    
+        with st.form("registrar_novedad"):
+
+            objetivo_seleccionado = st.selectbox(
+
+                "Objetivo",
+
+                objetivos_activos["id"].tolist(),
+
+                format_func=lambda x:
+
+                objetivos_activos[
+                    objetivos_activos["id"] == x
+                ]["objetivo_tipo"].values[0]
+
+            )
+
+            profesional_novedad = st.selectbox(
+
+                "Profesional responsable",
+
+                df_profesionales["label"].tolist()
+
+            )
+
+            descripcion_novedad = st.text_area(
+
+                "Actividad realizada"
+
+            )
+
+            avance_generado = st.slider(
+
+                "Avance logrado (%)",
+
+                0,
+
+                100,
+
+                10
+
+            )
+
+            observacion_novedad = st.text_area(
+
+                "Observaciones"
+
+            )
+
+            guardar_novedad = st.form_submit_button(
+
+                "💾 Guardar novedad"
+
+            )
+    if guardar_novedad:
+    
+        with engine.begin() as conn:
+
+            conn.execute(text("""
+
+            INSERT INTO pai_novedades(
+
+                id_objetivo,
+
+                profesional,
+
+                descripcion,
+
+                avance_generado,
+
+                observaciones
+
+            )
+
+            VALUES(
+
+                :id_objetivo,
+
+                :profesional,
+
+                :descripcion,
+
+                :avance_generado,
+
+                :observaciones
+
+            )
+
+            """), {
+
+                "id_objetivo": objetivo_seleccionado,
+
+                "profesional": profesional_novedad,
+
+                "descripcion": descripcion_novedad,
+
+                "avance_generado": avance_generado,
+
+                "observaciones": observacion_novedad
+
+            })
+    if guardar_novedad:
+    
+        with engine.begin() as conn:
+
+        # Guardar la novedad
+
+            conn.execute(text("""
+
+            INSERT INTO pai_novedades(
+
+                id_objetivo,
+
+                profesional,
+
+                descripcion,
+
+                avance_generado,
+
+                observaciones
+
+            )
+
+            VALUES(
+
+                :id_objetivo,
+
+                :profesional,
+
+                :descripcion,
+
+                :avance_generado,
+
+                :observaciones
+
+            )
+
+        """), {
+
+            "id_objetivo": objetivo_seleccionado,
+
+            "profesional": profesional_novedad,
+
+            "descripcion": descripcion_novedad,
+
+            "avance_generado": avance_generado,
+
+            "observaciones": observacion_novedad
+
+        })
+
+        # Calcular el avance acumulado
+
+        avance_total = conn.execute(text("""
+
+            SELECT COALESCE(
+
+                SUM(avance_generado),
+
+                0
+
+            )
+
+            FROM pai_novedades
+
+            WHERE id_objetivo = :id_objetivo
+
+        """), {
+
+            "id_objetivo": objetivo_seleccionado
+
+        }).scalar()
+
+        # Evitar superar el 100%
+
+        avance_total = min(avance_total, 100)
+
+        # Determinar estado
+
+        estado_objetivo = "Activo"
+
+        if avance_total >= 100:
+
+            estado_objetivo = "Cumplido"
+
+        # Actualizar el objetivo
+
+        conn.execute(text("""
+
+            UPDATE pai_objetivos
+
+            SET
+
+                porcentaje_avance = :avance,
+
+                estado = :estado
+
+            WHERE id = :id_objetivo
+
+        """), {
+
+            "avance": avance_total,
+
+            "estado": estado_objetivo,
+
+            "id_objetivo": objetivo_seleccionado
+
+        })
+
+    st.success("✅ Novedad registrada y objetivo actualizado")
    
 
     st.markdown("## 🌍 Seguimiento Individual con Enfoque ODS")
