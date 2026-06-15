@@ -2786,8 +2786,8 @@ if usuario_sel:
                 )
 
                 c3.metric(
-                    "Fecha meta",
-                    obj["fecha_meta"]
+                     "Fecha meta",
+                    str(obj["fecha_meta"])
                 )
 
                 st.divider()
