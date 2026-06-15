@@ -1397,21 +1397,81 @@ El grupo etario predominante corresponde a **{grupo_top['grupo']}**, con **{grup
 
     )
 
-    # INTERPRETACIÓN
+# INTERPRETACIÓN
 
-    principal_consumo = consumo_df.iloc[0]
+principal_consumo = consumo_df.iloc[0]
 
-    st.warning(
+st.warning(
 
-        f"La principal sustancia reportada es {principal_consumo['consumo']}."
+    f"La principal sustancia reportada es {principal_consumo['consumo']}."
 
-    )
+)
 
-    st.info(
+st.info(
 
-        "Los patrones de consumo permiten identificar niveles de complejidad social y sanitaria."
+    "Los patrones de consumo permiten identificar niveles de complejidad social y sanitaria."
 
-    )
+)
+
+# ==========================
+# SALUD MENTAL
+# ==========================
+
+st.subheader("🧠 Salud mental")
+
+mental_df = (
+
+    df["enfermedad_mental"]
+
+    .value_counts()
+
+    .reset_index()
+
+)
+
+mental_df.columns = [
+
+    "condicion",
+
+    "cantidad"
+
+]
+
+fig = px.bar(
+
+    mental_df,
+
+    x="condicion",
+
+    y="cantidad",
+
+    color="cantidad"
+
+)
+
+st.plotly_chart(
+
+    fig,
+
+    use_container_width=True
+
+)
+
+# INTERPRETACIÓN
+
+mental_top = mental_df.iloc[0]
+
+st.info(
+
+    f"La condición más frecuente registrada es: {mental_top['condicion']}."
+
+)
+
+st.warning(
+
+    "La presencia de problemas de salud mental puede aumentar la permanencia en calle y la vulnerabilidad social."
+
+)
 # =========================
 # TAB VULNERABILIDAD
 # =========================
@@ -1517,38 +1577,6 @@ with tab2:
     st.dataframe(
         top_criticos[columnas_existentes].head(20),
         use_container_width=True
-    )
-    st.subheader("🧠 Salud mental")
-
-    mental_df = (
-        df["enfermedad_mental"]
-        .value_counts()
-        .reset_index()
-    )
-
-    mental_df.columns = ["condicion", "cantidad"]
-
-    fig = px.bar(
-        mental_df,
-        x="condicion",
-        y="cantidad",
-        color="cantidad"
-    )
-
-    st.plotly_chart(
-        fig,
-        use_container_width=True
-    )
-
-    # INTERPRETACIÓN
-    mental_top = mental_df.iloc[0]
-
-    st.info(
-        f"La condición más frecuente registrada es: {mental_top['condicion']}."
-    )
-
-    st.warning(
-        "La presencia de salud mental puede aumentar la permanencia en calle y la vulnerabilidad social."
     )
 
 # =========================
