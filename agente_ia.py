@@ -1920,213 +1920,213 @@ with tab4:
     st.write("Consolidado analítico del Observatorio Social")
 
     # =========================
-# KPIs BASE
-# =========================
+    # KPIs BASE
+    # =========================
 
-total = len(df)
+    total = len(df)
 
-edad_promedio = round(df["edad"].mean(), 1) if "edad" in df.columns else 0
+    edad_promedio = round(df["edad"].mean(), 1) if "edad" in df.columns else 0
 
-# =========================
-# EGRESADOS
-# =========================
-df_egresados = pd.read_sql("""
-    SELECT *
-    FROM personas_caracterizacion
-    WHERE estado_caso = 'EGRESADO'
-""", engine)
+    # =========================
+    # EGRESADOS
+    # =========================
+    df_egresados = pd.read_sql("""
+        SELECT *
+        FROM personas_caracterizacion
+        WHERE estado_caso = 'EGRESADO'
+    """, engine)
 
-total_egresados = len(df_egresados)
-tasa_egreso = round((total_egresados / total) * 100, 2) if total > 0 else 0
+    total_egresados = len(df_egresados)
+    tasa_egreso = round((total_egresados / total) * 100, 2) if total > 0 else 0
 
-# =========================
-# INDICADORES
-# =========================
-st.subheader("📊 Indicadores Estratégicos")
+    # =========================
+    # INDICADORES
+    # =========================
+    st.subheader("📊 Indicadores Estratégicos")
 
-col1, col2, col3, col4 = st.columns(4)
+    col1, col2, col3, col4 = st.columns(4)
 
-col1.metric("👥 Personas", total)
-col2.metric("📊 Edad promedio", edad_promedio)
-col3.metric("🏆 Egresados", total_egresados)
-col4.metric("📈 Tasa egreso", f"{tasa_egreso}%")
-
-st.markdown("---")
-
-# =========================
-# PERFIL
-# =========================
-st.subheader("👤 Perfil Sociodemográfico")
-
-c1, c2 = st.columns(2)
-
-with c1:
-    if "sexo_al_nacer" in df.columns:
-        st.plotly_chart(
-            px.pie(df, names="sexo_al_nacer", title="Sexo al nacer"),
-            use_container_width=True
-        )
-
-with c2:
-    if "edad" in df.columns:
-        st.plotly_chart(
-            px.histogram(df, x="edad", nbins=15, title="Edad"),
-            use_container_width=True
-        )
+    col1.metric("👥 Personas", total)
+    col2.metric("📊 Edad promedio", edad_promedio)
+    col3.metric("🏆 Egresados", total_egresados)
+    col4.metric("📈 Tasa egreso", f"{tasa_egreso}%")
 
     st.markdown("---")
 
     # =========================
-    # DIVERSIDAD
+    # PERFIL
     # =========================
-    st.subheader("🏳️ Diversidad")
+    st.subheader("👤 Perfil Sociodemográfico")
 
-    st.plotly_chart(
-        px.histogram(
-            df,
-            x="orientacion_sexual_lgtbi",
-            color="orientacion_sexual_lgtbi",
-            title="Orientación sexual"
-        ),
-        use_container_width=True
-    )
+    c1, c2 = st.columns(2)
 
-    if "grupos_etnicos_afro_indigena" in df.columns:
+    with c1:
+        if "sexo_al_nacer" in df.columns:
+            st.plotly_chart(
+                px.pie(df, names="sexo_al_nacer", title="Sexo al nacer"),
+                use_container_width=True
+            )
+
+    with c2:
+        if "edad" in df.columns:
+            st.plotly_chart(
+                px.histogram(df, x="edad", nbins=15, title="Edad"),
+                use_container_width=True
+            )
+
+        st.markdown("---")
+
+        # =========================
+        # DIVERSIDAD
+        # =========================
+        st.subheader("🏳️ Diversidad")
+
         st.plotly_chart(
             px.histogram(
                 df,
-                x="grupos_etnicos_afro_indigena",
-                color="grupos_etnicos_afro_indigena",
-                title="Grupos étnicos"
+                x="orientacion_sexual_lgtbi",
+                color="orientacion_sexual_lgtbi",
+                title="Orientación sexual"
             ),
             use_container_width=True
         )
 
-    st.markdown("---")
+        if "grupos_etnicos_afro_indigena" in df.columns:
+            st.plotly_chart(
+                px.histogram(
+                    df,
+                    x="grupos_etnicos_afro_indigena",
+                    color="grupos_etnicos_afro_indigena",
+                    title="Grupos étnicos"
+                ),
+                use_container_width=True
+            )
 
-    # =========================
-    # IMPACTO
-    # =========================
-    st.subheader("🏆 Impacto Institucional")
-
-    col1, col2 = st.columns(2)
-    col1.metric("Egresados", total_egresados)
-    col2.metric("Tasa Egreso", f"{tasa_egreso}%")
+        st.markdown("---")
 
         # =========================
-    # HALLAZGOS
+        # IMPACTO
+        # =========================
+        st.subheader("🏆 Impacto Institucional")
+
+        col1, col2 = st.columns(2)
+        col1.metric("Egresados", total_egresados)
+        col2.metric("Tasa Egreso", f"{tasa_egreso}%")
+
+            # =========================
+        # HALLAZGOS
+        # =========================
+
+        st.subheader("📋 Hallazgos")
+
+        hallazgos = []
+
+        if edad_promedio > 50:
+            hallazgos.append("Envejecimiento poblacional.")
+
+        if tasa_egreso < 10:
+            hallazgos.append("Baja tasa de egreso.")
+
+        if len(hallazgos) == 0:
+            st.success("Sin alertas relevantes.")
+        else:
+            for h in hallazgos:
+                st.warning(h)
+
+        st.markdown("---")
+
+        # =========================
+        # CONCLUSIÓN
+        # =========================
+        st.subheader("📝 Conclusión")
+
+        st.info(f"""
+        Total: {total}
+        Egresados: {total_egresados}
+        Tasa: {tasa_egreso}%
+        Edad promedio: {edad_promedio}
+        """)
+
+        st.markdown("---")
+
+        # =========================
+    # PDF AVANZADO
     # =========================
+    st.subheader("📄 Informe PDF Avanzado")
 
-    st.subheader("📋 Hallazgos")
+    if st.button("📥 Generar PDF completo"):
 
-    hallazgos = []
+        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image
+        from reportlab.lib.styles import getSampleStyleSheet
+        from reportlab.lib.pagesizes import letter
 
-    if edad_promedio > 50:
-        hallazgos.append("Envejecimiento poblacional.")
+        styles = getSampleStyleSheet()
+        contenido = []
+        archivo = "informe_observatorio.pdf"
+        doc = SimpleDocTemplate(archivo, pagesize=letter)
 
-    if tasa_egreso < 10:
-        hallazgos.append("Baja tasa de egreso.")
+        # =========================
+        # GRAFICO 1 (EDAD)
+        # =========================
+        fig1 = px.histogram(df, x="edad", title="Distribución de edad")
+        fig1.write_image("edad.png")
 
-    if len(hallazgos) == 0:
-        st.success("Sin alertas relevantes.")
-    else:
-        for h in hallazgos:
-            st.warning(h)
+        # =========================
+        # GRAFICO 2 (SEXO)
+        # =========================
+        fig2 = px.pie(df, names="sexo_al_nacer", title="Sexo")
+        fig2.write_image("sexo.png")
 
-    st.markdown("---")
+        # =========================
+        # CONTENIDO PDF
+        # =========================
+        contenido.append(Paragraph("INFORME EJECUTIVO - OBSERVATORIO SOCIAL", styles["Title"]))
+        contenido.append(Spacer(1, 12))
 
-    # =========================
-    # CONCLUSIÓN
-    # =========================
-    st.subheader("📝 Conclusión")
+        contenido.append(Paragraph(f"Personas: {total}", styles["BodyText"]))
+        contenido.append(Paragraph(f"Egresados: {total_egresados}", styles["BodyText"]))
+        contenido.append(Paragraph(f"Tasa de egreso: {tasa_egreso}%", styles["BodyText"]))
+        contenido.append(Paragraph(f"Edad promedio: {edad_promedio}", styles["BodyText"]))
 
-    st.info(f"""
-    Total: {total}
-    Egresados: {total_egresados}
-    Tasa: {tasa_egreso}%
-    Edad promedio: {edad_promedio}
-    """)
+        contenido.append(Spacer(1, 12))
 
-    st.markdown("---")
+        contenido.append(Paragraph("ANÁLISIS GENERAL", styles["Heading2"]))
+        contenido.append(Paragraph(
+            "El análisis muestra la distribución poblacional y características sociodemográficas de los usuarios del sistema.",
+            styles["BodyText"]
+        ))
 
-    # =========================
-# PDF AVANZADO
-# =========================
-st.subheader("📄 Informe PDF Avanzado")
+        contenido.append(Spacer(1, 12))
 
-if st.button("📥 Generar PDF completo"):
+        # =========================
+        # INSERTAR GRAFICOS
+        # =========================
+        contenido.append(Image("edad.png", width=400, height=200))
+        contenido.append(Spacer(1, 12))
+        contenido.append(Image("sexo.png", width=400, height=200))
 
-    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image
-    from reportlab.lib.styles import getSampleStyleSheet
-    from reportlab.lib.pagesizes import letter
+        contenido.append(Spacer(1, 12))
 
-    styles = getSampleStyleSheet()
-    contenido = []
-    archivo = "informe_observatorio.pdf"
-    doc = SimpleDocTemplate(archivo, pagesize=letter)
+        contenido.append(Paragraph("CONCLUSIÓN", styles["Heading2"]))
+        contenido.append(Paragraph(
+            "Se recomienda fortalecer la intervención social basada en seguimiento individual y caracterización poblacional.",
+            styles["BodyText"]
+        ))
 
-    # =========================
-    # GRAFICO 1 (EDAD)
-    # =========================
-    fig1 = px.histogram(df, x="edad", title="Distribución de edad")
-    fig1.write_image("edad.png")
+        doc.build(contenido)
 
-    # =========================
-    # GRAFICO 2 (SEXO)
-    # =========================
-    fig2 = px.pie(df, names="sexo_al_nacer", title="Sexo")
-    fig2.write_image("sexo.png")
+        with open(archivo, "rb") as f:
+            st.download_button(
+                "⬇️ Descargar PDF",
+                f,
+                file_name=archivo,
+                mime="application/pdf"
+            )
 
-    # =========================
-    # CONTENIDO PDF
-    # =========================
-    contenido.append(Paragraph("INFORME EJECUTIVO - OBSERVATORIO SOCIAL", styles["Title"]))
-    contenido.append(Spacer(1, 12))
-
-    contenido.append(Paragraph(f"Personas: {total}", styles["BodyText"]))
-    contenido.append(Paragraph(f"Egresados: {total_egresados}", styles["BodyText"]))
-    contenido.append(Paragraph(f"Tasa de egreso: {tasa_egreso}%", styles["BodyText"]))
-    contenido.append(Paragraph(f"Edad promedio: {edad_promedio}", styles["BodyText"]))
-
-    contenido.append(Spacer(1, 12))
-
-    contenido.append(Paragraph("ANÁLISIS GENERAL", styles["Heading2"]))
-    contenido.append(Paragraph(
-        "El análisis muestra la distribución poblacional y características sociodemográficas de los usuarios del sistema.",
-        styles["BodyText"]
-    ))
-
-    contenido.append(Spacer(1, 12))
-
-    # =========================
-    # INSERTAR GRAFICOS
-    # =========================
-    contenido.append(Image("edad.png", width=400, height=200))
-    contenido.append(Spacer(1, 12))
-    contenido.append(Image("sexo.png", width=400, height=200))
-
-    contenido.append(Spacer(1, 12))
-
-    contenido.append(Paragraph("CONCLUSIÓN", styles["Heading2"]))
-    contenido.append(Paragraph(
-        "Se recomienda fortalecer la intervención social basada en seguimiento individual y caracterización poblacional.",
-        styles["BodyText"]
-    ))
-
-    doc.build(contenido)
-
-    with open(archivo, "rb") as f:
-        st.download_button(
-            "⬇️ Descargar PDF",
-            f,
-            file_name=archivo,
-            mime="application/pdf"
-        )
-
-    st.success("PDF generado correctamente")
-    # =========================
-    # NUEVO REGISTRO
-    # =========================
+        st.success("PDF generado correctamente")
+        # =========================
+        # NUEVO REGISTRO
+        # =========================
 
 with tab5:
 
