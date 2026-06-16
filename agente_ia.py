@@ -2066,7 +2066,7 @@ with tab4:
         st.markdown("---")
 
     # ==================================
-# PDF EJECUTIVO INSTITUCIONAL
+# PDF EJECUTIVO OBSERVATORIO SOCIAL
 # ==================================
 
 st.markdown("---")
@@ -2088,76 +2088,71 @@ if st.button("📥 Generar Informe Ejecutivo"):
 
         styles["Title"].textColor = colors.darkblue
 
-        styles["Heading1"].textColor = colors.darkblue
-
         styles["Heading2"].textColor = colors.darkred
 
         contenido = []
 
-        # ==========================
+        # ======================
         # PORTADA
-        # ==========================
+        # ======================
 
         contenido.append(
-
             Paragraph(
-                "OBSERVATORIO SOCIAL",
+                "OBSERVATORIO SOCIAL DE PEREIRA",
                 styles["Title"]
             )
-
         )
 
         contenido.append(
-
             Paragraph(
                 "Informe Ejecutivo Institucional",
-                styles["Heading1"]
-            )
-
-        )
-
-        contenido.append(
-
-            Paragraph(
-                f"Total personas caracterizadas: {total}",
-                styles["BodyText"]
-            )
-
-        )
-
-        contenido.append(
-            Spacer(1,20)
-        )
-
-        # ==========================
-        # RESUMEN EJECUTIVO
-        # ==========================
-
-        contenido.append(
-
-            Paragraph(
-                "RESUMEN EJECUTIVO",
                 styles["Heading2"]
             )
-
-        )
-
-        contenido.append(
-
-            Paragraph(
-                "Este documento consolida la información del Observatorio Social y presenta indicadores poblacionales, vulnerabilidades y resultados institucionales.",
-                styles["BodyText"]
-            )
-
         )
 
         contenido.append(
             Spacer(1,15)
         )
 
-        # ==========================
-        # TABLA DE INDICADORES
-        # ==========================
+        # ======================
+        # RESUMEN
+        # ======================
+
+        contenido.append(
+            Paragraph(
+                f"Total personas caracterizadas: {total}",
+                styles["BodyText"]
+            )
+        )
+
+        contenido.append(
+            Paragraph(
+                f"Edad promedio: {edad_promedio}",
+                styles["BodyText"]
+            )
+        )
+
+        contenido.append(
+            Paragraph(
+                f"Egresados: {total_egresados}",
+                styles["BodyText"]
+            )
+        )
+
+        contenido.append(
+            Paragraph(
+                f"Tasa de egreso: {tasa_egreso}%",
+                styles["BodyText"]
+            )
+        )
+
+        contenido.append(
+            Spacer(1,20)
+        )
+
+        # ======================
+        # TABLA
+        # ======================
 
         datos = [
 
@@ -2197,25 +2192,22 @@ if st.button("📥 Generar Informe Ejecutivo"):
             Spacer(1,20)
         )
 
-        # ==========================
-        # GRAFICO EDAD
-        # ==========================
+        # =====================================
+        # EDAD
+        # =====================================
 
         if "edad" in df.columns:
 
-            plt.figure(figsize=(7,4))
+            fig = px.histogram(
+                df,
+                x="edad",
+                title="Distribución de edad"
+            )
 
-            df["edad"].dropna().hist()
-
-            plt.title("Distribución por edad")
-
-            plt.xlabel("Edad")
-
-            plt.ylabel("Frecuencia")
-
-            plt.savefig("edad.png")
-
-            plt.close()
+            fig.write_image(
+                "edad.png",
+                engine="kaleido"
+            )
 
             contenido.append(
 
@@ -2236,28 +2228,63 @@ if st.button("📥 Generar Informe Ejecutivo"):
 
             )
 
-        # ==========================
+            edad_media = round(
+                df["edad"].mean(),
+                1
+            )
+
+            if edad_media >= 50:
+
+                conclusion = (
+
+                    f"La población presenta una edad promedio de {edad_media} años, evidenciando un proceso de envejecimiento poblacional."
+
+                )
+
+            elif edad_media >= 30:
+
+                conclusion = (
+
+                    f"La población presenta una edad promedio de {edad_media} años, predominando la población adulta."
+
+                )
+
+            else:
+
+                conclusion = (
+
+                    f"La población presenta una edad promedio de {edad_media} años, con predominio de población joven."
+
+                )
+
+            contenido.append(
+
+                Paragraph(
+                    conclusion,
+                    styles["BodyText"]
+                )
+
+            )
+
+            contenido.append(
+                Spacer(1,15)
+            )
+
+        # =====================================
         # SEXO
-        # ==========================
+        # =====================================
 
         if "sexo_al_nacer" in df.columns:
 
-            plt.figure(figsize=(6,6))
-
-            df["sexo_al_nacer"].value_counts().plot.pie(
-                autopct="%1.1f%%"
+            fig = px.pie(
+                df,
+                names="sexo_al_nacer",
+                title="Sexo al nacer"
             )
 
-            plt.ylabel("")
-
-            plt.title("Sexo al nacer")
-
-            plt.savefig("sexo.png")
-
-            plt.close()
-
-            contenido.append(
-                Spacer(1,10)
+            fig.write_image(
+                "sexo.png",
+                engine="kaleido"
             )
 
             contenido.append(
@@ -2279,33 +2306,73 @@ if st.button("📥 Generar Informe Ejecutivo"):
 
             )
 
-        # ==========================
+            principal = (
+                df["sexo_al_nacer"]
+                .value_counts()
+                .idxmax()
+            )
+
+            porcentaje = round(
+
+                (
+                    df["sexo_al_nacer"]
+                    .value_counts(normalize=True)
+                    .max()
+
+                ) * 100,
+
+                1
+
+            )
+
+            contenido.append(
+
+                Paragraph(
+
+                    f"Predomina la población {principal.lower()} con una representación del {porcentaje}% del total.",
+
+                    styles["BodyText"]
+
+                )
+
+            )
+
+            contenido.append(
+                Spacer(1,15)
+            )
+
+        # =====================================
         # NIVEL EDUCATIVO
-        # ==========================
+        # =====================================
 
         if "nivel_educativo" in df.columns:
 
-            plt.figure(figsize=(8,4))
+            fig = px.histogram(
 
-            df["nivel_educativo"].value_counts().head(10).plot.bar()
+                df,
 
-            plt.title("Nivel educativo")
+                x="nivel_educativo",
 
-            plt.tight_layout()
+                title="Nivel educativo"
 
-            plt.savefig("educacion.png")
+            )
 
-            plt.close()
+            fig.write_image(
 
-            contenido.append(
-                Spacer(1,10)
+                "educacion.png",
+
+                engine="kaleido"
+
             )
 
             contenido.append(
 
                 Paragraph(
+
                     "Nivel educativo",
+
                     styles["Heading2"]
+
                 )
 
             )
@@ -2313,40 +2380,75 @@ if st.button("📥 Generar Informe Ejecutivo"):
             contenido.append(
 
                 Image(
+
                     "educacion.png",
+
                     width=450,
+
                     height=250
+
                 )
 
             )
 
-        # ==========================
+            principal = (
+
+                df["nivel_educativo"]
+
+                .value_counts()
+
+                .idxmax()
+
+            )
+
+            contenido.append(
+
+                Paragraph(
+
+                    f"El nivel educativo predominante corresponde a {principal.lower()}, lo que orienta las estrategias de inclusión social y laboral.",
+
+                    styles["BodyText"]
+
+                )
+
+            )
+
+            contenido.append(
+                Spacer(1,15)
+            )
+
+        # =====================================
         # SEGURIDAD EN SALUD
-        # ==========================
+        # =====================================
 
         if "tipo_seguridad_salud" in df.columns:
 
-            plt.figure(figsize=(8,4))
+            fig = px.histogram(
 
-            df["tipo_seguridad_salud"].value_counts().plot.bar()
+                df,
 
-            plt.title("Seguridad en salud")
+                x="tipo_seguridad_salud",
 
-            plt.tight_layout()
+                title="Seguridad en salud"
 
-            plt.savefig("salud.png")
+            )
 
-            plt.close()
+            fig.write_image(
 
-            contenido.append(
-                Spacer(1,10)
+                "salud.png",
+
+                engine="kaleido"
+
             )
 
             contenido.append(
 
                 Paragraph(
+
                     "Seguridad en salud",
+
                     styles["Heading2"]
+
                 )
 
             )
@@ -2354,16 +2456,42 @@ if st.button("📥 Generar Informe Ejecutivo"):
             contenido.append(
 
                 Image(
+
                     "salud.png",
+
                     width=450,
+
                     height=250
+
                 )
 
             )
 
-        # ==========================
-        # HALLAZGOS
-        # ==========================
+            principal = (
+
+                df["tipo_seguridad_salud"]
+
+                .value_counts()
+
+                .idxmax()
+
+            )
+
+            contenido.append(
+
+                Paragraph(
+
+                    f"El régimen predominante es {principal.lower()}, aspecto relevante para orientar la gestión institucional en salud.",
+
+                    styles["BodyText"]
+
+                )
+
+            )
+
+        # =====================================
+        # CONCLUSIONES GENERALES
+        # =====================================
 
         contenido.append(
             PageBreak()
@@ -2372,47 +2500,11 @@ if st.button("📥 Generar Informe Ejecutivo"):
         contenido.append(
 
             Paragraph(
-                "HALLAZGOS AUTOMÁTICOS",
+
+                "CONCLUSIONES GENERALES",
+
                 styles["Heading2"]
-            )
 
-        )
-
-        if edad_promedio > 50:
-
-            contenido.append(
-
-                Paragraph(
-                    "• Se evidencia envejecimiento poblacional.",
-                    styles["BodyText"]
-                )
-
-            )
-
-        if tasa_egreso < 10:
-
-            contenido.append(
-
-                Paragraph(
-                    "• La tasa de egreso requiere fortalecimiento.",
-                    styles["BodyText"]
-                )
-
-            )
-
-        # ==========================
-        # RECOMENDACIONES
-        # ==========================
-
-        contenido.append(
-            Spacer(1,15)
-        )
-
-        contenido.append(
-
-            Paragraph(
-                "RECOMENDACIONES",
-                styles["Heading2"]
             )
 
         )
@@ -2420,45 +2512,28 @@ if st.button("📥 Generar Informe Ejecutivo"):
         contenido.append(
 
             Paragraph(
-                "Fortalecer los procesos de gestión de casos, seguimiento individual y estrategias de egreso sostenible.",
+
+                "La información consolidada permite orientar la toma de decisiones basadas en evidencia para fortalecer las estrategias de intervención social.",
+
                 styles["BodyText"]
+
             )
 
         )
 
-        # ==========================
-        # CONCLUSIONES
-        # ==========================
-
-        contenido.append(
-            Spacer(1,15)
-        )
-
-        contenido.append(
-
-            Paragraph(
-                "CONCLUSIONES",
-                styles["Heading2"]
-            )
-
-        )
-
-        contenido.append(
-
-            Paragraph(
-                "La información consolidada permite orientar la toma de decisiones institucionales basadas en evidencia.",
-                styles["BodyText"]
-            )
-
-        )
-
-        # ==========================
+        # =====================================
         # CREAR PDF
-        # ==========================
+        # =====================================
 
         doc.build(contenido)
 
-        with open(archivo,"rb") as f:
+        with open(
+
+            archivo,
+
+            "rb"
+
+        ) as f:
 
             st.download_button(
 
@@ -2473,12 +2548,18 @@ if st.button("📥 Generar Informe Ejecutivo"):
             )
 
         st.success(
+
             "✅ Informe generado correctamente"
+
         )
 
     except Exception as e:
 
-        st.error(f"Error: {e}")
+        st.error(
+
+            f"Error: {e}"
+
+        )
         # =========================
         # NUEVO REGISTRO
         # =========================
