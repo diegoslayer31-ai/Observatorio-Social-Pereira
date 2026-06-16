@@ -2,6 +2,22 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 from sqlalchemy import create_engine, text
+import os
+import matplotlib.pyplot as plt
+
+from reportlab.platypus import (
+    SimpleDocTemplate,
+    Paragraph,
+    Spacer,
+    Image,
+    Table,
+    TableStyle,
+    PageBreak
+)
+
+from reportlab.lib import colors
+from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib.pagesizes import letter
 
 st.set_page_config(
     page_title="Observatorio Social Asociación Ciudad Futuro",
@@ -2049,101 +2065,53 @@ with tab4:
 
         st.markdown("---")
 
-        # =========================
-# PDF AVANZADO
-# =========================
+    # ==================================
+# PDF EJECUTIVO INSTITUCIONAL
+# ==================================
 
 st.markdown("---")
-st.subheader("📄 Informe PDF Avanzado")
 
-if st.button("📥 Generar PDF completo"):
+st.subheader("📄 Informe Ejecutivo Institucional")
+
+if st.button("📥 Generar Informe Ejecutivo"):
 
     try:
 
-        from reportlab.platypus import (
-            SimpleDocTemplate,
-            Paragraph,
-            Spacer,
-            Image
-        )
-
-        from reportlab.lib.styles import getSampleStyleSheet
-        from reportlab.lib.pagesizes import letter
-
-        import os
-
-        archivo = "informe_observatorio.pdf"
-
-        styles = getSampleStyleSheet()
+        archivo = "Informe_Observatorio_Social.pdf"
 
         doc = SimpleDocTemplate(
             archivo,
             pagesize=letter
         )
 
+        styles = getSampleStyleSheet()
+
+        styles["Title"].textColor = colors.darkblue
+
+        styles["Heading1"].textColor = colors.darkblue
+
+        styles["Heading2"].textColor = colors.darkred
+
         contenido = []
 
-        # =========================
-        # CREAR GRÁFICO EDAD
-        # =========================
-
-        if "edad" in df.columns:
-
-            fig1 = px.histogram(
-                df,
-                x="edad",
-                nbins=15,
-                title="Distribución de edad"
-            )
-
-            fig1.write_image(
-                "edad.png",
-                engine="kaleido"
-            )
-
-        # =========================
-        # CREAR GRÁFICO SEXO
-        # =========================
-
-        if "sexo_al_nacer" in df.columns:
-
-            fig2 = px.pie(
-                df,
-                names="sexo_al_nacer",
-                title="Sexo al nacer"
-            )
-
-            fig2.write_image(
-                "sexo.png",
-                engine="kaleido"
-            )
-
-        # =========================
-        # TITULO
-        # =========================
+        # ==========================
+        # PORTADA
+        # ==========================
 
         contenido.append(
 
             Paragraph(
-                "INFORME EJECUTIVO - OBSERVATORIO SOCIAL",
+                "OBSERVATORIO SOCIAL",
                 styles["Title"]
             )
 
         )
 
         contenido.append(
-            Spacer(1,12)
-        )
-
-        # =========================
-        # INDICADORES
-        # =========================
-
-        contenido.append(
 
             Paragraph(
-                f"Total personas: {total}",
-                styles["BodyText"]
+                "Informe Ejecutivo Institucional",
+                styles["Heading1"]
             )
 
         )
@@ -2151,42 +2119,24 @@ if st.button("📥 Generar PDF completo"):
         contenido.append(
 
             Paragraph(
-                f"Egresados: {total_egresados}",
+                f"Total personas caracterizadas: {total}",
                 styles["BodyText"]
             )
 
         )
 
         contenido.append(
-
-            Paragraph(
-                f"Tasa de egreso: {tasa_egreso}%",
-                styles["BodyText"]
-            )
-
+            Spacer(1,20)
         )
+
+        # ==========================
+        # RESUMEN EJECUTIVO
+        # ==========================
 
         contenido.append(
 
             Paragraph(
-                f"Edad promedio: {edad_promedio}",
-                styles["BodyText"]
-            )
-
-        )
-
-        contenido.append(
-            Spacer(1,12)
-        )
-
-        # =========================
-        # ANALISIS
-        # =========================
-
-        contenido.append(
-
-            Paragraph(
-                "ANÁLISIS GENERAL",
+                "RESUMEN EJECUTIVO",
                 styles["Heading2"]
             )
 
@@ -2195,24 +2145,234 @@ if st.button("📥 Generar PDF completo"):
         contenido.append(
 
             Paragraph(
-                "El Observatorio Social permite identificar patrones demográficos, indicadores institucionales y resultados de intervención social.",
+                "Este documento consolida la información del Observatorio Social y presenta indicadores poblacionales, vulnerabilidades y resultados institucionales.",
                 styles["BodyText"]
             )
 
         )
 
         contenido.append(
-            Spacer(1,12)
+            Spacer(1,15)
         )
 
-        # =========================
+        # ==========================
+        # TABLA DE INDICADORES
+        # ==========================
+
+        datos = [
+
+            ["Indicador","Valor"],
+
+            ["Personas",total],
+
+            ["Edad promedio",edad_promedio],
+
+            ["Egresados",total_egresados],
+
+            ["Tasa egreso",f"{tasa_egreso}%"]
+
+        ]
+
+        tabla = Table(datos)
+
+        tabla.setStyle(
+
+            TableStyle([
+
+                ("BACKGROUND",(0,0),(-1,0),colors.darkblue),
+
+                ("TEXTCOLOR",(0,0),(-1,0),colors.white),
+
+                ("GRID",(0,0),(-1,-1),1,colors.black),
+
+                ("FONTNAME",(0,0),(-1,0),"Helvetica-Bold")
+
+            ])
+
+        )
+
+        contenido.append(tabla)
+
+        contenido.append(
+            Spacer(1,20)
+        )
+
+        # ==========================
+        # GRAFICO EDAD
+        # ==========================
+
+        if "edad" in df.columns:
+
+            plt.figure(figsize=(7,4))
+
+            df["edad"].dropna().hist()
+
+            plt.title("Distribución por edad")
+
+            plt.xlabel("Edad")
+
+            plt.ylabel("Frecuencia")
+
+            plt.savefig("edad.png")
+
+            plt.close()
+
+            contenido.append(
+
+                Paragraph(
+                    "Distribución por edad",
+                    styles["Heading2"]
+                )
+
+            )
+
+            contenido.append(
+
+                Image(
+                    "edad.png",
+                    width=450,
+                    height=250
+                )
+
+            )
+
+        # ==========================
+        # SEXO
+        # ==========================
+
+        if "sexo_al_nacer" in df.columns:
+
+            plt.figure(figsize=(6,6))
+
+            df["sexo_al_nacer"].value_counts().plot.pie(
+                autopct="%1.1f%%"
+            )
+
+            plt.ylabel("")
+
+            plt.title("Sexo al nacer")
+
+            plt.savefig("sexo.png")
+
+            plt.close()
+
+            contenido.append(
+                Spacer(1,10)
+            )
+
+            contenido.append(
+
+                Paragraph(
+                    "Sexo al nacer",
+                    styles["Heading2"]
+                )
+
+            )
+
+            contenido.append(
+
+                Image(
+                    "sexo.png",
+                    width=350,
+                    height=250
+                )
+
+            )
+
+        # ==========================
+        # NIVEL EDUCATIVO
+        # ==========================
+
+        if "nivel_educativo" in df.columns:
+
+            plt.figure(figsize=(8,4))
+
+            df["nivel_educativo"].value_counts().head(10).plot.bar()
+
+            plt.title("Nivel educativo")
+
+            plt.tight_layout()
+
+            plt.savefig("educacion.png")
+
+            plt.close()
+
+            contenido.append(
+                Spacer(1,10)
+            )
+
+            contenido.append(
+
+                Paragraph(
+                    "Nivel educativo",
+                    styles["Heading2"]
+                )
+
+            )
+
+            contenido.append(
+
+                Image(
+                    "educacion.png",
+                    width=450,
+                    height=250
+                )
+
+            )
+
+        # ==========================
+        # SEGURIDAD EN SALUD
+        # ==========================
+
+        if "tipo_seguridad_salud" in df.columns:
+
+            plt.figure(figsize=(8,4))
+
+            df["tipo_seguridad_salud"].value_counts().plot.bar()
+
+            plt.title("Seguridad en salud")
+
+            plt.tight_layout()
+
+            plt.savefig("salud.png")
+
+            plt.close()
+
+            contenido.append(
+                Spacer(1,10)
+            )
+
+            contenido.append(
+
+                Paragraph(
+                    "Seguridad en salud",
+                    styles["Heading2"]
+                )
+
+            )
+
+            contenido.append(
+
+                Image(
+                    "salud.png",
+                    width=450,
+                    height=250
+                )
+
+            )
+
+        # ==========================
         # HALLAZGOS
-        # =========================
+        # ==========================
+
+        contenido.append(
+            PageBreak()
+        )
 
         contenido.append(
 
             Paragraph(
-                "HALLAZGOS",
+                "HALLAZGOS AUTOMÁTICOS",
                 styles["Heading2"]
             )
 
@@ -2234,71 +2394,24 @@ if st.button("📥 Generar PDF completo"):
             contenido.append(
 
                 Paragraph(
-                    "• La tasa de egreso es baja.",
+                    "• La tasa de egreso requiere fortalecimiento.",
                     styles["BodyText"]
                 )
 
             )
 
-        if edad_promedio <= 50 and tasa_egreso >= 10:
-
-            contenido.append(
-
-                Paragraph(
-                    "• No se identifican alertas relevantes.",
-                    styles["BodyText"]
-                )
-
-            )
+        # ==========================
+        # RECOMENDACIONES
+        # ==========================
 
         contenido.append(
-            Spacer(1,12)
+            Spacer(1,15)
         )
-
-        # =========================
-        # GRAFICOS
-        # =========================
-
-        if os.path.exists("edad.png"):
-
-            contenido.append(
-
-                Image(
-                    "edad.png",
-                    width=450,
-                    height=250
-                )
-
-            )
-
-            contenido.append(
-                Spacer(1,12)
-            )
-
-        if os.path.exists("sexo.png"):
-
-            contenido.append(
-
-                Image(
-                    "sexo.png",
-                    width=450,
-                    height=250
-                )
-
-            )
-
-            contenido.append(
-                Spacer(1,12)
-            )
-
-        # =========================
-        # CONCLUSION
-        # =========================
 
         contenido.append(
 
             Paragraph(
-                "CONCLUSIÓN",
+                "RECOMENDACIONES",
                 styles["Heading2"]
             )
 
@@ -2307,22 +2420,45 @@ if st.button("📥 Generar PDF completo"):
         contenido.append(
 
             Paragraph(
-                "Se recomienda fortalecer la intervención social mediante seguimiento individual, gestión de casos y estrategias de egreso sostenible.",
+                "Fortalecer los procesos de gestión de casos, seguimiento individual y estrategias de egreso sostenible.",
                 styles["BodyText"]
             )
 
         )
 
-        # =========================
+        # ==========================
+        # CONCLUSIONES
+        # ==========================
+
+        contenido.append(
+            Spacer(1,15)
+        )
+
+        contenido.append(
+
+            Paragraph(
+                "CONCLUSIONES",
+                styles["Heading2"]
+            )
+
+        )
+
+        contenido.append(
+
+            Paragraph(
+                "La información consolidada permite orientar la toma de decisiones institucionales basadas en evidencia.",
+                styles["BodyText"]
+            )
+
+        )
+
+        # ==========================
         # CREAR PDF
-        # =========================
+        # ==========================
 
         doc.build(contenido)
 
-        with open(
-            archivo,
-            "rb"
-        ) as f:
+        with open(archivo,"rb") as f:
 
             st.download_button(
 
@@ -2337,14 +2473,12 @@ if st.button("📥 Generar PDF completo"):
             )
 
         st.success(
-            "✅ PDF generado correctamente"
+            "✅ Informe generado correctamente"
         )
 
     except Exception as e:
 
-        st.error(
-            f"Error al generar PDF: {e}"
-        )
+        st.error(f"Error: {e}")
         # =========================
         # NUEVO REGISTRO
         # =========================
