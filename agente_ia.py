@@ -2050,80 +2050,301 @@ with tab4:
         st.markdown("---")
 
         # =========================
-    # PDF AVANZADO
-    # =========================
-    st.subheader("📄 Informe PDF Avanzado")
+# PDF AVANZADO
+# =========================
 
-    if st.button("📥 Generar PDF completo"):
+st.markdown("---")
+st.subheader("📄 Informe PDF Avanzado")
 
-        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image
+if st.button("📥 Generar PDF completo"):
+
+    try:
+
+        from reportlab.platypus import (
+            SimpleDocTemplate,
+            Paragraph,
+            Spacer,
+            Image
+        )
+
         from reportlab.lib.styles import getSampleStyleSheet
         from reportlab.lib.pagesizes import letter
 
-        styles = getSampleStyleSheet()
-        contenido = []
+        import os
+
         archivo = "informe_observatorio.pdf"
-        doc = SimpleDocTemplate(archivo, pagesize=letter)
+
+        styles = getSampleStyleSheet()
+
+        doc = SimpleDocTemplate(
+            archivo,
+            pagesize=letter
+        )
+
+        contenido = []
 
         # =========================
-        # GRAFICO 1 (EDAD)
+        # CREAR GRÁFICO EDAD
         # =========================
-        fig1 = px.histogram(df, x="edad", title="Distribución de edad")
-        fig1.write_image("edad.png")
 
-        # =========================
-        # GRAFICO 2 (SEXO)
-        # =========================
-        fig2 = px.pie(df, names="sexo_al_nacer", title="Sexo")
-        fig2.write_image("sexo.png")
+        if "edad" in df.columns:
 
-        # =========================
-        # CONTENIDO PDF
-        # =========================
-        contenido.append(Paragraph("INFORME EJECUTIVO - OBSERVATORIO SOCIAL", styles["Title"]))
-        contenido.append(Spacer(1, 12))
+            fig1 = px.histogram(
+                df,
+                x="edad",
+                nbins=15,
+                title="Distribución de edad"
+            )
 
-        contenido.append(Paragraph(f"Personas: {total}", styles["BodyText"]))
-        contenido.append(Paragraph(f"Egresados: {total_egresados}", styles["BodyText"]))
-        contenido.append(Paragraph(f"Tasa de egreso: {tasa_egreso}%", styles["BodyText"]))
-        contenido.append(Paragraph(f"Edad promedio: {edad_promedio}", styles["BodyText"]))
-
-        contenido.append(Spacer(1, 12))
-
-        contenido.append(Paragraph("ANÁLISIS GENERAL", styles["Heading2"]))
-        contenido.append(Paragraph(
-            "El análisis muestra la distribución poblacional y características sociodemográficas de los usuarios del sistema.",
-            styles["BodyText"]
-        ))
-
-        contenido.append(Spacer(1, 12))
+            fig1.write_image(
+                "edad.png",
+                engine="kaleido"
+            )
 
         # =========================
-        # INSERTAR GRAFICOS
+        # CREAR GRÁFICO SEXO
         # =========================
-        contenido.append(Image("edad.png", width=400, height=200))
-        contenido.append(Spacer(1, 12))
-        contenido.append(Image("sexo.png", width=400, height=200))
 
-        contenido.append(Spacer(1, 12))
+        if "sexo_al_nacer" in df.columns:
 
-        contenido.append(Paragraph("CONCLUSIÓN", styles["Heading2"]))
-        contenido.append(Paragraph(
-            "Se recomienda fortalecer la intervención social basada en seguimiento individual y caracterización poblacional.",
-            styles["BodyText"]
-        ))
+            fig2 = px.pie(
+                df,
+                names="sexo_al_nacer",
+                title="Sexo al nacer"
+            )
+
+            fig2.write_image(
+                "sexo.png",
+                engine="kaleido"
+            )
+
+        # =========================
+        # TITULO
+        # =========================
+
+        contenido.append(
+
+            Paragraph(
+                "INFORME EJECUTIVO - OBSERVATORIO SOCIAL",
+                styles["Title"]
+            )
+
+        )
+
+        contenido.append(
+            Spacer(1,12)
+        )
+
+        # =========================
+        # INDICADORES
+        # =========================
+
+        contenido.append(
+
+            Paragraph(
+                f"Total personas: {total}",
+                styles["BodyText"]
+            )
+
+        )
+
+        contenido.append(
+
+            Paragraph(
+                f"Egresados: {total_egresados}",
+                styles["BodyText"]
+            )
+
+        )
+
+        contenido.append(
+
+            Paragraph(
+                f"Tasa de egreso: {tasa_egreso}%",
+                styles["BodyText"]
+            )
+
+        )
+
+        contenido.append(
+
+            Paragraph(
+                f"Edad promedio: {edad_promedio}",
+                styles["BodyText"]
+            )
+
+        )
+
+        contenido.append(
+            Spacer(1,12)
+        )
+
+        # =========================
+        # ANALISIS
+        # =========================
+
+        contenido.append(
+
+            Paragraph(
+                "ANÁLISIS GENERAL",
+                styles["Heading2"]
+            )
+
+        )
+
+        contenido.append(
+
+            Paragraph(
+                "El Observatorio Social permite identificar patrones demográficos, indicadores institucionales y resultados de intervención social.",
+                styles["BodyText"]
+            )
+
+        )
+
+        contenido.append(
+            Spacer(1,12)
+        )
+
+        # =========================
+        # HALLAZGOS
+        # =========================
+
+        contenido.append(
+
+            Paragraph(
+                "HALLAZGOS",
+                styles["Heading2"]
+            )
+
+        )
+
+        if edad_promedio > 50:
+
+            contenido.append(
+
+                Paragraph(
+                    "• Se evidencia envejecimiento poblacional.",
+                    styles["BodyText"]
+                )
+
+            )
+
+        if tasa_egreso < 10:
+
+            contenido.append(
+
+                Paragraph(
+                    "• La tasa de egreso es baja.",
+                    styles["BodyText"]
+                )
+
+            )
+
+        if edad_promedio <= 50 and tasa_egreso >= 10:
+
+            contenido.append(
+
+                Paragraph(
+                    "• No se identifican alertas relevantes.",
+                    styles["BodyText"]
+                )
+
+            )
+
+        contenido.append(
+            Spacer(1,12)
+        )
+
+        # =========================
+        # GRAFICOS
+        # =========================
+
+        if os.path.exists("edad.png"):
+
+            contenido.append(
+
+                Image(
+                    "edad.png",
+                    width=450,
+                    height=250
+                )
+
+            )
+
+            contenido.append(
+                Spacer(1,12)
+            )
+
+        if os.path.exists("sexo.png"):
+
+            contenido.append(
+
+                Image(
+                    "sexo.png",
+                    width=450,
+                    height=250
+                )
+
+            )
+
+            contenido.append(
+                Spacer(1,12)
+            )
+
+        # =========================
+        # CONCLUSION
+        # =========================
+
+        contenido.append(
+
+            Paragraph(
+                "CONCLUSIÓN",
+                styles["Heading2"]
+            )
+
+        )
+
+        contenido.append(
+
+            Paragraph(
+                "Se recomienda fortalecer la intervención social mediante seguimiento individual, gestión de casos y estrategias de egreso sostenible.",
+                styles["BodyText"]
+            )
+
+        )
+
+        # =========================
+        # CREAR PDF
+        # =========================
 
         doc.build(contenido)
 
-        with open(archivo, "rb") as f:
+        with open(
+            archivo,
+            "rb"
+        ) as f:
+
             st.download_button(
+
                 "⬇️ Descargar PDF",
-                f,
+
+                data=f,
+
                 file_name=archivo,
+
                 mime="application/pdf"
+
             )
 
-        st.success("PDF generado correctamente")
+        st.success(
+            "✅ PDF generado correctamente"
+        )
+
+    except Exception as e:
+
+        st.error(
+            f"Error al generar PDF: {e}"
+        )
         # =========================
         # NUEVO REGISTRO
         # =========================
