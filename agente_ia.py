@@ -199,15 +199,7 @@ def formulario_registro():
 
     else:
         st.info("Ingrese la contraseña para habilitar el formulario")
-# =========================
-# CONFIG
-# =========================
-st.set_page_config(
-    page_title="Observatorio Social Asociación Ciudad Futuro",
-    page_icon="📊",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
+
 # =========================
 # ESTILO INSTITUCIONAL
 # =========================
