@@ -46,159 +46,289 @@ def gestion_usuarios():
     
     st.title("⚙️ Gestión de usuarios")
 
-    df = pd.read_sql("SELECT * FROM habitante_de_calle", engine)
+    # =====================
+    # CARGAR BASE
+    # =====================
 
-    df["modalidad"] = df["modalidad"].astype(str).str.upper().str.strip()
-    df["estado_caso"] = df["estado_caso"].astype(str).str.upper().str.strip()
-
-    df_activos = df[df["estado_caso"] == "ACTIVO"]
-
-    # ================= CUPOS =================
-    urbano = len(df[(df["modalidad"] == "URBANO") & (df["estado_caso"] == "ACTIVO")])
-    granja = len(df[(df["modalidad"] == "GRANJA") & (df["estado_caso"] == "ACTIVO")])
-
-    col1, col2, col3 = st.columns(3)
-    col1.metric("Urbanos", urbano)
-    col2.metric("Granja", granja)
-    col3.metric("Total", urbano + granja)
-
-    st.divider()
-
-    # ================= LISTADO =================
-    st.subheader("Usuarios activos")
-
-    st.dataframe(df_activos)
-
-    st.divider()
-
-    # ================= BUSCADOR =================
-    df["nombre"] = df["nombres"] + " " + df["apellidos"]
-
-    usuario_sel = st.selectbox(
-        "Buscar usuario",
-        df.index,
-        format_func=lambda x: df.loc[x, "nombre"]
+    df = pd.read_sql(
+        "SELECT * FROM habitante_de_calle",
+        engine
     )
 
-    persona = df.loc[usuario_sel]
+    df["modalidad"] = (
+        df["modalidad"]
+        .astype(str)
+        .str.upper()
+        .str.strip()
+    )
+
+    df["estado_caso"] = (
+        df["estado_caso"]
+        .astype(str)
+        .str.upper()
+        .str.strip()
+    )
+
+    df["nombre"] = (
+        df["nombres"].astype(str)
+        + " "
+        + df["apellidos"].astype(str)
+    )
+
+    # =====================
+    # INDICADORES
+    # =====================
+
+    urbanos = len(
+        df[
+            (df["modalidad"]=="URBANO")
+            &
+            (df["estado_caso"]=="ACTIVO")
+        ]
+    )
+
+    granja = len(
+        df[
+            (df["modalidad"]=="GRANJA")
+            &
+            (df["estado_caso"]=="ACTIVO")
+        ]
+    )
+
+    c1,c2,c3 = st.columns(3)
+
+    c1.metric("🏙️ Urbanos", urbanos)
+    c2.metric("🌱 Granja", granja)
+    c3.metric("👥 Total", urbanos+granja)
+
+    st.divider()
+
+    # =====================
+    # BUSCADOR
+    # =====================
+
+    st.subheader("🔎 Buscar usuario")
+
+    usuario = st.selectbox(
+
+        "Seleccione",
+
+        df.index,
+
+        format_func=lambda x:
+        f"{df.loc[x,'nombre']} - {df.loc[x,'numero_identificacion']}"
+
+    )
+
+    persona = df.loc[usuario]
 
     st.info(f"""
-    👤 {persona['nombre']}
-    🪪 {persona['numero_identificacion']}
-    📌 {persona['estado_caso']}
-    """)
 
-    colA, colB = st.columns(2)
+👤 {persona['nombre']}
 
-    # ================= EGRESO =================
-    with colA:
-        if persona["estado_caso"] == "ACTIVO":
-            if st.button("📤 Egreso"):
+🪪 {persona['numero_identificacion']}
+
+📌 Estado: {persona['estado_caso']}
+
+🏷️ Modalidad: {persona['modalidad']}
+
+""")
+
+    col1,col2 = st.columns(2)
+
+    # =====================
+    # EGRESO
+    # =====================
+
+    with col1:
+
+        if persona["estado_caso"]=="ACTIVO":
+
+            if st.button("📤 Registrar egreso"):
 
                 with engine.begin() as conn:
-                    conn.execute(text("""
+
+                    conn.execute(
+
+                        text("""
+
                         UPDATE habitante_de_calle
-                        SET estado_caso = 'EGRESADO',
-                            fecha_ultimo_egreso = CURRENT_DATE
-                        WHERE numero_identificacion = :doc
-                    """), {"doc": persona["numero_identificacion"]})
+
+                        SET estado_caso='EGRESADO',
+
+                        fecha_ultimo_egreso=CURRENT_DATE
+
+                        WHERE numero_identificacion=:doc
+
+                        """),
+
+                        {
+                            "doc":
+                            persona["numero_identificacion"]
+                        }
+
+                    )
 
                 st.success("Egreso registrado")
+
                 st.rerun()
 
-    # ================= REINGRESO =================
-    with colB:
-        if persona["estado_caso"] == "EGRESADO":
-            if st.button("📥 Reingreso"):
+    # =====================
+    # REINGRESO
+    # =====================
+
+    with col2:
+
+        if persona["estado_caso"]=="EGRESADO":
+
+            if st.button("📥 Registrar reingreso"):
 
                 with engine.begin() as conn:
-                    conn.execute(text("""
+
+                    conn.execute(
+
+                        text("""
+
                         UPDATE habitante_de_calle
-                        SET estado_caso = 'ACTIVO',
-                            fecha_ultimo_ingreso = CURRENT_DATE,
-                            numero_reingresos = COALESCE(numero_reingresos,0)+1
-                        WHERE numero_identificacion = :doc
-                    """), {"doc": persona["numero_identificacion"]})
+
+                        SET estado_caso='ACTIVO',
+
+                        fecha_ultimo_ingreso=CURRENT_DATE,
+
+                        numero_reingresos=COALESCE(numero_reingresos,0)+1
+
+                        WHERE numero_identificacion=:doc
+
+                        """),
+
+                        {
+                            "doc":
+                            persona["numero_identificacion"]
+                        }
+
+                    )
 
                 st.success("Reingreso registrado")
+
                 st.rerun()
-def formulario_registro():
-    
-    st.subheader("🔐 Registro de usuarios")
 
-    clave = st.text_input("Ingrese la contraseña", type="password")
+    st.divider()
 
-    if clave == "Pereira2026":
+    # =====================
+    # NUEVO USUARIO
+    # =====================
 
-        with st.form("registro_usuario"):
+    st.subheader("➕ Registrar nuevo usuario")
 
-            nombres = st.text_input("Nombres")
-            apellidos = st.text_input("Apellidos")
+    with st.form("nuevo_usuario"):
 
-            sexo = st.selectbox("Sexo al nacer", ["Masculino", "Femenino"])
-            edad = st.number_input("Edad", 0, 120, 18)
+        nombres = st.text_input("Nombres")
 
-            tipo_id = st.selectbox("Tipo ID", ["CC", "TI", "CE", "PEP", "Otro"])
-            numero_id = st.text_input("Número de identificación")
+        apellidos = st.text_input("Apellidos")
 
-            etnia = st.selectbox("Etnia", ["Ninguno", "Afrodescendiente", "Indígena", "Mestizo"])
-            discapacidad = st.selectbox("Discapacidad", ["No", "Sí"])
+        sexo = st.selectbox(
+            "Sexo",
+            ["Masculino","Femenino"]
+        )
 
-            migracion = st.selectbox("Migración", ["NO", "SI"])
+        edad = st.number_input(
+            "Edad",
+            0,
+            120,
+            18
+        )
 
-            educacion = st.selectbox(
-                "Educación",
-                ["Ninguno", "Primaria", "Secundaria", "Técnico", "Tecnólogo", "Universitario"]
+        tipo_id = st.selectbox(
+            "Tipo ID",
+            ["CC","TI","CE","PEP","Otro"]
+        )
+
+        numero_id = st.text_input(
+            "Número identificación"
+        )
+
+        modalidad = st.selectbox(
+            "Modalidad",
+            ["URBANO","GRANJA"]
+        )
+
+        guardar_usuario = st.form_submit_button(
+            "💾 Guardar usuario"
+        )
+
+    if guardar_usuario:
+
+        with engine.begin() as conn:
+
+            conn.execute(
+
+                text("""
+
+                INSERT INTO habitante_de_calle(
+
+                nombres,
+
+                apellidos,
+
+                sexo_al_nacer,
+
+                edad,
+
+                tipo_de_identificacion,
+
+                numero_identificacion,
+
+                estado_caso,
+
+                modalidad
+
+                )
+
+                VALUES(
+
+                :nombres,
+
+                :apellidos,
+
+                :sexo,
+
+                :edad,
+
+                :tipo_id,
+
+                :numero_id,
+
+                'ACTIVO',
+
+                :modalidad
+
+                )
+
+                """),
+
+                {
+
+                    "nombres":nombres,
+
+                    "apellidos":apellidos,
+
+                    "sexo":sexo,
+
+                    "edad":edad,
+
+                    "tipo_id":tipo_id,
+
+                    "numero_id":numero_id,
+
+                    "modalidad":modalidad
+
+                }
+
             )
 
-            barrio = st.text_input("Barrio")
-            comuna = st.text_input("Comuna")
-            telefono = st.text_input("Teléfono")
+        st.success("✅ Usuario registrado")
 
-            consumo = st.selectbox(
-                "Consumo",
-                ["No", "Marihuana", "Cocaína", "Bazuco", "Alcohol", "Heroína", "Policonsumo"]
-            )
-
-            enfermedad = st.selectbox("Enfermedad mental", ["No", "Sí"])
-
-            modalidad = st.selectbox("Modalidad", ["GRANJA", "URBANO"])
-
-            guardar = st.form_submit_button("Guardar usuario")
-
-        if guardar:
-
-            with engine.begin() as conn:
-                conn.execute(text("""
-                    INSERT INTO habitante_de_calle (
-                        nombres, apellidos, sexo_al_nacer, edad,
-                        tipo_de_identificacion, numero_identificacion,
-                        grupos_etnicos_afro_indigena,
-                        personas_con_discapacidad,
-                        indicador_migracion,
-                        nivel_educativo_que_tiene_o_cursa,
-                        barrio_o_vereda_de_residencia,
-                        comuna_o_corregimiento_de_residencia,
-                        telefono_y_o_celular,
-                        tipo_de_consumo,
-                        enfermedad_mental,
-                        estado_caso,
-                        modalidad
-                    )
-                    VALUES (
-                        :nombres, :apellidos, :sexo, :edad,
-                        :tipo_id, :numero_id, :etnia,
-                        :discapacidad, :migracion, :educacion,
-                        :barrio, :comuna, :telefono,
-                        :consumo, :enfermedad,
-                        'ACTIVO', :modalidad
-                    )
-                """), locals())
-
-            st.success("Usuario registrado correctamente")
-
-    else:
-        st.info("Ingrese la contraseña para habilitar el formulario")
+        st.rerun()
 
 # =========================
 # ESTILO INSTITUCIONAL
