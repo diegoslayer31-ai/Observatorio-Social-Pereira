@@ -172,7 +172,7 @@ def gestion_usuarios():
     )
 
     st.divider()
-    # ==================================
+        # ==================================
     # BUSCADOR
     # ==================================
 
@@ -185,6 +185,7 @@ def gestion_usuarios():
         df.index,
 
         format_func=lambda x:
+
         f"{df.loc[x,'nombre']} - {df.loc[x,'numero_identificacion']}"
 
     )
@@ -203,20 +204,30 @@ def gestion_usuarios():
 
     """)
 
+    st.divider()
+
     # ==================================
-    # ÚLTIMAS 10 NOVEDADES
+    # 📝 ÚLTIMAS 10 NOVEDADES
     # ==================================
 
     st.subheader("📝 Últimas 10 novedades")
 
     try:
 
-        df_novedades = pd.read_sql("""
+        documento = str(
+            persona["numero_identificacion"]
+        ).strip()
+
+        df_novedades = pd.read_sql(f"""
 
             SELECT
 
                 n.fecha,
+
                 n.profesional,
+
+                o.objetivo_tipo,
+
                 n.descripcion
 
             FROM pai_novedades n
@@ -225,41 +236,43 @@ def gestion_usuarios():
 
             ON n.id_objetivo = o.id
 
-            WHERE o.documento_usuario = :doc
+            WHERE o.documento_usuario = '{documento}'
 
             ORDER BY n.fecha DESC
 
             LIMIT 10
 
-        """,
-
-        engine,
-
-        params={
-
-            "doc": str(persona["numero_identificacion"])
-
-        }
-
-        )
+        """, engine)
 
         if df_novedades.empty:
 
-            st.info("No hay novedades registradas")
+            st.warning(
+                "⚠️ No existen novedades registradas."
+            )
 
         else:
 
+            st.success(
+                f"Se encontraron {len(df_novedades)} novedades."
+            )
+
             st.dataframe(
+
                 df_novedades,
+
                 use_container_width=True
+
             )
 
     except Exception as e:
 
-        st.warning(e)
+        st.warning(
+            "Error cargando novedades"
+        )
+
+        st.caption(str(e))
 
     st.divider()
-
     # ==================================
     # ACTUALIZAR ESTADO Y MODALIDAD
     # ==================================
