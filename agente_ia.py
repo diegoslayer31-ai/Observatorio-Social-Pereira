@@ -771,41 +771,6 @@ elif st.session_state.page == "genero_diversidad":
 
     st.divider()
 
-    # =====================================
-    # 🚫 INACTIVAR / REACTIVAR
-    # =====================================
-    st.subheader("🚫 Cambiar estado del usuario")
-
-    df_lista = pd.read_sql("""
-        SELECT numero_identificacion, nombres, apellidos, estado_caso
-        FROM habitante_de_calle
-    """, engine)
-
-    df_lista["nombre"] = df_lista["nombres"] + " " + df_lista["apellidos"]
-
-    usuario_sel = st.selectbox(
-        "Selecciona usuario",
-        df_lista["numero_identificacion"].tolist(),
-        format_func=lambda x: df_lista[df_lista["numero_identificacion"] == x]["nombre"].values[0]
-    )
-
-    nuevo_estado = st.selectbox("Nuevo estado", ["ACTIVO", "INACTIVO"])
-
-    if st.button("Actualizar estado"):
-
-        with engine.begin() as conn:
-            conn.execute(text("""
-                UPDATE habitante_de_calle
-                SET estado_caso = :estado
-                WHERE numero_identificacion = :id
-            """), {
-                "estado": nuevo_estado,
-                "id": usuario_sel
-            })
-
-        st.success("Estado actualizado")
-        st.rerun()
-
 def gestion_usuarios():
     
     st.title("⚙️ Gestión de usuarios")
