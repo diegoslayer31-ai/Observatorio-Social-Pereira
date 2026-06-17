@@ -42,7 +42,86 @@ from reportlab.platypus import (
 )
 
 from reportlab.lib.styles import getSampleStyleSheet
+def gestion_usuarios():
+    
+    st.title("⚙️ Gestión de usuarios")
 
+    df = pd.read_sql("SELECT * FROM habitante_de_calle", engine)
+
+    df["modalidad"] = df["modalidad"].astype(str).str.upper().str.strip()
+    df["estado_caso"] = df["estado_caso"].astype(str).str.upper().str.strip()
+
+    df_activos = df[df["estado_caso"] == "ACTIVO"]
+
+    # ================= CUPOS =================
+    urbano = len(df[(df["modalidad"] == "URBANO") & (df["estado_caso"] == "ACTIVO")])
+    granja = len(df[(df["modalidad"] == "GRANJA") & (df["estado_caso"] == "ACTIVO")])
+
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Urbanos", urbano)
+    col2.metric("Granja", granja)
+    col3.metric("Total", urbano + granja)
+
+    st.divider()
+
+    # ================= LISTADO =================
+    st.subheader("Usuarios activos")
+
+    st.dataframe(df_activos)
+
+    st.divider()
+
+    # ================= BUSCADOR =================
+    df["nombre"] = df["nombres"] + " " + df["apellidos"]
+
+    usuario_sel = st.selectbox(
+        "Buscar usuario",
+        df.index,
+        format_func=lambda x: df.loc[x, "nombre"]
+    )
+
+    persona = df.loc[usuario_sel]
+
+    st.info(f"""
+    👤 {persona['nombre']}
+    🪪 {persona['numero_identificacion']}
+    📌 {persona['estado_caso']}
+    """)
+
+    colA, colB = st.columns(2)
+
+    # ================= EGRESO =================
+    with colA:
+        if persona["estado_caso"] == "ACTIVO":
+            if st.button("📤 Egreso"):
+
+                with engine.begin() as conn:
+                    conn.execute(text("""
+                        UPDATE habitante_de_calle
+                        SET estado_caso = 'EGRESADO',
+                            fecha_ultimo_egreso = CURRENT_DATE
+                        WHERE numero_identificacion = :doc
+                    """), {"doc": persona["numero_identificacion"]})
+
+                st.success("Egreso registrado")
+                st.rerun()
+
+    # ================= REINGRESO =================
+    with colB:
+        if persona["estado_caso"] == "EGRESADO":
+            if st.button("📥 Reingreso"):
+
+                with engine.begin() as conn:
+                    conn.execute(text("""
+                        UPDATE habitante_de_calle
+                        SET estado_caso = 'ACTIVO',
+                            fecha_ultimo_ingreso = CURRENT_DATE,
+                            numero_reingresos = COALESCE(numero_reingresos,0)+1
+                        WHERE numero_identificacion = :doc
+                    """), {"doc": persona["numero_identificacion"]})
+
+                st.success("Reingreso registrado")
+                st.rerun()
 def formulario_registro():
     
     st.subheader("🔐 Registro de usuarios")
@@ -283,6 +362,7 @@ with st.sidebar:
 
     st.markdown("---")
 
+
     if st.button("🏠 Inicio"):
         st.session_state.page = "home"
         st.rerun()
@@ -291,10 +371,13 @@ with st.sidebar:
         st.session_state.page = "gestion_usuarios"
         st.rerun()
 
+    if st.button("➕ Registro"):
+        st.session_state.page = "registro"
+        st.rerun()
+
     if st.button("♀️ Género y Diversidad"):
         st.session_state.page = "genero_diversidad"
         st.rerun()
-
 # =====================================
 # FUNCIÓN GÉNERO Y DIVERSIDAD (ACTUALIZADA)
 # =====================================
