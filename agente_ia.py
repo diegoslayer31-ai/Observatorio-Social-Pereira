@@ -120,188 +120,6 @@ def formulario_registro():
 
     else:
         st.info("Ingrese la contraseña para habilitar el formulario")
-def gestion_usuarios():
-    
-    st.title("⚙️ Gestión de usuarios")
-
-    # =========================
-    # CARGA DE DATOS
-    # =========================
-    df = pd.read_sql("""
-        SELECT *
-        FROM habitante_de_calle
-    """, engine)
-
-    df["modalidad"] = df["modalidad"].astype(str).str.upper().str.strip()
-    df["estado_caso"] = df["estado_caso"].astype(str).str.upper().str.strip()
-
-    df_activos = df[df["estado_caso"] == "ACTIVO"]
-
-    # =========================
-    # CUPOS EN TIEMPO REAL
-    # =========================
-    urbano, granja = cupos_actuales(df)
-
-    col1, col2, col3 = st.columns(3)
-
-    col1.metric("🏙️ Urbanos activos", urbano)
-    col2.metric("🌱 Granja activos", granja)
-    col3.metric("📊 Total activos", urbano + granja)
-
-    st.divider()
-
-    # =========================
-    # LISTADO ACTIVOS
-    # =========================
-    st.subheader("📋 Usuarios activos")
-
-    st.dataframe(
-        df_activos[[
-            "nombres",
-            "apellidos",
-            "numero_identificacion",
-            "modalidad",
-            "estado_caso"
-        ]],
-        use_container_width=True
-    )
-
-    st.divider()
-
-    # =========================
-    # BUSCADOR
-    # =========================
-    df["nombre"] = df["nombres"].astype(str) + " " + df["apellidos"].astype(str)
-
-    usuario_sel = st.selectbox(
-        "🔎 Buscar usuario",
-        df.index,
-        format_func=lambda x: f"{df.loc[x,'nombre']} - {df.loc[x,'numero_identificacion']}"
-    )
-
-    persona = df.loc[usuario_sel]
-
-    st.info(f"""
-    👤 {persona['nombre']}
-    🪪 {persona['numero_identificacion']}
-    📌 Estado: {persona['estado_caso']}
-    🏷️ Modalidad: {persona['modalidad']}
-    """)
-
-    colA, colB = st.columns(2)
-
-    # =========================
-    # EGRESO
-    # =========================
-    with colA:
-
-        if persona["estado_caso"] == "ACTIVO":
-
-            if st.button("📤 Registrar egreso"):
-
-                with engine.begin() as conn:
-
-                    conn.execute(text("""
-                        UPDATE habitante_de_calle
-                        SET estado_caso = 'EGRESADO',
-                            fecha_ultimo_egreso = CURRENT_DATE
-                        WHERE numero_identificacion = :doc
-                    """), {"doc": persona["numero_identificacion"]})
-
-                    conn.execute(text("""
-                        INSERT INTO movimientos_habitante (
-                            numero_identificacion,
-                            tipo_movimiento,
-                            modalidad,
-                            usuario_registra,
-                            observacion
-                        )
-                        VALUES (
-                            :doc,
-                            'EGRESO',
-                            :modalidad,
-                            'sistema',
-                            'Egreso desde gestión usuarios'
-                        )
-                    """), {
-                        "doc": persona["numero_identificacion"],
-                        "modalidad": persona["modalidad"]
-                    })
-
-                st.success("✔ Egreso registrado")
-                st.rerun()
-
-    # =========================
-    # REINGRESO
-    # =========================
-    with colB:
-
-        if persona["estado_caso"] == "EGRESADO":
-
-            if st.button("📥 Registrar reingreso"):
-
-                with engine.begin() as conn:
-
-                    conn.execute(text("""
-                        UPDATE habitante_de_calle
-                        SET estado_caso = 'ACTIVO',
-                            fecha_ultimo_ingreso = CURRENT_DATE,
-                            numero_reingresos = COALESCE(numero_reingresos,0) + 1
-                        WHERE numero_identificacion = :doc
-                    """), {"doc": persona["numero_identificacion"]})
-
-                    conn.execute(text("""
-                        INSERT INTO movimientos_habitante (
-                            numero_identificacion,
-                            tipo_movimiento,
-                            modalidad,
-                            usuario_registra,
-                            observacion
-                        )
-                        VALUES (
-                            :doc,
-                            'REINGRESO',
-                            :modalidad,
-                            'sistema',
-                            'Reingreso desde gestión usuarios'
-                        )
-                    """), {
-                        "doc": persona["numero_identificacion"],
-                        "modalidad": persona["modalidad"]
-                    })
-
-                st.success("✔ Reingreso registrado")
-                st.rerun()
-
-    st.divider()
-
-    # =========================
-    # CAMBIO MANUAL DE ESTADO
-    # =========================
-    st.subheader("🚫 Cambiar estado")
-
-    usuario_estado = st.selectbox(
-        "Selecciona usuario",
-        df["numero_identificacion"].tolist()
-    )
-
-    nuevo_estado = st.selectbox("Nuevo estado", ["ACTIVO", "EGRESADO"])
-
-    if st.button("Actualizar estado"):
-
-        with engine.begin() as conn:
-
-            conn.execute(text("""
-                UPDATE habitante_de_calle
-                SET estado_caso = :estado
-                WHERE numero_identificacion = :id
-            """), {
-                "estado": nuevo_estado,
-                "id": usuario_estado
-            })
-
-        st.success("Estado actualizado")
-        st.rerun()
 # =========================
 # CONFIG
 # =========================
@@ -833,8 +651,37 @@ if st.session_state.page == "genero_diversidad":
 
         st.warning("Error cargando indicadores")
         st.caption(str(e))
+# =====================================
+# ROUTER
+# =====================================
 
-    
+if st.session_state.page == "gestion_usuarios":
+
+    formulario_registro()
+    st.stop()
+
+elif st.session_state.page == "genero_diversidad":
+
+    formulario_genero_diversidad()
+    st.stop()
+    # =========================
+    # 2. LISTA DE USUARIOS ACTIVOS
+    # =========================
+    st.subheader("📋 Usuarios activos")
+
+    with st.container():
+        st.dataframe(
+            df_activos[[
+                "nombre",
+                "numero_identificacion",
+                "estado_caso"
+            ]],
+            use_container_width=True
+        )
+
+    st.markdown("---")
+
+
     # =====================================
     # 🔐 REGISTRO COMPLETO (ANTES TAB11)
     # =====================================
@@ -924,7 +771,188 @@ if st.session_state.page == "genero_diversidad":
 
     st.divider()
 
+def gestion_usuarios():
+    
+    st.title("⚙️ Gestión de usuarios")
 
+    # =========================
+    # CARGA DE DATOS
+    # =========================
+    df = pd.read_sql("""
+        SELECT *
+        FROM habitante_de_calle
+    """, engine)
+
+    df["modalidad"] = df["modalidad"].astype(str).str.upper().str.strip()
+    df["estado_caso"] = df["estado_caso"].astype(str).str.upper().str.strip()
+
+    df_activos = df[df["estado_caso"] == "ACTIVO"]
+
+    # =========================
+    # CUPOS EN TIEMPO REAL
+    # =========================
+    urbano, granja = cupos_actuales(df)
+
+    col1, col2, col3 = st.columns(3)
+
+    col1.metric("🏙️ Urbanos activos", urbano)
+    col2.metric("🌱 Granja activos", granja)
+    col3.metric("📊 Total activos", urbano + granja)
+
+    st.divider()
+
+    # =========================
+    # LISTADO ACTIVOS
+    # =========================
+    st.subheader("📋 Usuarios activos")
+
+    st.dataframe(
+        df_activos[[
+            "nombres",
+            "apellidos",
+            "numero_identificacion",
+            "modalidad",
+            "estado_caso"
+        ]],
+        use_container_width=True
+    )
+
+    st.divider()
+
+    # =========================
+    # BUSCADOR
+    # =========================
+    df["nombre"] = df["nombres"].astype(str) + " " + df["apellidos"].astype(str)
+
+    usuario_sel = st.selectbox(
+        "🔎 Buscar usuario",
+        df.index,
+        format_func=lambda x: f"{df.loc[x,'nombre']} - {df.loc[x,'numero_identificacion']}"
+    )
+
+    persona = df.loc[usuario_sel]
+
+    st.info(f"""
+    👤 {persona['nombre']}
+    🪪 {persona['numero_identificacion']}
+    📌 Estado: {persona['estado_caso']}
+    🏷️ Modalidad: {persona['modalidad']}
+    """)
+
+    colA, colB = st.columns(2)
+
+    # =========================
+    # EGRESO
+    # =========================
+    with colA:
+
+        if persona["estado_caso"] == "ACTIVO":
+
+            if st.button("📤 Registrar egreso"):
+
+                with engine.begin() as conn:
+
+                    conn.execute(text("""
+                        UPDATE habitante_de_calle
+                        SET estado_caso = 'EGRESADO',
+                            fecha_ultimo_egreso = CURRENT_DATE
+                        WHERE numero_identificacion = :doc
+                    """), {"doc": persona["numero_identificacion"]})
+
+                    conn.execute(text("""
+                        INSERT INTO movimientos_habitante (
+                            numero_identificacion,
+                            tipo_movimiento,
+                            modalidad,
+                            usuario_registra,
+                            observacion
+                        )
+                        VALUES (
+                            :doc,
+                            'EGRESO',
+                            :modalidad,
+                            'sistema',
+                            'Egreso desde gestión usuarios'
+                        )
+                    """), {
+                        "doc": persona["numero_identificacion"],
+                        "modalidad": persona["modalidad"]
+                    })
+
+                st.success("✔ Egreso registrado")
+                st.rerun()
+
+    # =========================
+    # REINGRESO
+    # =========================
+    with colB:
+
+        if persona["estado_caso"] == "EGRESADO":
+
+            if st.button("📥 Registrar reingreso"):
+
+                with engine.begin() as conn:
+
+                    conn.execute(text("""
+                        UPDATE habitante_de_calle
+                        SET estado_caso = 'ACTIVO',
+                            fecha_ultimo_ingreso = CURRENT_DATE,
+                            numero_reingresos = COALESCE(numero_reingresos,0) + 1
+                        WHERE numero_identificacion = :doc
+                    """), {"doc": persona["numero_identificacion"]})
+
+                    conn.execute(text("""
+                        INSERT INTO movimientos_habitante (
+                            numero_identificacion,
+                            tipo_movimiento,
+                            modalidad,
+                            usuario_registra,
+                            observacion
+                        )
+                        VALUES (
+                            :doc,
+                            'REINGRESO',
+                            :modalidad,
+                            'sistema',
+                            'Reingreso desde gestión usuarios'
+                        )
+                    """), {
+                        "doc": persona["numero_identificacion"],
+                        "modalidad": persona["modalidad"]
+                    })
+
+                st.success("✔ Reingreso registrado")
+                st.rerun()
+
+    st.divider()
+
+    # =========================
+    # CAMBIO MANUAL DE ESTADO
+    # =========================
+    st.subheader("🚫 Cambiar estado")
+
+    usuario_estado = st.selectbox(
+        "Selecciona usuario",
+        df["numero_identificacion"].tolist()
+    )
+
+    nuevo_estado = st.selectbox("Nuevo estado", ["ACTIVO", "EGRESADO"])
+
+    if st.button("Actualizar estado"):
+
+        with engine.begin() as conn:
+
+            conn.execute(text("""
+                UPDATE habitante_de_calle
+                SET estado_caso = :estado
+                WHERE numero_identificacion = :id
+            """), {
+                "estado": nuevo_estado,
+                "id": usuario_estado
+            })
+
+        st.success("Estado actualizado")
+        st.rerun()
 # =====================================
 # BANNER PRINCIPAL
 # =====================================
