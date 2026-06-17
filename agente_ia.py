@@ -99,94 +99,270 @@ def gestion_usuarios():
 
     st.divider()
 
-    # ==================================
-    # REGISTRAR NUEVO USUARIO
-    # ==================================
+    with st.form("nuevo_usuario"):
 
-    st.subheader("➕ Nuevo usuario")
+        st.markdown("### 👤 Datos personales")
 
-    with st.expander("Abrir formulario"):
+        nombres = st.text_input("Nombres")
 
-        with st.form("nuevo_usuario"):
+        apellidos = st.text_input("Apellidos")
 
-            nombres = st.text_input("Nombres")
+        sexo = st.selectbox(
+            "Sexo al nacer",
+            ["Masculino", "Femenino"]
+        )
 
-            apellidos = st.text_input("Apellidos")
+        fecha_nacimiento = st.date_input(
+            "Fecha de nacimiento"
+        )
 
-            sexo = st.selectbox(
-                "Sexo",
-                ["Masculino", "Femenino"]
+        edad = st.number_input(
+            "Edad",
+            0,
+            120,
+            18
+        )
+
+        tipo_id = st.selectbox(
+            "Tipo identificación",
+            [
+                "CC",
+                "TI",
+                "CE",
+                "PEP",
+                "Otro"
+            ]
+        )
+
+        numero_id = st.text_input(
+            "Número identificación"
+        )
+
+        telefono = st.text_input(
+            "Teléfono"
+        )
+
+        correo = st.text_input(
+            "Correo"
+        )
+
+        st.divider()
+
+        st.markdown("### 🏠 Caracterización social básica")
+
+        discapacidad = st.selectbox(
+            "Discapacidad",
+            ["No", "Sí"]
+        )
+
+        migracion = st.selectbox(
+            "Migración",
+            ["NO", "SI"]
+        )
+
+        etnia = st.selectbox(
+            "Grupo étnico",
+            [
+                "Ninguno",
+                "Afrodescendiente",
+                "Indígena",
+                "Mestizo"
+            ]
+        )
+
+        seguridad_salud = st.selectbox(
+            "Seguridad social",
+            [
+                "Subsidiado",
+                "Contributivo",
+                "Especial",
+                "No afiliado"
+            ]
+        )
+
+        educacion = st.selectbox(
+            "Nivel educativo",
+            [
+                "Ninguno",
+                "Primaria",
+                "Secundaria",
+                "Técnico",
+                "Tecnólogo",
+                "Universitario"
+            ]
+        )
+
+        ocupacion = st.text_input(
+            "Condición ocupacional"
+        )
+
+        barrio = st.text_input(
+            "Barrio o vereda"
+        )
+
+        comuna = st.text_input(
+            "Comuna o corregimiento"
+        )
+
+        zona = st.selectbox(
+            "Zona residencia",
+            [
+                "Urbana",
+                "Rural"
+            ]
+        )
+
+        direccion = st.text_input(
+            "Dirección"
+        )
+
+        st.divider()
+
+        st.markdown("### 🩺 Programa")
+
+        consumo = st.selectbox(
+            "Tipo consumo",
+            [
+                "No",
+                "Marihuana",
+                "Cocaína",
+                "Bazuco",
+                "Alcohol",
+                "Heroína",
+                "Policonsumo"
+            ]
+        )
+
+        enfermedad = st.selectbox(
+            "Enfermedad mental",
+            [
+                "No",
+                "Sí"
+            ]
+        )
+
+        modalidad = st.selectbox(
+            "Modalidad",
+            [
+                "URBANO",
+                "GRANJA"
+            ]
+        )
+
+        guardar = st.form_submit_button(
+            "💾 Guardar usuario"
+        )
+
+    if guardar:
+    
+        with engine.begin() as conn:
+
+            conn.execute(text("""
+
+            INSERT INTO habitante_de_calle(
+
+                nombres,
+                apellidos,
+                sexo_al_nacer,
+                fecha_nacimiento,
+                edad,
+                tipo_identificacion,
+                numero_identificacion,
+
+                personas_con_discapacidad,
+                indicador_migracion,
+                grupos_etnicos,
+                tipo_seguridad_salud,
+                nivel_educativo,
+                condicion_ocupacional,
+                barrio_vereda,
+                comuna_corregimiento,
+                zona_residencia,
+                direccion,
+
+                telefono,
+                correo,
+
+                tipo_consumo,
+                enfermedad_mental,
+
+                estado_caso,
+                modalidad,
+
+                fecha_ingreso_albergue,
+                numero_atenciones
+
             )
 
-            edad = st.number_input(
-                "Edad",
-                0,
-                120,
-                18
+            VALUES(
+
+                :nombres,
+                :apellidos,
+                :sexo,
+                :fecha_nacimiento,
+                :edad,
+                :tipo_id,
+                :numero_id,
+
+                :discapacidad,
+                :migracion,
+                :etnia,
+                :seguridad_salud,
+                :educacion,
+                :ocupacion,
+                :barrio,
+                :comuna,
+                :zona,
+                :direccion,
+
+                :telefono,
+                :correo,
+
+                :consumo,
+                :enfermedad,
+
+                'ACTIVO',
+                :modalidad,
+
+                CURRENT_DATE,
+                0
+
             )
 
-            numero_id = st.text_input(
-                "Número identificación"
-            )
+        """), {
 
-            modalidad = st.selectbox(
-                "Modalidad",
-                [
-                    "URBANO",
-                    "GRANJA"
-                ]
-            )
+            "nombres": nombres,
+            "apellidos": apellidos,
+            "sexo": sexo,
+            "fecha_nacimiento": fecha_nacimiento,
+            "edad": edad,
+            "tipo_id": tipo_id,
+            "numero_id": numero_id,
 
-            guardar = st.form_submit_button(
-                "💾 Guardar"
-            )
+            "discapacidad": discapacidad,
+            "migracion": migracion,
+            "etnia": etnia,
+            "seguridad_salud": seguridad_salud,
+            "educacion": educacion,
+            "ocupacion": ocupacion,
+            "barrio": barrio,
+            "comuna": comuna,
+            "zona": zona,
+            "direccion": direccion,
 
-        if guardar:
+            "telefono": telefono,
+            "correo": correo,
 
-            with engine.begin() as conn:
+            "consumo": consumo,
+            "enfermedad": enfermedad,
 
-                conn.execute(text("""
-                    INSERT INTO habitante_de_calle(
+            "modalidad": modalidad
 
-                        nombres,
-                        apellidos,
-                        sexo_al_nacer,
-                        edad,
-                        numero_identificacion,
-                        modalidad,
-                        estado_caso
+        })
 
-                    )
+    st.success("✅ Usuario registrado correctamente")
 
-                    VALUES(
-
-                        :nombres,
-                        :apellidos,
-                        :sexo,
-                        :edad,
-                        :numero_id,
-                        :modalidad,
-                        'ACTIVO'
-
-                    )
-
-                """),{
-
-                    "nombres": nombres,
-                    "apellidos": apellidos,
-                    "sexo": sexo,
-                    "edad": edad,
-                    "numero_id": numero_id,
-                    "modalidad": modalidad
-
-                })
-
-            st.success("✅ Usuario registrado")
-
-            st.rerun()
-
-    st.divider()
-
+    st.rerun()
     # ==================================
     # LISTADO
     # ==================================
