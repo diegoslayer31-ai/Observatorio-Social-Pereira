@@ -172,7 +172,6 @@ def gestion_usuarios():
     )
 
     st.divider()
-
     # ==================================
     # BUSCADOR
     # ==================================
@@ -186,7 +185,6 @@ def gestion_usuarios():
         df.index,
 
         format_func=lambda x:
-
         f"{df.loc[x,'nombre']} - {df.loc[x,'numero_identificacion']}"
 
     )
@@ -195,15 +193,70 @@ def gestion_usuarios():
 
     st.info(f"""
 
-👤 {persona['nombre']}
+    👤 {persona['nombre']}
 
-🪪 {persona['numero_identificacion']}
+    🪪 {persona['numero_identificacion']}
 
-📌 Estado: {persona['estado_caso']}
+    📌 Estado: {persona['estado_caso']}
 
-🏷️ Modalidad: {persona['modalidad']}
+    🏷️ Modalidad: {persona['modalidad']}
 
-""")
+    """)
+
+    # ==================================
+    # ÚLTIMAS 10 NOVEDADES
+    # ==================================
+
+    st.subheader("📝 Últimas 10 novedades")
+
+    try:
+
+        df_novedades = pd.read_sql("""
+
+            SELECT
+
+                n.fecha,
+                n.profesional,
+                n.descripcion
+
+            FROM pai_novedades n
+
+            INNER JOIN pai_objetivos o
+
+            ON n.id_objetivo = o.id
+
+            WHERE o.documento_usuario = :doc
+
+            ORDER BY n.fecha DESC
+
+            LIMIT 10
+
+        """,
+
+        engine,
+
+        params={
+
+            "doc": str(persona["numero_identificacion"])
+
+        }
+
+        )
+
+        if df_novedades.empty:
+
+            st.info("No hay novedades registradas")
+
+        else:
+
+            st.dataframe(
+                df_novedades,
+                use_container_width=True
+            )
+
+    except Exception as e:
+
+        st.warning(e)
 
     st.divider()
 
@@ -1291,7 +1344,7 @@ def gestion_usuarios():
     📌 Estado: {persona['estado_caso']}
     🏷️ Modalidad: {persona['modalidad']}
     """)
-
+        
     colA, colB = st.columns(2)
 
     # =========================
@@ -1406,6 +1459,7 @@ def gestion_usuarios():
 
         st.success("Estado actualizado")
         st.rerun()
+    
 # =====================================
 # BANNER PRINCIPAL
 # =====================================
