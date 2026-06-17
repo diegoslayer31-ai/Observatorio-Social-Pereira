@@ -726,119 +726,14 @@ if st.session_state.page == "genero_diversidad":
 # =====================================
 
 if st.session_state.page == "gestion_usuarios":
-    formulario_registro()
+    
+    gestion_usuarios()
     st.stop()
 elif st.session_state.page == "genero_diversidad":
 
     formulario_genero_diversidad()
     st.stop()
-    # =========================
-    # 2. LISTA DE USUARIOS ACTIVOS
-    # =========================
-    st.subheader("📋 Usuarios activos")
-
-    with st.container():
-        st.dataframe(
-            df_activos[[
-                "nombre",
-                "numero_identificacion",
-                "estado_caso"
-            ]],
-            use_container_width=True
-        )
-
-    st.markdown("---")
-
-
-    # =====================================
-    # 🔐 REGISTRO COMPLETO (ANTES TAB11)
-    # =====================================
-    st.subheader("➕ Registrar usuario (ficha social completa)")
-
-    with st.form("form_usuario_completo"):
-
-        nombres = st.text_input("Nombres")
-        apellidos = st.text_input("Apellidos")
-
-        sexo = st.selectbox("Sexo al nacer", ["Masculino", "Femenino"])
-        edad = st.number_input("Edad", 0, 120, 18)
-
-        tipo_id = st.selectbox("Tipo ID", ["CC", "TI", "CE", "PEP", "Otro"])
-        numero_id = st.text_input("Número de identificación")
-
-        etnia = st.selectbox("Etnia", ["Ninguno", "Afrodescendiente", "Indígena", "Mestizo"])
-        discapacidad = st.selectbox("Discapacidad", ["No", "Sí"])
-        migracion = st.selectbox("Migración", ["NO", "SI"])
-
-        educacion = st.selectbox(
-            "Educación",
-            ["Ninguno", "Primaria", "Secundaria", "Técnico", "Tecnólogo", "Universitario"]
-        )
-
-        barrio = st.text_input("Barrio")
-        comuna = st.text_input("Comuna")
-        telefono = st.text_input("Teléfono")
-
-        consumo = st.selectbox(
-            "Consumo",
-            ["No", "Marihuana", "Cocaína", "Bazuco", "Alcohol", "Heroína", "Policonsumo"]
-        )
-
-        enfermedad = st.selectbox("Enfermedad mental", ["No", "Sí"])
-        modalidad = st.selectbox("Modalidad", ["GRANJA", "URBANO"])
-
-        guardar = st.form_submit_button("Guardar usuario")
-
-    if guardar:
-
-        with engine.begin() as conn:
-            conn.execute(text("""
-                INSERT INTO habitante_de_calle (
-                    nombres, apellidos, sexo_al_nacer, edad,
-                    tipo_de_identificacion, numero_identificacion,
-                    grupos_etnicos_afro_indigena,
-                    personas_con_discapacidad,
-                    indicador_migracion,
-                    nivel_educativo_que_tiene_o_cursa,
-                    barrio_o_vereda_de_residencia,
-                    comuna_o_corregimiento_de_residencia,
-                    telefono_y_o_celular,
-                    tipo_de_consumo,
-                    enfermedad_mental,
-                    estado_caso,
-                    modalidad
-                )
-                VALUES (
-                    :nombres, :apellidos, :sexo, :edad,
-                    :tipo_id, :numero_id, :etnia,
-                    :discapacidad, :migracion, :educacion,
-                    :barrio, :comuna, :telefono,
-                    :consumo, :enfermedad,
-                    'ACTIVO', :modalidad
-                )
-            """), {
-                "nombres": nombres,
-                "apellidos": apellidos,
-                "sexo": sexo,
-                "edad": edad,
-                "tipo_id": tipo_id,
-                "numero_id": numero_id,
-                "etnia": etnia,
-                "discapacidad": discapacidad,
-                "migracion": migracion,
-                "educacion": educacion,
-                "barrio": barrio,
-                "comuna": comuna,
-                "telefono": telefono,
-                "consumo": consumo,
-                "enfermedad": enfermedad,
-                "modalidad": modalidad
-            })
-
-        st.success("Usuario registrado correctamente")
-
-    st.divider()
-
+   
 def gestion_usuarios():
     
     st.title("⚙️ Gestión de usuarios")
@@ -866,24 +761,6 @@ def gestion_usuarios():
     col1.metric("🏙️ Urbanos activos", urbano)
     col2.metric("🌱 Granja activos", granja)
     col3.metric("📊 Total activos", urbano + granja)
-
-    st.divider()
-
-    # =========================
-    # LISTADO ACTIVOS
-    # =========================
-    st.subheader("📋 Usuarios activos")
-
-    st.dataframe(
-        df_activos[[
-            "nombres",
-            "apellidos",
-            "numero_identificacion",
-            "modalidad",
-            "estado_caso"
-        ]],
-        use_container_width=True
-    )
 
     st.divider()
 
@@ -3504,83 +3381,6 @@ with tab6:
             st.success("✅ Novedad registrada correctamente")
             st.rerun()
 
-            # ==========================
-            # TODO EL GUARDADO AQUÍ
-            # ==========================
-
-            if guardar:
-
-                with engine.begin() as conn:
-
-                    conn.execute(text("""
-                        INSERT INTO pai_intervenciones(
-                            documento_usuario,
-                            tipo_intervencion,
-                            profesional,
-                            descripcion,
-                            consumo,
-                            consumo_tipo,
-                            consumo_frecuencia,
-                            consumo_via,
-                            salud,
-                            salud_detalle,
-                            red_apoyo,
-                            red_apoyo_detalle,
-                            red_apoyo_contacto,
-                            empleo_estado,
-                            empleo_detalle,
-                            documento,
-                            egreso,
-                            observaciones,
-                            seguimiento,
-                            fecha
-                        )
-                        VALUES(
-                            :documento_usuario,
-                            :tipo_intervencion,
-                            :profesional,
-                            :descripcion,
-                            :consumo,
-                            :consumo_tipo,
-                            :consumo_frecuencia,
-                            :consumo_via,
-                            :salud,
-                            :salud_detalle,
-                            :red_apoyo,
-                            :red_apoyo_detalle,
-                            :red_apoyo_contacto,
-                            :empleo_estado,
-                            :empleo_detalle,
-                            :documento,
-                            :egreso,
-                            :observaciones,
-                            :seguimiento,
-                            NOW()
-                        )
-                    """), {
-                        "documento_usuario": usuario_sel,
-                        "tipo_intervencion": tipo_intervencion,
-                        "profesional": profesional,
-                        "descripcion": descripcion,
-                        "consumo": consumo,
-                        "consumo_tipo": consumo_tipo,
-                        "consumo_frecuencia": consumo_frecuencia,
-                        "consumo_via": consumo_via,
-                        "salud": salud,
-                        "salud_detalle": salud_detalle,
-                        "red_apoyo": red_apoyo,
-                        "red_apoyo_detalle": red_apoyo_detalle,
-                        "red_apoyo_contacto": red_apoyo_contacto,
-                        "empleo_estado": empleo_estado,
-                        "empleo_detalle": empleo_detalle,
-                        "documento": documento,
-                        "egreso": egreso,
-                        "observaciones": observaciones,
-                        "seguimiento": seguimiento
-                    })
-
-                st.success("✅ Seguimiento registrado correctamente")
-                st.rerun()
                 
             if guardar:
 
