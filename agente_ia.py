@@ -370,11 +370,6 @@ with st.sidebar:
     if st.button("⚙️ Gestión usuarios"):
         st.session_state.page = "gestion_usuarios"
         st.rerun()
-
-    if st.button("➕ Registro"):
-        st.session_state.page = "registro"
-        st.rerun()
-
     if st.button("♀️ Género y Diversidad"):
         st.session_state.page = "genero_diversidad"
         st.rerun()
