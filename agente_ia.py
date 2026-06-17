@@ -739,10 +739,8 @@ if st.session_state.page == "genero_diversidad":
 # =====================================
 
 if st.session_state.page == "gestion_usuarios":
-
     formulario_registro()
     st.stop()
-
 elif st.session_state.page == "genero_diversidad":
 
     formulario_genero_diversidad()
