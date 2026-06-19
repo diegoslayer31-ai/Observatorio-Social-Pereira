@@ -3937,6 +3937,45 @@ with tab6:
                     )
 
                     st.divider()
+    # =========================
+            # OBJETIVOS PAI
+            # =========================
+
+            st.markdown("## 🎯 Objetivos PAI")
+
+            objetivos = pd.read_sql(f"""
+                SELECT *
+                FROM pai_objetivos
+                WHERE documento_usuario = '{usuario_sel}'
+                ORDER BY fecha_apertura DESC
+            """, engine)
+
+            if objetivos.empty:
+                st.info("Este usuario aún no tiene objetivos PAI creados.")
+            else:
+                for _, obj in objetivos.iterrows():
+
+                    avance = obj["porcentaje_avance"] or 0
+
+                    fecha_meta = obj["fecha_meta"]
+                    fecha_meta = fecha_meta.strftime("%d/%m/%Y") if fecha_meta else "Sin fecha"
+
+                    st.markdown(f"### 🎯 {obj['objetivo_tipo']}")
+
+                    if obj["linea_politica"]:
+                        st.caption(f"🏛️ {obj['linea_politica']}")
+
+                    st.write(obj["objetivo_descripcion"])
+
+                    st.progress(avance / 100)
+
+                    c1,c2,c3 = st.columns(3)
+
+                    c1.metric("Avance", f"{avance}%")
+                    c2.metric("Estado", obj["estado"])
+                    c3.metric("Fecha meta", fecha_meta)
+
+                    st.divider()
 with tab7:
 
     st.title("📈 Seguimiento e Impacto - Reducción de Riesgos y Daños")
