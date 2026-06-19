@@ -3477,6 +3477,7 @@ def calcular_indice_ods(salud, empleo, inclusion, derechos):
     indice = (total / 4) * 100
 
 
+
 mapa_politica = {
     "Documentación y ciudadanía":"Restablecimiento de derechos",
     "Cedulación":"Restablecimiento de derechos",
@@ -3517,46 +3518,40 @@ mapa_ods = {
 
 mapa_hitos = {
     "Documentación y ciudadanía":[
-        "Documentos identificados",
-        "Trámite iniciado",
+        "Identificación de documentos",
+        "Inicio de trámite",
         "Gestión institucional",
-        "Documentación obtenida"
-    ],
-    "Cedulación":[
-        "Solicitud iniciada",
-        "Cita asignada",
-        "Trámite radicado",
         "Documento entregado"
     ],
-    "Aseguramiento en salud":[
-        "Afiliación identificada",
-        "Trámite iniciado",
-        "Acceso garantizado",
-        "Seguimiento"
-    ],
     "Salud mental":[
-        "Valoración realizada",
-        "Intervención iniciada",
-        "Seguimiento",
+        "Valoración inicial",
+        "Intervención psicológica",
+        "Seguimiento clínico",
         "Estabilización"
     ],
     "Tratamiento consumo SPA":[
-        "Acepta intervención",
-        "Inicia tratamiento",
+        "Motivación al cambio",
+        "Ingreso a tratamiento",
         "Adherencia",
-        "Estabilización"
+        "Prevención de recaídas"
     ],
-    "Inclusión social":[
-        "Participa en actividades",
-        "Fortalece habilidades",
-        "Integración comunitaria",
-        "Inclusión lograda"
+    "Empleabilidad":[
+        "Perfilamiento laboral",
+        "Capacitación",
+        "Búsqueda de empleo",
+        "Vinculación laboral"
+    ],
+    "Vivienda":[
+        "Diagnóstico habitacional",
+        "Gestión de subsidio",
+        "Asignación",
+        "Estabilización habitacional"
     ]
 }
 
 with tab6:
 
-    st.title("📋 Seguimiento Profesional - PAI")
+    st.title("📋 Seguimiento Profesional - PAI Inteligente")
 
     # =========================
     # PROFESIONALES
@@ -3579,7 +3574,7 @@ with tab6:
 
     st.subheader("🔎 Búsqueda de usuario")
 
-    busqueda = st.text_input("Buscar por nombre o documento")
+    busqueda = st.text_input("Buscar usuario")
 
     usuario_sel = None
     df_busqueda = df.copy()
@@ -3607,6 +3602,30 @@ with tab6:
     st.divider()
 
     # =========================
+    # FUNCIONES PAI INTELIGENTE
+    # =========================
+
+    def calcular_progreso(actividades, avance_hitos):
+        if not actividades:
+            return 0
+
+        total = len(actividades)
+        hechos = len(avance_hitos)
+
+        return round((hechos / total) * 100, 1)
+
+
+    def semaforo(avance):
+
+        if avance < 30:
+            return "🔴 Crítico"
+        elif avance < 70:
+            return "🟡 En proceso"
+        else:
+            return "🟢 Estable"
+
+
+    # =========================
     # USUARIO
     # =========================
 
@@ -3623,18 +3642,18 @@ with tab6:
 
             st.success("Usuario encontrado")
 
-            c1,c2,c3 = st.columns(3)
+            c1, c2, c3 = st.columns(3)
             c1.metric("Nombre", f"{datos['nombres']} {datos['apellidos']}")
-            c2.metric("Edad", datos.get("edad","N/A"))
+            c2.metric("Edad", datos.get("edad", "N/A"))
             c3.metric("Documento", usuario_sel)
 
             st.divider()
 
             # =========================
-            # OBJETIVOS
+            # OBJETIVOS PAI
             # =========================
 
-            st.markdown("## 🎯 Objetivos PAI")
+            st.markdown("## 🎯 Objetivos PAI Inteligentes")
 
             objetivos = pd.read_sql(f"""
                 SELECT *
@@ -3643,39 +3662,67 @@ with tab6:
                 ORDER BY fecha_apertura DESC
             """, engine)
 
+            import json
+
             if objetivos.empty:
                 st.info("Sin objetivos registrados")
 
             else:
                 for _, obj in objetivos.iterrows():
 
-                    st.markdown(f"### 🎯 {obj['objetivo_tipo']}")
+                    actividades = json.loads(obj["actividades"]) if obj.get("actividades") else []
+                    avance_hitos = json.loads(obj["avance_hitos"]) if obj.get("avance_hitos") else []
 
+                    avance = calcular_progreso(actividades, avance_hitos)
+                    estado = semaforo(avance)
+
+                    st.markdown(f"### 🎯 {obj['objetivo_tipo']}")
                     st.caption(f"🏛️ {obj.get('linea_politica','')}")
+
+                    st.progress(avance / 100)
+                    st.metric("Avance automático", f"{avance}%")
+                    st.write("Estado:", estado)
 
                     st.write(obj["objetivo_descripcion"])
 
-                    # ACTIVIDADES
-                    if obj.get("actividades"):
-                        import json
-                        acts = json.loads(obj["actividades"])
+                    # =========================
+                    # HITOS INTERACTIVOS
+                    # =========================
 
-                        st.markdown("**🧩 Actividades**")
-                        for a in acts:
-                            st.write("•", a)
+                    st.markdown("### 🧭 Hitos del proceso")
 
-                    # SUBACTIVIDADES
-                    if obj.get("subactividades"):
-                        subs = json.loads(obj["subactividades"])
+                    if not avance_hitos:
+                        avance_hitos = []
 
-                        st.markdown("**🔹 Subactividades**")
-                        for s in subs:
-                            st.write("•", s)
+                    for h in actividades:
+
+                        hecho = h in avance_hitos
+
+                        col1, col2 = st.columns([0.1, 0.9])
+
+                        with col1:
+                            checked = st.checkbox("", value=hecho, key=f"{obj['id']}_{h}")
+
+                        with col2:
+                            st.write(h)
+
+                        if checked and h not in avance_hitos:
+                            avance_hitos.append(h)
+
+                        if not checked and h in avance_hitos:
+                            avance_hitos.remove(h)
+
+                    # guardar progreso automático
+                    engine.execute("""
+                        UPDATE pai_objetivos
+                        SET avance_hitos = %s
+                        WHERE id = %s
+                    """, (json.dumps(avance_hitos), obj["id"]))
 
                     st.divider()
 
             # =========================
-            # CREAR OBJETIVO
+            # CREAR OBJETIVO PAI
             # =========================
 
             st.markdown("## ➕ Crear objetivo PAI")
@@ -3698,27 +3745,21 @@ with tab6:
                         df_profesionales[df_profesionales["id"] == x]["label"].values[0]
                 )
 
-                prioridad = st.selectbox("Prioridad", ["Alta","Media","Baja"])
+                prioridad = st.selectbox("Prioridad", ["Alta", "Media", "Baja"])
 
                 submit = st.form_submit_button("Guardar objetivo")
 
             # =========================
-            # LÓGICA PRO
+            # GUARDADO INTELIGENTE
             # =========================
 
             if submit:
-
-                import json
 
                 ods = mapa_ods.get(objetivo_tipo, ["ODS 10"])
                 politica = mapa_politica.get(objetivo_tipo, "Restablecimiento de derechos")
                 hitos = mapa_hitos.get(objetivo_tipo, [])
 
-                # ACTIVIDADES BASE (simplificadas desde hitos)
                 actividades = hitos
-
-                # SUBACTIVIDADES (editable después si quieres expandir)
-                subactividades = hitos[:2] if hitos else []
 
                 query = """
                     INSERT INTO pai_objetivos (
@@ -3731,7 +3772,7 @@ with tab6:
                         linea_politica,
                         ods,
                         actividades,
-                        subactividades,
+                        avance_hitos,
                         estado,
                         porcentaje_avance,
                         fecha_apertura
@@ -3751,14 +3792,14 @@ with tab6:
                         politica,
                         json.dumps(ods),
                         json.dumps(actividades),
-                        json.dumps(subactividades)
+                        json.dumps([])
                     )
                 )
 
-                st.success("Objetivo PAI creado correctamente")
+                st.success("Objetivo PAI inteligente creado")
                 st.rerun()
 
-  
+    
 with tab7:
 
     st.title("📈 Seguimiento e Impacto - Reducción de Riesgos y Daños")
