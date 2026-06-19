@@ -3643,8 +3643,15 @@ with tab6:
     """, engine)
 
     df_profesionales["label"] = (
+
         df_profesionales["nombre"].astype(str)
-        + " (" + df_profesionales["rol"].astype(str) + ")"
+
+        + " ("
+
+        + df_profesionales["rol"].astype(str)
+
+        + ")"
+
     )
 
     # =========================
@@ -3653,198 +3660,283 @@ with tab6:
 
     st.subheader("🔎 Búsqueda de usuario")
 
-busqueda = st.text_input(
-    "Buscar por nombre o documento"
-)
+    busqueda = st.text_input(
+        "Buscar por nombre o documento"
+    )
 
-usuario_sel = None
+    usuario_sel = None
 
-df_busqueda = df.copy()
+    df_busqueda = df.copy()
 
-if busqueda:
+    if busqueda:
 
-    df_busqueda = df_busqueda[
+        df_busqueda = df_busqueda[
 
-        df_busqueda["nombres"]
-        .astype(str)
-        .str.contains(busqueda, case=False, na=False)
-
-        |
-
-        df_busqueda["apellidos"]
-        .astype(str)
-        .str.contains(busqueda, case=False, na=False)
-
-        |
-
-        df_busqueda["numero_identificacion"]
-        .astype(str)
-        .str.contains(busqueda, na=False)
-
-    ]
-
-if not df_busqueda.empty:
-
-    usuario_sel = st.selectbox(
-
-        "Seleccione usuario",
-
-        df_busqueda["numero_identificacion"].tolist(),
-
-        format_func=lambda x: (
-
-            df_busqueda[
-                df_busqueda["numero_identificacion"] == x
-            ]
-
-            [["nombres", "apellidos"]]
+            df_busqueda["nombres"]
 
             .astype(str)
 
-            .agg(" ".join, axis=1)
+            .str.contains(
 
-            .values[0]
+                busqueda,
 
-        )
+                case=False,
 
-    )
+                na=False
 
-else:
-
-    st.info(
-        "No hay coincidencias"
-    )
-
-st.divider()
-if usuario_sel:
-    
-    usuario = pd.read_sql(f"""
-
-        SELECT *
-
-        FROM habitante_de_calle
-
-        WHERE numero_identificacion='{usuario_sel}'
-
-    """, engine)
-
-    if not usuario.empty:
-
-        datos = usuario.iloc[0]
-
-        st.success("Usuario encontrado")
-
-        c1,c2,c3 = st.columns(3)
-
-        c1.metric(
-
-            "Nombre",
-
-            f"{datos['nombres']} {datos['apellidos']}"
-
-        )
-
-        c2.metric(
-
-            "Edad",
-
-            datos.get("edad","N/A")
-
-        )
-
-        c3.metric(
-
-            "Documento",
-
-            usuario_sel
-
-        )
-
-        st.divider()
-
-   # ==========================
-# OBJETIVOS PAI
-# ==========================
-
-st.markdown("## 🎯 Objetivos PAI")
-
-objetivos = pd.read_sql(f"""
-
-    SELECT *
-
-    FROM pai_objetivos
-
-    WHERE documento_usuario = '{usuario_sel}'
-
-    ORDER BY fecha_apertura DESC
-
-""", engine)
-
-if objetivos.empty:
-
-    st.info(
-        "Este usuario aún no tiene objetivos PAI creados."
-    )
-
-else:
-
-    for _, obj in objetivos.iterrows():
-
-        avance = obj["porcentaje_avance"]
-
-        if avance is None:
-
-            avance = 0
-
-        fecha_meta = obj["fecha_meta"]
-
-        if fecha_meta:
-
-            fecha_meta = fecha_meta.strftime(
-                "%d/%m/%Y"
             )
 
-        else:
+            |
 
-            fecha_meta = "Sin fecha"
+            df_busqueda["apellidos"]
 
-        st.markdown(
-            f"### 🎯 {obj['objetivo_tipo']}"
-        )
+            .astype(str)
 
-        if obj["linea_politica"]:
+            .str.contains(
 
-            st.caption(
-                f"🏛️ {obj['linea_politica']}"
+                busqueda,
+
+                case=False,
+
+                na=False
+
             )
 
-        st.write(
-            obj["objetivo_descripcion"]
+            |
+
+            df_busqueda["numero_identificacion"]
+
+            .astype(str)
+
+            .str.contains(
+
+                busqueda,
+
+                na=False
+
+            )
+
+        ]
+
+    if not df_busqueda.empty:
+
+        usuario_sel = st.selectbox(
+
+            "Seleccione usuario",
+
+            df_busqueda[
+
+                "numero_identificacion"
+
+            ].tolist(),
+
+            format_func=lambda x:
+
+            (
+
+                df_busqueda[
+
+                    df_busqueda["numero_identificacion"]
+
+                    == x
+
+                ]
+
+                [["nombres","apellidos"]]
+
+                .astype(str)
+
+                .agg(
+
+                    " ".join,
+
+                    axis=1
+
+                )
+
+                .values[0]
+
+            )
+
         )
 
-        st.progress(
-            avance / 100
+    else:
+
+        st.info(
+
+            "No hay coincidencias"
+
         )
 
-        c1, c2, c3 = st.columns(3)
+    st.divider()
 
-        c1.metric(
-            "Avance",
-            f"{avance}%"
-        )
+    # ====================================
+    # DATOS USUARIO
+    # ====================================
 
-        c2.metric(
-            "Estado",
-            obj["estado"]
-        )
+    if usuario_sel:
 
-        c3.metric(
-            "Fecha meta",
-            fecha_meta
-        )
+        usuario = pd.read_sql(f"""
 
-        st.divider()
-with tab7:
+            SELECT *
+
+            FROM habitante_de_calle
+
+            WHERE numero_identificacion='{usuario_sel}'
+
+        """, engine)
+
+        if not usuario.empty:
+
+            datos = usuario.iloc[0]
+
+            st.success(
+
+                "Usuario encontrado"
+
+            )
+
+            c1,c2,c3 = st.columns(3)
+
+            c1.metric(
+
+                "Nombre",
+
+                f"{datos['nombres']} {datos['apellidos']}"
+
+            )
+
+            c2.metric(
+
+                "Edad",
+
+                datos.get(
+
+                    "edad",
+
+                    "N/A"
+
+                )
+
+            )
+
+            c3.metric(
+
+                "Documento",
+
+                usuario_sel
+
+            )
+
+            st.divider()
+
+            # ==========================
+            # OBJETIVOS PAI
+            # ==========================
+
+            st.markdown(
+
+                "## 🎯 Objetivos PAI"
+
+            )
+
+            objetivos = pd.read_sql(f"""
+
+                SELECT *
+
+                FROM pai_objetivos
+
+                WHERE documento_usuario = '{usuario_sel}'
+
+                ORDER BY fecha_apertura DESC
+
+            """, engine)
+
+            if objetivos.empty:
+
+                st.info(
+
+                    "Este usuario aún no tiene objetivos PAI creados."
+
+                )
+
+            else:
+
+                for _, obj in objetivos.iterrows():
+
+                    avance = obj["porcentaje_avance"]
+
+                    if avance is None:
+
+                        avance = 0
+
+                    fecha_meta = obj["fecha_meta"]
+
+                    if fecha_meta:
+
+                        fecha_meta = fecha_meta.strftime(
+
+                            "%d/%m/%Y"
+
+                        )
+
+                    else:
+
+                        fecha_meta = "Sin fecha"
+
+                    st.markdown(
+
+                        f"### 🎯 {obj['objetivo_tipo']}"
+
+                    )
+
+                    if obj["linea_politica"]:
+
+                        st.caption(
+
+                            f"🏛️ {obj['linea_politica']}"
+
+                        )
+
+                    st.write(
+
+                        obj["objetivo_descripcion"]
+
+                    )
+
+                    st.progress(
+
+                        avance / 100
+
+                    )
+
+                    c1,c2,c3 = st.columns(3)
+
+                    c1.metric(
+
+                        "Avance",
+
+                        f"{avance}%"
+
+                    )
+
+                    c2.metric(
+
+                        "Estado",
+
+                        obj["estado"]
+
+                    )
+
+                    c3.metric(
+
+                        "Fecha meta",
+
+                        fecha_meta
+
+                    )
+
+                    st.divider()
 
     st.title("📈 Seguimiento e Impacto - Reducción de Riesgos y Daños")
 
