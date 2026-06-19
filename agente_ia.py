@@ -3762,104 +3762,88 @@ if usuario_sel:
 
         st.divider()
 
-        # =======================
-        # OBJETIVOS
-        # =======================
+   # ==========================
+# OBJETIVOS PAI
+# ==========================
 
-        st.markdown("## 🎯 Objetivos PAI")
+st.markdown("## 🎯 Objetivos PAI")
 
-        objetivos = pd.read_sql(f"""
+objetivos = pd.read_sql(f"""
 
-            SELECT *
+    SELECT *
 
-            FROM pai_objetivos
+    FROM pai_objetivos
 
-            WHERE documento_usuario='{usuario_sel}'
+    WHERE documento_usuario = '{usuario_sel}'
 
-            ORDER BY fecha_apertura DESC
+    ORDER BY fecha_apertura DESC
 
-        """, engine)
+""", engine)
 
-        if objetivos.empty:
+if objetivos.empty:
 
-            st.info(
+    st.info(
+        "Este usuario aún no tiene objetivos PAI creados."
+    )
 
-                "Este usuario aún no tiene objetivos"
+else:
 
+    for _, obj in objetivos.iterrows():
+
+        avance = obj["porcentaje_avance"]
+
+        if avance is None:
+
+            avance = 0
+
+        fecha_meta = obj["fecha_meta"]
+
+        if fecha_meta:
+
+            fecha_meta = fecha_meta.strftime(
+                "%d/%m/%Y"
             )
 
         else:
 
-            for _,obj in objetivos.iterrows():
+            fecha_meta = "Sin fecha"
 
-                avance = obj["porcentaje_avance"] or 0
+        st.markdown(
+            f"### 🎯 {obj['objetivo_tipo']}"
+        )
 
-                fecha_meta = obj["fecha_meta"]
+        if obj["linea_politica"]:
 
-                fecha_meta = (
+            st.caption(
+                f"🏛️ {obj['linea_politica']}"
+            )
 
-                    fecha_meta.strftime("%d/%m/%Y")
+        st.write(
+            obj["objetivo_descripcion"]
+        )
 
-                    if fecha_meta
+        st.progress(
+            avance / 100
+        )
 
-                    else "Sin fecha"
+        c1, c2, c3 = st.columns(3)
 
-                )
+        c1.metric(
+            "Avance",
+            f"{avance}%"
+        )
 
-                st.markdown(
+        c2.metric(
+            "Estado",
+            obj["estado"]
+        )
 
-                    f"### 🎯 {obj['objetivo_tipo']}"
+        c3.metric(
+            "Fecha meta",
+            fecha_meta
+        )
 
-                )
-
-                if obj["linea_politica"]:
-
-                    st.caption(
-
-                        f"🏛️ {obj['linea_politica']}"
-
-                    )
-
-                st.write(
-
-                    obj["objetivo_descripcion"]
-
-                )
-
-                st.progress(
-
-                    avance/100
-
-                )
-
-                a,b,c = st.columns(3)
-
-                a.metric(
-
-                    "Avance",
-
-                    f"{avance}%"
-
-                )
-
-                b.metric(
-
-                    "Estado",
-
-                    obj["estado"]
-
-                )
-
-                c.metric(
-
-                    "Fecha meta",
-
-                    fecha_meta
-
-                )
-
-                st.divider()
-
+        st.divider()
 with tab7:
 
     st.title("📈 Seguimiento e Impacto - Reducción de Riesgos y Daños")
