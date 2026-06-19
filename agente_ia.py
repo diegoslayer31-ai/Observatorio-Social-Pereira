@@ -3627,6 +3627,95 @@ mapa_hitos = {
     ]
 
 }
+
+with tab6:
+
+    st.title("📋 Seguimiento Profesional - PAI")
+
+    # =========================
+    # PROFESIONALES
+    # =========================
+
+    df_profesionales = pd.read_sql("""
+        SELECT nombre, rol
+        FROM profesionales
+        ORDER BY nombre
+    """, engine)
+
+    df_profesionales["label"] = (
+        df_profesionales["nombre"].astype(str)
+        + " (" + df_profesionales["rol"].astype(str) + ")"
+    )
+
+    # =========================
+    # BÚSQUEDA
+    # =========================
+
+    st.subheader("🔎 Búsqueda de usuario")
+
+busqueda = st.text_input(
+    "Buscar por nombre o documento"
+)
+
+usuario_sel = None
+
+df_busqueda = df.copy()
+
+if busqueda:
+
+    df_busqueda = df_busqueda[
+
+        df_busqueda["nombres"]
+        .astype(str)
+        .str.contains(busqueda, case=False, na=False)
+
+        |
+
+        df_busqueda["apellidos"]
+        .astype(str)
+        .str.contains(busqueda, case=False, na=False)
+
+        |
+
+        df_busqueda["numero_identificacion"]
+        .astype(str)
+        .str.contains(busqueda, na=False)
+
+    ]
+
+if not df_busqueda.empty:
+
+    usuario_sel = st.selectbox(
+
+        "Seleccione usuario",
+
+        df_busqueda["numero_identificacion"].tolist(),
+
+        format_func=lambda x: (
+
+            df_busqueda[
+                df_busqueda["numero_identificacion"] == x
+            ]
+
+            [["nombres", "apellidos"]]
+
+            .astype(str)
+
+            .agg(" ".join, axis=1)
+
+            .values[0]
+
+        )
+
+    )
+
+else:
+
+    st.info(
+        "No hay coincidencias"
+    )
+
+st.divider()
 if usuario_sel:
     
     usuario = pd.read_sql(f"""
