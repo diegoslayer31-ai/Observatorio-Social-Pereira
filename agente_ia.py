@@ -3637,307 +3637,78 @@ with tab6:
     # =========================
 
     df_profesionales = pd.read_sql("""
-        SELECT nombre, rol
+        SELECT id, nombre, rol
         FROM profesionales
         ORDER BY nombre
     """, engine)
 
     df_profesionales["label"] = (
-
         df_profesionales["nombre"].astype(str)
-
-        + " ("
-
-        + df_profesionales["rol"].astype(str)
-
-        + ")"
-
+        + " (" + df_profesionales["rol"].astype(str) + ")"
     )
 
     # =========================
-    # BÚSQUEDA
+    # BÚSQUEDA DE USUARIO
     # =========================
 
     st.subheader("🔎 Búsqueda de usuario")
 
-    busqueda = st.text_input(
-        "Buscar por nombre o documento"
-    )
+    busqueda = st.text_input("Buscar por nombre o documento")
 
     usuario_sel = None
-
     df_busqueda = df.copy()
 
     if busqueda:
-
         df_busqueda = df_busqueda[
-
-            df_busqueda["nombres"]
-
-            .astype(str)
-
-            .str.contains(
-
-                busqueda,
-
-                case=False,
-
-                na=False
-
-            )
-
+            df_busqueda["nombres"].astype(str).str.contains(busqueda, case=False, na=False)
             |
-
-            df_busqueda["apellidos"]
-
-            .astype(str)
-
-            .str.contains(
-
-                busqueda,
-
-                case=False,
-
-                na=False
-
-            )
-
+            df_busqueda["apellidos"].astype(str).str.contains(busqueda, case=False, na=False)
             |
-
-            df_busqueda["numero_identificacion"]
-
-            .astype(str)
-
-            .str.contains(
-
-                busqueda,
-
-                na=False
-
-            )
-
+            df_busqueda["numero_identificacion"].astype(str).str.contains(busqueda, na=False)
         ]
 
     if not df_busqueda.empty:
-
         usuario_sel = st.selectbox(
-
             "Seleccione usuario",
-
-            df_busqueda[
-
-                "numero_identificacion"
-
-            ].tolist(),
-
+            df_busqueda["numero_identificacion"].tolist(),
             format_func=lambda x:
-
-            (
-
-                df_busqueda[
-
-                    df_busqueda["numero_identificacion"]
-
-                    == x
-
-                ]
-
-                [["nombres","apellidos"]]
-
+                df_busqueda[df_busqueda["numero_identificacion"] == x][["nombres", "apellidos"]]
                 .astype(str)
-
-                .agg(
-
-                    " ".join,
-
-                    axis=1
-
-                )
-
+                .agg(" ".join, axis=1)
                 .values[0]
-
-            )
-
         )
-
     else:
-
-        st.info(
-
-            "No hay coincidencias"
-
-        )
+        st.info("No hay coincidencias")
 
     st.divider()
 
-    # ====================================
-    # DATOS USUARIO
-    # ====================================
+    # =========================
+    # USUARIO SELECCIONADO
+    # =========================
 
     if usuario_sel:
 
         usuario = pd.read_sql(f"""
-
             SELECT *
-
             FROM habitante_de_calle
-
-            WHERE numero_identificacion='{usuario_sel}'
-
+            WHERE numero_identificacion = '{usuario_sel}'
         """, engine)
 
         if not usuario.empty:
 
             datos = usuario.iloc[0]
 
-            st.success(
+            st.success("Usuario encontrado")
 
-                "Usuario encontrado"
+            c1, c2, c3 = st.columns(3)
 
-            )
-
-            c1,c2,c3 = st.columns(3)
-
-            c1.metric(
-
-                "Nombre",
-
-                f"{datos['nombres']} {datos['apellidos']}"
-
-            )
-
-            c2.metric(
-
-                "Edad",
-
-                datos.get(
-
-                    "edad",
-
-                    "N/A"
-
-                )
-
-            )
-
-            c3.metric(
-
-                "Documento",
-
-                usuario_sel
-
-            )
+            c1.metric("Nombre", f"{datos['nombres']} {datos['apellidos']}")
+            c2.metric("Edad", datos.get("edad", "N/A"))
+            c3.metric("Documento", usuario_sel)
 
             st.divider()
 
-            # ==========================
-            # OBJETIVOS PAI
-            # ==========================
-
-            st.markdown(
-
-                "## 🎯 Objetivos PAI"
-
-            )
-
-            objetivos = pd.read_sql(f"""
-
-                SELECT *
-
-                FROM pai_objetivos
-
-                WHERE documento_usuario = '{usuario_sel}'
-
-                ORDER BY fecha_apertura DESC
-
-            """, engine)
-
-            if objetivos.empty:
-
-                st.info(
-
-                    "Este usuario aún no tiene objetivos PAI creados."
-
-                )
-
-            else:
-
-                for _, obj in objetivos.iterrows():
-
-                    avance = obj["porcentaje_avance"]
-
-                    if avance is None:
-
-                        avance = 0
-
-                    fecha_meta = obj["fecha_meta"]
-
-                    if fecha_meta:
-
-                        fecha_meta = fecha_meta.strftime(
-
-                            "%d/%m/%Y"
-
-                        )
-
-                    else:
-
-                        fecha_meta = "Sin fecha"
-
-                    st.markdown(
-
-                        f"### 🎯 {obj['objetivo_tipo']}"
-
-                    )
-
-                    if obj["linea_politica"]:
-
-                        st.caption(
-
-                            f"🏛️ {obj['linea_politica']}"
-
-                        )
-
-                    st.write(
-
-                        obj["objetivo_descripcion"]
-
-                    )
-
-                    st.progress(
-
-                        avance / 100
-
-                    )
-
-                    c1,c2,c3 = st.columns(3)
-
-                    c1.metric(
-
-                        "Avance",
-
-                        f"{avance}%"
-
-                    )
-
-                    c2.metric(
-
-                        "Estado",
-
-                        obj["estado"]
-
-                    )
-
-                    c3.metric(
-
-                        "Fecha meta",
-
-                        fecha_meta
-
-                    )
-
-                    st.divider()
-    # =========================
+            # =========================
             # OBJETIVOS PAI
             # =========================
 
@@ -3952,6 +3723,7 @@ with tab6:
 
             if objetivos.empty:
                 st.info("Este usuario aún no tiene objetivos PAI creados.")
+
             else:
                 for _, obj in objetivos.iterrows():
 
@@ -3969,13 +3741,116 @@ with tab6:
 
                     st.progress(avance / 100)
 
-                    c1,c2,c3 = st.columns(3)
+                    c1, c2, c3 = st.columns(3)
 
                     c1.metric("Avance", f"{avance}%")
                     c2.metric("Estado", obj["estado"])
                     c3.metric("Fecha meta", fecha_meta)
 
                     st.divider()
+
+            # =========================
+            # CREAR OBJETIVO PAI
+            # =========================
+
+            st.markdown("## ➕ Crear objetivo PAI")
+
+            with st.form("crear_objetivo_pai"):
+
+                objetivo_tipo = st.selectbox(
+                    "Objetivo",
+                    [
+                        "Salud física",
+                        "Salud mental",
+                        "Documentación y ciudadanía",
+                        "Tratamiento consumo SPA",
+                        "Empleabilidad",
+                        "Red de apoyo",
+                        "Vivienda",
+                        "Educación"
+                    ]
+                )
+
+                objetivo_descripcion = st.text_area("Descripción del objetivo")
+
+                fecha_meta = st.date_input("Fecha meta")
+
+                profesional_id = st.selectbox(
+                    "Profesional responsable",
+                    df_profesionales["id"],
+                    format_func=lambda x:
+                        df_profesionales[df_profesionales["id"] == x]["label"].values[0]
+                )
+
+                prioridad = st.selectbox(
+                    "Prioridad",
+                    ["Alta", "Media", "Baja"]
+                )
+
+                submit = st.form_submit_button("Guardar objetivo")
+
+            if submit:
+
+                mapa_ods = {
+                    "Salud física": "ODS 3",
+                    "Salud mental": "ODS 3",
+                    "Documentación y ciudadanía": "ODS 16",
+                    "Tratamiento consumo SPA": "ODS 3",
+                    "Empleabilidad": "ODS 8",
+                    "Red de apoyo": "ODS 10",
+                    "Vivienda": "ODS 11",
+                    "Educación": "ODS 4"
+                }
+
+                mapa_politica = {
+                    "Salud física": "Atención integral en salud",
+                    "Salud mental": "Salud mental comunitaria",
+                    "Documentación y ciudadanía": "Restablecimiento de derechos",
+                    "Tratamiento consumo SPA": "Reducción de riesgos y daños",
+                    "Empleabilidad": "Inclusión laboral",
+                    "Red de apoyo": "Fortalecimiento familiar",
+                    "Vivienda": "Habitabilidad digna",
+                    "Educación": "Acceso a educación"
+                }
+
+                ods = mapa_ods.get(objetivo_tipo, "ODS 3")
+                politica = mapa_politica.get(objetivo_tipo, "Atención integral")
+
+                query = """
+                    INSERT INTO pai_objetivos (
+                        documento_usuario,
+                        objetivo_tipo,
+                        objetivo_descripcion,
+                        fecha_meta,
+                        profesional_responsable,
+                        prioridad,
+                        linea_politica,
+                        ods,
+                        estado,
+                        porcentaje_avance,
+                        fecha_apertura
+                    )
+                    VALUES (
+                        %s, %s, %s, %s, %s, %s, %s, %s, 'Activo', 0, NOW()
+                    )
+                """
+
+                engine.execute(
+                    query,
+                    (
+                        usuario_sel,
+                        objetivo_tipo,
+                        objetivo_descripcion,
+                        fecha_meta,
+                        profesional_id,
+                        prioridad,
+                        politica,
+                        ods
+                    )
+                )
+
+                st.success("Objetivo PAI creado correctamente")
+                st.rerun()
 with tab7:
 
     st.title("📈 Seguimiento e Impacto - Reducción de Riesgos y Daños")
