@@ -3476,20 +3476,25 @@ def calcular_indice_ods(salud, empleo, inclusion, derechos):
 
     indice = (total / 4) * 100
 
+# ==========================
+# MAPAS
+# ==========================
 
 mapa_politica = {
+
+    "Documentación y ciudadanía":"Restablecimiento de derechos",
 
     "Cedulación":"Restablecimiento de derechos",
 
     "Aseguramiento en salud":"Atención integral en salud",
 
-    "Vinculación familiar":"Fortalecimiento familiar",
-
-    "Reducción de riesgos y daños":"Reducción de riesgos y daños",
+    "Salud mental":"Atención integral en salud",
 
     "Tratamiento consumo SPA":"Reducción de riesgos y daños",
 
-    "Salud mental":"Atención integral en salud",
+    "Reducción de riesgos y daños":"Reducción de riesgos y daños",
+
+    "Vinculación familiar":"Fortalecimiento familiar",
 
     "Inclusión social":"Inclusión social",
 
@@ -3505,510 +3510,267 @@ mapa_politica = {
 
     "Participación comunitaria":"Participación ciudadana",
 
+    "Justicia y acceso a derechos":"Restablecimiento de derechos",
+
     "Otro":"Restablecimiento de derechos"
 
 }
 
-with tab6:
+mapa_ods = {
 
-    st.title("📋 Seguimiento Profesional - PAI")
+    "Documentación y ciudadanía":["ODS 16"],
 
-    # =========================
-    # PROFESIONALES
-    # =========================
+    "Cedulación":["ODS 16"],
 
-    df_profesionales = pd.read_sql("""
-        SELECT nombre, rol
-        FROM profesionales
-        ORDER BY nombre
+    "Aseguramiento en salud":["ODS 3","ODS 10"],
+
+    "Salud mental":["ODS 3"],
+
+    "Tratamiento consumo SPA":["ODS 3"],
+
+    "Reducción de riesgos y daños":["ODS 3"],
+
+    "Vinculación familiar":["ODS 10","ODS 16"],
+
+    "Inclusión social":["ODS 10","ODS 16"],
+
+    "Empleabilidad":["ODS 8","ODS 10"],
+
+    "Generación de ingresos":["ODS 8","ODS 10"],
+
+    "Educación":["ODS 4"],
+
+    "Vivienda":["ODS 11"],
+
+    "Proyecto de vida":["ODS 3","ODS 10"],
+
+    "Participación comunitaria":["ODS 16"],
+
+    "Justicia y acceso a derechos":["ODS 16"],
+
+    "Otro":["ODS 10"]
+
+}
+
+mapa_hitos = {
+
+    "Documentación y ciudadanía":[
+
+        "Documentos identificados",
+
+        "Trámite iniciado",
+
+        "Gestión institucional",
+
+        "Documentación obtenida"
+
+    ],
+
+    "Cedulación":[
+
+        "Solicitud iniciada",
+
+        "Cita asignada",
+
+        "Trámite radicado",
+
+        "Documento entregado"
+
+    ],
+
+    "Aseguramiento en salud":[
+
+        "Afiliación identificada",
+
+        "Trámite iniciado",
+
+        "Acceso garantizado",
+
+        "Seguimiento"
+
+    ],
+
+    "Salud mental":[
+
+        "Valoración realizada",
+
+        "Intervención iniciada",
+
+        "Seguimiento",
+
+        "Estabilización"
+
+    ],
+
+    "Tratamiento consumo SPA":[
+
+        "Acepta intervención",
+
+        "Inicia tratamiento",
+
+        "Adherencia",
+
+        "Estabilización"
+
+    ],
+
+    "Inclusión social":[
+
+        "Participa en actividades",
+
+        "Fortalece habilidades",
+
+        "Integración comunitaria",
+
+        "Inclusión lograda"
+
+    ]
+
+}
+if usuario_sel:
+    
+    usuario = pd.read_sql(f"""
+
+        SELECT *
+
+        FROM habitante_de_calle
+
+        WHERE numero_identificacion='{usuario_sel}'
+
     """, engine)
 
-    df_profesionales["label"] = (
-        df_profesionales["nombre"].astype(str)
-        + " (" + df_profesionales["rol"].astype(str) + ")"
-    )
+    if not usuario.empty:
 
-    # =========================
-    # BÚSQUEDA
-    # =========================
+        datos = usuario.iloc[0]
 
-    st.subheader("🔎 Búsqueda de usuario")
+        st.success("Usuario encontrado")
 
-    busqueda = st.text_input("Buscar por nombre o documento")
+        c1,c2,c3 = st.columns(3)
 
-    usuario_sel = None
-    df_busqueda = pd.DataFrame()
+        c1.metric(
 
-    # 🔥 IMPORTANTE: asegurar que df exista
-    if "df" in locals() and df is not None:
+            "Nombre",
 
-        df_busqueda = df.copy()
+            f"{datos['nombres']} {datos['apellidos']}"
 
-        if busqueda:
-            df_busqueda = df_busqueda[
-                df_busqueda["nombres"].astype(str).str.contains(busqueda, case=False, na=False) |
-                df_busqueda["apellidos"].astype(str).str.contains(busqueda, case=False, na=False) |
-                df_busqueda["numero_identificacion"].astype(str).str.contains(busqueda, na=False)
-            ]
+        )
 
-        if not df_busqueda.empty:
+        c2.metric(
 
-            usuario_sel = st.selectbox(
-                "Seleccione usuario",
-                df_busqueda["numero_identificacion"].tolist(),
-                format_func=lambda x: (
-                    df_busqueda[
-                        df_busqueda["numero_identificacion"] == x
-                    ][["nombres", "apellidos"]]
-                    .astype(str)
-                    .agg(" ".join, axis=1)
-                    .values[0]
-                )
+            "Edad",
+
+            datos.get("edad","N/A")
+
+        )
+
+        c3.metric(
+
+            "Documento",
+
+            usuario_sel
+
+        )
+
+        st.divider()
+
+        # =======================
+        # OBJETIVOS
+        # =======================
+
+        st.markdown("## 🎯 Objetivos PAI")
+
+        objetivos = pd.read_sql(f"""
+
+            SELECT *
+
+            FROM pai_objetivos
+
+            WHERE documento_usuario='{usuario_sel}'
+
+            ORDER BY fecha_apertura DESC
+
+        """, engine)
+
+        if objetivos.empty:
+
+            st.info(
+
+                "Este usuario aún no tiene objetivos"
+
             )
 
         else:
-            st.info("No hay coincidencias")
 
-    else:
-        st.warning("No se cargó la base de datos principal (df)")
+            for _,obj in objetivos.iterrows():
 
-    st.divider()
-   
-    # ====================================
-    # PAI
-    # ====================================
+                avance = obj["porcentaje_avance"] or 0
 
-    if usuario_sel:
+                fecha_meta = obj["fecha_meta"]
 
-        # =========================
-        # USUARIO
-        # =========================
-        usuario = pd.read_sql(f"""
-            SELECT *
-            FROM habitante_de_calle
-            WHERE numero_identificacion = '{usuario_sel}'
-        """, engine)
+                fecha_meta = (
 
-        if not usuario.empty:
+                    fecha_meta.strftime("%d/%m/%Y")
 
-            datos = usuario.iloc[0]
+                    if fecha_meta
 
-            st.success("Usuario encontrado")
+                    else "Sin fecha"
 
-            c1, c2, c3 = st.columns(3)
-
-            c1.metric("Nombre", f"{datos['nombres']} {datos['apellidos']}")
-            c2.metric("Edad", datos.get("edad", "N/A"))
-            c3.metric("Documento", usuario_sel)
-
-            st.divider()
-
-            # =========================
-            # OBJETIVOS PAI
-            # =========================
-            st.markdown("## 🎯 Objetivos PAI")
-
-            objetivos = pd.read_sql(f"""
-                SELECT *
-                FROM pai_objetivos
-                WHERE documento_usuario = '{usuario_sel}'
-                ORDER BY fecha_apertura DESC
-            """, engine)
-
-            if objetivos.empty:
-                st.info("Este usuario aún no tiene objetivos PAI creados.")
-
-            else:
-                for _, obj in objetivos.iterrows():
-
-                    avance = obj["porcentaje_avance"] or 0
-
-                    fecha_meta = obj["fecha_meta"]
-                    fecha_meta = fecha_meta.strftime("%d/%m/%Y") if fecha_meta else "Sin fecha"
-
-                    st.markdown(f"### 🎯 {obj['objetivo_tipo']}")
-
-                    if obj["linea_politica"]:
-                        st.caption(f"🏛️ {obj['linea_politica']}")
-
-                    st.write(obj["objetivo_descripcion"])
-
-                    st.progress(avance / 100)
-
-                    c1, c2, c3 = st.columns(3)
-                    c1.metric("Avance", f"{avance}%")
-                    c2.metric("Estado", obj["estado"])
-                    c3.metric("Fecha meta", fecha_meta)
-
-                    st.divider()
-
-            # =========================
-            # MAPAS
-            # =========================
-            mapa_politica = {
-                "Documentación y ciudadanía": "Restablecimiento de derechos",
-                "Cedulación": "Restablecimiento de derechos",
-                "Aseguramiento en salud": "Atención integral en salud",
-                "Salud mental": "Atención integral en salud",
-                "Tratamiento consumo SPA": "Reducción de riesgos y daños",
-                "Reducción de riesgos y daños": "Reducción de riesgos y daños",
-                "Vinculación familiar": "Fortalecimiento familiar",
-                "Inclusión social": "Inclusión social",
-                "Empleabilidad": "Inclusión laboral y generación de ingresos",
-                "Generación de ingresos": "Inclusión laboral y generación de ingresos",
-                "Educación": "Educación",
-                "Vivienda": "Habitabilidad y vivienda",
-                "Proyecto de vida": "Inclusión social",
-                "Participación comunitaria": "Participación ciudadana",
-                "Justicia y acceso a derechos": "Restablecimiento de derechos",
-                "Otro": "Restablecimiento de derechos"
-            }
-
-            mapa_ods = {
-                "Documentación y ciudadanía": ["ODS 16"],
-                "Cedulación": ["ODS 16"],
-                "Aseguramiento en salud": ["ODS 3", "ODS 10"],
-                "Salud mental": ["ODS 3"],
-                "Tratamiento consumo SPA": ["ODS 3"],
-                "Reducción de riesgos y daños": ["ODS 3"],
-                "Vinculación familiar": ["ODS 10", "ODS 16"],
-                "Inclusión social": ["ODS 10", "ODS 16"],
-                "Empleabilidad": ["ODS 8", "ODS 10"],
-                "Generación de ingresos": ["ODS 8", "ODS 10"],
-                "Educación": ["ODS 4"],
-                "Vivienda": ["ODS 11"],
-                "Proyecto de vida": ["ODS 3", "ODS 10"],
-                "Participación comunitaria": ["ODS 16"],
-                "Justicia y acceso a derechos": ["ODS 16"],
-                "Otro": ["ODS 10"]
-            }
-
-            mapa_hitos = {
-                "Documentación y ciudadanía": [
-                    "Documentos identificados",
-                    "Trámite iniciado",
-                    "Gestión institucional",
-                    "Documentación obtenida"
-                ],
-                "Cedulación": [
-                    "Solicitud iniciada",
-                    "Cita asignada",
-                    "Trámite radicado",
-                    "Documento entregado"
-                ],
-                "Salud mental": [
-                    "Valoración realizada",
-                    "Intervención iniciada",
-                    "Seguimiento continuo",
-                    "Estabilización"
-                ],
-                "Tratamiento consumo SPA": [
-                    "Acepta intervención",
-                    "Inicia tratamiento",
-                    "Adherencia",
-                    "Estabilización"
-                ],
-                "Inclusión social": [
-                    "Participa en actividades",
-                    "Fortalece habilidades",
-                    "Integración comunitaria"
-                ]
-            }
-
-            # =========================
-            # CREAR OBJETIVO
-            # =========================
-            st.markdown("## ➕ Crear objetivo PAI")
-
-            with st.form("crear_objetivo"):
-
-                objetivo_tipo = st.selectbox(
-                    "Objetivo PAI",
-                    list(mapa_politica.keys())
                 )
 
-                linea_politica = mapa_politica.get(objetivo_tipo)
-                ods_asociados = mapa_ods.get(objetivo_tipo, [])
+                st.markdown(
 
-                st.info(f"🏛️ Política: {linea_politica}")
-                st.info(f"🌍 ODS: {', '.join(ods_asociados)}")
+                    f"### 🎯 {obj['objetivo_tipo']}"
 
-                objetivo_descripcion = st.text_area("Descripción")
-                fecha_meta = st.date_input("Fecha meta")
+                )
 
-                guardar_objetivo = st.form_submit_button("💾 Guardar objetivo")
+                if obj["linea_politica"]:
 
-                if guardar_objetivo:
-                    with engine.begin() as conn:
-                        conn.execute(text("""
-                            INSERT INTO pai_objetivos(
-                                documento_usuario,
-                                objetivo_tipo,
-                                objetivo_descripcion,
-                                fecha_meta,
-                                linea_politica
-                            )
-                            VALUES(
-                                :documento_usuario,
-                                :objetivo_tipo,
-                                :objetivo_descripcion,
-                                :fecha_meta,
-                                :linea_politica
-                            )
-                        """), {
-                            "documento_usuario": usuario_sel,
-                            "objetivo_tipo": objetivo_tipo,
-                            "objetivo_descripcion": objetivo_descripcion,
-                            "fecha_meta": fecha_meta,
-                            "linea_politica": linea_politica
-                        })
+                    st.caption(
 
-                    st.success("Objetivo creado")
-                    st.rerun()
+                        f"🏛️ {obj['linea_politica']}"
 
-            # =========================
-            # REGISTRAR NOVEDAD
-            # =========================
-            st.markdown("## 📝 Registrar novedad")
-
-            objetivos_activos = pd.read_sql(f"""
-                SELECT *
-                FROM pai_objetivos
-                WHERE documento_usuario = '{usuario_sel}'
-                AND estado = 'Activo'
-            """, engine)
-
-            if not objetivos_activos.empty:
-
-                with st.form(f"registrar_novedad_{usuario_sel}"):
-
-                    objetivo_seleccionado = st.selectbox(
-                        "Objetivo",
-                        objetivos_activos["id"].tolist(),
-                        format_func=lambda x:
-                            objetivos_activos[
-                                objetivos_activos["id"] == x
-                            ]["objetivo_tipo"].values[0]
                     )
 
-                    objetivo_actual = objetivos_activos[
-                        objetivos_activos["id"] == objetivo_seleccionado
-                    ]["objetivo_tipo"].values[0]
+                st.write(
 
-                    hitos = mapa_hitos.get(
-                        objetivo_actual,
-                        ["Inicio", "Seguimiento", "Avance", "Cumplimiento"]
-                    )
+                    obj["objetivo_descripcion"]
 
-                    hito = st.selectbox("Hito", hitos)
+                )
 
-                    profesional_novedad = st.text_input("Profesional")
-                    descripcion_novedad = st.text_area("Actividad")
-                    observacion_novedad = st.text_area("Observaciones")
+                st.progress(
 
-                    guardar_novedad = st.form_submit_button("Guardar")
+                    avance/100
 
-                if guardar_novedad:
+                )
 
-                    avance_generado = int((hitos.index(hito)+1)/len(hitos)*100)
+                a,b,c = st.columns(3)
 
-                    with engine.begin() as conn:
+                a.metric(
 
-                        conn.execute(text("""
-                            INSERT INTO pai_novedades(
-                                id_objetivo,
-                                profesional,
-                                descripcion,
-                                avance_generado,
-                                observaciones
-                            )
-                            VALUES(
-                                :id_objetivo,
-                                :profesional,
-                                :descripcion,
-                                :avance_generado,
-                                :observaciones
-                            )
-                        """), {
-                            "id_objetivo": objetivo_seleccionado,
-                            "profesional": profesional_novedad,
-                            "descripcion": descripcion_novedad,
-                            "avance_generado": avance_generado,
-                            "observaciones": observacion_novedad
-                        })
+                    "Avance",
 
-                    st.success("Novedad guardada")
-                    st.rerun()
+                    f"{avance}%"
 
-            else:
-                st.info("No hay objetivos activos")
-        # ==========================
-    # REGISTRAR NOVEDAD
-    # ==========================
+                )
 
-    st.markdown("## 📝 Registrar novedad")
+                b.metric(
 
-    # ⚠️ VALIDACIÓN BASE
-    if objetivos.empty:
-        st.info("No hay objetivos activos para este usuario")
-    else:
+                    "Estado",
 
-        # ⚠️ convertir a "activos" si quieres usar este nombre
-        objetivos_activos = objetivos
+                    obj["estado"]
 
-        with st.form("registrar_novedad"):
+                )
 
-            objetivo_seleccionado = st.selectbox(
-                "Objetivo",
-                objetivos_activos["id"].tolist(),
-                format_func=lambda x:
-                    objetivos_activos[
-                        objetivos_activos["id"] == x
-                    ]["objetivo_tipo"].values[0]
-            )
+                c.metric(
 
-            objetivo_actual = objetivos_activos[
-                objetivos_activos["id"] == objetivo_seleccionado
-            ]["objetivo_tipo"].values[0]
+                    "Fecha meta",
 
-            # ==========================
-            # HITOS
-            # ==========================
-            hitos = mapa_hitos.get(
-                objetivo_actual,
-                ["Inicio", "Seguimiento", "Avance", "Cumplimiento"]
-            )
+                    fecha_meta
 
-            hito = st.selectbox("Hito alcanzado", hitos)
+                )
 
-            profesional_novedad = st.selectbox(
-                "Profesional responsable",
-                df_profesionales["label"].tolist()
-            )
+                st.divider()
 
-            descripcion_novedad = st.text_area("Actividad realizada")
-            observacion_novedad = st.text_area("Observaciones")
-
-            guardar_novedad = st.form_submit_button("💾 Guardar novedad")
-
-        # ==========================
-        # GUARDAR NOVEDAD (FUERA DEL FORM)
-        # ==========================
-        if guardar_novedad:
-
-            avance_generado = int(
-                ((hitos.index(hito) + 1) / len(hitos)) * 100
-            )
-
-            with engine.begin() as conn:
-
-                # INSERT NOVEDAD
-                conn.execute(text("""
-                    INSERT INTO pai_novedades(
-                        id_objetivo,
-                        profesional,
-                        descripcion,
-                        avance_generado,
-                        observaciones
-                    )
-                    VALUES(
-                        :id_objetivo,
-                        :profesional,
-                        :descripcion,
-                        :avance_generado,
-                        :observaciones
-                    )
-                """), {
-                    "id_objetivo": objetivo_seleccionado,
-                    "profesional": profesional_novedad,
-                    "descripcion": descripcion_novedad,
-                    "avance_generado": avance_generado,
-                    "observaciones": observacion_novedad
-                })
-
-                # SUMA AVANCE TOTAL
-                avance_total = conn.execute(text("""
-                    SELECT COALESCE(SUM(avance_generado), 0)
-                    FROM pai_novedades
-                    WHERE id_objetivo = :id_objetivo
-                """), {
-                    "id_objetivo": objetivo_seleccionado
-                }).scalar()
-
-                avance_total = min(avance_total, 100)
-
-                estado_objetivo = "Activo"
-                if avance_total >= 100:
-                    estado_objetivo = "Cumplido"
-
-                # UPDATE OBJETIVO
-                conn.execute(text("""
-                    UPDATE pai_objetivos
-                    SET porcentaje_avance = :avance,
-                        estado = :estado
-                    WHERE id = :id_objetivo
-                """), {
-                    "avance": avance_total,
-                    "estado": estado_objetivo,
-                    "id_objetivo": objetivo_seleccionado
-                })
-
-            st.success("✅ Novedad registrada correctamente")
-            st.rerun()
-
-                
-            if guardar:
-
-                ods_detectados = []
-
-                # ODS 2 - Hambre Cero
-                if comedor in ["Ocasional", "Frecuente"]:
-                    ods_detectados.append("ODS 2 - Hambre Cero")
-
-                # ODS 3 - Salud y Bienestar
-                if consumo in ["Reducido", "Abstinencia"]:
-                    ods_detectados.append("ODS 3 - Salud y Bienestar")
-
-                if vih in ["Positivo", "Indetectable"]:
-                    ods_detectados.append("ODS 3 - Salud y Bienestar")
-
-                if salud in ["Estable", "Compensado", "En tratamiento"]:
-                    ods_detectados.append("ODS 3 - Salud y Bienestar")
-
-                # ODS 4 - Educación
-                if educacion != "No":
-                    ods_detectados.append("ODS 4 - Educación de Calidad")
-
-                if formacion_empleo == "Finalizada":
-                    ods_detectados.append("ODS 4 - Educación de Calidad")
-
-                # ODS 5
-                if genero_participacion in ["Mujer cis", "Mujer trans", "No binario"]:
-                    ods_detectados.append("ODS 5 - Igualdad de Género")
-
-                # ODS 6
-                if agua == "Sí":
-                    ods_detectados.append("ODS 6 - Agua Limpia y Saneamiento")
-
-                # ODS 8
-                if empleo_estado in ["Formal", "Emprendimiento"]:
-                    ods_detectados.append("ODS 8 - Trabajo Decente")
-
-                # ODS 10
-                if red_apoyo in ["Moderada", "Fuerte"]:
-                    ods_detectados.append("ODS 10 - Reducción de las Desigualdades")
-
-                # ODS 16
-                if documento == "Tiene":
-                    ods_detectados.append("ODS 16")
-
-                ods_detectados = list(set(ods_detectados))
-
-                if ods_detectados:
-                    st.markdown("### 🌍 ODS impactados en este seguimiento")
-
-                    for ods in sorted(ods_detectados):
-                        st.success(ods)
 with tab7:
 
     st.title("📈 Seguimiento e Impacto - Reducción de Riesgos y Daños")
