@@ -3476,156 +3476,82 @@ def calcular_indice_ods(salud, empleo, inclusion, derechos):
 
     indice = (total / 4) * 100
 
-# ==========================
-# MAPAS
-# ==========================
 
 mapa_politica = {
-
     "Documentación y ciudadanía":"Restablecimiento de derechos",
-
     "Cedulación":"Restablecimiento de derechos",
-
     "Aseguramiento en salud":"Atención integral en salud",
-
     "Salud mental":"Atención integral en salud",
-
     "Tratamiento consumo SPA":"Reducción de riesgos y daños",
-
     "Reducción de riesgos y daños":"Reducción de riesgos y daños",
-
     "Vinculación familiar":"Fortalecimiento familiar",
-
     "Inclusión social":"Inclusión social",
-
     "Empleabilidad":"Inclusión laboral y generación de ingresos",
-
     "Generación de ingresos":"Inclusión laboral y generación de ingresos",
-
     "Educación":"Educación",
-
     "Vivienda":"Habitabilidad y vivienda",
-
     "Proyecto de vida":"Inclusión social",
-
     "Participación comunitaria":"Participación ciudadana",
-
     "Justicia y acceso a derechos":"Restablecimiento de derechos",
-
     "Otro":"Restablecimiento de derechos"
-
 }
 
 mapa_ods = {
-
     "Documentación y ciudadanía":["ODS 16"],
-
     "Cedulación":["ODS 16"],
-
     "Aseguramiento en salud":["ODS 3","ODS 10"],
-
     "Salud mental":["ODS 3"],
-
     "Tratamiento consumo SPA":["ODS 3"],
-
     "Reducción de riesgos y daños":["ODS 3"],
-
     "Vinculación familiar":["ODS 10","ODS 16"],
-
     "Inclusión social":["ODS 10","ODS 16"],
-
     "Empleabilidad":["ODS 8","ODS 10"],
-
     "Generación de ingresos":["ODS 8","ODS 10"],
-
     "Educación":["ODS 4"],
-
     "Vivienda":["ODS 11"],
-
     "Proyecto de vida":["ODS 3","ODS 10"],
-
     "Participación comunitaria":["ODS 16"],
-
     "Justicia y acceso a derechos":["ODS 16"],
-
     "Otro":["ODS 10"]
-
 }
 
 mapa_hitos = {
-
     "Documentación y ciudadanía":[
-
         "Documentos identificados",
-
         "Trámite iniciado",
-
         "Gestión institucional",
-
         "Documentación obtenida"
-
     ],
-
     "Cedulación":[
-
         "Solicitud iniciada",
-
         "Cita asignada",
-
         "Trámite radicado",
-
         "Documento entregado"
-
     ],
-
     "Aseguramiento en salud":[
-
         "Afiliación identificada",
-
         "Trámite iniciado",
-
         "Acceso garantizado",
-
         "Seguimiento"
-
     ],
-
     "Salud mental":[
-
         "Valoración realizada",
-
         "Intervención iniciada",
-
         "Seguimiento",
-
         "Estabilización"
-
     ],
-
     "Tratamiento consumo SPA":[
-
         "Acepta intervención",
-
         "Inicia tratamiento",
-
         "Adherencia",
-
         "Estabilización"
-
     ],
-
     "Inclusión social":[
-
         "Participa en actividades",
-
         "Fortalece habilidades",
-
         "Integración comunitaria",
-
         "Inclusión lograda"
-
     ]
-
 }
 
 with tab6:
@@ -3648,7 +3574,7 @@ with tab6:
     )
 
     # =========================
-    # BÚSQUEDA DE USUARIO
+    # BÚSQUEDA USUARIO
     # =========================
 
     st.subheader("🔎 Búsqueda de usuario")
@@ -3672,25 +3598,22 @@ with tab6:
             "Seleccione usuario",
             df_busqueda["numero_identificacion"].tolist(),
             format_func=lambda x:
-                df_busqueda[df_busqueda["numero_identificacion"] == x][["nombres", "apellidos"]]
+                df_busqueda[df_busqueda["numero_identificacion"] == x][["nombres","apellidos"]]
                 .astype(str)
                 .agg(" ".join, axis=1)
                 .values[0]
         )
-    else:
-        st.info("No hay coincidencias")
 
     st.divider()
 
     # =========================
-    # USUARIO SELECCIONADO
+    # USUARIO
     # =========================
 
     if usuario_sel:
 
         usuario = pd.read_sql(f"""
-            SELECT *
-            FROM habitante_de_calle
+            SELECT * FROM habitante_de_calle
             WHERE numero_identificacion = '{usuario_sel}'
         """, engine)
 
@@ -3700,16 +3623,15 @@ with tab6:
 
             st.success("Usuario encontrado")
 
-            c1, c2, c3 = st.columns(3)
-
+            c1,c2,c3 = st.columns(3)
             c1.metric("Nombre", f"{datos['nombres']} {datos['apellidos']}")
-            c2.metric("Edad", datos.get("edad", "N/A"))
+            c2.metric("Edad", datos.get("edad","N/A"))
             c3.metric("Documento", usuario_sel)
 
             st.divider()
 
             # =========================
-            # OBJETIVOS PAI
+            # OBJETIVOS
             # =========================
 
             st.markdown("## 🎯 Objetivos PAI")
@@ -3722,35 +3644,38 @@ with tab6:
             """, engine)
 
             if objetivos.empty:
-                st.info("Este usuario aún no tiene objetivos PAI creados.")
+                st.info("Sin objetivos registrados")
 
             else:
                 for _, obj in objetivos.iterrows():
 
-                    avance = obj["porcentaje_avance"] or 0
-
-                    fecha_meta = obj["fecha_meta"]
-                    fecha_meta = fecha_meta.strftime("%d/%m/%Y") if fecha_meta else "Sin fecha"
-
                     st.markdown(f"### 🎯 {obj['objetivo_tipo']}")
 
-                    if obj["linea_politica"]:
-                        st.caption(f"🏛️ {obj['linea_politica']}")
+                    st.caption(f"🏛️ {obj.get('linea_politica','')}")
 
                     st.write(obj["objetivo_descripcion"])
 
-                    st.progress(avance / 100)
+                    # ACTIVIDADES
+                    if obj.get("actividades"):
+                        import json
+                        acts = json.loads(obj["actividades"])
 
-                    c1, c2, c3 = st.columns(3)
+                        st.markdown("**🧩 Actividades**")
+                        for a in acts:
+                            st.write("•", a)
 
-                    c1.metric("Avance", f"{avance}%")
-                    c2.metric("Estado", obj["estado"])
-                    c3.metric("Fecha meta", fecha_meta)
+                    # SUBACTIVIDADES
+                    if obj.get("subactividades"):
+                        subs = json.loads(obj["subactividades"])
+
+                        st.markdown("**🔹 Subactividades**")
+                        for s in subs:
+                            st.write("•", s)
 
                     st.divider()
 
             # =========================
-            # CREAR OBJETIVO PAI
+            # CREAR OBJETIVO
             # =========================
 
             st.markdown("## ➕ Crear objetivo PAI")
@@ -3759,19 +3684,10 @@ with tab6:
 
                 objetivo_tipo = st.selectbox(
                     "Objetivo",
-                    [
-                        "Salud física",
-                        "Salud mental",
-                        "Documentación y ciudadanía",
-                        "Tratamiento consumo SPA",
-                        "Empleabilidad",
-                        "Red de apoyo",
-                        "Vivienda",
-                        "Educación"
-                    ]
+                    list(mapa_politica.keys())
                 )
 
-                objetivo_descripcion = st.text_area("Descripción del objetivo")
+                objetivo_descripcion = st.text_area("Descripción")
 
                 fecha_meta = st.date_input("Fecha meta")
 
@@ -3782,39 +3698,27 @@ with tab6:
                         df_profesionales[df_profesionales["id"] == x]["label"].values[0]
                 )
 
-                prioridad = st.selectbox(
-                    "Prioridad",
-                    ["Alta", "Media", "Baja"]
-                )
+                prioridad = st.selectbox("Prioridad", ["Alta","Media","Baja"])
 
                 submit = st.form_submit_button("Guardar objetivo")
 
+            # =========================
+            # LÓGICA PRO
+            # =========================
+
             if submit:
 
-                mapa_ods = {
-                    "Salud física": "ODS 3",
-                    "Salud mental": "ODS 3",
-                    "Documentación y ciudadanía": "ODS 16",
-                    "Tratamiento consumo SPA": "ODS 3",
-                    "Empleabilidad": "ODS 8",
-                    "Red de apoyo": "ODS 10",
-                    "Vivienda": "ODS 11",
-                    "Educación": "ODS 4"
-                }
+                import json
 
-                mapa_politica = {
-                    "Salud física": "Atención integral en salud",
-                    "Salud mental": "Salud mental comunitaria",
-                    "Documentación y ciudadanía": "Restablecimiento de derechos",
-                    "Tratamiento consumo SPA": "Reducción de riesgos y daños",
-                    "Empleabilidad": "Inclusión laboral",
-                    "Red de apoyo": "Fortalecimiento familiar",
-                    "Vivienda": "Habitabilidad digna",
-                    "Educación": "Acceso a educación"
-                }
+                ods = mapa_ods.get(objetivo_tipo, ["ODS 10"])
+                politica = mapa_politica.get(objetivo_tipo, "Restablecimiento de derechos")
+                hitos = mapa_hitos.get(objetivo_tipo, [])
 
-                ods = mapa_ods.get(objetivo_tipo, "ODS 3")
-                politica = mapa_politica.get(objetivo_tipo, "Atención integral")
+                # ACTIVIDADES BASE (simplificadas desde hitos)
+                actividades = hitos
+
+                # SUBACTIVIDADES (editable después si quieres expandir)
+                subactividades = hitos[:2] if hitos else []
 
                 query = """
                     INSERT INTO pai_objetivos (
@@ -3826,13 +3730,13 @@ with tab6:
                         prioridad,
                         linea_politica,
                         ods,
+                        actividades,
+                        subactividades,
                         estado,
                         porcentaje_avance,
                         fecha_apertura
                     )
-                    VALUES (
-                        %s, %s, %s, %s, %s, %s, %s, %s, 'Activo', 0, NOW()
-                    )
+                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'Activo',0,NOW())
                 """
 
                 engine.execute(
@@ -3845,147 +3749,16 @@ with tab6:
                         profesional_id,
                         prioridad,
                         politica,
-                        ods
+                        json.dumps(ods),
+                        json.dumps(actividades),
+                        json.dumps(subactividades)
                     )
                 )
 
                 st.success("Objetivo PAI creado correctamente")
                 st.rerun()
-        if submit:
-    
-            # =========================
-            # MAPA ODS
-            # =========================
 
-            mapa_ods = {
-                "Salud física": "ODS 3",
-                "Salud mental": "ODS 3",
-                "Documentación y ciudadanía": "ODS 16",
-                "Tratamiento consumo SPA": "ODS 3",
-                "Empleabilidad": "ODS 8",
-                "Red de apoyo": "ODS 10",
-                "Vivienda": "ODS 11",
-                "Educación": "ODS 4"
-            }
-
-            ods = mapa_ods.get(objetivo_tipo, "ODS 3")
-
-            # =========================
-            # MAPA POLÍTICA PÚBLICA
-            # =========================
-
-            mapa_politica = {
-                "Salud física": "Atención integral en salud",
-                "Salud mental": "Salud mental comunitaria",
-                "Documentación y ciudadanía": "Restablecimiento de derechos",
-                "Tratamiento consumo SPA": "Reducción de riesgos y daños",
-                "Empleabilidad": "Inclusión laboral",
-                "Red de apoyo": "Fortalecimiento familiar",
-                "Vivienda": "Habitabilidad digna",
-                "Educación": "Acceso a educación"
-            }
-
-            politica = mapa_politica.get(objetivo_tipo, "Atención integral")
-
-            # =========================
-            # MAPA ACTIVIDADES AUTOMÁTICAS
-            # =========================
-
-            mapa_actividades = {
-                "Salud mental": [
-                    "Valoración psicológica inicial",
-                    "Intervención terapéutica individual",
-                    "Seguimiento psicosocial",
-                    "Derivación a psiquiatría si es necesario",
-                    "Fortalecimiento de redes de apoyo"
-                ],
-
-                "Tratamiento consumo SPA": [
-                    "Entrevista motivacional",
-                    "Plan de reducción de riesgos",
-                    "Ingreso a programa de rehabilitación",
-                    "Seguimiento de adherencia",
-                    "Prevención de recaídas"
-                ],
-
-                "Empleabilidad": [
-                    "Perfilamiento laboral",
-                    "Construcción de hoja de vida",
-                    "Formación en habilidades blandas",
-                    "Búsqueda activa de empleo",
-                    "Seguimiento de inserción laboral"
-                ],
-
-                "Documentación y ciudadanía": [
-                    "Diagnóstico documental",
-                    "Acompañamiento a trámites",
-                    "Radicación de documentos",
-                    "Seguimiento institucional",
-                    "Entrega de documentos"
-                ],
-
-                "Salud física": [
-                    "Valoración médica inicial",
-                    "Control de signos vitales",
-                    "Seguimiento clínico",
-                    "Adherencia a tratamiento",
-                    "Promoción de hábitos saludables"
-                ],
-
-                "Vivienda": [
-                    "Evaluación de condiciones habitacionales",
-                    "Gestión de subsidios",
-                    "Articulación con oferta institucional",
-                    "Seguimiento de estabilidad habitacional",
-                    "Acompañamiento psicosocial"
-                ]
-            }
-
-            actividades = mapa_actividades.get(objetivo_tipo, [])
-            import json
-            actividades_json = json.dumps(actividades)
-
-            # =========================
-            # INSERT EN BASE DE DATOS
-            # =========================
-
-            query = """
-                INSERT INTO pai_objetivos (
-                    documento_usuario,
-                    objetivo_tipo,
-                    objetivo_descripcion,
-                    fecha_meta,
-                    profesional_responsable,
-                    prioridad,
-                    linea_politica,
-                    ods,
-                    actividades,
-                    estado,
-                    porcentaje_avance,
-                    fecha_apertura
-                )
-                VALUES (
-                    %s, %s, %s, %s, %s, %s, %s, %s, %s, 'Activo', 0, NOW()
-                )
-            """
-
-            engine.execute(
-                query,
-                (
-                    usuario_sel,
-                    objetivo_tipo,
-                    objetivo_descripcion,
-                    fecha_meta,
-                    profesional_id,
-                    prioridad,
-                    politica,
-                    ods,
-                    actividades_json
-                )
-            )
-
-            st.success("Objetivo PAI creado con actividades automáticas")
-            st.rerun()
+  
 with tab7:
 
     st.title("📈 Seguimiento e Impacto - Reducción de Riesgos y Daños")
