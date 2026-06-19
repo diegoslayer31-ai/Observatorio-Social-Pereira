@@ -3851,6 +3851,141 @@ with tab6:
 
                 st.success("Objetivo PAI creado correctamente")
                 st.rerun()
+        if submit:
+    
+            # =========================
+            # MAPA ODS
+            # =========================
+
+            mapa_ods = {
+                "Salud física": "ODS 3",
+                "Salud mental": "ODS 3",
+                "Documentación y ciudadanía": "ODS 16",
+                "Tratamiento consumo SPA": "ODS 3",
+                "Empleabilidad": "ODS 8",
+                "Red de apoyo": "ODS 10",
+                "Vivienda": "ODS 11",
+                "Educación": "ODS 4"
+            }
+
+            ods = mapa_ods.get(objetivo_tipo, "ODS 3")
+
+            # =========================
+            # MAPA POLÍTICA PÚBLICA
+            # =========================
+
+            mapa_politica = {
+                "Salud física": "Atención integral en salud",
+                "Salud mental": "Salud mental comunitaria",
+                "Documentación y ciudadanía": "Restablecimiento de derechos",
+                "Tratamiento consumo SPA": "Reducción de riesgos y daños",
+                "Empleabilidad": "Inclusión laboral",
+                "Red de apoyo": "Fortalecimiento familiar",
+                "Vivienda": "Habitabilidad digna",
+                "Educación": "Acceso a educación"
+            }
+
+            politica = mapa_politica.get(objetivo_tipo, "Atención integral")
+
+            # =========================
+            # MAPA ACTIVIDADES AUTOMÁTICAS
+            # =========================
+
+            mapa_actividades = {
+                "Salud mental": [
+                    "Valoración psicológica inicial",
+                    "Intervención terapéutica individual",
+                    "Seguimiento psicosocial",
+                    "Derivación a psiquiatría si es necesario",
+                    "Fortalecimiento de redes de apoyo"
+                ],
+
+                "Tratamiento consumo SPA": [
+                    "Entrevista motivacional",
+                    "Plan de reducción de riesgos",
+                    "Ingreso a programa de rehabilitación",
+                    "Seguimiento de adherencia",
+                    "Prevención de recaídas"
+                ],
+
+                "Empleabilidad": [
+                    "Perfilamiento laboral",
+                    "Construcción de hoja de vida",
+                    "Formación en habilidades blandas",
+                    "Búsqueda activa de empleo",
+                    "Seguimiento de inserción laboral"
+                ],
+
+                "Documentación y ciudadanía": [
+                    "Diagnóstico documental",
+                    "Acompañamiento a trámites",
+                    "Radicación de documentos",
+                    "Seguimiento institucional",
+                    "Entrega de documentos"
+                ],
+
+                "Salud física": [
+                    "Valoración médica inicial",
+                    "Control de signos vitales",
+                    "Seguimiento clínico",
+                    "Adherencia a tratamiento",
+                    "Promoción de hábitos saludables"
+                ],
+
+                "Vivienda": [
+                    "Evaluación de condiciones habitacionales",
+                    "Gestión de subsidios",
+                    "Articulación con oferta institucional",
+                    "Seguimiento de estabilidad habitacional",
+                    "Acompañamiento psicosocial"
+                ]
+            }
+
+            actividades = mapa_actividades.get(objetivo_tipo, [])
+            import json
+            actividades_json = json.dumps(actividades)
+
+            # =========================
+            # INSERT EN BASE DE DATOS
+            # =========================
+
+            query = """
+                INSERT INTO pai_objetivos (
+                    documento_usuario,
+                    objetivo_tipo,
+                    objetivo_descripcion,
+                    fecha_meta,
+                    profesional_responsable,
+                    prioridad,
+                    linea_politica,
+                    ods,
+                    actividades,
+                    estado,
+                    porcentaje_avance,
+                    fecha_apertura
+                )
+                VALUES (
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s, 'Activo', 0, NOW()
+                )
+            """
+
+            engine.execute(
+                query,
+                (
+                    usuario_sel,
+                    objetivo_tipo,
+                    objetivo_descripcion,
+                    fecha_meta,
+                    profesional_id,
+                    prioridad,
+                    politica,
+                    ods,
+                    actividades_json
+                )
+            )
+
+            st.success("Objetivo PAI creado con actividades automáticas")
+            st.rerun()
 with tab7:
 
     st.title("📈 Seguimiento e Impacto - Reducción de Riesgos y Daños")
