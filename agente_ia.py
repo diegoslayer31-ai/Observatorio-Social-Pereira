@@ -3937,6 +3937,7 @@ with tab6:
                     )
 
                     st.divider()
+with tab7:
 
     st.title("📈 Seguimiento e Impacto - Reducción de Riesgos y Daños")
 
