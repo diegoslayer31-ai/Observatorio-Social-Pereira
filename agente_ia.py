@@ -4496,6 +4496,59 @@ with tab6:
             )
 
             st.divider()
+        # =========================
+# HISTORIAL NOVEDADES
+# =========================
+
+st.markdown("### 🕒 Historial")
+
+novedades = pd.read_sql(
+
+    f"""
+
+    SELECT *
+
+    FROM pai_novedades
+
+    WHERE id_objetivo={obj['id']}
+
+    ORDER BY fecha DESC
+
+    """,
+
+    engine
+
+)
+
+if novedades.empty:
+
+    st.info(
+
+        "Sin novedades registradas"
+
+    )
+
+else:
+
+    for _, nov in novedades.iterrows():
+
+        st.info(
+
+            f"""
+
+            📅 {nov['fecha']}
+
+            👨‍⚕️ {nov['profesional']}
+
+            📌 {nov['tipo_novedad']}
+
+            📝 {nov['descripcion']}
+
+            📂 {nov['evidencia']}
+
+            """
+
+        )
 with tab7:
 
     st.title("📈 Seguimiento e Impacto - Reducción de Riesgos y Daños")
