@@ -4135,7 +4135,7 @@ else:
             )
 
             c3.metric(
-                "ODS",
+                "ods_principal",
                 ods
             )
 
