@@ -4113,10 +4113,34 @@ with tab6:
 
                     )
 
-                    nombre_profesional = (
-                df_profesionales.set_index("id")["nombre"]
-                .get(obj["profesional_referente"], "Sin asignar")
-                 )
+                # =========================
+                # PROFESIONAL
+                # =========================
+
+                nombre_profesional = "Sin asignar"
+
+                if obj["profesional_referente"]:
+
+                    profesional = pd.read_sql(
+
+                        f"""
+
+                        SELECT nombre
+
+                        FROM profesionales
+
+                        WHERE id={obj['profesional_referente']}
+
+                        """,
+
+                        engine
+
+                    )
+
+                    if not profesional.empty:
+
+                        nombre_profesional = profesional.iloc[0]["nombre"]
+
                 # =========================
                 # MOSTRAR OBJETIVO
                 # =========================
