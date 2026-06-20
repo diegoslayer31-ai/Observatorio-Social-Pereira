@@ -4200,7 +4200,105 @@ with tab6:
                     avance/100
 
                 )
+            objetivos = pd.read_sql(
 
+        f"""
+
+        SELECT *
+
+        FROM pai_objetivos
+
+        WHERE documento_usuario='{usuario_sel}'
+
+        """,
+
+        engine
+
+    )
+
+    if not objetivos.empty:
+
+        objetivos_activos = len(
+
+            objetivos[
+                objetivos["estado"]=="Activo"
+            ]
+
+        )
+
+        objetivos_cumplidos = len(
+
+            objetivos[
+                objetivos["porcentaje_avance"]>=100
+            ]
+
+        )
+
+        avance_promedio = round(
+
+            objetivos["porcentaje_avance"]
+
+            .fillna(0)
+
+            .mean(),
+
+            1
+
+        )
+
+        ods_impactados = len(
+
+            set(
+
+                ",".join(
+
+                    objetivos["ods_principal"]
+
+                    .fillna("")
+
+                )
+
+                .split(",")
+
+            )
+
+        )
+
+        c1,c2,c3,c4 = st.columns(4)
+
+        c1.metric(
+
+            "🎯 Activos",
+
+            objetivos_activos
+
+        )
+
+        c2.metric(
+
+            "✅ Cumplidos",
+
+            objetivos_cumplidos
+
+        )
+
+        c3.metric(
+
+            "📈 Avance promedio",
+
+            f"{avance_promedio}%"
+
+        )
+
+        c4.metric(
+
+            "🌍 ODS impactados",
+
+            ods_impactados
+
+        )
+
+    
         st.divider()
     for actividad in actividades:
 
