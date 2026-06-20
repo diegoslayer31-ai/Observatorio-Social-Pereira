@@ -3753,180 +3753,420 @@ with tab6:
             )
 
         )
+        # =========================
+    # CREAR OBJETIVO PAI
     # =========================
-# CREAR OBJETIVO PAI
+
+    st.markdown("## ➕ Crear objetivo PAI")
+
+    with st.form("crear_objetivo_pai"):
+
+        objetivo_tipo = st.selectbox(
+
+            "Objetivo",
+
+            list(mapa_politica.keys())
+
+        )
+
+        st.caption(
+            f"🏛️ Política pública: {mapa_politica.get(objetivo_tipo,'')}"
+        )
+
+        st.caption(
+            f"🌍 ODS: {', '.join(mapa_ods.get(objetivo_tipo,[]))}"
+        )
+
+        subactividades = st.multiselect(
+
+            "Subactividades",
+
+            mapa_hitos.get(
+                objetivo_tipo,
+                []
+            ),
+
+            default=mapa_hitos.get(
+                objetivo_tipo,
+                []
+            )
+
+        )
+
+        objetivo_descripcion = st.text_area(
+
+            "Descripción del objetivo"
+
+        )
+
+        fecha_meta = st.date_input(
+
+            "Fecha meta"
+
+        )
+
+        profesional_id = st.selectbox(
+
+            "Profesional responsable",
+
+            df_profesionales["id"],
+
+            format_func=lambda x:
+
+            df_profesionales[
+
+                df_profesionales["id"]==x
+
+            ]["label"].values[0]
+
+        )
+
+        prioridad = st.selectbox(
+
+            "Prioridad",
+
+            [
+
+                "Alta",
+
+                "Media",
+
+                "Baja"
+
+            ]
+
+        )
+
+        submit = st.form_submit_button(
+
+            "💾 Guardar objetivo"
+
+        )
+        # =========================
+    # GUARDAR OBJETIVO
+    # =========================
+
+    if submit:
+
+        import json
+
+        from sqlalchemy import text
+
+        politica = mapa_politica.get(
+
+            objetivo_tipo,
+
+            "Restablecimiento de derechos"
+
+        )
+
+        ods = mapa_ods.get(
+
+            objetivo_tipo,
+
+            ["ODS 10"]
+
+        )
+
+        query = text("""
+
+            INSERT INTO pai_objetivos (
+
+                documento_usuario,
+
+                objetivo_tipo,
+
+                objetivo_descripcion,
+
+                fecha_apertura,
+
+                fecha_meta,
+
+                estado,
+
+                porcentaje_avance,
+
+                profesional_referente,
+
+                ods_principal,
+
+                observaciones,
+
+                linea_politica,
+
+                actividades
+
+            )
+
+            VALUES (
+
+                :documento_usuario,
+
+                :objetivo_tipo,
+
+                :objetivo_descripcion,
+
+                NOW(),
+
+                :fecha_meta,
+
+                'Activo',
+
+                0,
+
+                :profesional_referente,
+
+                :ods_principal,
+
+                '',
+
+                :linea_politica,
+
+                :actividades
+
+            )
+
+        """)
+
+        with engine.begin() as conn:
+
+            conn.execute(
+
+                query,
+
+                {
+
+                    "documento_usuario":str(usuario_sel),
+
+                    "objetivo_tipo":objetivo_tipo,
+
+                    "objetivo_descripcion":objetivo_descripcion,
+
+                    "fecha_meta":fecha_meta,
+
+                    "profesional_referente":int(profesional_id),
+
+                    "ods_principal":", ".join(ods),
+
+                    "linea_politica":politica,
+
+                    "actividades":json.dumps(
+
+                        subactividades
+
+                    )
+
+                }
+
+            )
+
+        st.success(
+
+            "✅ Objetivo creado"
+
+        )
+
+        st.rerun()
+    # =========================
+# OBJETIVOS ACTIVOS
 # =========================
 
-st.markdown("## ➕ Crear objetivo PAI")
+st.divider()
 
-with st.form("crear_objetivo_pai"):
+st.markdown("## 🎯 Objetivos activos")
 
-    objetivo_tipo = st.selectbox(
+objetivos = pd.read_sql(f"""
 
-        "Objetivo",
+    SELECT *
 
-        list(mapa_politica.keys())
+    FROM pai_objetivos
 
+    WHERE documento_usuario='{usuario_sel}'
+
+    ORDER BY fecha_apertura DESC
+
+""", engine)
+
+import json
+
+if objetivos.empty:
+
+    st.info(
+        "Este usuario aún no tiene objetivos."
     )
 
-    st.caption(
-        f"🏛️ Política pública: {mapa_politica.get(objetivo_tipo,'')}"
-    )
+else:
 
-    st.caption(
-        f"🌍 ODS: {', '.join(mapa_ods.get(objetivo_tipo,[]))}"
-    )
+    for _, obj in objetivos.iterrows():
 
-    subactividades = st.multiselect(
+        actividades = []
 
-        "Subactividades",
+        if obj["actividades"]:
 
-        mapa_hitos.get(
-            objetivo_tipo,
-            []
-        ),
+            try:
 
-        default=mapa_hitos.get(
-            objetivo_tipo,
-            []
+                actividades = json.loads(
+                    obj["actividades"]
+                )
+
+            except:
+
+                actividades = []
+            avance_hitos = []
+
+if obj["avance_hitos"]:
+
+    try:
+
+        avance_hitos = json.loads(
+            obj["avance_hitos"]
         )
 
-    )
+    except:
 
-    objetivo_descripcion = st.text_area(
+        avance_hitos = []
 
-        "Descripción del objetivo"
+        total = len(actividades)
 
-    )
+    if total == 0:
 
-    fecha_meta = st.date_input(
+        avance = 0
 
-        "Fecha meta"
+    else:
 
-    )
+        avance = round(
 
-    profesional_id = st.selectbox(
+            (
 
-        "Profesional responsable",
+                len(avance_hitos)
 
-        df_profesionales["id"],
+                / total
 
-        format_func=lambda x:
+            )*100,
 
-        df_profesionales[
-
-            df_profesionales["id"]==x
-
-        ]["label"].values[0]
-
-    )
-
-    prioridad = st.selectbox(
-
-        "Prioridad",
-
-        [
-
-            "Alta",
-
-            "Media",
-
-            "Baja"
-
-        ]
-
-    )
-
-    submit = st.form_submit_button(
-
-        "💾 Guardar objetivo"
-
-    )
-    # =========================
-# GUARDAR OBJETIVO
-# =========================
-
-if submit:
-
-    import json
-
-    from sqlalchemy import text
-
-    politica = mapa_politica.get(
-
-        objetivo_tipo,
-
-        "Restablecimiento de derechos"
-
-    )
-
-    ods = mapa_ods.get(
-
-        objetivo_tipo,
-
-        ["ODS 10"]
-
-    )
-
-    query = text("""
-
-        INSERT INTO pai_objetivos (
-
-            documento_usuario,
-
-            objetivo_tipo,
-
-            objetivo_descripcion,
-
-            fecha_apertura,
-
-            fecha_meta,
-
-            estado,
-
-            porcentaje_avance,
-
-            profesional_referente,
-
-            ods_principal,
-
-            observaciones,
-
-            linea_politica,
-
-            actividades
+            1
 
         )
 
-        VALUES (
+        ods = obj["ods_principal"]
 
-            :documento_usuario,
+        profesional = pd.read_sql(f"""
 
-            :objetivo_tipo,
+            SELECT nombre
 
-            :objetivo_descripcion,
+            FROM profesionales
 
-            NOW(),
+            WHERE id={obj['profesional_referente']}
 
-            :fecha_meta,
+        """, engine)
 
-            'Activo',
+        nombre_profesional = ""
 
-            0,
+        if not profesional.empty:
 
-            :profesional_referente,
+            nombre_profesional = profesional.iloc[0]["nombre"]
 
-            :ods_principal,
-
-            '',
-
-            :linea_politica,
-
-            :actividades
-
+        st.markdown(
+            f"### 🎯 {obj['objetivo_tipo']}"
         )
 
-    """)
+        c1,c2,c3 = st.columns(3)
+
+        c1.metric(
+            "Avance",
+            f"{avance}%"
+        )
+
+        c2.metric(
+            "Estado",
+            obj["estado"]
+        )
+
+        c3.metric(
+            "ODS",
+            ods
+        )
+
+        st.caption(
+            f"👨‍⚕️ {nombre_profesional}"
+        )
+
+        st.caption(
+            f"🏛️ {obj['linea_politica']}"
+        )
+
+        st.write(
+            obj["objetivo_descripcion"]
+        )
+
+        st.progress(
+            avance/100
+        )
+
+        st.markdown(
+            "#### 🧭 Actividades"
+        )
+
+        st.markdown(
+        "#### 🧭 Seguimiento"
+    )
+
+    for actividad in actividades:
+
+        hecho = actividad in avance_hitos
+
+        col1,col2 = st.columns(
+            [0.1,0.9]
+        )
+
+        with col1:
+
+            marcado = st.checkbox(
+
+                "",
+
+                value=hecho,
+
+                key=f"{obj['id']}_{actividad}"
+
+            )
+
+        with col2:
+
+            st.write(
+                actividad
+            )
+
+        if marcado:
+
+            if actividad not in avance_hitos:
+
+                avance_hitos.append(
+                    actividad
+                )
+
+        else:
+
+            if actividad in avance_hitos:
+
+                avance_hitos.remove(
+                    actividad
+                )
+        from sqlalchemy import text
+
+        query = text("""
+
+        UPDATE pai_objetivos
+
+        SET
+
+        avance_hitos=:avance_hitos,
+
+        porcentaje_avance=:porcentaje_avance
+
+        WHERE id=:id
+
+        """)
 
     with engine.begin() as conn:
 
@@ -3936,23 +4176,23 @@ if submit:
 
             {
 
-                "documento_usuario":str(usuario_sel),
+                "avance_hitos":
 
-                "objetivo_tipo":objetivo_tipo,
+                json.dumps(
 
-                "objetivo_descripcion":objetivo_descripcion,
+                    avance_hitos
 
-                "fecha_meta":fecha_meta,
+                ),
 
-                "profesional_referente":int(profesional_id),
+                "porcentaje_avance":
 
-                "ods_principal":", ".join(ods),
+                avance,
 
-                "linea_politica":politica,
+                "id":
 
-                "actividades":json.dumps(
+                int(
 
-                    subactividades
+                    obj["id"]
 
                 )
 
@@ -3960,13 +4200,7 @@ if submit:
 
         )
 
-    st.success(
-
-        "✅ Objetivo creado"
-
-    )
-
-    st.rerun()
+        st.divider()
 with tab7:
 
     st.title("📈 Seguimiento e Impacto - Reducción de Riesgos y Daños")
