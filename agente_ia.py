@@ -3581,7 +3581,7 @@ mapa_hitos = {
     }
 with tab6:
 
-    st.title("📋 PAI Inteligente")
+    st.title("📋 PAI")
 
     import json
     from sqlalchemy import text
@@ -4341,6 +4341,112 @@ with tab6:
                 avance_hitos.remove(
                     actividad
                 )
+        st.markdown("### 📝 Registrar novedad")
+
+        tipo_novedad = st.selectbox(
+
+            "Actividad realizada",
+
+            actividades,
+
+            key=f"tipo_{obj['id']}"
+
+        )
+
+        descripcion_novedad = st.text_area(
+
+            "Descripción",
+
+            key=f"desc_{obj['id']}"
+
+        )
+
+        evidencia = st.text_input(
+
+            "Evidencia",
+
+            key=f"evid_{obj['id']}"
+
+        )
+
+        guardar_novedad = st.button(
+
+            "💾 Guardar novedad",
+
+            key=f"guardar_{obj['id']}"
+
+        )
+        if guardar_novedad:
+    
+            from sqlalchemy import text
+
+            query_nov = text("""
+
+                INSERT INTO pai_novedades(
+
+                    id_objetivo,
+
+                    fecha,
+
+                    profesional,
+
+                    tipo_novedad,
+
+                    descripcion,
+
+                    avance_generado,
+
+                    evidencia
+
+                )
+
+                VALUES(
+
+                    :id_objetivo,
+
+                    NOW(),
+
+                    :profesional,
+
+                    :tipo_novedad,
+
+                    :descripcion,
+
+                    :avance_generado,
+
+                    :evidencia
+
+                )
+
+            """)
+
+            with engine.begin() as conn:
+
+                conn.execute(
+
+                    query_nov,
+
+                    {
+
+                        "id_objetivo": int(obj["id"]),
+
+                        "profesional": nombre_profesional,
+
+                        "tipo_novedad": tipo_novedad,
+
+                        "descripcion": descripcion_novedad,
+
+                        "avance_generado": avance,
+
+                        "evidencia": evidencia
+
+                    }
+
+                )
+
+            st.success("Novedad registrada")
+
+            st.rerun()
         from sqlalchemy import text
 
         query = text("""
