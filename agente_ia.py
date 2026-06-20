@@ -4069,7 +4069,59 @@ else:
                 st.markdown(
                     f"### 🎯 {obj['objetivo_tipo']}"
                 )
+            # =========================
+        # CALCULAR AVANCE
+        # =========================
 
+        actividades = []
+
+        if obj["actividades"]:
+
+            try:
+
+                actividades = json.loads(
+                    obj["actividades"]
+                )
+
+            except:
+
+                actividades = []
+
+        avance_hitos = []
+
+        if obj["avance_hitos"]:
+
+            try:
+
+                avance_hitos = json.loads(
+                    obj["avance_hitos"]
+                )
+
+            except:
+
+                avance_hitos = []
+
+        total = len(actividades)
+
+        if total == 0:
+
+            avance = 0
+
+        else:
+
+            avance = round(
+
+                (
+
+                    len(avance_hitos)
+
+                    / total
+
+                ) * 100,
+
+                1
+
+            )
             c1,c2,c3 = st.columns(3)
 
             c1.metric(
