@@ -4014,102 +4014,102 @@ else:
                 actividades = []
             avance_hitos = []
 
-if obj["avance_hitos"]:
+        if obj["avance_hitos"]:
 
-    try:
+            try:
 
-        avance_hitos = json.loads(
-            obj["avance_hitos"]
+                avance_hitos = json.loads(
+                    obj["avance_hitos"]
+                )
+
+            except:
+
+                avance_hitos = []
+
+                total = len(actividades)
+
+            if total == 0:
+
+                avance = 0
+
+            else:
+
+                avance = round(
+
+                    (
+
+                        len(avance_hitos)
+
+                        / total
+
+                    )*100,
+
+                    1
+
+                )
+
+                ods = obj["ods_principal"]
+
+                profesional = pd.read_sql(f"""
+
+                    SELECT nombre
+
+                    FROM profesionales
+
+                    WHERE id={obj['profesional_referente']}
+
+                """, engine)
+
+                nombre_profesional = ""
+
+                if not profesional.empty:
+
+                    nombre_profesional = profesional.iloc[0]["nombre"]
+
+                st.markdown(
+                    f"### 🎯 {obj['objetivo_tipo']}"
+                )
+
+            c1,c2,c3 = st.columns(3)
+
+            c1.metric(
+                "Avance",
+                f"{avance}%"
+            )
+
+            c2.metric(
+                "Estado",
+                obj["estado"]
+            )
+
+            c3.metric(
+                "ODS",
+                ods
+            )
+
+            st.caption(
+                f"👨‍⚕️ {nombre_profesional}"
+            )
+
+            st.caption(
+                f"🏛️ {obj['linea_politica']}"
+            )
+
+            st.write(
+                obj["objetivo_descripcion"]
+            )
+
+            st.progress(
+                avance/100
+            )
+
+            st.markdown(
+                "#### 🧭 Actividades"
+            )
+
+            st.markdown(
+            "#### 🧭 Seguimiento"
         )
-
-    except:
-
-        avance_hitos = []
-
-        total = len(actividades)
-
-    if total == 0:
-
-        avance = 0
-
-    else:
-
-        avance = round(
-
-            (
-
-                len(avance_hitos)
-
-                / total
-
-            )*100,
-
-            1
-
-        )
-
-        ods = obj["ods_principal"]
-
-        profesional = pd.read_sql(f"""
-
-            SELECT nombre
-
-            FROM profesionales
-
-            WHERE id={obj['profesional_referente']}
-
-        """, engine)
-
-        nombre_profesional = ""
-
-        if not profesional.empty:
-
-            nombre_profesional = profesional.iloc[0]["nombre"]
-
-        st.markdown(
-            f"### 🎯 {obj['objetivo_tipo']}"
-        )
-
-        c1,c2,c3 = st.columns(3)
-
-        c1.metric(
-            "Avance",
-            f"{avance}%"
-        )
-
-        c2.metric(
-            "Estado",
-            obj["estado"]
-        )
-
-        c3.metric(
-            "ODS",
-            ods
-        )
-
-        st.caption(
-            f"👨‍⚕️ {nombre_profesional}"
-        )
-
-        st.caption(
-            f"🏛️ {obj['linea_politica']}"
-        )
-
-        st.write(
-            obj["objetivo_descripcion"]
-        )
-
-        st.progress(
-            avance/100
-        )
-
-        st.markdown(
-            "#### 🧭 Actividades"
-        )
-
-        st.markdown(
-        "#### 🧭 Seguimiento"
-    )
 
     for actividad in actividades:
 
