@@ -4650,10 +4650,38 @@ with tab8:
                 n.descripcion
 
             FROM pai_objetivos o
+        from sqlalchemy import text
 
-            LEFT JOIN pai_novedades n
+            query_base = """
+            SELECT
+                o.id,
+                o.documento_usuario,
+                o.objetivo_tipo,
+                o.estado,
+                o.porcentaje_avance,
+                o.linea_politica,
+                o.ods_principal,
+                o.profesional_referente
+            FROM pai_objetivos o
+            WHERE 1=1
+            """
+            params = {}
 
-            ON o.id = n.id_objetivo
+            # =========================
+            # FILTRO PROFESIONAL
+            # =========================
+            if profesional != "Todos":
+                query_base += " AND o.profesional_referente = :prof"
+                params["prof"] = profesional
+
+
+            # =========================
+            # FILTRO FECHAS (SI APLICA A OBJETIVOS)
+            # =========================
+            if fecha_inicio and fecha_fin:
+                query_base += " AND o.fecha_creacion BETWEEN :inicio AND :fin"
+                params["inicio"] = fecha_inicio
+                params["fin"] = fecha_fin
 
             WHERE n.fecha
 
