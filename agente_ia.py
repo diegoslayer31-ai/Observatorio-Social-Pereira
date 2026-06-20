@@ -3546,8 +3546,39 @@ mapa_hitos = {
         "Gestión de subsidio",
         "Asignación",
         "Estabilización habitacional"
+    ],
+    "Red de apoyo":[
+    "Identificación de familiares",
+    "Primer contacto",
+    "Fortalecimiento de vínculos",
+    "Seguimiento",
+    "Red consolidada"
+    ],
+
+    "Educación":[
+        "Diagnóstico educativo",
+        "Gestión de matrícula",
+        "Inicio de formación",
+        "Seguimiento académico",
+        "Permanencia"
+    ],
+
+    "Vivienda":[
+        "Diagnóstico habitacional",
+        "Gestión institucional",
+        "Asignación",
+        "Seguimiento",
+        "Estabilización"
+    ],
+
+    "Proyecto de vida":[
+        "Identificación de intereses",
+        "Definición de metas",
+        "Construcción del plan",
+        "Seguimiento",
+        "Consolidación"
     ]
-}
+    }
 with tab6:
 
     st.title("📋 PAI Inteligente")
@@ -3754,221 +3785,240 @@ with tab6:
 
         )
         # =========================
-    # CREAR OBJETIVO PAI
-    # =========================
+# CREAR OBJETIVO PAI
+# =========================
 
-    st.markdown("## ➕ Crear objetivo PAI")
+st.markdown("## ➕ Crear objetivo PAI")
 
-    with st.form("crear_objetivo_pai"):
+# =========================
+# OBJETIVO (FUERA DEL FORMULARIO)
+# =========================
 
-        objetivo_tipo = st.selectbox(
+objetivo_tipo = st.selectbox(
 
-            "Objetivo",
+    "Objetivo",
 
-            list(mapa_politica.keys())
+    list(mapa_politica.keys()),
 
-        )
+    key="objetivo_pai"
 
-        st.caption(
-            f"🏛️ Política pública: {mapa_politica.get(objetivo_tipo,'')}"
-        )
+)
 
-        st.caption(
-            f"🌍 ODS: {', '.join(mapa_ods.get(objetivo_tipo,[]))}"
-        )
+st.info(
 
-        subactividades = st.multiselect(
+    f"🏛️ Política pública: {mapa_politica.get(objetivo_tipo,'')}"
 
-        "Subactividades sugeridas",
+)
+
+st.info(
+
+    f"🌍 ODS: {', '.join(mapa_ods.get(objetivo_tipo,[]))}"
+
+)
+
+# =========================
+# FORMULARIO
+# =========================
+
+with st.form("crear_objetivo_pai"):
+
+    subactividades = st.multiselect(
+
+        "🧭 Subactividades sugeridas",
 
         options=mapa_hitos.get(
+
             objetivo_tipo,
+
             []
+
         ),
 
         default=mapa_hitos.get(
-            objetivo_tipo,
-            []
-        ),
 
-        key=f"sub_{objetivo_tipo}"
+            objetivo_tipo,
+
+            []
+
+        )
 
     )
 
-        objetivo_descripcion = st.text_area(
+    objetivo_descripcion = st.text_area(
 
-            "Descripción del objetivo"
+        "Descripción del objetivo"
 
-        )
+    )
 
-        fecha_meta = st.date_input(
+    fecha_meta = st.date_input(
 
-            "Fecha meta"
+        "Fecha meta"
 
-        )
+    )
 
-        profesional_id = st.selectbox(
+    profesional_id = st.selectbox(
 
-            "Profesional responsable",
+        "Profesional responsable",
 
-            df_profesionales["id"],
+        df_profesionales["id"],
 
-            format_func=lambda x:
+        format_func=lambda x:
 
-            df_profesionales[
+        df_profesionales[
 
-                df_profesionales["id"]==x
+            df_profesionales["id"] == x
 
-            ]["label"].values[0]
+        ]["label"].values[0]
 
-        )
+    )
 
-        prioridad = st.selectbox(
+    prioridad = st.selectbox(
 
-            "Prioridad",
+        "Prioridad",
 
-            [
+        [
 
-                "Alta",
+            "Alta",
 
-                "Media",
+            "Media",
 
-                "Baja"
+            "Baja"
 
-            ]
+        ]
 
-        )
+    )
 
-        submit = st.form_submit_button(
+    submit = st.form_submit_button(
 
-            "💾 Guardar objetivo"
+        "💾 Guardar objetivo"
 
-        )
-        # =========================
-    # GUARDAR OBJETIVO
-    # =========================
+    )
 
-    if submit:
+# =========================
+# GUARDAR OBJETIVO
+# =========================
 
-        import json
+if submit:
 
-        from sqlalchemy import text
+    import json
 
-        politica = mapa_politica.get(
+    from sqlalchemy import text
+
+    politica = mapa_politica.get(
+
+        objetivo_tipo,
+
+        "Restablecimiento de derechos"
+
+    )
+
+    ods = mapa_ods.get(
+
+        objetivo_tipo,
+
+        ["ODS 10"]
+
+    )
+
+    query = text("""
+
+        INSERT INTO pai_objetivos (
+
+            documento_usuario,
 
             objetivo_tipo,
 
-            "Restablecimiento de derechos"
+            objetivo_descripcion,
+
+            fecha_apertura,
+
+            fecha_meta,
+
+            estado,
+
+            porcentaje_avance,
+
+            profesional_referente,
+
+            ods_principal,
+
+            observaciones,
+
+            linea_politica,
+
+            actividades
 
         )
 
-        ods = mapa_ods.get(
+        VALUES (
 
-            objetivo_tipo,
+            :documento_usuario,
 
-            ["ODS 10"]
+            :objetivo_tipo,
 
-        )
+            :objetivo_descripcion,
 
-        query = text("""
+            NOW(),
 
-            INSERT INTO pai_objetivos (
+            :fecha_meta,
 
-                documento_usuario,
+            'Activo',
 
-                objetivo_tipo,
+            0,
 
-                objetivo_descripcion,
+            :profesional_referente,
 
-                fecha_apertura,
+            :ods_principal,
 
-                fecha_meta,
+            '',
 
-                estado,
+            :linea_politica,
 
-                porcentaje_avance,
-
-                profesional_referente,
-
-                ods_principal,
-
-                observaciones,
-
-                linea_politica,
-
-                actividades
-
-            )
-
-            VALUES (
-
-                :documento_usuario,
-
-                :objetivo_tipo,
-
-                :objetivo_descripcion,
-
-                NOW(),
-
-                :fecha_meta,
-
-                'Activo',
-
-                0,
-
-                :profesional_referente,
-
-                :ods_principal,
-
-                '',
-
-                :linea_politica,
-
-                :actividades
-
-            )
-
-        """)
-
-        with engine.begin() as conn:
-
-            conn.execute(
-
-                query,
-
-                {
-
-                    "documento_usuario":str(usuario_sel),
-
-                    "objetivo_tipo":objetivo_tipo,
-
-                    "objetivo_descripcion":objetivo_descripcion,
-
-                    "fecha_meta":fecha_meta,
-
-                    "profesional_referente":int(profesional_id),
-
-                    "ods_principal":", ".join(ods),
-
-                    "linea_politica":politica,
-
-                    "actividades":json.dumps(
-
-                        subactividades
-
-                    )
-
-                }
-
-            )
-
-        st.success(
-
-            "✅ Objetivo creado"
+            :actividades
 
         )
 
-        st.rerun()
+    """)
+
+    with engine.begin() as conn:
+
+        conn.execute(
+
+            query,
+
+            {
+
+                "documento_usuario": str(usuario_sel),
+
+                "objetivo_tipo": objetivo_tipo,
+
+                "objetivo_descripcion": objetivo_descripcion,
+
+                "fecha_meta": fecha_meta,
+
+                "profesional_referente": int(profesional_id),
+
+                "ods_principal": ", ".join(ods),
+
+                "linea_politica": politica,
+
+                "actividades": json.dumps(
+
+                    subactividades
+
+                )
+
+            }
+
+        )
+
+    st.success(
+
+        "✅ Objetivo PAI creado"
+
+    )
+
+    st.rerun()
     # =========================
 # OBJETIVOS ACTIVOS
 # =========================
