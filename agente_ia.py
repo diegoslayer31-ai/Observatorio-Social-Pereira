@@ -4581,42 +4581,37 @@ with tab8:
             "Fecha final"
 
         )
-
     with c3:
 
         profesionales = pd.read_sql("""
-
-            SELECT DISTINCT
-
-            profesional_referente
-
-            FROM pai_objetivos
-
-            WHERE profesional_referente IS NOT NULL
-
-            ORDER BY profesional_referente
-
+            SELECT id, nombre, rol
+            FROM profesionales
+            ORDER BY nombre
         """, engine)
 
-        lista_profesionales = (
-
-            ["Todos"]
-
-            +
-
-            profesionales[
-                "profesional_referente"
-            ].tolist()
-
+        profesionales["label"] = (
+            profesionales["nombre"] + " (" + profesionales["rol"] + ")"
         )
+
+        lista_profesionales = ["Todos"] + profesionales["label"].tolist()
 
         profesional = st.selectbox(
-
             "Profesional",
-
             lista_profesionales
-
         )
+
+
+    # =========================
+    # 
+    # =========================
+
+    if profesional != "Todos":
+        profesional_id = profesionales[
+            profesionales["label"] == profesional
+        ]["id"].values[0]
+    else:
+        profesional_id = None
+    
     from sqlalchemy import text
 
     # ==========================
