@@ -4614,10 +4614,8 @@ with tab8:
     
     from sqlalchemy import text
 
-    from sqlalchemy import text
-
     # ==========================
-    # CONSULTA BASE
+    # QUERY BASE SEGURA
     # ==========================
 
     query_base = """
@@ -4636,11 +4634,12 @@ with tab8:
     FROM pai_objetivos o
     LEFT JOIN pai_novedades n
         ON o.id = n.id_objetivo
-    WHERE n.fecha BETWEEN :inicio AND :fin
+        AND n.fecha BETWEEN :inicio AND :fin
+    WHERE 1=1
     """
 
     # ==========================
-    # PARAMETROS BASE (OBLIGATORIO)
+    # PARAMETROS BASE
     # ==========================
 
     params = {
@@ -4649,7 +4648,7 @@ with tab8:
     }
 
     # ==========================
-    # FILTRO PROFESIONAL (FIX PRO)
+    # FILTRO PROFESIONAL
     # ==========================
 
     if profesional != "Todos":
