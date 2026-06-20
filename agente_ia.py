@@ -4049,172 +4049,177 @@ if objetivos.empty:
 
 else:
 
-    for _, obj in objetivos.iterrows():
+   for _, obj in objetivos.iterrows():
+    
+    # =========================
+    # ACTIVIDADES
+    # =========================
 
-        actividades = []
+    actividades = []
 
-        if obj["actividades"]:
+    if obj["actividades"]:
 
-            try:
+        try:
 
-                actividades = json.loads(
-                    obj["actividades"]
-                )
+            actividades = json.loads(
+                obj["actividades"]
+            )
 
-            except:
+        except:
 
-                actividades = []
+            actividades = []
+
+    # =========================
+    # AVANCE HITOS
+    # =========================
+
+    avance_hitos = []
+
+    if obj["avance_hitos"]:
+
+        try:
+
+            avance_hitos = json.loads(
+                obj["avance_hitos"]
+            )
+
+        except:
+
             avance_hitos = []
 
-        if obj["avance_hitos"]:
+    # =========================
+    # CALCULAR AVANCE
+    # =========================
 
-            try:
+    total = len(actividades)
 
-                avance_hitos = json.loads(
-                    obj["avance_hitos"]
-                )
+    if total == 0:
 
-            except:
+        avance = 0
 
-                avance_hitos = []
+    else:
 
-                total = len(actividades)
+        avance = round(
 
-            if total == 0:
+            (
 
-                avance = 0
+                len(avance_hitos)
 
-            else:
+                / total
 
-                avance = round(
+            ) * 100,
 
-                    (
+            1
 
-                        len(avance_hitos)
-
-                        / total
-
-                    )*100,
-
-                    1
-
-                )
-
-                ods = obj["ods_principal"]
-
-                profesional = pd.read_sql(f"""
-
-                    SELECT nombre
-
-                    FROM profesionales
-
-                    WHERE id={obj['profesional_referente']}
-
-                """, engine)
-
-                nombre_profesional = ""
-
-                if not profesional.empty:
-
-                    nombre_profesional = profesional.iloc[0]["nombre"]
-
-                st.markdown(
-                    f"### 🎯 {obj['objetivo_tipo']}"
-                )
-            # =========================
-        # CALCULAR AVANCE
-        # =========================
-
-        actividades = []
-
-        if obj["actividades"]:
-
-            try:
-
-                actividades = json.loads(
-                    obj["actividades"]
-                )
-
-            except:
-
-                actividades = []
-
-        avance_hitos = []
-
-        if obj["avance_hitos"]:
-
-            try:
-
-                avance_hitos = json.loads(
-                    obj["avance_hitos"]
-                )
-
-            except:
-
-                avance_hitos = []
-
-        total = len(actividades)
-
-        if total == 0:
-
-            avance = 0
-
-        else:
-
-            avance = round(
-
-                (
-
-                    len(avance_hitos)
-
-                    / total
-
-                ) * 100,
-
-                1
-
-            )
-            c1,c2,c3 = st.columns(3)
-
-            c1.metric(
-                "Avance",
-                f"{avance}%"
-            )
-
-            c2.metric(
-                "Estado",
-                obj["estado"]
-            )
-
-            c3.metric(
-                "ods_principal",
-                ods_principal
-            )
-
-            st.caption(
-                f"👨‍⚕️ {nombre_profesional}"
-            )
-
-            st.caption(
-                f"🏛️ {obj['linea_politica']}"
-            )
-
-            st.write(
-                obj["objetivo_descripcion"]
-            )
-
-            st.progress(
-                avance/100
-            )
-
-            st.markdown(
-                "#### 🧭 Actividades"
-            )
-
-            st.markdown(
-            "#### 🧭 Seguimiento"
         )
 
+    # =========================
+    # PROFESIONAL
+    # =========================
+
+    nombre_profesional = "Sin asignar"
+
+    if obj["profesional_referente"]:
+
+        profesional = pd.read_sql(
+
+            f"""
+
+            SELECT nombre
+
+            FROM profesionales
+
+            WHERE id={obj['profesional_referente']}
+
+            """,
+
+            engine
+
+        )
+
+        if not profesional.empty:
+
+            nombre_profesional = profesional.iloc[0]["nombre"]
+
+    # =========================
+    # MOSTRAR OBJETIVO
+    # =========================
+
+    st.markdown(
+
+        f"### 🎯 {obj['objetivo_tipo']}"
+
+    )
+
+    c1,c2,c3 = st.columns(3)
+
+    c1.metric(
+
+        "Avance",
+
+        f"{avance}%"
+
+    )
+
+    c2.metric(
+
+        "Estado",
+
+        obj["estado"]
+
+    )
+
+    c3.metric(
+
+        "ODS",
+
+        obj["ods_principal"]
+
+    )
+
+    st.caption(
+
+        f"👨‍⚕️ {nombre_profesional}"
+
+    )
+
+    st.caption(
+
+        f"🏛️ {obj['linea_politica']}"
+
+    )
+
+    st.write(
+
+        obj["objetivo_descripcion"]
+
+    )
+
+    st.progress(
+
+        avance/100
+
+    )
+
+    st.markdown(
+
+        "#### 🧭 Actividades"
+
+    )
+
+    for actividad in actividades:
+
+        hecho = actividad in avance_hitos
+
+        st.write(
+
+            "✅" if hecho else "⬜",
+
+            actividad
+
+        )
+
+    st.divider()
     for actividad in actividades:
 
         hecho = actividad in avance_hitos
