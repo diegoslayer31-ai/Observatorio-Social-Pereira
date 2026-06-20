@@ -3548,258 +3548,212 @@ mapa_hitos = {
         "Estabilización habitacional"
     ]
 }
-
 with tab6:
 
-    st.title("📋 Seguimiento Profesional - PAI Inteligente")
+    st.title("📋 PAI Inteligente")
 
-    # =========================
-    # PROFESIONALES
-    # =========================
-
+    import json
+    from sqlalchemy import text
     df_profesionales = pd.read_sql("""
-        SELECT id, nombre, rol
+
+        SELECT id,nombre,rol
+
         FROM profesionales
+
         ORDER BY nombre
+
     """, engine)
 
-    df_profesionales["label"] = (
-        df_profesionales["nombre"].astype(str)
-        + " (" + df_profesionales["rol"].astype(str) + ")"
+    df_profesionales["label"]=(
+
+        df_profesionales["nombre"]
+
+        +" ("
+
+        +df_profesionales["rol"]
+
+        +")"
+
+    )
+    st.subheader("🔎 Buscar usuario")
+
+    busqueda = st.text_input(
+
+        "Nombre, apellido o documento"
+
     )
 
-    # =========================
-    # BÚSQUEDA USUARIO
-    # =========================
-
-    st.subheader("🔎 Búsqueda de usuario")
-
-    busqueda = st.text_input("Buscar usuario")
-
-    usuario_sel = None
     df_busqueda = df.copy()
 
     if busqueda:
+
         df_busqueda = df_busqueda[
-            df_busqueda["nombres"].astype(str).str.contains(busqueda, case=False, na=False)
+
+            df_busqueda["nombres"]
+
+            .astype(str)
+
+            .str.contains(
+
+                busqueda,
+
+                case=False,
+
+                na=False
+
+            )
+
             |
-            df_busqueda["apellidos"].astype(str).str.contains(busqueda, case=False, na=False)
+
+            df_busqueda["apellidos"]
+
+            .astype(str)
+
+            .str.contains(
+
+                busqueda,
+
+                case=False,
+
+                na=False
+
+            )
+
             |
-            df_busqueda["numero_identificacion"].astype(str).str.contains(busqueda, na=False)
+
+            df_busqueda["numero_identificacion"]
+
+            .astype(str)
+
+            .str.contains(
+
+                busqueda,
+
+                na=False
+
+            )
+
         ]
 
+    usuario_sel=None
+
     if not df_busqueda.empty:
-        usuario_sel = st.selectbox(
+
+        usuario_sel=st.selectbox(
+
             "Seleccione usuario",
-            df_busqueda["numero_identificacion"].tolist(),
+
+            df_busqueda[
+
+                "numero_identificacion"
+
+            ],
+
             format_func=lambda x:
-                df_busqueda[df_busqueda["numero_identificacion"] == x][["nombres","apellidos"]]
+
+            (
+
+                df_busqueda[
+
+                    df_busqueda[
+
+                        "numero_identificacion"
+
+                    ]==x
+
+                ]
+
+                [["nombres","apellidos"]]
+
                 .astype(str)
-                .agg(" ".join, axis=1)
+
+                .agg(
+
+                    " ".join,
+
+                    axis=1
+
+                )
+
                 .values[0]
+
+            )
+
         )
-
-    st.divider()
-
-    # =========================
-    # FUNCIONES PAI INTELIGENTE
-    # =========================
-
-    def calcular_progreso(actividades, avance_hitos):
-        if not actividades:
-            return 0
-
-        total = len(actividades)
-        hechos = len(avance_hitos)
-
-        return round((hechos / total) * 100, 1)
-
-
-    def semaforo(avance):
-
-        if avance < 30:
-            return "🔴 Crítico"
-        elif avance < 70:
-            return "🟡 En proceso"
-        else:
-            return "🟢 Estable"
-
-
-    # =========================
-    # USUARIO
-    # =========================
-
     if usuario_sel:
-
+    
         usuario = pd.read_sql(f"""
-            SELECT * FROM habitante_de_calle
-            WHERE numero_identificacion = '{usuario_sel}'
+
+            SELECT *
+
+            FROM habitante_de_calle
+
+            WHERE numero_identificacion='{usuario_sel}'
+
         """, engine)
 
-        if not usuario.empty:
+        datos=usuario.iloc[0]
 
-            datos = usuario.iloc[0]
+        st.divider()
 
-            st.success("Usuario encontrado")
+        c1,c2,c3,c4=st.columns(4)
 
-            c1, c2, c3 = st.columns(3)
-            c1.metric("Nombre", f"{datos['nombres']} {datos['apellidos']}")
-            c2.metric("Edad", datos.get("edad", "N/A"))
-            c3.metric("Documento", usuario_sel)
+        c1.metric(
 
-            st.divider()
+            "Nombre",
 
-            # =========================
-            # OBJETIVOS PAI
-            # =========================
+            f"{datos['nombres']} {datos['apellidos']}"
 
-            st.markdown("## 🎯 Objetivos PAI Inteligentes")
+        )
 
-            objetivos = pd.read_sql(f"""
-                SELECT *
-                FROM pai_objetivos
-                WHERE documento_usuario = '{usuario_sel}'
-                ORDER BY fecha_apertura DESC
-            """, engine)
+        c2.metric(
 
-            import json
+            "Documento",
 
-            if objetivos.empty:
-                st.info("Sin objetivos registrados")
+            usuario_sel
 
-            else:
-                for _, obj in objetivos.iterrows():
+        )
 
-                    actividades = json.loads(obj["actividades"]) if obj.get("actividades") else []
-                    avance_hitos = json.loads(obj["avance_hitos"]) if obj.get("avance_hitos") else []
+        c3.metric(
 
-                    avance = calcular_progreso(actividades, avance_hitos)
-                    estado = semaforo(avance)
+            "Edad",
 
-                    st.markdown(f"### 🎯 {obj['objetivo_tipo']}")
-                    st.caption(f"🏛️ {obj.get('linea_politica','')}")
+            datos.get(
 
-                    st.progress(avance / 100)
-                    st.metric("Avance automático", f"{avance}%")
-                    st.write("Estado:", estado)
+                "edad",
 
-                    st.write(obj["objetivo_descripcion"])
+                "N/A"
 
-                    # =========================
-                    # HITOS INTERACTIVOS
-                    # =========================
+            )
 
-                    st.markdown("### 🧭 Hitos del proceso")
+        )
 
-                    if not avance_hitos:
-                        avance_hitos = []
+        c4.metric(
 
-                    for h in actividades:
+            "Objetivos",
 
-                        hecho = h in avance_hitos
+            len(
 
-                        col1, col2 = st.columns([0.1, 0.9])
+                pd.read_sql(
 
-                        with col1:
-                            checked = st.checkbox("", value=hecho, key=f"{obj['id']}_{h}")
+                    f"""
 
-                        with col2:
-                            st.write(h)
+                    SELECT *
 
-                        if checked and h not in avance_hitos:
-                            avance_hitos.append(h)
+                    FROM pai_objetivos
 
-                        if not checked and h in avance_hitos:
-                            avance_hitos.remove(h)
+                    WHERE documento_usuario='{usuario_sel}'
 
-                    # guardar progreso automático
-                    engine.execute("""
-                        UPDATE pai_objetivos
-                        SET avance_hitos = %s
-                        WHERE id = %s
-                    """, (json.dumps(avance_hitos), obj["id"]))
+                    """,
 
-                    st.divider()
+                    engine
 
-            # =========================
-            # CREAR OBJETIVO PAI
-            # =========================
-
-            st.markdown("## ➕ Crear objetivo PAI")
-
-            with st.form("crear_objetivo_pai"):
-
-                objetivo_tipo = st.selectbox(
-                    "Objetivo",
-                    list(mapa_politica.keys())
                 )
 
-                objetivo_descripcion = st.text_area("Descripción")
+            )
 
-                fecha_meta = st.date_input("Fecha meta")
-
-                profesional_id = st.selectbox(
-                    "Profesional responsable",
-                    df_profesionales["id"],
-                    format_func=lambda x:
-                        df_profesionales[df_profesionales["id"] == x]["label"].values[0]
-                )
-
-                prioridad = st.selectbox("Prioridad", ["Alta", "Media", "Baja"])
-
-                submit = st.form_submit_button("Guardar objetivo")
-
-            # =========================
-            # GUARDADO INTELIGENTE
-            # =========================
-
-            if submit:
-
-                ods = mapa_ods.get(objetivo_tipo, ["ODS 10"])
-                politica = mapa_politica.get(objetivo_tipo, "Restablecimiento de derechos")
-                hitos = mapa_hitos.get(objetivo_tipo, [])
-
-                actividades = hitos
-
-                query = """
-                    INSERT INTO pai_objetivos (
-                        documento_usuario,
-                        objetivo_tipo,
-                        objetivo_descripcion,
-                        fecha_meta,
-                        profesional_responsable,
-                        prioridad,
-                        linea_politica,
-                        ods,
-                        actividades,
-                        avance_hitos,
-                        estado,
-                        porcentaje_avance,
-                        fecha_apertura
-                    )
-                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'Activo',0,NOW())
-                """
-
-                engine.execute(
-                    query,
-                    (
-                        usuario_sel,
-                        objetivo_tipo,
-                        objetivo_descripcion,
-                        fecha_meta,
-                        profesional_id,
-                        prioridad,
-                        politica,
-                        json.dumps(ods),
-                        json.dumps(actividades),
-                        json.dumps([])
-                    )
-                )
-
-                st.success("Objetivo PAI inteligente creado")
-                st.rerun()
-
-    
+        )
+        
 with tab7:
 
     st.title("📈 Seguimiento e Impacto - Reducción de Riesgos y Daños")
