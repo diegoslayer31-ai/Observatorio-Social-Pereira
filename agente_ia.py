@@ -4490,59 +4490,59 @@ with tab6:
             )
 
             st.divider()
-        # =========================
-# HISTORIAL NOVEDADES
-# =========================
+            # =========================
+    # HISTORIAL NOVEDADES
+    # =========================
 
-st.markdown("### 🕒 Historial")
+    st.markdown("### 🕒 Historial")
 
-novedades = pd.read_sql(
+    novedades = pd.read_sql(
 
-    f"""
+        f"""
 
-    SELECT *
+        SELECT *
 
-    FROM pai_novedades
+        FROM pai_novedades
 
-    WHERE id_objetivo={obj['id']}
+        WHERE id_objetivo={obj['id']}
 
-    ORDER BY fecha DESC
+        ORDER BY fecha DESC
 
-    """,
+        """,
 
-    engine
-
-)
-
-if novedades.empty:
-
-    st.info(
-
-        "Sin novedades registradas"
+        engine
 
     )
 
-else:
-
-    for _, nov in novedades.iterrows():
+    if novedades.empty:
 
         st.info(
 
-            f"""
-
-            📅 {nov['fecha']}
-
-            👨‍⚕️ {nov['profesional']}
-
-            📌 {nov['tipo_novedad']}
-
-            📝 {nov['descripcion']}
-
-            📂 {nov['evidencia']}
-
-            """
+            "Sin novedades registradas"
 
         )
+
+    else:
+
+        for _, nov in novedades.iterrows():
+
+            st.info(
+
+                f"""
+
+                📅 {nov['fecha']}
+
+                👨‍⚕️ {nov['profesional']}
+
+                📌 {nov['tipo_novedad']}
+
+                📝 {nov['descripcion']}
+
+                📂 {nov['evidencia']}
+
+                """
+
+            )
 with tab7:
 
     st.title("📈 Seguimiento e Impacto - Reducción de Riesgos y Daños")
