@@ -4751,76 +4751,79 @@ with tab8:
         st.divider()
         st.divider()
 
-        # ==========================
-        # GESTIÓN POR PROFESIONAL
+                # ==========================
+        # GESTIÓN POR PROFESIONAL (FIX PRO)
         # ==========================
 
-        st.subheader(
-            "👨‍⚕️ Gestión por profesional"
+        st.subheader("👨‍⚕️ Gestión por profesional")
+
+        # ==========================
+        # MAPEO ID → NOMBRE
+        # ==========================
+        profesional_map = pd.read_sql("""
+            SELECT id, nombre
+            FROM profesionales
+        """, engine)
+
+        map_dict = dict(zip(
+            profesional_map["id"],
+            profesional_map["nombre"]
+        ))
+
+        # convertir IDs a nombres
+        consulta["profesional_nombre"] = (
+            consulta["profesional_referente"]
+            .map(map_dict)
+            .fillna("Sin asignar")
         )
 
+        # ==========================
+        # AGRUPACIÓN PARA GRÁFICO
+        # ==========================
         profesional_df = (
-
-            consulta["profesional_referente"]
-
-            .fillna("Sin asignar")
-
+            consulta["profesional_nombre"]
             .value_counts()
-
             .reset_index()
-
         )
 
         profesional_df.columns = [
-
             "profesional",
-
             "cantidad"
-
         ]
 
+        # ==========================
+        # GRÁFICO
+        # ==========================
         fig = px.bar(
-
             profesional_df,
-
             x="profesional",
-
             y="cantidad",
-
             color="cantidad",
-
             text="cantidad",
-
             title="Objetivos asignados por profesional"
-
         )
 
         fig.update_traces(
-
             textposition="outside"
-
         )
 
         st.plotly_chart(
-
             fig,
-
-            use_container_width=True
-
+            use_container_width=True,
+            key="grafico_profesional"
         )
 
+        # ==========================
+        # TOP PROFESIONAL
+        # ==========================
         if not profesional_df.empty:
 
             top_profesional = profesional_df.iloc[0]
 
             st.info(
-
                 f"El profesional con mayor carga es "
-
                 f"**{top_profesional['profesional']}** "
-
                 f"con **{top_profesional['cantidad']} objetivos**."
-
             )
 
         st.divider()
