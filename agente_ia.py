@@ -3517,45 +3517,51 @@ mapa_ods = {
 }
 
 mapa_hitos = {
-    "Documentación y ciudadanía":[
+    "Documentación y ciudadanía": [
         "Identificación de documentos",
         "Inicio de trámite",
         "Gestión institucional",
         "Documento entregado"
     ],
-    "Salud mental":[
+
+    "Salud mental": [
         "Valoración inicial",
         "Intervención psicológica",
         "Seguimiento clínico",
         "Estabilización"
     ],
-    "Tratamiento consumo SPA":[
+
+    "Tratamiento consumo SPA": [
         "Motivación al cambio",
         "Ingreso a tratamiento",
         "Adherencia",
         "Prevención de recaídas"
     ],
-    "Empleabilidad":[
+
+    "Empleabilidad": [
         "Perfilamiento laboral",
         "Capacitación",
         "Búsqueda de empleo",
         "Vinculación laboral"
     ],
-    "Vivienda":[
+
+    "Vivienda": [
         "Diagnóstico habitacional",
         "Gestión de subsidio",
         "Asignación",
-        "Estabilización habitacional"
-    ],
-    "Red de apoyo":[
-    "Identificación de familiares",
-    "Primer contacto",
-    "Fortalecimiento de vínculos",
-    "Seguimiento",
-    "Red consolidada"
+        "Seguimiento",
+        "Estabilización"
     ],
 
-    "Educación":[
+    "Red de apoyo": [
+        "Identificación de familiares",
+        "Primer contacto",
+        "Fortalecimiento de vínculos",
+        "Seguimiento",
+        "Red consolidada"
+    ],
+
+    "Educación": [
         "Diagnóstico educativo",
         "Gestión de matrícula",
         "Inicio de formación",
@@ -3563,22 +3569,14 @@ mapa_hitos = {
         "Permanencia"
     ],
 
-    "Vivienda":[
-        "Diagnóstico habitacional",
-        "Gestión institucional",
-        "Asignación",
-        "Seguimiento",
-        "Estabilización"
-    ],
-
-    "Proyecto de vida":[
+    "Proyecto de vida": [
         "Identificación de intereses",
         "Definición de metas",
         "Construcción del plan",
         "Seguimiento",
         "Consolidación"
     ]
-    }
+}
 with tab6:
 
     st.title("📋 PAI")
@@ -3784,7 +3782,7 @@ with tab6:
             )
 
         )
-                # =========================
+        # =========================
         # CREAR OBJETIVO PAI
         # =========================
 
@@ -3793,55 +3791,51 @@ with tab6:
         # =========================
         # OBJETIVO (FUERA DEL FORMULARIO)
         # =========================
+        # =========================
+        # ESTADO INICIAL
+        # =========================
+        if "objetivo_actual" not in st.session_state:
+            st.session_state.objetivo_actual = list(mapa_politica.keys())[0]
 
+        # =========================
+        # SELECTBOX REACTIVO
+        # =========================
         objetivo_tipo = st.selectbox(
-
             "Objetivo",
-
             list(mapa_politica.keys()),
-
             key="objetivo_pai"
-
         )
 
-        st.info(
+        # =========================
+        # SINCRONIZAR ESTADO
+        # =========================
+        st.session_state.objetivo_actual = objetivo_tipo
 
-            f"🏛️ Política pública: {mapa_politica.get(objetivo_tipo,'')}"
 
-        )
+        # =========================
+        # 🔥 DETECTAR CAMBIO (RESIDUOS LIMPIOS)
+        # =========================
+        if "last_objetivo" not in st.session_state:
+            st.session_state.last_objetivo = objetivo_tipo
 
-        st.info(
-
-            f"🌍 ODS: {', '.join(mapa_ods.get(objetivo_tipo,[]))}"
-
-        )
-
+        if st.session_state.last_objetivo != objetivo_tipo:
+            st.session_state.last_objetivo = objetivo_tipo
+            st.rerun()
         # =========================
         # FORMULARIO
         # =========================
 
         with st.form("crear_objetivo_pai"):
 
+            opciones_hitos = mapa_hitos.get(
+                st.session_state.objetivo_actual,
+                []
+            )
+
             subactividades = st.multiselect(
-
                 "🧭 Subactividades sugeridas",
-
-                options=mapa_hitos.get(
-
-                    objetivo_tipo,
-
-                    []
-
-                ),
-
-                default=mapa_hitos.get(
-
-                    objetivo_tipo,
-
-                    []
-
-                )
-
+                options=opciones_hitos,
+                default=opciones_hitos
             )
 
             objetivo_descripcion = st.text_area(
