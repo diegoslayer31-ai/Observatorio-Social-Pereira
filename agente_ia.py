@@ -3998,7 +3998,7 @@ if submit:
 
                 "profesional_referente": int(profesional_id),
 
-                "ods_principal": ", ".join(ods),
+                "ods_principal": ", ".join(ods_principal),
 
                 "linea_politica": politica,
 
@@ -4188,7 +4188,7 @@ else:
 
             c3.metric(
                 "ods_principal",
-                ods
+                ods_principal
             )
 
             st.caption(
@@ -5088,7 +5088,7 @@ with tab8:
             "🌍 Objetivos de Desarrollo Sostenible"
         )
 
-        ods_df = (
+        ods_principal_df = (
 
             consulta["ods_principal"]
 
@@ -5100,7 +5100,7 @@ with tab8:
 
         )
 
-        ods_df.columns = [
+        ods_principal_df.columns = [
 
             "ods",
 
@@ -5110,7 +5110,7 @@ with tab8:
 
         fig = px.bar(
 
-            ods_df,
+            ods_principal_df,
 
             x="ods",
 
