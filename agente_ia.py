@@ -4642,13 +4642,19 @@ with tab8:
         "fin": fecha_fin
     }
 
+        # ==========================
+    # FILTRO PROFESIONAL (FIX PRO)
     # ==========================
-    # FILTRO PROFESIONAL
-    # ==========================
-    if profesional != "Todos":
-        query_base += " AND o.profesional_referente = :prof"
-        params["prof"] = profesional
 
+    if profesional != "Todos":
+
+        # convertir label → id
+        prof_id = profesionales[
+            profesionales["label"] == profesional
+        ]["id"].values[0]
+
+        query_base += " AND o.profesional_referente = :prof"
+        params["prof"] = int(prof_id)
     # ==========================
     # EJECUCIÓN
     # ==========================
