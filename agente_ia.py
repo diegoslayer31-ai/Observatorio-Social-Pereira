@@ -3779,19 +3779,21 @@ with tab6:
 
         subactividades = st.multiselect(
 
-            "Subactividades",
+        "Subactividades sugeridas",
 
-            mapa_hitos.get(
-                objetivo_tipo,
-                []
-            ),
+        options=mapa_hitos.get(
+            objetivo_tipo,
+            []
+        ),
 
-            default=mapa_hitos.get(
-                objetivo_tipo,
-                []
-            )
+        default=mapa_hitos.get(
+            objetivo_tipo,
+            []
+        ),
 
-        )
+        key=f"sub_{objetivo_tipo}"
+
+    )
 
         objetivo_descripcion = st.text_area(
 
