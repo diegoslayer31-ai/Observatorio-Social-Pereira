@@ -3784,442 +3784,424 @@ with tab6:
             )
 
         )
+                # =========================
+        # CREAR OBJETIVO PAI
         # =========================
-# CREAR OBJETIVO PAI
-# =========================
 
-st.markdown("## ➕ Crear objetivo PAI")
+        st.markdown("## ➕ Crear objetivo PAI")
 
-# =========================
-# OBJETIVO (FUERA DEL FORMULARIO)
-# =========================
+        # =========================
+        # OBJETIVO (FUERA DEL FORMULARIO)
+        # =========================
 
-objetivo_tipo = st.selectbox(
+        objetivo_tipo = st.selectbox(
 
-    "Objetivo",
+            "Objetivo",
 
-    list(mapa_politica.keys()),
+            list(mapa_politica.keys()),
 
-    key="objetivo_pai"
-
-)
-
-st.info(
-
-    f"🏛️ Política pública: {mapa_politica.get(objetivo_tipo,'')}"
-
-)
-
-st.info(
-
-    f"🌍 ODS: {', '.join(mapa_ods.get(objetivo_tipo,[]))}"
-
-)
-
-# =========================
-# FORMULARIO
-# =========================
-
-with st.form("crear_objetivo_pai"):
-
-    subactividades = st.multiselect(
-
-        "🧭 Subactividades sugeridas",
-
-        options=mapa_hitos.get(
-
-            objetivo_tipo,
-
-            []
-
-        ),
-
-        default=mapa_hitos.get(
-
-            objetivo_tipo,
-
-            []
+            key="objetivo_pai"
 
         )
 
-    )
+        st.info(
 
-    objetivo_descripcion = st.text_area(
-
-        "Descripción del objetivo"
-
-    )
-
-    fecha_meta = st.date_input(
-
-        "Fecha meta"
-
-    )
-
-    profesional_id = st.selectbox(
-
-        "Profesional responsable",
-
-        df_profesionales["id"],
-
-        format_func=lambda x:
-
-        df_profesionales[
-
-            df_profesionales["id"] == x
-
-        ]["label"].values[0]
-
-    )
-
-    prioridad = st.selectbox(
-
-        "Prioridad",
-
-        [
-
-            "Alta",
-
-            "Media",
-
-            "Baja"
-
-        ]
-
-    )
-
-    submit = st.form_submit_button(
-
-        "💾 Guardar objetivo"
-
-    )
-
-# =========================
-# GUARDAR OBJETIVO
-# =========================
-
-if submit:
-
-    import json
-
-    from sqlalchemy import text
-
-    politica = mapa_politica.get(
-
-        objetivo_tipo,
-
-        "Restablecimiento de derechos"
-
-    )
-
-    ods = mapa_ods.get(
-
-        objetivo_tipo,
-
-        ["ODS 10"]
-
-    )
-
-    query = text("""
-
-        INSERT INTO pai_objetivos (
-
-            documento_usuario,
-
-            objetivo_tipo,
-
-            objetivo_descripcion,
-
-            fecha_apertura,
-
-            fecha_meta,
-
-            estado,
-
-            porcentaje_avance,
-
-            profesional_referente,
-
-            ods_principal,
-
-            observaciones,
-
-            linea_politica,
-
-            actividades
+            f"🏛️ Política pública: {mapa_politica.get(objetivo_tipo,'')}"
 
         )
 
-        VALUES (
+        st.info(
 
-            :documento_usuario,
-
-            :objetivo_tipo,
-
-            :objetivo_descripcion,
-
-            NOW(),
-
-            :fecha_meta,
-
-            'Activo',
-
-            0,
-
-            :profesional_referente,
-
-            :ods_principal,
-
-            '',
-
-            :linea_politica,
-
-            :actividades
+            f"🌍 ODS: {', '.join(mapa_ods.get(objetivo_tipo,[]))}"
 
         )
 
-    """)
+        # =========================
+        # FORMULARIO
+        # =========================
 
-    with engine.begin() as conn:
+        with st.form("crear_objetivo_pai"):
 
-        conn.execute(
+            subactividades = st.multiselect(
 
-            query,
+                "🧭 Subactividades sugeridas",
 
-            {
+                options=mapa_hitos.get(
 
-                "documento_usuario": str(usuario_sel),
+                    objetivo_tipo,
 
-                "objetivo_tipo": objetivo_tipo,
+                    []
 
-                "objetivo_descripcion": objetivo_descripcion,
+                ),
 
-                "fecha_meta": fecha_meta,
+                default=mapa_hitos.get(
 
-                "profesional_referente": int(profesional_id),
+                    objetivo_tipo,
 
-                "ods_principal": ", ".join(ods_principal),
-
-                "linea_politica": politica,
-
-                "actividades": json.dumps(
-
-                    subactividades
+                    []
 
                 )
 
-            }
-
-        )
-
-    st.success(
-
-        "✅ Objetivo PAI creado"
-
-    )
-
-    st.rerun()
-    # =========================
-# OBJETIVOS ACTIVOS
-# =========================
-
-st.divider()
-
-st.markdown("## 🎯 Objetivos activos")
-
-objetivos = pd.read_sql(f"""
-
-    SELECT *
-
-    FROM pai_objetivos
-
-    WHERE documento_usuario='{usuario_sel}'
-
-    ORDER BY fecha_apertura DESC
-
-""", engine)
-
-import json
-
-if objetivos.empty:
-
-    st.info(
-        "Este usuario aún no tiene objetivos."
-    )
-
-else:
-
-   for _, obj in objetivos.iterrows():
-    
-    # =========================
-    # ACTIVIDADES
-    # =========================
-
-    actividades = []
-
-    if obj["actividades"]:
-
-        try:
-
-            actividades = json.loads(
-                obj["actividades"]
             )
 
-        except:
+            objetivo_descripcion = st.text_area(
 
-            actividades = []
+                "Descripción del objetivo"
 
-    # =========================
-    # AVANCE HITOS
-    # =========================
-
-    avance_hitos = []
-
-    if obj["avance_hitos"]:
-
-        try:
-
-            avance_hitos = json.loads(
-                obj["avance_hitos"]
             )
 
-        except:
+            fecha_meta = st.date_input(
 
-            avance_hitos = []
+                "Fecha meta"
 
-    # =========================
-    # CALCULAR AVANCE
-    # =========================
+            )
 
-    total = len(actividades)
+            profesional_id = st.selectbox(
 
-    if total == 0:
+                "Profesional responsable",
 
-        avance = 0
+                df_profesionales["id"],
 
-    else:
+                format_func=lambda x:
 
-        avance = round(
+                df_profesionales[
 
-            (
+                    df_profesionales["id"] == x
 
-                len(avance_hitos)
+                ]["label"].values[0]
 
-                / total
+            )
 
-            ) * 100,
+            prioridad = st.selectbox(
 
-            1
+                "Prioridad",
 
-        )
+                [
 
-    # =========================
-    # PROFESIONAL
-    # =========================
+                    "Alta",
 
-    nombre_profesional = "Sin asignar"
+                    "Media",
 
-    if obj["profesional_referente"]:
+                    "Baja"
 
-        profesional = pd.read_sql(
+                ]
 
-            f"""
+            )
 
-            SELECT nombre
+            submit = st.form_submit_button(
 
-            FROM profesionales
+                "💾 Guardar objetivo"
 
-            WHERE id={obj['profesional_referente']}
+            )
 
-            """,
+        # =========================
+        # GUARDAR OBJETIVO
+        # =========================
 
-            engine
+        if submit:
 
-        )
+            import json
 
-        if not profesional.empty:
+            from sqlalchemy import text
 
-            nombre_profesional = profesional.iloc[0]["nombre"]
+            politica = mapa_politica.get(
 
-    # =========================
-    # MOSTRAR OBJETIVO
-    # =========================
+                objetivo_tipo,
 
-    st.markdown(
+                "Restablecimiento de derechos"
 
-        f"### 🎯 {obj['objetivo_tipo']}"
+            )
 
-    )
+            ods = mapa_ods.get(
 
-    c1,c2,c3 = st.columns(3)
+                objetivo_tipo,
 
-    c1.metric(
+                ["ODS 10"]
 
-        "Avance",
+            )
 
-        f"{avance}%"
+            query = text("""
 
-    )
+                INSERT INTO pai_objetivos (
 
-    c2.metric(
+                    documento_usuario,
 
-        "Estado",
+                    objetivo_tipo,
 
-        obj["estado"]
+                    objetivo_descripcion,
 
-    )
+                    fecha_apertura,
 
-    c3.metric(
+                    fecha_meta,
 
-        "ODS",
+                    estado,
 
-        obj["ods_principal"]
+                    porcentaje_avance,
 
-    )
+                    profesional_referente,
 
-    st.caption(
+                    ods_principal,
 
-        f"👨‍⚕️ {nombre_profesional}"
+                    observaciones,
 
-    )
+                    linea_politica,
 
-    st.caption(
+                    actividades
 
-        f"🏛️ {obj['linea_politica']}"
+                )
 
-    )
+                VALUES (
 
-    st.write(
+                    :documento_usuario,
 
-        obj["objetivo_descripcion"]
+                    :objetivo_tipo,
 
-    )
+                    :objetivo_descripcion,
 
-    st.progress(
+                    NOW(),
 
-        avance/100
+                    :fecha_meta,
 
-    )
+                    'Activo',
 
-    st.markdown(
+                    0,
 
-        "#### 🧭 Actividades"
+                    :profesional_referente,
 
-    )
+                    :ods_principal,
 
-    for actividad in actividades:
+                    '',
 
-        hecho = actividad in avance_hitos
+                    :linea_politica,
 
-        st.write(
+                    :actividades
 
-            "✅" if hecho else "⬜",
+                )
 
-            actividad
+            """)
 
-        )
+            with engine.begin() as conn:
 
-    st.divider()
+                conn.execute(
+
+                    query,
+
+                    {
+
+                        "documento_usuario": str(usuario_sel),
+
+                        "objetivo_tipo": objetivo_tipo,
+
+                        "objetivo_descripcion": objetivo_descripcion,
+
+                        "fecha_meta": fecha_meta,
+
+                        "profesional_referente": int(profesional_id),
+
+                        "ods_principal": ", ".join(ods_principal),
+
+                        "linea_politica": politica,
+
+                        "actividades": json.dumps(
+
+                            subactividades
+
+                        )
+
+                    }
+
+                )
+
+            st.success(
+
+                "✅ Objetivo PAI creado"
+
+            )
+
+            st.rerun()
+            # =========================
+        # OBJETIVOS ACTIVOS
+        # =========================
+
+        st.divider()
+
+        st.markdown("## 🎯 Objetivos activos")
+
+        objetivos = pd.read_sql(f"""
+
+            SELECT *
+
+            FROM pai_objetivos
+
+            WHERE documento_usuario='{usuario_sel}'
+
+            ORDER BY fecha_apertura DESC
+
+        """, engine)
+
+        import json
+
+        if objetivos.empty:
+
+            st.info(
+                "Este usuario aún no tiene objetivos."
+            )
+
+        else:
+
+            for _, obj in objetivos.iterrows():
+                
+                # =========================
+                # ACTIVIDADES
+                # =========================
+
+                actividades = []
+
+                if obj["actividades"]:
+
+                    try:
+
+                        actividades = json.loads(
+                            obj["actividades"]
+                        )
+
+                    except:
+
+                        actividades = []
+
+                # =========================
+                # AVANCE HITOS
+                # =========================
+
+                avance_hitos = []
+
+                if obj["avance_hitos"]:
+
+                    try:
+
+                        avance_hitos = json.loads(
+                            obj["avance_hitos"]
+                        )
+
+                    except:
+
+                        avance_hitos = []
+
+                # =========================
+                # CALCULAR AVANCE
+                # =========================
+
+                total = len(actividades)
+
+                if total == 0:
+
+                    avance = 0
+
+                else:
+
+                    avance = round(
+
+                        (
+
+                            len(avance_hitos)
+
+                            / total
+
+                        ) * 100,
+
+                        1
+
+                    )
+
+                # =========================
+                # PROFESIONAL
+                # =========================
+
+                nombre_profesional = "Sin asignar"
+
+                if obj["profesional_referente"]:
+
+                    profesional = pd.read_sql(
+
+                        f"""
+
+                        SELECT nombre
+
+                        FROM profesionales
+
+                        WHERE id={obj['profesional_referente']}
+
+                        """,
+
+                        engine
+
+                    )
+
+                    if not profesional.empty:
+
+                        nombre_profesional = profesional.iloc[0]["nombre"]
+
+                # =========================
+                # MOSTRAR OBJETIVO
+                # =========================
+
+                st.markdown(
+
+                    f"### 🎯 {obj['objetivo_tipo']}"
+
+                )
+
+                c1,c2,c3 = st.columns(3)
+
+                c1.metric(
+
+                    "Avance",
+
+                    f"{avance}%"
+
+                )
+
+                c2.metric(
+
+                    "Estado",
+
+                    obj["estado"]
+
+                )
+
+                c3.metric(
+
+                    "ODS",
+
+                    obj["ods_principal"]
+
+                )
+
+                st.caption(
+
+                    f"👨‍⚕️ {nombre_profesional}"
+
+                )
+
+                st.caption(
+
+                    f"🏛️ {obj['linea_politica']}"
+
+                )
+
+                st.write(
+
+                    obj["objetivo_descripcion"]
+
+                )
+
+                st.progress(
+
+                    avance/100
+
+                )
+
+        st.divider()
     for actividad in actividades:
 
         hecho = actividad in avance_hitos
