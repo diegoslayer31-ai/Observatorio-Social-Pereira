@@ -4617,131 +4617,51 @@ with tab8:
             lista_profesionales
 
         )
-        # ==========================
-    # CONSULTA PRINCIPAL
+    from sqlalchemy import text
+
+    # ==========================
+    # CONSULTA BASE
     # ==========================
 
-    if profesional == "Todos":
+    query_base = """
+    SELECT
+        o.id,
+        o.documento_usuario,
+        o.objetivo_tipo,
+        o.estado,
+        o.porcentaje_avance,
+        o.linea_politica,
+        o.ods_principal,
+        o.profesional_referente,
+        n.profesional,
+        n.fecha,
+        n.descripcion
+    FROM pai_objetivos o
+    LEFT JOIN pai_novedades n
+        ON o.id = n.id_objetivo
+    WHERE n.fecha BETWEEN :inicio AND :fin
+    """
 
-        consulta = pd.read_sql(f"""
+    params = {
+        "inicio": fecha_inicio,
+        "fin": fecha_fin
+    }
 
-            SELECT
+    # ==========================
+    # FILTRO PROFESIONAL
+    # ==========================
+    if profesional != "Todos":
+        query_base += " AND o.profesional_referente = :prof"
+        params["prof"] = profesional
 
-                o.id,
-
-                o.documento_usuario,
-
-                o.objetivo_tipo,
-
-                o.estado,
-
-                o.porcentaje_avance,
-
-                o.linea_politica,
-
-                o.ods_principal,
-
-                o.profesional_referente,
-
-                n.profesional,
-
-                n.fecha,
-
-                n.descripcion
-
-            FROM pai_objetivos o
-        from sqlalchemy import text
-
-            query_base = """
-            SELECT
-                o.id,
-                o.documento_usuario,
-                o.objetivo_tipo,
-                o.estado,
-                o.porcentaje_avance,
-                o.linea_politica,
-                o.ods_principal,
-                o.profesional_referente
-            FROM pai_objetivos o
-            WHERE 1=1
-            """
-            params = {}
-
-            # =========================
-            # FILTRO PROFESIONAL
-            # =========================
-            if profesional != "Todos":
-                query_base += " AND o.profesional_referente = :prof"
-                params["prof"] = profesional
-
-
-            # =========================
-            # FILTRO FECHAS (SI APLICA A OBJETIVOS)
-            # =========================
-            if fecha_inicio and fecha_fin:
-                query_base += " AND o.fecha_creacion BETWEEN :inicio AND :fin"
-                params["inicio"] = fecha_inicio
-                params["fin"] = fecha_fin
-
-            WHERE n.fecha
-
-            BETWEEN
-
-            '{fecha_inicio}'
-
-            AND
-
-            '{fecha_fin}'
-
-        """, engine)
-
-    else:
-
-        consulta = pd.read_sql(f"""
-
-            SELECT
-
-                o.id,
-
-                o.documento_usuario,
-
-                o.objetivo_tipo,
-
-                o.estado,
-
-                o.porcentaje_avance,
-
-                o.linea_politica,
-
-                o.ods_principal,
-
-                o.profesional_referente,
-
-                n.profesional,
-
-                n.fecha,
-
-                n.descripcion
-
-            FROM pai_objetivos o
-
-            LEFT JOIN pai_novedades n
-
-            ON o.id = n.id_objetivo
-
-            WHERE o.profesional_referente = '{profesional}'
-
-            AND n.fecha
-
-            BETWEEN
-
-            '{fecha_inicio}'
-
-            AND
-
-            '{fecha_fin}'
-
-        """, engine)
+    # ==========================
+    # EJECUCIÓN
+    # ==========================
+    consulta = pd.read_sql(
+        text(query_base),
+        engine,
+        params=params
+    )
         # ==========================
     # INDICADORES GENERALES
     # ==========================
