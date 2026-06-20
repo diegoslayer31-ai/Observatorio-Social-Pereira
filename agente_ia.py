@@ -4614,6 +4614,8 @@ with tab8:
     
     from sqlalchemy import text
 
+    from sqlalchemy import text
+
     # ==========================
     # CONSULTA BASE
     # ==========================
@@ -4637,27 +4639,32 @@ with tab8:
     WHERE n.fecha BETWEEN :inicio AND :fin
     """
 
+    # ==========================
+    # PARAMETROS BASE (OBLIGATORIO)
+    # ==========================
+
     params = {
         "inicio": fecha_inicio,
         "fin": fecha_fin
     }
 
-        # ==========================
+    # ==========================
     # FILTRO PROFESIONAL (FIX PRO)
     # ==========================
 
     if profesional != "Todos":
 
-        # convertir label → id
         prof_id = profesionales[
             profesionales["label"] == profesional
         ]["id"].values[0]
 
         query_base += " AND o.profesional_referente = :prof"
         params["prof"] = int(prof_id)
+
     # ==========================
-    # EJECUCIÓN
+    # EJECUCIÓN SEGURA
     # ==========================
+
     consulta = pd.read_sql(
         text(query_base),
         engine,
