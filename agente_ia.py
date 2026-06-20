@@ -3695,7 +3695,7 @@ with tab6:
         datos=usuario.iloc[0]
 
         st.divider()
-
+        
         c1,c2,c3,c4=st.columns(4)
 
         c1.metric(
@@ -3753,7 +3753,220 @@ with tab6:
             )
 
         )
-        
+    # =========================
+# CREAR OBJETIVO PAI
+# =========================
+
+st.markdown("## ➕ Crear objetivo PAI")
+
+with st.form("crear_objetivo_pai"):
+
+    objetivo_tipo = st.selectbox(
+
+        "Objetivo",
+
+        list(mapa_politica.keys())
+
+    )
+
+    st.caption(
+        f"🏛️ Política pública: {mapa_politica.get(objetivo_tipo,'')}"
+    )
+
+    st.caption(
+        f"🌍 ODS: {', '.join(mapa_ods.get(objetivo_tipo,[]))}"
+    )
+
+    subactividades = st.multiselect(
+
+        "Subactividades",
+
+        mapa_hitos.get(
+            objetivo_tipo,
+            []
+        ),
+
+        default=mapa_hitos.get(
+            objetivo_tipo,
+            []
+        )
+
+    )
+
+    objetivo_descripcion = st.text_area(
+
+        "Descripción del objetivo"
+
+    )
+
+    fecha_meta = st.date_input(
+
+        "Fecha meta"
+
+    )
+
+    profesional_id = st.selectbox(
+
+        "Profesional responsable",
+
+        df_profesionales["id"],
+
+        format_func=lambda x:
+
+        df_profesionales[
+
+            df_profesionales["id"]==x
+
+        ]["label"].values[0]
+
+    )
+
+    prioridad = st.selectbox(
+
+        "Prioridad",
+
+        [
+
+            "Alta",
+
+            "Media",
+
+            "Baja"
+
+        ]
+
+    )
+
+    submit = st.form_submit_button(
+
+        "💾 Guardar objetivo"
+
+    )
+    # =========================
+# GUARDAR OBJETIVO
+# =========================
+
+if submit:
+
+    import json
+
+    from sqlalchemy import text
+
+    politica = mapa_politica.get(
+
+        objetivo_tipo,
+
+        "Restablecimiento de derechos"
+
+    )
+
+    ods = mapa_ods.get(
+
+        objetivo_tipo,
+
+        ["ODS 10"]
+
+    )
+
+    query = text("""
+
+        INSERT INTO pai_objetivos (
+
+            documento_usuario,
+
+            objetivo_tipo,
+
+            objetivo_descripcion,
+
+            fecha_apertura,
+
+            fecha_meta,
+
+            estado,
+
+            porcentaje_avance,
+
+            profesional_referente,
+
+            ods_principal,
+
+            observaciones,
+
+            linea_politica,
+
+            actividades
+
+        )
+
+        VALUES (
+
+            :documento_usuario,
+
+            :objetivo_tipo,
+
+            :objetivo_descripcion,
+
+            NOW(),
+
+            :fecha_meta,
+
+            'Activo',
+
+            0,
+
+            :profesional_referente,
+
+            :ods_principal,
+
+            '',
+
+            :linea_politica,
+
+            :actividades
+
+        )
+
+    """)
+
+    with engine.begin() as conn:
+
+        conn.execute(
+
+            query,
+
+            {
+
+                "documento_usuario":str(usuario_sel),
+
+                "objetivo_tipo":objetivo_tipo,
+
+                "objetivo_descripcion":objetivo_descripcion,
+
+                "fecha_meta":fecha_meta,
+
+                "profesional_referente":int(profesional_id),
+
+                "ods_principal":", ".join(ods),
+
+                "linea_politica":politica,
+
+                "actividades":json.dumps(
+
+                    subactividades
+
+                )
+
+            }
+
+        )
+
+    st.success(
+
+        "✅ Objetivo creado"
+
+    )
+
+    st.rerun()
 with tab7:
 
     st.title("📈 Seguimiento e Impacto - Reducción de Riesgos y Daños")
