@@ -1688,7 +1688,7 @@ with st.sidebar:
 
     st.divider()
 
-tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8= st.tabs([
 
     "📊 General",
 
@@ -1703,8 +1703,6 @@ tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9 = st.tabs([
     "📋 Seguimiento Profesional",
 
     "📈 Seguimiento e Impacto",
-
-    "📄 Informes",
 
     "📥 Carga Activos"
 
@@ -4631,10 +4629,10 @@ with tab7:
 
             st.divider()
 # =====================================
-# TAB 9 - CARGA MASIVA ACTUALIZADA
+# TAB 8 - CARGA MASIVA ACTUALIZADA
 # =====================================
 
-with tab9:
+with tab8:
 
     st.title("📥 Carga Masiva de Activos")
 
