@@ -4588,8 +4588,8 @@ with tab7:
     """
 
     params = {
-        "inicio": fecha_inicio,
-        "fin": fecha_fin
+    "inicio": fecha_inicio.strftime("%Y-%m-%d"),
+    "fin": fecha_fin.strftime("%Y-%m-%d")
     }
 
     if profesional_sel != "Todos":
