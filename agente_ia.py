@@ -4547,7 +4547,7 @@ with tab7:
 
     st.title("📈 Seguimiento e Impacto - Reducción de Riesgos y Daños")
 
-    
+    from sqlalchemy import text
 
     # =========================
     # PROFESIONALES
@@ -4594,19 +4594,19 @@ with tab7:
         "fin": fecha_fin.strftime("%Y-%m-%d")
     }
 
-    # filtro profesional (por ID)
+    # =========================
+    # FILTRO PROFESIONAL (AJUSTE CLAVE)
+    # =========================
     if profesional_sel != "Todos":
         query += " AND profesional_id = :profesional"
         params["profesional"] = profesional_sel
 
+    # =========================
+    # EJECUCIÓN
+    # =========================
     df = pd.read_sql(text(query), engine, params=params)
 
     st.divider()
-
-    # =========================
-    # DEBUG (puedes borrarlo luego)
-    # =========================
-    st.write("DEBUG shape:", df.shape)
 
     # =========================
     # RESULTADOS
