@@ -4547,7 +4547,7 @@ with tab7:
 
     st.title("📈 Seguimiento e Impacto - Reducción de Riesgos y Daños")
 
-    from sqlalchemy import text
+    
 
     # =========================
     # PROFESIONALES
