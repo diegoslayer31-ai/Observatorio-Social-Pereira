@@ -4547,8 +4547,10 @@ with tab7:
 
     st.title("📈 Seguimiento e Impacto - Reducción de Riesgos y Daños")
 
+    from sqlalchemy import text
+
     # =========================
-    # PROFESIONALES (ya existente en tu app, solo si lo necesitas aquí)
+    # PROFESIONALES
     # =========================
     df_profesionales = pd.read_sql("""
         SELECT id, nombre, rol
@@ -4584,23 +4586,27 @@ with tab7:
     query = """
         SELECT *
         FROM pai_novedades
-        WHERE fecha BETWEEN :inicio AND :fin
+        WHERE DATE(fecha) BETWEEN :inicio AND :fin
     """
 
     params = {
-    "inicio": fecha_inicio.strftime("%Y-%m-%d"),
-    "fin": fecha_fin.strftime("%Y-%m-%d")
+        "inicio": fecha_inicio.strftime("%Y-%m-%d"),
+        "fin": fecha_fin.strftime("%Y-%m-%d")
     }
 
+    # filtro profesional (por ID)
     if profesional_sel != "Todos":
-        query += " AND profesional = :profesional"
-        params["profesional"] = df_profesionales[
-            df_profesionales["id"] == profesional_sel
-        ]["nombre"].values[0]
+        query += " AND profesional_id = :profesional"
+        params["profesional"] = profesional_sel
 
     df = pd.read_sql(text(query), engine, params=params)
 
     st.divider()
+
+    # =========================
+    # DEBUG (puedes borrarlo luego)
+    # =========================
+    st.write("DEBUG shape:", df.shape)
 
     # =========================
     # RESULTADOS
@@ -4614,18 +4620,16 @@ with tab7:
         for _, row in df.iterrows():
 
             st.markdown(f"""
-            ### 📌 {row['tipo_novedad']}
-            👨‍⚕️ {row['profesional']}  
-            📅 {row['fecha']}  
+            ### 📌 {row.get('tipo_novedad', 'Sin tipo')}
+            👨‍⚕️ {row.get('profesional', 'Sin profesional')}  
+            📅 {row.get('fecha', '')}  
 
-            📝 {row['descripcion']}  
+            📝 {row.get('descripcion', 'Sin descripción')}  
 
-            📂 Evidencia: {row['evidencia']}
+            📂 Evidencia: {row.get('evidencia', 'N/A')}
             """)
 
             st.divider()
-    
-        
 # =====================================
 # TAB 9 - CARGA MASIVA ACTUALIZADA
 # =====================================
