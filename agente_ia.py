@@ -4593,11 +4593,17 @@ with tab7:
     }
 
     # =========================
-    # FILTRO PROFESIONAL (AJUSTE CLAVE)
+    # 🔥 FILTRO CORRECTO (POR NOMBRE)
     # =========================
     if profesional_sel != "Todos":
-        query += " AND profesional_id = :profesional"
-        params["profesional"] = profesional_sel
+
+        nombre_profesional = df_profesionales.loc[
+            df_profesionales["id"] == profesional_sel,
+            "nombre"
+        ].values[0]
+
+        query += " AND profesional = :profesional"
+        params["profesional"] = nombre_profesional
 
     # =========================
     # EJECUCIÓN
@@ -4618,13 +4624,15 @@ with tab7:
         for _, row in df.iterrows():
 
             st.markdown(f"""
-            ### 📌 {row.get('tipo_novedad', 'Sin tipo')}
-            👨‍⚕️ {row.get('profesional', 'Sin profesional')}  
-            📅 {row.get('fecha', '')}  
+            ### 📌 {row['tipo_novedad']}
+            👨‍⚕️ {row['profesional']}  
+            📅 {row['fecha']}  
 
-            📝 {row.get('descripcion', 'Sin descripción')}  
+            📝 {row['descripcion']}  
 
-            📂 Evidencia: {row.get('evidencia', 'N/A')}
+            📈 Avance: {row['avance_generado']}%  
+
+            📂 Evidencia: {row['evidencia']}
             """)
 
             st.divider()
