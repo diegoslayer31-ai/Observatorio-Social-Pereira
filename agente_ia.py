@@ -4547,188 +4547,83 @@ with tab7:
 
     st.title("📈 Seguimiento e Impacto - Reducción de Riesgos y Daños")
 
-    
-with tab8:
-
-    st.header("📄 Informes Gerenciales")
-    st.markdown("Seguimiento institucional del Plan de Atención Individual (PAI)")
-    st.divider()
-
-    # ==========================
-    # FILTROS EN COLUMNA
-    # ==========================
-
-    col1, col2, col3 = st.columns(3)
-
-    # --------------------------
-    # PROFESIONALES (CON NOMBRES)
-    # --------------------------
-
-    profesionales = pd.read_sql("""
-        SELECT id, nombre
+    # =========================
+    # PROFESIONALES (ya existente en tu app, solo si lo necesitas aquí)
+    # =========================
+    df_profesionales = pd.read_sql("""
+        SELECT id, nombre, rol
         FROM profesionales
         ORDER BY nombre
     """, engine)
 
-    lista_profesionales = ["Todos"] + profesionales["nombre"].tolist()
+    df_profesionales["label"] = (
+        df_profesionales["nombre"] + " (" + df_profesionales["rol"] + ")"
+    )
 
-    with col1:
-        profesional = st.selectbox(
-            "Profesional",
-            lista_profesionales,
-            key="profesional_select"
+    # =========================
+    # FILTROS
+    # =========================
+    col1, col2, col3 = st.columns(3)
+
+    profesional_sel = col1.selectbox(
+        "👨‍⚕️ Profesional",
+        ["Todos"] + df_profesionales["id"].tolist(),
+        format_func=lambda x: (
+            "Todos"
+            if x == "Todos"
+            else df_profesionales[df_profesionales["id"] == x]["label"].values[0]
         )
+    )
 
-    # --------------------------
-    # FECHAS
-    # --------------------------
+    fecha_inicio = col2.date_input("📅 Fecha inicio")
+    fecha_fin = col3.date_input("📅 Fecha fin")
 
-    with col2:
-        fecha_inicio = st.date_input(
-            "Fecha inicio",
-            key="fecha_inicio"
-        )
-
-    with col3:
-        fecha_fin = st.date_input(
-            "Fecha fin",
-            key="fecha_fin"
-        )
-
-    # ==========================
-    # MAPEO PROFESIONAL (NOMBRE → ID)
-    # ==========================
-
-    if profesional != "Todos":
-        profesional_id = profesionales[
-            profesionales["nombre"] == profesional
-        ]["id"].values[0]
-    else:
-        profesional_id = None
-
-    # ==========================
+    # =========================
     # QUERY BASE
-    # ==========================
-
-    query_base = """
-    SELECT
-        o.id,
-        o.documento_usuario,
-        o.objetivo_tipo,
-        o.estado,
-        o.porcentaje_avance,
-        o.linea_politica,
-        o.ods_principal,
-        o.profesional_referente,
-        n.fecha,
-        n.descripcion
-    FROM pai_objetivos o
-    LEFT JOIN pai_novedades n
-        ON o.id = n.id_objetivo
-    WHERE n.fecha BETWEEN :inicio AND :fin
+    # =========================
+    query = """
+        SELECT *
+        FROM pai_novedades
+        WHERE fecha BETWEEN :inicio AND :fin
     """
-
-    # ==========================
-    # PARAMS
-    # ==========================
 
     params = {
         "inicio": fecha_inicio,
         "fin": fecha_fin
     }
 
-    # ==========================
-    # FILTRO PROFESIONAL
-    # ==========================
+    if profesional_sel != "Todos":
+        query += " AND profesional = :profesional"
+        params["profesional"] = df_profesionales[
+            df_profesionales["id"] == profesional_sel
+        ]["nombre"].values[0]
 
-    if profesional != "Todos":
-        query_base += " AND o.profesional_referente = :prof"
-        params["prof"] = profesional_id
-
-    # ==========================
-    # EJECUCIÓN
-    # ==========================
-
-    consulta = pd.read_sql(
-        text(query_base),
-        engine,
-        params=params
-    )
-
-    # ==========================
-    # VALIDACIÓN
-    # ==========================
-
-    if consulta.empty:
-        st.warning("No hay datos para el filtro seleccionado.")
-        st.stop()
-
-    # ==========================
-    # INDICADORES
-    # ==========================
-
-    st.subheader("📊 Indicadores generales")
-
-    usuarios = consulta["documento_usuario"].nunique()
-    objetivos = consulta["id"].nunique()
-
-    cumplidos = consulta[
-        consulta["estado"] == "Cumplido"
-    ]["id"].nunique()
-
-    avance = round(consulta["porcentaje_avance"].mean(), 1)
-
-    c1, c2, c3, c4 = st.columns(4)
-
-    c1.metric("Usuarios", usuarios)
-    c2.metric("Objetivos", objetivos)
-    c3.metric("Cumplidos", cumplidos)
-    c4.metric("Avance promedio", f"{avance}%")
+    df = pd.read_sql(text(query), engine, params=params)
 
     st.divider()
 
-    # ==========================
-    # PROFESIONALES (CON NOMBRES)
-    # ==========================
+    # =========================
+    # RESULTADOS
+    # =========================
+    if df.empty:
+        st.info("No hay registros en este rango.")
+    else:
 
-    st.subheader("👨‍⚕️ Gestión por profesional")
+        st.success(f"{len(df)} registros encontrados")
 
-    consulta = consulta.merge(
-        profesionales,
-        left_on="profesional_referente",
-        right_on="id",
-        how="left"
-    )
+        for _, row in df.iterrows():
 
-    consulta["profesional_nombre"] = consulta["nombre"].fillna("Sin asignar")
+            st.markdown(f"""
+            ### 📌 {row['tipo_novedad']}
+            👨‍⚕️ {row['profesional']}  
+            📅 {row['fecha']}  
 
-    grafico_df = consulta["profesional_nombre"].value_counts().reset_index()
-    grafico_df.columns = ["profesional", "cantidad"]
+            📝 {row['descripcion']}  
 
-    fig = px.bar(
-        grafico_df,
-        x="profesional",
-        y="cantidad",
-        text="cantidad",
-        title="Objetivos asignados por profesional"
-    )
+            📂 Evidencia: {row['evidencia']}
+            """)
 
-    fig.update_traces(textposition="outside")
-
-    st.plotly_chart(
-        fig,
-        use_container_width=True,
-        key="grafico_profesionales"
-    )
-
-    if not grafico_df.empty:
-        top = grafico_df.iloc[0]
-        st.info(
-            f"El profesional con mayor carga es **{top['profesional']}** "
-            f"con **{top['cantidad']} objetivos**."
-        )
-
-    st.divider()
+            st.divider()
     
         
 # =====================================
