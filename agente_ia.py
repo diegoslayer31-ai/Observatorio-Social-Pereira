@@ -4543,7 +4543,7 @@ with tab6:
                 """
 
             )
-with tab7:
+with tab8:
 
     st.title("📈 Seguimiento e Impacto - Reducción de Riesgos y Daños")
 
