@@ -4600,178 +4600,10 @@ with tab8:
             lista_profesionales
         )
 
-
-    # =========================
-    # 
-    # =========================
-
-    if profesional != "Todos":
-        profesional_id = profesionales[
-            profesionales["label"] == profesional
-        ]["id"].values[0]
-    else:
-        profesional_id = None
-    
-    from sqlalchemy import text
-
-    # ==========================
-    # QUERY BASE SEGURA
-    # ==========================
-
-    query_base = """
-    SELECT
-        o.id,
-        o.documento_usuario,
-        o.objetivo_tipo,
-        o.estado,
-        o.porcentaje_avance,
-        o.linea_politica,
-        o.ods_principal,
-        o.profesional_referente,
-        n.profesional,
-        n.fecha,
-        n.descripcion
-    FROM pai_objetivos o
-    LEFT JOIN pai_novedades n
-        ON o.id = n.id_objetivo
-        AND n.fecha BETWEEN :inicio AND :fin
-    WHERE 1=1
-    """
-
-    # ==========================
-    # PARAMETROS BASE
-    # ==========================
-
-    params = {
-        "inicio": fecha_inicio,
-        "fin": fecha_fin
-    }
-
-    # ==========================
-    # FILTRO PROFESIONAL
-    # ==========================
-
-    if profesional != "Todos":
-
-        prof_id = profesionales[
-            profesionales["label"] == profesional
-        ]["id"].values[0]
-
-        query_base += " AND o.profesional_referente = :prof"
-        params["prof"] = int(prof_id)
-
-    # ==========================
-    # EJECUCIÓN SEGURA
-    # ==========================
-
-    consulta = pd.read_sql(
-        text(query_base),
-        engine,
-        params=params
-    )
         # ==========================
-    # INDICADORES GENERALES
-    # ==========================
-
-    if consulta.empty:
-
-        st.warning(
-
-            "No hay información disponible."
-
-        )
-
-    else:
-
-        st.subheader(
-
-            "📊 Indicadores generales"
-
-        )
-
-        usuarios = consulta[
-
-            "documento_usuario"
-
-        ].nunique()
-
-        objetivos = consulta[
-
-            "id"
-
-        ].nunique()
-
-        cumplidos = (
-
-            consulta[
-                consulta["estado"]
-
-                == "Cumplido"
-
-            ]["id"]
-
-            .nunique()
-
-        )
-
-        avance = round(
-
-            consulta[
-
-                "porcentaje_avance"
-
-            ].mean(),
-
-            1
-
-        )
-
-        c1, c2, c3, c4 = st.columns(4)
-
-        c1.metric(
-
-            "Usuarios",
-
-            usuarios
-
-        )
-
-        c2.metric(
-
-            "Objetivos",
-
-            objetivos
-
-        )
-
-        c3.metric(
-
-            "Cumplidos",
-
-            cumplidos
-
-        )
-
-        c4.metric(
-
-            "Avance promedio",
-
-            f"{avance}%"
-
-        )
-
-        st.divider()
-        st.divider()
-
-                # ==========================
-        # GESTIÓN POR PROFESIONAL (FIX PRO)
+        # MAPEO PROFESIONAL (ID → NOMBRE)
         # ==========================
 
-        st.subheader("👨‍⚕️ Gestión por profesional")
-
-        # ==========================
-        # MAPEO ID → NOMBRE
-        # ==========================
         profesional_map = pd.read_sql("""
             SELECT id, nombre
             FROM profesionales
@@ -4782,63 +4614,152 @@ with tab8:
             profesional_map["nombre"]
         ))
 
-        # convertir IDs a nombres
-        consulta["profesional_nombre"] = (
-            consulta["profesional_referente"]
-            .map(map_dict)
-            .fillna("Sin asignar")
+
+        # ==========================
+        # QUERY BASE SEGURA
+        # ==========================
+
+        query_base = """
+        SELECT
+            o.id,
+            o.documento_usuario,
+            o.objetivo_tipo,
+            o.estado,
+            o.porcentaje_avance,
+            o.linea_politica,
+            o.ods_principal,
+            o.profesional_referente,
+            n.profesional,
+            n.fecha,
+            n.descripcion
+        FROM pai_objetivos o
+        LEFT JOIN pai_novedades n
+            ON o.id = n.id_objetivo
+        WHERE 1=1
+        """
+
+        params = {
+            "inicio": fecha_inicio,
+            "fin": fecha_fin
+        }
+
+
+        # ==========================
+        # FILTRO PROFESIONAL (ID)
+        # ==========================
+
+        if profesional != "Todos":
+
+            prof_id = profesionales[
+                profesionales["label"] == profesional
+            ]["id"].values[0]
+
+            query_base += " AND o.profesional_referente = :prof"
+            params["prof"] = int(prof_id)
+
+
+        # ==========================
+        # FILTRO FECHAS (MEJOR PRÁCTICA)
+        # ==========================
+
+        query_base += " AND n.fecha BETWEEN :inicio AND :fin"
+
+
+        # ==========================
+        # EJECUCIÓN (SIEMPRE FUERA DEL IF)
+        # ==========================
+
+        consulta = pd.read_sql(
+            text(query_base),
+            engine,
+            params=params
         )
 
-        # ==========================
-        # AGRUPACIÓN PARA GRÁFICO
-        # ==========================
-        profesional_df = (
-            consulta["profesional_nombre"]
-            .value_counts()
-            .reset_index()
-        )
-
-        profesional_df.columns = [
-            "profesional",
-            "cantidad"
-        ]
 
         # ==========================
-        # GRÁFICO
+        # INDICADORES GENERALES
         # ==========================
-        fig = px.bar(
-            profesional_df,
-            x="profesional",
-            y="cantidad",
-            color="cantidad",
-            text="cantidad",
-            title="Objetivos asignados por profesional"
-        )
 
-        fig.update_traces(
-            textposition="outside"
-        )
+        if consulta.empty:
 
-        st.plotly_chart(
-            fig,
-            use_container_width=True,
-            key="grafico_profesional"
-        )
+            st.warning("No hay información disponible.")
 
-        # ==========================
-        # TOP PROFESIONAL
-        # ==========================
-        if not profesional_df.empty:
+        else:
 
-            top_profesional = profesional_df.iloc[0]
+            st.subheader("📊 Indicadores generales")
 
-            st.info(
-                f"El profesional con mayor carga es "
-                f"**{top_profesional['profesional']}** "
-                f"con **{top_profesional['cantidad']} objetivos**."
+            usuarios = consulta["documento_usuario"].nunique()
+            objetivos = consulta["id"].nunique()
+
+            cumplidos = consulta[
+                consulta["estado"] == "Cumplido"
+            ]["id"].nunique()
+
+            avance = round(consulta["porcentaje_avance"].mean(), 1)
+
+            c1, c2, c3, c4 = st.columns(4)
+
+            c1.metric("Usuarios", usuarios)
+            c2.metric("Objetivos", objetivos)
+            c3.metric("Cumplidos", cumplidos)
+            c4.metric("Avance promedio", f"{avance}%")
+
+
+            st.divider()
+
+
+            # ==========================
+            # GESTIÓN POR PROFESIONAL (FIX DEFINITIVO)
+            # ==========================
+
+            st.subheader("👨‍⚕️ Gestión por profesional")
+
+            consulta["profesional_nombre"] = (
+                consulta["profesional_referente"]
+                .map(map_dict)
+                .fillna("Sin asignar")
             )
 
-        st.divider()
+            profesional_df = (
+                consulta["profesional_nombre"]
+                .value_counts()
+                .reset_index()
+            )
+
+            profesional_df.columns = ["profesional", "cantidad"]
+
+            fig = px.bar(
+                profesional_df,
+                x="profesional",
+                y="cantidad",
+                text="cantidad",
+                title="Objetivos asignados por profesional"
+            )
+
+            fig.update_traces(textposition="outside")
+
+            st.plotly_chart(
+                fig,
+                use_container_width=True,
+                key="grafico_profesional"
+            )
+
+
+            # ==========================
+            # TOP PROFESIONAL
+            # ==========================
+
+            if not profesional_df.empty:
+
+                top = profesional_df.iloc[0]
+
+                st.info(
+                    f"El profesional con mayor carga es "
+                    f"**{top['profesional']}** "
+                    f"con **{top['cantidad']} objetivos**."
+                )
+
+            st.divider()
 
         # ==========================
         # OBJETIVOS PAI
