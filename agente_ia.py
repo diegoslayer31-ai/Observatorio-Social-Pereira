@@ -4549,30 +4549,62 @@ with tab7:
 
     
 with tab8:
+
     st.header("📄 Informes Gerenciales")
-
     st.markdown("Seguimiento institucional del Plan de Atención Individual (PAI)")
-
     st.divider()
 
-        # ==========================
-    # FILTROS
+    # ==========================
+    # FILTROS EN COLUMNA
     # ==========================
 
+    col1, col2, col3 = st.columns(3)
+
+    # --------------------------
+    # PROFESIONALES (CON NOMBRES)
+    # --------------------------
+
     profesionales = pd.read_sql("""
-        SELECT DISTINCT profesional_referente
-        FROM pai_objetivos
-        WHERE profesional_referente IS NOT NULL
-        ORDER BY profesional_referente
+        SELECT id, nombre
+        FROM profesionales
+        ORDER BY nombre
     """, engine)
 
-    lista_profesionales = ["Todos"] + profesionales["profesional_referente"].tolist()
+    lista_profesionales = ["Todos"] + profesionales["nombre"].tolist()
 
-    profesional = st.selectbox(
-        "Profesional",
-        lista_profesionales,
-        key="profesional_select"
-    )
+    with col1:
+        profesional = st.selectbox(
+            "Profesional",
+            lista_profesionales,
+            key="profesional_select"
+        )
+
+    # --------------------------
+    # FECHAS
+    # --------------------------
+
+    with col2:
+        fecha_inicio = st.date_input(
+            "Fecha inicio",
+            key="fecha_inicio"
+        )
+
+    with col3:
+        fecha_fin = st.date_input(
+            "Fecha fin",
+            key="fecha_fin"
+        )
+
+    # ==========================
+    # MAPEO PROFESIONAL (NOMBRE → ID)
+    # ==========================
+
+    if profesional != "Todos":
+        profesional_id = profesionales[
+            profesionales["nombre"] == profesional
+        ]["id"].values[0]
+    else:
+        profesional_id = None
 
     # ==========================
     # QUERY BASE
@@ -4587,16 +4619,23 @@ with tab8:
         o.porcentaje_avance,
         o.linea_politica,
         o.ods_principal,
-        o.profesional_referente
+        o.profesional_referente,
+        n.fecha,
+        n.descripcion
     FROM pai_objetivos o
-    WHERE 1=1
+    LEFT JOIN pai_novedades n
+        ON o.id = n.id_objetivo
+    WHERE n.fecha BETWEEN :inicio AND :fin
     """
 
     # ==========================
     # PARAMS
     # ==========================
 
-    params = {}
+    params = {
+        "inicio": fecha_inicio,
+        "fin": fecha_fin
+    }
 
     # ==========================
     # FILTRO PROFESIONAL
@@ -4604,10 +4643,10 @@ with tab8:
 
     if profesional != "Todos":
         query_base += " AND o.profesional_referente = :prof"
-        params["prof"] = profesional
+        params["prof"] = profesional_id
 
     # ==========================
-    # EJECUCIÓN (IMPORTANTE: SIEMPRE FUERA DEL IF)
+    # EJECUCIÓN
     # ==========================
 
     consulta = pd.read_sql(
@@ -4615,6 +4654,82 @@ with tab8:
         engine,
         params=params
     )
+
+    # ==========================
+    # VALIDACIÓN
+    # ==========================
+
+    if consulta.empty:
+        st.warning("No hay datos para el filtro seleccionado.")
+        st.stop()
+
+    # ==========================
+    # INDICADORES
+    # ==========================
+
+    st.subheader("📊 Indicadores generales")
+
+    usuarios = consulta["documento_usuario"].nunique()
+    objetivos = consulta["id"].nunique()
+
+    cumplidos = consulta[
+        consulta["estado"] == "Cumplido"
+    ]["id"].nunique()
+
+    avance = round(consulta["porcentaje_avance"].mean(), 1)
+
+    c1, c2, c3, c4 = st.columns(4)
+
+    c1.metric("Usuarios", usuarios)
+    c2.metric("Objetivos", objetivos)
+    c3.metric("Cumplidos", cumplidos)
+    c4.metric("Avance promedio", f"{avance}%")
+
+    st.divider()
+
+    # ==========================
+    # PROFESIONALES (CON NOMBRES)
+    # ==========================
+
+    st.subheader("👨‍⚕️ Gestión por profesional")
+
+    consulta = consulta.merge(
+        profesionales,
+        left_on="profesional_referente",
+        right_on="id",
+        how="left"
+    )
+
+    consulta["profesional_nombre"] = consulta["nombre"].fillna("Sin asignar")
+
+    grafico_df = consulta["profesional_nombre"].value_counts().reset_index()
+    grafico_df.columns = ["profesional", "cantidad"]
+
+    fig = px.bar(
+        grafico_df,
+        x="profesional",
+        y="cantidad",
+        text="cantidad",
+        title="Objetivos asignados por profesional"
+    )
+
+    fig.update_traces(textposition="outside")
+
+    st.plotly_chart(
+        fig,
+        use_container_width=True,
+        key="grafico_profesionales"
+    )
+
+    if not grafico_df.empty:
+        top = grafico_df.iloc[0]
+        st.info(
+            f"El profesional con mayor carga es **{top['profesional']}** "
+            f"con **{top['cantidad']} objetivos**."
+        )
+
+    st.divider()
+    
         
 # =====================================
 # TAB 9 - CARGA MASIVA ACTUALIZADA
