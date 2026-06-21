@@ -4549,613 +4549,73 @@ with tab7:
 
     
 with tab8:
-
     st.header("📄 Informes Gerenciales")
 
-    st.markdown(
-        "Seguimiento institucional del Plan de Atención Individual (PAI)"
-    )
+    st.markdown("Seguimiento institucional del Plan de Atención Individual (PAI)")
 
     st.divider()
 
-    # ==========================
+        # ==========================
     # FILTROS
     # ==========================
 
-    st.subheader("⚙️ Filtros")
-
-    c1, c2, c3 = st.columns(3)
-
-    with c1:
-
-        fecha_inicio = st.date_input(
-
-            "Fecha inicial"
-
-        )
-
-    with c2:
-
-        fecha_fin = st.date_input(
-
-            "Fecha final"
-
-        )
-    with c3:
-
-        profesionales = pd.read_sql("""
-            SELECT id, nombre, rol
-            FROM profesionales
-            ORDER BY nombre
-        """, engine)
-
-        profesionales["label"] = (
-            profesionales["nombre"] + " (" + profesionales["rol"] + ")"
-        )
-
-        lista_profesionales = ["Todos"] + profesionales["label"].tolist()
-
-        profesional = st.selectbox(
-            "Profesional",
-            lista_profesionales
-        )
-
-        # ==========================
-        # MAPEO PROFESIONAL (ID → NOMBRE)
-        # ==========================
-
-        profesional_map = pd.read_sql("""
-            SELECT id, nombre
-            FROM profesionales
-        """, engine)
-
-        map_dict = dict(zip(
-            profesional_map["id"],
-            profesional_map["nombre"]
-        ))
-
-
-        # ==========================
-        # QUERY BASE SEGURA
-        # ==========================
-
-        query_base = """
-        SELECT
-            o.id,
-            o.documento_usuario,
-            o.objetivo_tipo,
-            o.estado,
-            o.porcentaje_avance,
-            o.linea_politica,
-            o.ods_principal,
-            o.profesional_referente,
-            n.profesional,
-            n.fecha,
-            n.descripcion
-        FROM pai_objetivos o
-        LEFT JOIN pai_novedades n
-            ON o.id = n.id_objetivo
-        WHERE 1=1
-        """
-
-        params = {
-            "inicio": fecha_inicio,
-            "fin": fecha_fin
-        }
-
-
-        # ==========================
-        # FILTRO PROFESIONAL (ID)
-        # ==========================
-
-        if profesional != "Todos":
-
-            prof_id = profesionales[
-                profesionales["label"] == profesional
-            ]["id"].values[0]
-
-            query_base += " AND o.profesional_referente = :prof"
-            params["prof"] = int(prof_id)
-
-
-        # ==========================
-        # FILTRO FECHAS (MEJOR PRÁCTICA)
-        # ==========================
-
-        query_base += " AND n.fecha BETWEEN :inicio AND :fin"
-
-
-        # ==========================
-        # EJECUCIÓN (SIEMPRE FUERA DEL IF)
-        # ==========================
-
-        consulta = pd.read_sql(
-            text(query_base),
-            engine,
-            params=params
-        )
-
-
-        # ==========================
-        # INDICADORES GENERALES
-        # ==========================
-
-        if consulta.empty:
-
-            st.warning("No hay información disponible.")
-
-        else:
-
-            st.subheader("📊 Indicadores generales")
-
-            usuarios = consulta["documento_usuario"].nunique()
-            objetivos = consulta["id"].nunique()
-
-            cumplidos = consulta[
-                consulta["estado"] == "Cumplido"
-            ]["id"].nunique()
-
-            avance = round(consulta["porcentaje_avance"].mean(), 1)
-
-            c1, c2, c3, c4 = st.columns(4)
-
-            c1.metric("Usuarios", usuarios)
-            c2.metric("Objetivos", objetivos)
-            c3.metric("Cumplidos", cumplidos)
-            c4.metric("Avance promedio", f"{avance}%")
-
-
-            st.divider()
-
-
-            # ==========================
-            # GESTIÓN POR PROFESIONAL (FIX DEFINITIVO)
-            # ==========================
-
-            st.subheader("👨‍⚕️ Gestión por profesional")
-
-            consulta["profesional_nombre"] = (
-                consulta["profesional_referente"]
-                .map(map_dict)
-                .fillna("Sin asignar")
-            )
-
-            profesional_df = (
-                consulta["profesional_nombre"]
-                .value_counts()
-                .reset_index()
-            )
-
-            profesional_df.columns = ["profesional", "cantidad"]
-
-            fig = px.bar(
-                profesional_df,
-                x="profesional",
-                y="cantidad",
-                text="cantidad",
-                title="Objetivos asignados por profesional"
-            )
-
-            fig.update_traces(textposition="outside")
-
-            st.plotly_chart(
-                fig,
-                use_container_width=True,
-                key="grafico_profesional"
-            )
-
-
-            # ==========================
-            # TOP PROFESIONAL
-            # ==========================
-
-            if not profesional_df.empty:
-
-                top = profesional_df.iloc[0]
-
-                st.info(
-                    f"El profesional con mayor carga es "
-                    f"**{top['profesional']}** "
-                    f"con **{top['cantidad']} objetivos**."
-                )
-
-            st.divider()
-
-        # ==========================
-        # OBJETIVOS PAI
-        # ==========================
-
-        st.subheader(
-
-            "🎯 Objetivos PAI"
-
-        )
-
-        objetivos_df = (
-
-            consulta["objetivo_tipo"]
-
-            .value_counts()
-
-            .reset_index()
-
-        )
-
-        objetivos_df.columns = [
-
-            "objetivo",
-
-            "cantidad"
-
-        ]
-
-        fig = px.bar(
-
-            objetivos_df,
-
-            x="objetivo",
-
-            y="cantidad",
-
-            color="cantidad",
-
-            text="cantidad",
-
-            title="Distribución de objetivos PAI"
-
-        )
-
-        fig.update_traces(
-
-            textposition="outside"
-
-        )
-
-        st.plotly_chart(
-
-            fig,
-
-            use_container_width=True
-
-        )
-
-        if not objetivos_df.empty:
-
-            top_objetivo = objetivos_df.iloc[0]
-
-            st.success(
-
-                f"El objetivo más frecuente es "
-
-                f"**{top_objetivo['objetivo']}**."
-
-            )
-            st.divider()
-
-        # ==========================
-        # GESTIÓN POR PROFESIONAL
-        # ==========================
-
-        st.subheader(
-            "👨‍⚕️ Gestión por profesional"
-        )
-
-        profesional_df = (
-
-            consulta["profesional_referente"]
-
-            .fillna("Sin asignar")
-
-            .value_counts()
-
-            .reset_index()
-
-        )
-
-        profesional_df.columns = [
-
-            "profesional",
-
-            "cantidad"
-
-        ]
-
-        fig = px.bar(
-
-            profesional_df,
-
-            x="profesional",
-
-            y="cantidad",
-
-            color="cantidad",
-
-            text="cantidad",
-
-            title="Objetivos asignados por profesional"
-
-        )
-
-        fig.update_traces(
-
-            textposition="outside"
-
-        )
-
-        st.plotly_chart(
-
-            fig,
-
-            use_container_width=True
-
-        )
-        st.divider()
-
-        # ==========================
-        # OBJETIVOS PAI
-        # ==========================
-
-        st.subheader(
-            "🎯 Objetivos PAI"
-        )
-
-        objetivos_df = (
-
-            consulta["objetivo_tipo"]
-
-            .value_counts()
-
-            .reset_index()
-
-        )
-
-        objetivos_df.columns = [
-
-            "objetivo",
-
-            "cantidad"
-
-        ]
-
-        fig = px.bar(
-
-            objetivos_df,
-
-            x="objetivo",
-
-            y="cantidad",
-
-            color="cantidad",
-
-            text="cantidad",
-
-            title="Distribución de objetivos PAI"
-
-        )
-
-        fig.update_traces(
-
-            textposition="outside"
-
-        )
-
-        st.plotly_chart(
-
-            fig,
-
-            use_container_width=True
-
-        )
-        st.divider()
-
-        # ==========================
-        # POLÍTICA PÚBLICA
-        # ==========================
-
-        st.subheader(
-            "🏛️ Política pública"
-        )
-
-        politica_df = (
-
-            consulta["linea_politica"]
-
-            .fillna("Sin asignar")
-
-            .value_counts()
-
-            .reset_index()
-
-        )
-
-        politica_df.columns = [
-
-            "linea",
-
-            "cantidad"
-
-        ]
-
-        fig = px.pie(
-
-            politica_df,
-
-            names="linea",
-
-            values="cantidad",
-
-            title="Distribución por línea de política pública"
-
-        )
-
-        st.plotly_chart(
-
-            fig,
-
-            use_container_width=True
-
-        )
-        st.divider()
-
-        # ==========================
-        # ODS
-        # ==========================
-
-        st.subheader(
-            "🌍 Objetivos de Desarrollo Sostenible"
-        )
-
-        ods_principal_df = (
-
-            consulta["ods_principal"]
-
-            .fillna("Sin asignar")
-
-            .value_counts()
-
-            .reset_index()
-
-        )
-
-        ods_principal_df.columns = [
-
-            "ods",
-
-            "cantidad"
-
-        ]
-
-        fig = px.bar(
-
-            ods_principal_df,
-
-            x="ods",
-
-            y="cantidad",
-
-            color="cantidad",
-
-            text="cantidad",
-
-            title="Distribución por ODS"
-
-        )
-
-        fig.update_traces(
-
-            textposition="outside"
-
-        )
-
-        st.plotly_chart(
-
-            fig,
-
-            use_container_width=True
-
-        )
-        st.divider()
-
-        # ==========================
-        # TENDENCIA MENSUAL
-        # ==========================
-
-        st.subheader(
-            "📅 Tendencia mensual"
-        )
-
-        tendencia = pd.read_sql("""
-
-            SELECT
-
-                DATE_TRUNC(
-
-                    'month',
-
-                    fecha
-
-                ) AS mes,
-
-                COUNT(*) AS cantidad
-
-            FROM pai_novedades
-
-            GROUP BY mes
-
-            ORDER BY mes
-
-        """, engine)
-
-        if not tendencia.empty:
-
-            fig = px.line(
-
-                tendencia,
-
-                x="mes",
-
-                y="cantidad",
-
-                markers=True,
-
-                title="Novedades registradas por mes"
-
-            )
-
-            st.plotly_chart(
-
-                fig,
-
-                use_container_width=True
-
-            )
-
-        else:
-
-            st.info(
-
-                "La tendencia mensual aparecerá cuando existan novedades."
-
-            )
-        st.divider()
-
-        # ==========================
-        # DETALLE OPERATIVO
-        # ==========================
-
-        st.subheader(
-            "📋 Detalle operativo"
-        )
-
-        st.dataframe(
-
-            consulta,
-
-            use_container_width=True
-
-        )
-        st.divider()
-
-        st.subheader(
-            "📥 Exportación"
-        )
-
-        st.info(
-            """
-            Próximamente este módulo permitirá exportar:
-
-            • Informe mensual
-
-            • Informe por profesional
-
-            • Informe institucional
-
-            • Informe por línea de política pública
-
-            • Informe por ODS
-
-            """
-        )
+    profesionales = pd.read_sql("""
+        SELECT DISTINCT profesional_referente
+        FROM pai_objetivos
+        WHERE profesional_referente IS NOT NULL
+        ORDER BY profesional_referente
+    """, engine)
+
+    lista_profesionales = ["Todos"] + profesionales["profesional_referente"].tolist()
+
+    profesional = st.selectbox(
+        "Profesional",
+        lista_profesionales,
+        key="profesional_select"
+    )
+
+    # ==========================
+    # QUERY BASE
+    # ==========================
+
+    query_base = """
+    SELECT
+        o.id,
+        o.documento_usuario,
+        o.objetivo_tipo,
+        o.estado,
+        o.porcentaje_avance,
+        o.linea_politica,
+        o.ods_principal,
+        o.profesional_referente
+    FROM pai_objetivos o
+    WHERE 1=1
+    """
+
+    # ==========================
+    # PARAMS
+    # ==========================
+
+    params = {}
+
+    # ==========================
+    # FILTRO PROFESIONAL
+    # ==========================
+
+    if profesional != "Todos":
+        query_base += " AND o.profesional_referente = :prof"
+        params["prof"] = profesional
+
+    # ==========================
+    # EJECUCIÓN (IMPORTANTE: SIEMPRE FUERA DEL IF)
+    # ==========================
+
+    consulta = pd.read_sql(
+        text(query_base),
+        engine,
+        params=params
+    )
+        
 # =====================================
 # TAB 9 - CARGA MASIVA ACTUALIZADA
 # =====================================
