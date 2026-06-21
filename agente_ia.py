@@ -4546,6 +4546,7 @@ with tab7:
     st.title("📈 Seguimiento e Impacto - Reducción de Riesgos y Daños")
 
     from sqlalchemy import text
+    import pandas as pd
 
     # =========================
     # PROFESIONALES
@@ -4579,7 +4580,7 @@ with tab7:
     fecha_fin = col3.date_input("📅 Fecha fin")
 
     # =========================
-    # QUERY BASE
+    # QUERY
     # =========================
     query = """
         SELECT *
@@ -4592,9 +4593,7 @@ with tab7:
         "fin": fecha_fin.strftime("%Y-%m-%d")
     }
 
-    # =========================
-    # 🔥 FILTRO CORRECTO (POR NOMBRE)
-    # =========================
+    # filtro profesional (por nombre real en tu tabla)
     if profesional_sel != "Todos":
 
         nombre_profesional = df_profesionales.loc[
@@ -4606,36 +4605,64 @@ with tab7:
         params["profesional"] = nombre_profesional
 
     # =========================
-    # EJECUCIÓN
+    # DATA
     # =========================
     df = pd.read_sql(text(query), engine, params=params)
 
     st.divider()
 
     # =========================
-    # RESULTADOS
+    # VALIDACIÓN
     # =========================
     if df.empty:
         st.info("No hay registros en este rango.")
-    else:
+        st.stop()
 
-        st.success(f"{len(df)} registros encontrados")
+    # =========================
+    # KPIs
+    # =========================
+    col1, col2, col3 = st.columns(3)
 
-        for _, row in df.iterrows():
+    col1.metric("📌 Registros", len(df))
+    col2.metric("📈 Avance promedio", f"{df['avance_generado'].mean():.1f}%")
+    col3.metric("👨‍⚕️ Profesionales activos", df["profesional"].nunique())
 
-            st.markdown(f"""
-            ### 📌 {row['tipo_novedad']}
-            👨‍⚕️ {row['profesional']}  
-            📅 {row['fecha']}  
+    st.divider()
 
-            📝 {row['descripcion']}  
+    # =========================
+    # GRÁFICAS
+    # =========================
 
-            📈 Avance: {row['avance_generado']}%  
+    # 📈 evolución del avance
+    df["fecha"] = pd.to_datetime(df["fecha"])
+    evol = df.groupby(df["fecha"].dt.date)["avance_generado"].mean()
 
-            📂 Evidencia: {row['evidencia']}
-            """)
+    st.subheader("📈 Evolución del avance")
+    st.line_chart(evol)
 
-            st.divider()
+    # 👨‍⚕️ productividad
+    st.subheader("👨‍⚕️ Intervenciones por profesional")
+    prod = df.groupby("profesional")["id"].count().sort_values(ascending=False)
+    st.bar_chart(prod)
+
+    st.divider()
+
+    # =========================
+    # TABLA DETALLADA
+    # =========================
+    st.subheader("📋 Detalle de registros")
+
+    st.dataframe(
+        df[[
+            "fecha",
+            "profesional",
+            "tipo_novedad",
+            "descripcion",
+            "avance_generado",
+            "evidencia"
+        ]],
+        use_container_width=True
+    )
 # =====================================
 # TAB 8 - CARGA MASIVA ACTUALIZADA
 # =====================================
