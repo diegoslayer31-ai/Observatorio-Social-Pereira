@@ -44,6 +44,7 @@ from reportlab.platypus import (
 )
 
 from reportlab.lib.styles import getSampleStyleSheet
+import uuid
 def generar_historia_integral(documento, engine):
     
     buffer = BytesIO()
@@ -53,7 +54,10 @@ def generar_historia_integral(documento, engine):
     elements = []
 
     documento = str(documento).strip()
+    from datetime import datetime
 
+    fecha_reporte = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    reporte_id = str(uuid.uuid4())[:8]
     # =========================
     # 1. USUARIO
     # =========================
@@ -72,6 +76,12 @@ def generar_historia_integral(documento, engine):
     u = usuario_df.iloc[0]
 
     elements.append(Paragraph("HISTORIA INTEGRAL DE ATENCIÓN", styles["Title"]))
+    elements.append(Spacer(1, 6))
+    elements.append(Paragraph(f"ID de informe: PAI-{reporte_id}", styles["BodyText"]))
+    elements.append(Paragraph(f"Fecha de generación: {fecha_reporte}", styles["BodyText"]))
+    elements.append(Paragraph("Sistema: PAI - Historia Integral de Atención", styles["BodyText"]))
+
+    elements.append(Spacer(1, 12))
     elements.append(Spacer(1, 12))
 
     elements.append(Paragraph("1. IDENTIFICACIÓN", styles["Heading2"]))
