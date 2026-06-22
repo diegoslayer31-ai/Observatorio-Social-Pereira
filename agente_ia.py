@@ -89,7 +89,32 @@ def generar_historia_integral(documento, engine):
     elements.append(Paragraph(f"Documento: {u['numero_identificacion']}", styles["BodyText"]))
     elements.append(Paragraph(f"Edad: {u['edad']} | Sexo: {u['sexo_al_nacer']}", styles["BodyText"]))
     elements.append(Spacer(1, 12))
+    resumen_obj = pd.read_sql(text("""
+        SELECT
+            COUNT(*) AS objetivos,
+            AVG(porcentaje_avance) AS avance_promedio
+        FROM pai_objetivos
+        WHERE documento_usuario = :doc
+    """), engine, params={"doc": documento})
 
+
+    resumen_nov = pd.read_sql(text("""
+        SELECT COUNT(*) AS novedades
+        FROM pai_novedades n
+        JOIN pai_objetivos o ON o.id = n.id_objetivo
+        WHERE o.documento_usuario = :doc
+    """), engine, params={"doc": documento})
+    objetivos = int(resumen_obj.iloc[0]["objetivos"] or 0)
+    avance_promedio = float(resumen_obj.iloc[0]["avance_promedio"] or 0)
+    novedades = int(resumen_nov.iloc[0]["novedades"] or 0)
+    elements.append(Paragraph("RESUMEN EJECUTIVO", styles["Heading2"]))
+    elements.append(Spacer(1, 6))
+
+    elements.append(Paragraph(f"Objetivos registrados: {objetivos}", styles["BodyText"]))
+    elements.append(Paragraph(f"Avance promedio: {round(avance_promedio, 1)}%", styles["BodyText"]))
+    elements.append(Paragraph(f"Novedades registradas: {novedades}", styles["BodyText"]))
+
+    elements.append(Spacer(1, 12))
     # =========================
     # 2. MOVIMIENTOS
     # =========================
@@ -211,7 +236,49 @@ def generar_historia_integral(documento, engine):
                 ]))
 
                 elements.append(table)
+        timeline_df = pd.read_sql(text("""
+        SELECT
+            o.fecha_apertura AS fecha,
+            'OBJETIVO' AS tipo_evento,
+            o.objetivo_tipo AS descripcion,
+            o.objetivo_descripcion AS detalle
+        FROM pai_objetivos o
+        WHERE o.documento_usuario = :doc
 
+        UNION ALL
+
+        SELECT
+            n.fecha AS fecha,
+            n.tipo_novedad AS tipo_evento,
+            n.descripcion AS descripcion,
+            n.evidencia AS detalle
+        FROM pai_novedades n
+        JOIN pai_objetivos o ON o.id = n.id_objetivo
+        WHERE o.documento_usuario = :doc
+
+        ORDER BY fecha ASC
+    """), engine, params={"doc": documento})
+        timeline_df["fecha"] = pd.to_datetime(timeline_df["fecha"], errors="coerce")
+        timeline_df = timeline_df.dropna(subset=["fecha"])
+        elements.append(Paragraph("LÍNEA DE TIEMPO DEL CASO", styles["Heading2"]))
+        elements.append(Spacer(1, 6))
+        
+        for _, r in timeline_df.iterrows():
+    
+            fecha = r["fecha"].strftime("%Y-%m-%d %H:%M")
+
+            elements.append(Paragraph(
+                f"{fecha} | {r['tipo_evento']} | {r['descripcion']}",
+                styles["BodyText"]
+            ))
+
+            if pd.notnull(r["detalle"]) and str(r["detalle"]).strip():
+                elements.append(Paragraph(
+                    f"   ➜ {r['detalle']}",
+                    styles["BodyText"]
+                ))
+
+            elements.append(Spacer(1, 4))
     # =========================
     # FINAL
     # =========================
