@@ -4663,6 +4663,82 @@ with tab7:
         ]],
         use_container_width=True
     )
+        # =========================
+    # ODS
+    # =========================
+
+    st.divider()
+
+    st.subheader("🌎 Contribución a los Objetivos de Desarrollo Sostenible (ODS)")
+
+    total_intervenciones = len(df)
+
+    # ODS 3
+    ods3 = (
+        df["tipo_novedad"]
+        .str.contains(
+            "motivación|salud|acompañamiento|orientación",
+            case=False,
+            na=False
+        )
+        .sum()
+    )
+
+    # ODS 10
+    ods10 = total_intervenciones
+
+    # ODS 16
+    ods16 = (
+        df["evidencia"]
+        .fillna("")
+        .str.strip()
+        .ne("")
+        .sum()
+    )
+
+    col1, col2, col3 = st.columns(3)
+
+    col1.metric(
+        "🩺 ODS 3 Salud y bienestar",
+        f"{(ods3/total_intervenciones)*100:.1f}%"
+    )
+
+    col2.metric(
+        "⚖️ ODS 10 Reducción desigualdades",
+        f"{(ods10/total_intervenciones)*100:.1f}%"
+    )
+
+    col3.metric(
+        "🏛️ ODS 16 Fortalecimiento institucional",
+        f"{(ods16/total_intervenciones)*100:.1f}%"
+    )
+    st.subheader("📋 Aporte institucional a los ODS")
+
+    ods_df = pd.DataFrame({
+        "ODS": [
+            "ODS 3",
+            "ODS 10",
+            "ODS 16"
+        ],
+
+        "Objetivo": [
+            "Salud y bienestar",
+            "Reducción de desigualdades",
+            "Paz, justicia e instituciones sólidas"
+        ],
+
+        "Contribución": [
+            "Intervenciones de reducción de riesgos y daños.",
+            "Inclusión social y disminución de vulnerabilidades.",
+            "Seguimiento, trazabilidad y fortalecimiento institucional."
+        ]
+    })
+
+    st.dataframe(
+        ods_df,
+        use_container_width=True,
+        hide_index=True
+    )
 # =====================================
 # TAB 8 - CARGA MASIVA ACTUALIZADA
 # =====================================
