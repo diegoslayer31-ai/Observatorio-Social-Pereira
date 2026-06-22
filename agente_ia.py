@@ -52,6 +52,22 @@ def generar_historia_integral(documento, engine):
 
     styles = getSampleStyleSheet()
     elements = []
+    elements.append(Paragraph("INFORME PAI - DOCUMENTO AUDITABLE", styles["Title"]))
+    elements.append(Spacer(1, 6))
+
+    elements.append(Paragraph(
+        "Sistema de Plan de Atención Individual - Reducción de Riesgos y Daños",
+        styles["BodyText"]
+    ))
+
+    elements.append(Spacer(1, 6))
+
+    elements.append(Paragraph(
+        "Documento de carácter institucional - Uso exclusivo para seguimiento y control",
+        styles["BodyText"]
+    ))
+
+    elements.append(Spacer(1, 12))
 
     documento = str(documento).strip()
     from datetime import datetime
@@ -69,6 +85,29 @@ def generar_historia_integral(documento, engine):
 
     if usuario_df.empty:
         elements.append(Paragraph("NO SE ENCONTRÓ EL USUARIO", styles["Title"]))
+        elements.append(Spacer(1, 20))
+
+        elements.append(Paragraph("────────────────────────────────────────", styles["BodyText"]))
+
+        elements.append(Paragraph(
+            f"ID del informe: PAI-{reporte_id}",
+            styles["BodyText"]
+        ))
+
+        elements.append(Paragraph(
+            "Este documento fue generado automáticamente desde el sistema PAI.",
+            styles["BodyText"]
+        ))
+
+        elements.append(Paragraph(
+            "Cualquier modificación posterior invalida su trazabilidad institucional.",
+            styles["BodyText"]
+        ))
+
+        elements.append(Paragraph(
+            f"Fecha de cierre del informe: {fecha_reporte}",
+            styles["BodyText"]
+        ))
         doc.build(elements)
         buffer.seek(0)
         return buffer
@@ -279,6 +318,48 @@ def generar_historia_integral(documento, engine):
                 ))
 
             elements.append(Spacer(1, 4))
+            control_df = pd.read_sql(text("""
+        SELECT
+            COUNT(*) AS objetivos,
+            SUM(CASE WHEN estado = 'Activo' THEN 1 ELSE 0 END) AS activos,
+            SUM(CASE WHEN porcentaje_avance >= 100 THEN 1 ELSE 0 END) AS cumplidos,
+            AVG(porcentaje_avance) AS avance_promedio
+        FROM pai_objetivos
+        WHERE documento_usuario = :doc
+    """), engine, params={"doc": documento})
+
+
+    inconsistencias_df = pd.read_sql(text("""
+        SELECT COUNT(*) AS sin_novedades
+        FROM pai_objetivos o
+        LEFT JOIN pai_novedades n ON n.id_objetivo = o.id
+        WHERE o.documento_usuario = :doc
+        AND n.id IS NULL
+"""), engine, params={"doc": documento})
+    total_obj = int(control_df.iloc[0]["objetivos"] or 0)
+    activos = int(control_df.iloc[0]["activos"] or 0)
+    cumplidos = int(control_df.iloc[0]["cumplidos"] or 0)
+    avance_prom = float(control_df.iloc[0]["avance_promedio"] or 0)
+
+    sin_novedades = int(inconsistencias_df.iloc[0]["sin_novedades"] or 0)
+    elements.append(Paragraph("CONTROL DE CONSISTENCIA", styles["Heading2"]))
+    elements.append(Spacer(1, 6))
+    elements.append(Paragraph(f"Total de objetivos: {total_obj}", styles["BodyText"]))
+    elements.append(Paragraph(f"Objetivos activos: {activos}", styles["BodyText"]))
+    elements.append(Paragraph(f"Objetivos cumplidos: {cumplidos}", styles["BodyText"]))
+    elements.append(Paragraph(f"Avance promedio: {round(avance_prom, 1)}%", styles["BodyText"]))
+    elements.append(Paragraph(f"Objetivos sin novedades: {sin_novedades}", styles["BodyText"]))
+    if sin_novedades > 0:
+            elements.append(Paragraph(
+            "⚠ ALERTA: Existen objetivos sin registro de novedades",
+            styles["BodyText"]
+        ))
+
+    if avance_prom > 100:
+        elements.append(Paragraph(
+            "⚠ ALERTA: Inconsistencia en avance mayor a 100%",
+            styles["BodyText"]
+        ))
     # =========================
     # FINAL
     # =========================
