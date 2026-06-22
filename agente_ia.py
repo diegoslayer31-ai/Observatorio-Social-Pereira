@@ -58,9 +58,9 @@ def generar_historia_integral(documento, engine):
     # 1. USUARIO
     # =========================
     usuario_df = pd.read_sql(text("""
-        SELECT *
+        SELECT nombres, apellidos, numero_identificacion, edad, sexo_al_nacer
         FROM habitante_de_calle
-        WHERE TRIM(numero_identificacion) = TRIM(:doc)
+        WHERE numero_identificacion::TEXT = :doc
     """), engine, params={"doc": documento})
 
     if usuario_df.empty:
@@ -72,21 +72,21 @@ def generar_historia_integral(documento, engine):
     u = usuario_df.iloc[0]
 
     elements.append(Paragraph("HISTORIA INTEGRAL DE ATENCIÓN", styles["Title"]))
-    elements.append(Spacer(1, 10))
+    elements.append(Spacer(1, 12))
 
     elements.append(Paragraph("1. IDENTIFICACIÓN", styles["Heading2"]))
     elements.append(Paragraph(f"{u['nombres']} {u['apellidos']}", styles["BodyText"]))
     elements.append(Paragraph(f"Documento: {u['numero_identificacion']}", styles["BodyText"]))
     elements.append(Paragraph(f"Edad: {u['edad']} | Sexo: {u['sexo_al_nacer']}", styles["BodyText"]))
-    elements.append(Spacer(1, 10))
+    elements.append(Spacer(1, 12))
 
     # =========================
     # 2. MOVIMIENTOS
     # =========================
     mov_df = pd.read_sql(text("""
-        SELECT *
+        SELECT fecha_movimiento, tipo_movimiento, modalidad, observacion
         FROM movimientos_habitante
-        WHERE TRIM(numero_identificacion) = TRIM(:doc)
+        WHERE numero_identificacion::TEXT = :doc
         ORDER BY fecha_movimiento
     """), engine, params={"doc": documento})
 
@@ -100,63 +100,113 @@ def generar_historia_integral(documento, engine):
         for _, r in mov_df.iterrows():
             data.append([
                 str(r["fecha_movimiento"]),
-                r["tipo_movimiento"],
-                r["modalidad"],
-                r["observacion"]
+                str(r["tipo_movimiento"]),
+                str(r["modalidad"]),
+                str(r["observacion"])
             ])
 
         table = Table(data)
         table.setStyle(TableStyle([
             ("BACKGROUND", (0,0), (-1,0), colors.grey),
             ("TEXTCOLOR", (0,0), (-1,0), colors.whitesmoke),
-            ("GRID", (0,0), (-1,-1), 0.5, colors.black)
+            ("GRID", (0,0), (-1,-1), 0.5, colors.black),
+            ("FONTNAME", (0,0), (-1,0), "Helvetica-Bold"),
+            ("FONTSIZE", (0,0), (-1,-1), 8),
         ]))
 
         elements.append(table)
 
-    elements.append(Spacer(1, 10))
+    elements.append(Spacer(1, 12))
 
     # =========================
-    # 3. INTERVENCIONES PAI
+    # 3. PAI REAL
     # =========================
-    pai_df = pd.read_sql(text("""
+    elements.append(Paragraph("3. PLAN DE ATENCIÓN INDIVIDUAL (PAI)", styles["Heading2"]))
+
+    pai_objetivos_df = pd.read_sql(text("""
         SELECT *
-        FROM pai_intervenciones
-        WHERE TRIM(documento_usuario) = TRIM(:doc)
-        ORDER BY fecha
+        FROM pai_objetivos
+        WHERE documento_usuario = :doc
+        ORDER BY fecha_apertura DESC
     """), engine, params={"doc": documento})
 
-    elements.append(Paragraph("3. INTERVENCIONES PAI", styles["Heading2"]))
-
-    if pai_df.empty:
-        elements.append(Paragraph("Sin intervenciones registradas", styles["BodyText"]))
+    if pai_objetivos_df.empty:
+        elements.append(Paragraph("Sin objetivos PAI registrados", styles["BodyText"]))
     else:
-        data = [["Fecha", "Profesional", "Tipo", "Riesgo", "Resultado"]]
 
-        for _, r in pai_df.iterrows():
-            data.append([
-                str(r["fecha"]),
-                r["profesional"],
-                r["tipo_intervencion"],
-                r["riesgo"],
-                r["resultado_intervencion"]
-            ])
+        for _, obj in pai_objetivos_df.iterrows():
 
-        table = Table(data)
-        table.setStyle(TableStyle([
-            ("BACKGROUND", (0,0), (-1,0), colors.darkblue),
-            ("TEXTCOLOR", (0,0), (-1,0), colors.whitesmoke),
-            ("GRID", (0,0), (-1,-1), 0.5, colors.black)
-        ]))
+            elements.append(Spacer(1, 8))
 
-        elements.append(table)
+            elements.append(Paragraph(
+                f"🎯 {obj['objetivo_tipo']} ({obj['estado']})",
+                styles["Heading3"]
+            ))
+
+            elements.append(Paragraph(
+                f"📅 Apertura: {obj['fecha_apertura']} | Meta: {obj['fecha_meta']}",
+                styles["BodyText"]
+            ))
+
+            elements.append(Paragraph(
+                f"📈 Avance: {obj['porcentaje_avance']}% | ODS: {obj['ods_principal']}",
+                styles["BodyText"]
+            ))
+
+            elements.append(Paragraph(
+                f"🧭 Línea política: {obj['linea_politica']}",
+                styles["BodyText"]
+            ))
+
+            elements.append(Paragraph(
+                f"📝 Descripción: {obj['objetivo_descripcion']}",
+                styles["BodyText"]
+            ))
+
+            elements.append(Spacer(1, 6))
+
+            # NOVEDADES POR OBJETIVO
+            novedades_df = pd.read_sql(text("""
+                SELECT *
+                FROM pai_novedades
+                WHERE id_objetivo = :id
+                ORDER BY fecha DESC
+            """), engine, params={"id": int(obj["id"])})
+
+            if novedades_df.empty:
+                elements.append(Paragraph("Sin novedades registradas", styles["BodyText"]))
+            else:
+
+                elements.append(Paragraph("📌 Novedades:", styles["Heading4"]))
+
+                data = [["Fecha", "Profesional", "Tipo", "Descripción", "Avance"]]
+
+                for _, n in novedades_df.iterrows():
+                    data.append([
+                        str(n["fecha"]),
+                        str(n["profesional"]),
+                        str(n["tipo_novedad"]),
+                        str(n["descripcion"]),
+                        str(n["avance_generado"])
+                    ])
+
+                table = Table(data)
+                table.setStyle(TableStyle([
+                    ("BACKGROUND", (0,0), (-1,0), colors.darkblue),
+                    ("TEXTCOLOR", (0,0), (-1,0), colors.whitesmoke),
+                    ("GRID", (0,0), (-1,-1), 0.5, colors.black),
+                    ("FONTNAME", (0,0), (-1,0), "Helvetica-Bold"),
+                    ("FONTSIZE", (0,0), (-1,-1), 7),
+                    ("VALIGN", (0,0), (-1,-1), "TOP"),
+                ]))
+
+                elements.append(table)
 
     # =========================
-    # FINAL PDF
+    # FINAL
     # =========================
     doc.build(elements)
     buffer.seek(0)
-
     return buffer
 
 
