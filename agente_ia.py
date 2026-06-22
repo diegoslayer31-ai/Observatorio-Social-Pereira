@@ -18,6 +18,8 @@ from reportlab.platypus import (
 from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib.pagesizes import letter
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+from io import BytesIO
 
 st.set_page_config(
     page_title="Observatorio Social Asociación Ciudad Futuro",
@@ -42,6 +44,114 @@ from reportlab.platypus import (
 )
 
 from reportlab.lib.styles import getSampleStyleSheet
+def generar_historia_integral(documento, engine):
+    
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=letter)
+
+    styles = getSampleStyleSheet()
+    elements = []
+
+    # =========================
+    # 1. USUARIO
+    # =========================
+    usuario = pd.read_sql(text("""
+        SELECT *
+        FROM habitante_de_calle
+        WHERE numero_identificacion = :doc
+    """), engine, params={"doc": documento})
+
+    if usuario.empty:
+        return None
+
+    u = usuario.iloc[0]
+
+    elements.append(Paragraph("HISTORIA INTEGRAL DE ATENCIÓN", styles["Title"]))
+    elements.append(Spacer(1, 10))
+
+    elements.append(Paragraph("1. IDENTIFICACIÓN", styles["Heading2"]))
+    elements.append(Paragraph(f"{u['nombres']} {u['apellidos']}", styles["BodyText"]))
+    elements.append(Paragraph(f"Documento: {u['numero_identificacion']}", styles["BodyText"]))
+    elements.append(Paragraph(f"Edad: {u['edad']} | Sexo: {u['sexo_al_nacer']}", styles["BodyText"]))
+    elements.append(Spacer(1, 10))
+
+    # =========================
+    # 2. MOVIMIENTOS
+    # =========================
+    movimientos = pd.read_sql(text("""
+        SELECT *
+        FROM movimientos_habitante
+        WHERE numero_identificacion = :doc
+        ORDER BY fecha_movimiento
+    """), engine, params={"doc": documento})
+
+    elements.append(Paragraph("2. MOVIMIENTOS", styles["Heading2"]))
+
+    if not movimientos.empty:
+
+        data = [["Fecha", "Tipo", "Modalidad", "Observación"]]
+
+        for _, r in movimientos.iterrows():
+            data.append([
+                str(r["fecha_movimiento"]),
+                r["tipo_movimiento"],
+                r["modalidad"],
+                r["observacion"]
+            ])
+
+        table = Table(data)
+        table.setStyle(TableStyle([
+            ("BACKGROUND", (0,0), (-1,0), colors.grey),
+            ("TEXTCOLOR", (0,0), (-1,0), colors.whitesmoke),
+            ("GRID", (0,0), (-1,-1), 0.5, colors.black)
+        ]))
+
+        elements.append(table)
+
+    elements.append(Spacer(1, 10))
+
+    # =========================
+    # 3. INTERVENCIONES PAI
+    # =========================
+    pai = pd.read_sql(text("""
+        SELECT *
+        FROM pai_intervenciones
+        WHERE documento_usuario = :doc
+        ORDER BY fecha
+    """), engine, params={"doc": documento})
+
+    elements.append(Paragraph("3. INTERVENCIONES PAI", styles["Heading2"]))
+
+    if not pai.empty:
+
+        data = [["Fecha", "Profesional", "Tipo", "Riesgo", "Resultado"]]
+
+        for _, r in pai.iterrows():
+            data.append([
+                str(r["fecha"]),
+                r["profesional"],
+                r["tipo_intervencion"],
+                r["riesgo"],
+                r["resultado_intervencion"]
+            ])
+
+        table = Table(data)
+        table.setStyle(TableStyle([
+            ("BACKGROUND", (0,0), (-1,0), colors.darkblue),
+            ("TEXTCOLOR", (0,0), (-1,0), colors.whitesmoke),
+            ("GRID", (0,0), (-1,-1), 0.5, colors.black)
+        ]))
+
+        elements.append(table)
+
+    # =========================
+    # BUILD PDF
+    # =========================
+    doc.build(elements)
+    buffer.seek(0)
+    return buffer
+
+
 def gestion_usuarios():
     
     st.title("⚙️ Gestión de usuarios")
@@ -1688,7 +1798,7 @@ with st.sidebar:
 
     st.divider()
 
-tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8= st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9= st.tabs([
 
     "📊 General",
 
@@ -1705,7 +1815,8 @@ tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8= st.tabs([
     "📈 Seguimiento e Impacto",
 
     "📥 Carga Activos"
-
+    
+    "📄 Historia Integral"
 ])
 
 # =========================
@@ -4819,3 +4930,32 @@ with tab8:
 
         except Exception as e:
             st.error(f"❌ Error: {e}")
+    with tab9:
+
+        st.title("📄 Historia Integral de Atención")
+
+        usuarios = pd.read_sql("""
+            SELECT numero_identificacion, nombres, apellidos
+            FROM habitante_de_calle
+        """, engine)
+
+        documento = st.selectbox(
+            "Seleccionar usuario",
+            usuarios["numero_identificacion"],
+            format_func=lambda x:
+                usuarios.loc[usuarios["numero_identificacion"]==x, "nombres"].values[0]
+                + " " +
+                usuarios.loc[usuarios["numero_identificacion"]==x, "apellidos"].values[0]
+        )
+
+        if st.button("📄 Generar PDF"):
+
+            pdf = generar_historia_integral(documento, engine)
+
+            if pdf:
+                st.download_button(
+                    "⬇️ Descargar historia",
+                    pdf,
+                    file_name=f"historia_{documento}.pdf",
+                    mime="application/pdf"
+            )
