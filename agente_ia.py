@@ -52,19 +52,24 @@ def generar_historia_integral(documento, engine):
     styles = getSampleStyleSheet()
     elements = []
 
+    documento = str(documento).strip()
+
     # =========================
     # 1. USUARIO
     # =========================
-    usuario = pd.read_sql(text("""
+    usuario_df = pd.read_sql(text("""
         SELECT *
         FROM habitante_de_calle
-        WHERE numero_identificacion = :doc
+        WHERE TRIM(numero_identificacion) = TRIM(:doc)
     """), engine, params={"doc": documento})
 
-    if usuario.empty:
-        return None
+    if usuario_df.empty:
+        elements.append(Paragraph("NO SE ENCONTRÓ EL USUARIO", styles["Title"]))
+        doc.build(elements)
+        buffer.seek(0)
+        return buffer
 
-    u = usuario.iloc[0]
+    u = usuario_df.iloc[0]
 
     elements.append(Paragraph("HISTORIA INTEGRAL DE ATENCIÓN", styles["Title"]))
     elements.append(Spacer(1, 10))
@@ -78,20 +83,21 @@ def generar_historia_integral(documento, engine):
     # =========================
     # 2. MOVIMIENTOS
     # =========================
-    movimientos = pd.read_sql(text("""
+    mov_df = pd.read_sql(text("""
         SELECT *
         FROM movimientos_habitante
-        WHERE numero_identificacion = :doc
+        WHERE TRIM(numero_identificacion) = TRIM(:doc)
         ORDER BY fecha_movimiento
     """), engine, params={"doc": documento})
 
     elements.append(Paragraph("2. MOVIMIENTOS", styles["Heading2"]))
 
-    if not movimientos.empty:
-
+    if mov_df.empty:
+        elements.append(Paragraph("Sin registros de movimientos", styles["BodyText"]))
+    else:
         data = [["Fecha", "Tipo", "Modalidad", "Observación"]]
 
-        for _, r in movimientos.iterrows():
+        for _, r in mov_df.iterrows():
             data.append([
                 str(r["fecha_movimiento"]),
                 r["tipo_movimiento"],
@@ -113,20 +119,21 @@ def generar_historia_integral(documento, engine):
     # =========================
     # 3. INTERVENCIONES PAI
     # =========================
-    pai = pd.read_sql(text("""
+    pai_df = pd.read_sql(text("""
         SELECT *
         FROM pai_intervenciones
-        WHERE documento_usuario = :doc
+        WHERE TRIM(documento_usuario) = TRIM(:doc)
         ORDER BY fecha
     """), engine, params={"doc": documento})
 
     elements.append(Paragraph("3. INTERVENCIONES PAI", styles["Heading2"]))
 
-    if not pai.empty:
-
+    if pai_df.empty:
+        elements.append(Paragraph("Sin intervenciones registradas", styles["BodyText"]))
+    else:
         data = [["Fecha", "Profesional", "Tipo", "Riesgo", "Resultado"]]
 
-        for _, r in pai.iterrows():
+        for _, r in pai_df.iterrows():
             data.append([
                 str(r["fecha"]),
                 r["profesional"],
@@ -145,10 +152,11 @@ def generar_historia_integral(documento, engine):
         elements.append(table)
 
     # =========================
-    # BUILD PDF
+    # FINAL PDF
     # =========================
     doc.build(elements)
     buffer.seek(0)
+
     return buffer
 
 
@@ -4941,7 +4949,7 @@ with tab8:
         """, engine)
 
         documento = st.selectbox(
-            "Seleccionar usuario",
+            "👤 Seleccione usuario",
             usuarios["numero_identificacion"],
             format_func=lambda x:
                 usuarios.loc[usuarios["numero_identificacion"]==x, "nombres"].values[0]
@@ -4953,10 +4961,9 @@ with tab8:
 
             pdf = generar_historia_integral(documento, engine)
 
-            if pdf:
-                st.download_button(
-                    "⬇️ Descargar historia",
-                    pdf,
-                    file_name=f"historia_{documento}.pdf",
-                    mime="application/pdf"
+            st.download_button(
+                "⬇️ Descargar Historia Integral",
+                data=pdf,
+                file_name=f"historia_{documento}.pdf",
+                mime="application/pdf"
             )
