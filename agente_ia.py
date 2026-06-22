@@ -4930,6 +4930,7 @@ with tab8:
 
         except Exception as e:
             st.error(f"❌ Error: {e}")
+    
     with tab9:
 
         st.title("📄 Historia Integral de Atención")
