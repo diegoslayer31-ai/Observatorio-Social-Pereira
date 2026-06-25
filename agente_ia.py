@@ -4498,9 +4498,7 @@ with tab6:
 
                 )
                 if guardar_novedad:
-            
-                    from sqlalchemy import text
-
+                    
                     query_nov = text("""
 
                         INSERT INTO pai_novedades(
@@ -4568,55 +4566,48 @@ with tab6:
                     st.success("Novedad registrada")
 
                     st.rerun()
-            from sqlalchemy import text
 
-            query = text("""
 
-            UPDATE pai_objetivos
+                # =========================
+                # GUARDAR AVANCE DEL OBJETIVO
+                # =========================
 
-            SET
+                query = text("""
 
-            avance_hitos=:avance_hitos,
+                    UPDATE pai_objetivos
 
-            porcentaje_avance=:porcentaje_avance
+                    SET
 
-            WHERE id=:id
+                        avance_hitos=:avance_hitos,
 
-            """)
+                        porcentaje_avance=:porcentaje_avance
 
-        with engine.begin() as conn:
+                    WHERE id=:id
 
-            conn.execute(
+                """)
 
-                query,
+                with engine.begin() as conn:
 
-                {
+                    conn.execute(
 
-                    "avance_hitos":
+                        query,
 
-                    json.dumps(
+                        {
 
-                        avance_hitos
+                            "avance_hitos":
+                            json.dumps(avance_hitos),
 
-                    ),
+                            "porcentaje_avance":
+                            avance,
 
-                    "porcentaje_avance":
+                            "id":
+                            int(obj["id"])
 
-                    avance,
-
-                    "id":
-
-                    int(
-
-                        obj["id"]
+                        }
 
                     )
 
-                }
-
-            )
-
-            st.divider()
+                st.divider()
             # =========================
             # HISTORIAL NOVEDADES
             # =========================
