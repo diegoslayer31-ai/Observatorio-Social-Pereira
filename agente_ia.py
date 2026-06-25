@@ -4425,7 +4425,17 @@ else:
 
     st.divider()
 
-    
+    # =========================
+    # DICCIONARIO PROFESIONALES
+    # =========================
+
+    profesionales_dict = dict(
+        zip(
+            df_profesionales["id"],
+            df_profesionales["nombre"]
+        )
+    )
+
     # =========================
     # RECORRER OBJETIVOS
     # =========================
@@ -4473,6 +4483,37 @@ else:
             if total > 0
             else 0
         )
+
+        # =========================
+# PROFESIONAL RESPONSABLE
+# =========================
+
+nombre_profesional = "Sin asignar"
+
+if pd.notna(obj["profesional_referente"]):
+
+    try:
+
+        id_profesional = int(
+            float(
+                obj["profesional_referente"]
+            )
+        )
+
+        profesional = df_profesionales[
+            df_profesionales["id"].astype(int)
+            == id_profesional
+        ]
+
+        if not profesional.empty:
+
+            nombre_profesional = (
+                profesional.iloc[0]["nombre"]
+            )
+
+    except Exception:
+
+        nombre_profesional = "Sin asignar"
 
         with st.expander(
 
