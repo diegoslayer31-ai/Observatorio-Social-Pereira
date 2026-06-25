@@ -4425,16 +4425,6 @@ else:
 
     st.divider()
 
-    # =========================
-    # DICCIONARIO PROFESIONALES
-    # =========================
-
-    profesionales_dict = dict(
-        zip(
-            df_profesionales["id"],
-            df_profesionales["nombre"]
-        )
-    )
 
     # =========================
     # RECORRER OBJETIVOS
@@ -4487,35 +4477,19 @@ else:
         # =========================
 # PROFESIONAL RESPONSABLE
 # =========================
+nombre_profesional = (
+    obj["nombre_profesional"]
+    if pd.notna(obj["nombre_profesional"])
+    else "Sin asignar"
+)
 
-nombre_profesional = "Sin asignar"
+rol_profesional = (
+    obj["rol_profesional"]
+    if pd.notna(obj["rol_profesional"])
+    else ""
+)
 
-if pd.notna(obj["profesional_referente"]):
-
-    try:
-
-        id_profesional = int(
-            float(
-                obj["profesional_referente"]
-            )
-        )
-
-        profesional = df_profesionales[
-            df_profesionales["id"].astype(int)
-            == id_profesional
-        ]
-
-        if not profesional.empty:
-
-            nombre_profesional = (
-                profesional.iloc[0]["nombre"]
-            )
-
-    except Exception:
-
-        nombre_profesional = "Sin asignar"
-
-        with st.expander(
+with st.expander(
 
             f"🎯 {obj['objetivo_tipo']} ({avance}%)",
 
@@ -4538,10 +4512,6 @@ if pd.notna(obj["profesional_referente"]):
             c3.metric(
                 "ODS",
                 obj["ods_principal"]
-            )
-
-            st.caption(
-                f"👨‍⚕️ {nombre_profesional}"
             )
 
             st.caption(
