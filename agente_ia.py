@@ -4618,58 +4618,62 @@ with tab6:
 
             st.divider()
             # =========================
-    # HISTORIAL NOVEDADES
-    # =========================
+# HISTORIAL NOVEDADES
+# =========================
 
-    st.markdown("### 🕒 Historial")
+st.markdown("### 🕒 Historial")
 
-    novedades = pd.read_sql(
+novedades = pd.read_sql(
+    f"""
+    SELECT *
+    FROM pai_novedades
+    WHERE id_objetivo={obj['id']}
+    ORDER BY fecha DESC
+    """,
+    engine
+)
 
-        f"""
+if novedades.empty:
 
-        SELECT *
-
-        FROM pai_novedades
-
-        WHERE id_objetivo={obj['id']}
-
-        ORDER BY fecha DESC
-
-        """,
-
-        engine
-
+    st.caption(
+        "Sin novedades registradas"
     )
 
-    if novedades.empty:
+else:
 
-        st.info(
+    for _, nov in novedades.iterrows():
 
-            "Sin novedades registradas"
+        with st.container():
 
-        )
+            c1, c2 = st.columns([0.3, 0.7])
 
-    else:
+            with c1:
 
-        for _, nov in novedades.iterrows():
+                st.caption(
+                    f"📅 {nov['fecha']:%Y-%m-%d}"
+                )
 
-            st.info(
+                st.caption(
+                    f"👨‍⚕️ {nov['profesional']}"
+                )
 
-                f"""
+            with c2:
 
-                📅 {nov['fecha']}
+                st.markdown(
+                    f"**{nov['tipo_novedad']}**"
+                )
 
-                👨‍⚕️ {nov['profesional']}
+                st.write(
+                    nov['descripcion']
+                )
 
-                📌 {nov['tipo_novedad']}
+                if nov["evidencia"]:
 
-                📝 {nov['descripcion']}
+                    st.caption(
+                        f"📂 {nov['evidencia']}"
+                    )
 
-                📂 {nov['evidencia']}
-
-                """
-
-            )
+            st.divider()
 with tab7:
 
     st.title("📈 Seguimiento e Impacto - Reducción de Riesgos y Daños")
