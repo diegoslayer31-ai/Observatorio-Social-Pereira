@@ -4420,249 +4420,150 @@ with tab6:
                     avance/100
 
                 )
-                objetivos = pd.read_sql(
-
-            f"""
-
-            SELECT *
-
-            FROM pai_objetivos
-
-            WHERE documento_usuario='{usuario_sel}'
-
-            """,
-
-            engine
-
-        )
-
-            if not objetivos.empty:
-
-                objetivos_activos = len(
-
-                    objetivos[
-                        objetivos["estado"]=="Activo"
-                    ]
-
-                )
-
-                objetivos_cumplidos = len(
-
-                    objetivos[
-                        objetivos["porcentaje_avance"]>=100
-                    ]
-
-                )
-
-                avance_promedio = round(
-
-                    objetivos["porcentaje_avance"]
-
-                    .fillna(0)
-
-                    .mean(),
-
-                    1
-
-                )
-
-                ods_impactados = len(
-
-                    set(
-
-                        ",".join(
-
-                            objetivos["ods_principal"]
-
-                            .fillna("")
-
-                        )
-
-                        .split(",")
-
-                    )
-
-                )
-
-                c1,c2,c3,c4 = st.columns(4)
-
-                c1.metric(
-
-                    "🎯 Activos",
-
-                    objetivos_activos
-
-                )
-
-                c2.metric(
-
-                    "✅ Cumplidos",
-
-                    objetivos_cumplidos
-
-                )
-
-                c3.metric(
-
-                    "📈 Avance promedio",
-
-                    f"{avance_promedio}%"
-
-                )
-
-                c4.metric(
-
-                    "🌍 ODS impactados",
-
-                    ods_impactados
-
-                )
-
             
-                st.divider()
-            for actividad in actividades:
+                for actividad in actividades:
 
-                hecho = actividad in avance_hitos
+                    hecho = actividad in avance_hitos
 
-                col1,col2 = st.columns(
-                    [0.1,0.9]
+                    col1,col2 = st.columns(
+                        [0.1,0.9]
+                    )
+
+                    with col1:
+
+                        marcado = st.checkbox(
+
+                            "",
+
+                            value=hecho,
+
+                            key=f"{obj['id']}_{actividad}"
+
+                        )
+
+                    with col2:
+
+                        st.write(
+                            actividad
+                        )
+
+                    if marcado:
+
+                        if actividad not in avance_hitos:
+
+                            avance_hitos.append(
+                                actividad
+                            )
+
+                    else:
+
+                        if actividad in avance_hitos:
+
+                            avance_hitos.remove(
+                                actividad
+                            )
+                st.markdown("### 📝 Registrar novedad")
+
+                tipo_novedad = st.selectbox(
+
+                    "Actividad realizada",
+
+                    actividades,
+
+                    key=f"tipo_{obj['id']}"
+
                 )
 
-                with col1:
+                descripcion_novedad = st.text_area(
 
-                    marcado = st.checkbox(
+                    "Descripción",
 
-                        "",
+                    key=f"desc_{obj['id']}"
 
-                        value=hecho,
+                )
 
-                        key=f"{obj['id']}_{actividad}"
+                evidencia = st.text_input(
 
-                    )
+                    "Evidencia",
 
-                with col2:
+                    key=f"evid_{obj['id']}"
 
-                    st.write(
-                        actividad
-                    )
+                )
 
-                if marcado:
+                guardar_novedad = st.button(
 
-                    if actividad not in avance_hitos:
+                    "💾 Guardar novedad",
 
-                        avance_hitos.append(
-                            actividad
+                    key=f"guardar_{obj['id']}"
+
+                )
+                if guardar_novedad:
+            
+                    from sqlalchemy import text
+
+                    query_nov = text("""
+
+                        INSERT INTO pai_novedades(
+
+                            id_objetivo,
+
+                            fecha,
+
+                            profesional,
+
+                            tipo_novedad,
+
+                            descripcion,
+
+                            avance_generado,
+
+                            evidencia
+
                         )
 
-                else:
+                        VALUES(
 
-                    if actividad in avance_hitos:
+                            :id_objetivo,
 
-                        avance_hitos.remove(
-                            actividad
+                            NOW(),
+
+                            :profesional,
+
+                            :tipo_novedad,
+
+                            :descripcion,
+
+                            :avance_generado,
+
+                            :evidencia
+
                         )
-            st.markdown("### 📝 Registrar novedad")
 
-            tipo_novedad = st.selectbox(
+                    """)
 
-                "Actividad realizada",
+                    with engine.begin() as conn:
 
-                actividades,
+                        conn.execute(
 
-                key=f"tipo_{obj['id']}"
+                            query_nov,
 
-            )
+                            {
 
-            descripcion_novedad = st.text_area(
+                                "id_objetivo": int(obj["id"]),
 
-                "Descripción",
+                                "profesional": nombre_profesional,
 
-                key=f"desc_{obj['id']}"
+                                "tipo_novedad": tipo_novedad,
 
-            )
+                                "descripcion": descripcion_novedad,
 
-            evidencia = st.text_input(
+                                "avance_generado": avance,
 
-                "Evidencia",
+                                "evidencia": evidencia
 
-                key=f"evid_{obj['id']}"
+                            }
 
-            )
-
-            guardar_novedad = st.button(
-
-                "💾 Guardar novedad",
-
-                key=f"guardar_{obj['id']}"
-
-            )
-            if guardar_novedad:
-        
-                from sqlalchemy import text
-
-                query_nov = text("""
-
-                    INSERT INTO pai_novedades(
-
-                        id_objetivo,
-
-                        fecha,
-
-                        profesional,
-
-                        tipo_novedad,
-
-                        descripcion,
-
-                        avance_generado,
-
-                        evidencia
-
-                    )
-
-                    VALUES(
-
-                        :id_objetivo,
-
-                        NOW(),
-
-                        :profesional,
-
-                        :tipo_novedad,
-
-                        :descripcion,
-
-                        :avance_generado,
-
-                        :evidencia
-
-                    )
-
-                """)
-
-                with engine.begin() as conn:
-
-                    conn.execute(
-
-                        query_nov,
-
-                        {
-
-                            "id_objetivo": int(obj["id"]),
-
-                            "profesional": nombre_profesional,
-
-                            "tipo_novedad": tipo_novedad,
-
-                            "descripcion": descripcion_novedad,
-
-                            "avance_generado": avance,
-
-                            "evidencia": evidencia
-
-                        }
-
-                    )
+                        )
 
                 st.success("Novedad registrada")
 
