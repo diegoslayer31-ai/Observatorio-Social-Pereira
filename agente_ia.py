@@ -5147,8 +5147,8 @@ with tab8:
         except Exception as e:
             st.error(f"❌ Error: {e}")
     
-    with tab9:
-
+with tab9:
+    try:
         st.title("📄 Historia Integral de Atención")
 
         usuarios = pd.read_sql("""
@@ -5156,17 +5156,24 @@ with tab8:
             FROM habitante_de_calle
         """, engine)
 
+        st.write("Usuarios encontrados:", len(usuarios))
+
         documento = st.selectbox(
             "👤 Seleccione usuario",
             usuarios["numero_identificacion"],
             format_func=lambda x:
-                usuarios.loc[usuarios["numero_identificacion"]==x, "nombres"].values[0]
+                usuarios.loc[
+                    usuarios["numero_identificacion"] == x,
+                    "nombres"
+                ].values[0]
                 + " " +
-                usuarios.loc[usuarios["numero_identificacion"]==x, "apellidos"].values[0]
+                usuarios.loc[
+                    usuarios["numero_identificacion"] == x,
+                    "apellidos"
+                ].values[0]
         )
 
         if st.button("📄 Generar PDF"):
-
             pdf = generar_historia_integral(documento, engine)
 
             st.download_button(
@@ -5175,3 +5182,6 @@ with tab8:
                 file_name=f"historia_{documento}.pdf",
                 mime="application/pdf"
             )
+
+    except Exception as e:
+        st.error(f"Error: {e}")
