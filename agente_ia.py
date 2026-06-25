@@ -4939,11 +4939,12 @@ with tab7:
     st.divider()
 
     # =========================
-    # VALIDACIÓN
-    # =========================
-    if df.empty:
-        st.info("No hay registros en este rango.")
-        st.stop()
+# VALIDACIÓN
+# =========================
+if df.empty:
+    st.info("No hay registros en este rango.")
+
+else:
 
     # =========================
     # KPIs
@@ -4960,14 +4961,12 @@ with tab7:
     # GRÁFICAS
     # =========================
 
-    # 📈 evolución del avance
     df["fecha"] = pd.to_datetime(df["fecha"])
     evol = df.groupby(df["fecha"].dt.date)["avance_generado"].mean()
 
     st.subheader("📈 Evolución del avance")
     st.line_chart(evol)
 
-    # 👨‍⚕️ productividad
     st.subheader("👨‍⚕️ Intervenciones por profesional")
     prod = df.groupby("profesional")["id"].count().sort_values(ascending=False)
     st.bar_chart(prod)
