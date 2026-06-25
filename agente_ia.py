@@ -52,22 +52,6 @@ def generar_historia_integral(documento, engine):
 
     styles = getSampleStyleSheet()
     elements = []
-    elements.append(Paragraph("INFORME PAI - DOCUMENTO AUDITABLE", styles["Title"]))
-    elements.append(Spacer(1, 6))
-
-    elements.append(Paragraph(
-        "Sistema de Plan de Atención Individual - Reducción de Riesgos y Daños",
-        styles["BodyText"]
-    ))
-
-    elements.append(Spacer(1, 6))
-
-    elements.append(Paragraph(
-        "Documento de carácter institucional - Uso exclusivo para seguimiento y control",
-        styles["BodyText"]
-    ))
-
-    elements.append(Spacer(1, 12))
 
     documento = str(documento).strip()
     from datetime import datetime
@@ -85,29 +69,6 @@ def generar_historia_integral(documento, engine):
 
     if usuario_df.empty:
         elements.append(Paragraph("NO SE ENCONTRÓ EL USUARIO", styles["Title"]))
-        elements.append(Spacer(1, 20))
-
-        elements.append(Paragraph("────────────────────────────────────────", styles["BodyText"]))
-
-        elements.append(Paragraph(
-            f"ID del informe: PAI-{reporte_id}",
-            styles["BodyText"]
-        ))
-
-        elements.append(Paragraph(
-            "Este documento fue generado automáticamente desde el sistema PAI.",
-            styles["BodyText"]
-        ))
-
-        elements.append(Paragraph(
-            "Cualquier modificación posterior invalida su trazabilidad institucional.",
-            styles["BodyText"]
-        ))
-
-        elements.append(Paragraph(
-            f"Fecha de cierre del informe: {fecha_reporte}",
-            styles["BodyText"]
-        ))
         doc.build(elements)
         buffer.seek(0)
         return buffer
@@ -318,48 +279,6 @@ def generar_historia_integral(documento, engine):
                 ))
 
             elements.append(Spacer(1, 4))
-            control_df = pd.read_sql(text("""
-        SELECT
-            COUNT(*) AS objetivos,
-            SUM(CASE WHEN estado = 'Activo' THEN 1 ELSE 0 END) AS activos,
-            SUM(CASE WHEN porcentaje_avance >= 100 THEN 1 ELSE 0 END) AS cumplidos,
-            AVG(porcentaje_avance) AS avance_promedio
-        FROM pai_objetivos
-        WHERE documento_usuario = :doc
-    """), engine, params={"doc": documento})
-
-
-    inconsistencias_df = pd.read_sql(text("""
-        SELECT COUNT(*) AS sin_novedades
-        FROM pai_objetivos o
-        LEFT JOIN pai_novedades n ON n.id_objetivo = o.id
-        WHERE o.documento_usuario = :doc
-        AND n.id IS NULL
-"""), engine, params={"doc": documento})
-    total_obj = int(control_df.iloc[0]["objetivos"] or 0)
-    activos = int(control_df.iloc[0]["activos"] or 0)
-    cumplidos = int(control_df.iloc[0]["cumplidos"] or 0)
-    avance_prom = float(control_df.iloc[0]["avance_promedio"] or 0)
-
-    sin_novedades = int(inconsistencias_df.iloc[0]["sin_novedades"] or 0)
-    elements.append(Paragraph("CONTROL DE CONSISTENCIA", styles["Heading2"]))
-    elements.append(Spacer(1, 6))
-    elements.append(Paragraph(f"Total de objetivos: {total_obj}", styles["BodyText"]))
-    elements.append(Paragraph(f"Objetivos activos: {activos}", styles["BodyText"]))
-    elements.append(Paragraph(f"Objetivos cumplidos: {cumplidos}", styles["BodyText"]))
-    elements.append(Paragraph(f"Avance promedio: {round(avance_prom, 1)}%", styles["BodyText"]))
-    elements.append(Paragraph(f"Objetivos sin novedades: {sin_novedades}", styles["BodyText"]))
-    if sin_novedades > 0:
-            elements.append(Paragraph(
-            "⚠ ALERTA: Existen objetivos sin registro de novedades",
-            styles["BodyText"]
-        ))
-
-    if avance_prom > 100:
-        elements.append(Paragraph(
-            "⚠ ALERTA: Inconsistencia en avance mayor a 100%",
-            styles["BodyText"]
-        ))
     # =========================
     # FINAL
     # =========================
@@ -4113,7 +4032,9 @@ with tab6:
 
         st.markdown("## ➕ Crear objetivo PAI")
 
-    
+        # =========================
+        # OBJETIVO (FUERA DEL FORMULARIO)
+        # =========================
         # =========================
         # ESTADO INICIAL
         # =========================
@@ -4336,27 +4257,27 @@ with tab6:
             )
 
             st.rerun()
-                # =========================
+            # =========================
         # OBJETIVOS ACTIVOS
         # =========================
 
         st.divider()
+
         st.markdown("## 🎯 Objetivos activos")
 
-        objetivos = pd.read_sql(
-            f"""
-            SELECT
-                p.*,
-                pr.nombre AS nombre_profesional,
-                pr.rol AS rol_profesional
-            FROM pai_objetivos p
-            LEFT JOIN profesionales pr
-                ON pr.id = p.profesional_referente
-            WHERE p.documento_usuario='{usuario_sel}'
-            ORDER BY p.fecha_apertura DESC
-            """,
-            engine
-        )
+        objetivos = pd.read_sql(f"""
+
+            SELECT *
+
+            FROM pai_objetivos
+
+            WHERE documento_usuario='{usuario_sel}'
+
+            ORDER BY fecha_apertura DESC
+
+        """, engine)
+
+        import json
 
         if objetivos.empty:
 
@@ -4366,273 +4287,299 @@ with tab6:
 
         else:
 
-            # =========================
-            # INDICADORES GENERALES
-            # =========================
-
-            objetivos_activos = len(
-                objetivos[
-                    objetivos["estado"] == "Activo"
-                ]
-            )
-
-            objetivos_cumplidos = len(
-                objetivos[
-                    objetivos["porcentaje_avance"] >= 100
-                ]
-            )
-
-            avance_promedio = round(
-                objetivos["porcentaje_avance"]
-                .fillna(0)
-                .mean(),
-                1
-            )
-
-            ods_impactados = len(
-                set(
-                    ",".join(
-                        objetivos["ods_principal"]
-                        .fillna("")
-                        .astype(str)
-                    ).split(",")
-                )
-            )
-
-            c1, c2, c3, c4 = st.columns(4)
-
-            c1.metric(
-                "🎯 Activos",
-                objetivos_activos
-            )
-
-            c2.metric(
-                "✅ Cumplidos",
-                objetivos_cumplidos
-            )
-
-            c3.metric(
-                "📈 Avance promedio",
-                f"{avance_promedio}%"
-            )
-
-            c4.metric(
-                "🌍 ODS impactados",
-                ods_impactados
-            )
-
-            st.divider()
-
-
-    # =========================
-    # RECORRER OBJETIVOS
-    # =========================
-
-    for _, obj in objetivos.iterrows():
-
-        actividades = []
-
-        if obj["actividades"]:
-
-            try:
-
-                actividades = json.loads(
-                    obj["actividades"]
-                )
-
-            except:
+            for _, obj in objetivos.iterrows():
+                
+                # =========================
+                # ACTIVIDADES
+                # =========================
 
                 actividades = []
 
-        avance_hitos = []
+                if obj["actividades"]:
 
-        if obj["avance_hitos"]:
+                    try:
 
-            try:
+                        actividades = json.loads(
+                            obj["actividades"]
+                        )
 
-                avance_hitos = json.loads(
-                    obj["avance_hitos"]
-                )
+                    except:
 
-            except:
+                        actividades = []
+
+                # =========================
+                # AVANCE HITOS
+                # =========================
 
                 avance_hitos = []
 
-        total = len(actividades)
+                if obj["avance_hitos"]:
 
-        avance = (
-            round(
-                (
-                    len(avance_hitos)
-                    / total
-                ) * 100,
-                1
-            )
-            if total > 0
-            else 0
+                    try:
+
+                        avance_hitos = json.loads(
+                            obj["avance_hitos"]
+                        )
+
+                    except:
+
+                        avance_hitos = []
+
+                # =========================
+                # CALCULAR AVANCE
+                # =========================
+
+                total = len(actividades)
+
+                if total == 0:
+
+                    avance = 0
+
+                else:
+
+                    avance = round(
+
+                        (
+
+                            len(avance_hitos)
+
+                            / total
+
+                        ) * 100,
+
+                        1
+
+                    )
+
+                # =========================
+                # PROFESIONAL
+                # =========================
+
+                nombre_profesional = "Sin asignar"
+
+                if obj["profesional_referente"]:
+
+                    profesional = pd.read_sql(
+
+                        f"""
+
+                        SELECT nombre
+
+                        FROM profesionales
+
+                        WHERE id={obj['profesional_referente']}
+
+                        """,
+
+                        engine
+
+                    )
+
+                    if not profesional.empty:
+
+                        nombre_profesional = profesional.iloc[0]["nombre"]
+
+                # =========================
+                # MOSTRAR OBJETIVO
+                # =========================
+
+                st.markdown(
+
+                    f"### 🎯 {obj['objetivo_tipo']}"
+
+                )
+
+                c1,c2,c3 = st.columns(3)
+
+                c1.metric(
+
+                    "Avance",
+
+                    f"{avance}%"
+
+                )
+
+                c2.metric(
+
+                    "Estado",
+
+                    obj["estado"]
+
+                )
+
+                c3.metric(
+
+                    "ODS",
+
+                    obj["ods_principal"]
+
+                )
+
+                st.caption(
+
+                    f"👨‍⚕️ {nombre_profesional}"
+
+                )
+
+                st.caption(
+
+                    f"🏛️ {obj['linea_politica']}"
+
+                )
+
+                st.write(
+
+                    obj["objetivo_descripcion"]
+
+                )
+
+                st.progress(
+
+                    avance/100
+
+                )
+                objetivos = pd.read_sql(
+
+            f"""
+
+            SELECT *
+
+            FROM pai_objetivos
+
+            WHERE documento_usuario='{usuario_sel}'
+
+            """,
+
+            engine
+
         )
 
-        # =========================
-# PROFESIONAL RESPONSABLE
-# =========================
-nombre_profesional = (
-    obj["nombre_profesional"]
-    if pd.notna(obj["nombre_profesional"])
-    else "Sin asignar"
-)
+            if not objetivos.empty:
 
-rol_profesional = (
-    obj["rol_profesional"]
-    if pd.notna(obj["rol_profesional"])
-    else ""
-)
+                objetivos_activos = len(
 
-with st.expander(
+                    objetivos[
+                        objetivos["estado"]=="Activo"
+                    ]
 
-            f"🎯 {obj['objetivo_tipo']} ({avance}%)",
+                )
 
-            expanded=False
+                objetivos_cumplidos = len(
 
-        ):
+                    objetivos[
+                        objetivos["porcentaje_avance"]>=100
+                    ]
 
-            c1, c2, c3 = st.columns(3)
+                )
 
-            c1.metric(
-                "Avance",
-                f"{avance}%"
-            )
+                avance_promedio = round(
 
-            c2.metric(
-                "Estado",
-                obj["estado"]
-            )
+                    objetivos["porcentaje_avance"]
 
-            c3.metric(
-                "ODS",
-                obj["ods_principal"]
-            )
+                    .fillna(0)
 
-            st.caption(
-                f"🏛️ {obj['linea_politica']}"
-            )
+                    .mean(),
 
-            st.write(
-                obj["objetivo_descripcion"]
-            )
+                    1
 
-            st.progress(
-                avance / 100
-            )
+                )
 
-            st.markdown(
-                "#### 🧭 Actividades"
-            )
+                ods_impactados = len(
 
-            nuevos_hitos = avance_hitos.copy()
+                    set(
 
-            for actividad in actividades:
+                        ",".join(
 
-                marcado = st.checkbox(
+                            objetivos["ods_principal"]
 
-                    actividad,
+                            .fillna("")
 
-                    value=(
-                        actividad
-                        in nuevos_hitos
-                    ),
+                        )
 
-                    key=(
-                        f"chk_"
-                        f"{obj['id']}_"
-                        f"{actividad}"
+                        .split(",")
+
                     )
 
                 )
 
+                c1,c2,c3,c4 = st.columns(4)
+
+                c1.metric(
+
+                    "🎯 Activos",
+
+                    objetivos_activos
+
+                )
+
+                c2.metric(
+
+                    "✅ Cumplidos",
+
+                    objetivos_cumplidos
+
+                )
+
+                c3.metric(
+
+                    "📈 Avance promedio",
+
+                    f"{avance_promedio}%"
+
+                )
+
+                c4.metric(
+
+                    "🌍 ODS impactados",
+
+                    ods_impactados
+
+                )
+
+            
+                st.divider()
+            for actividad in actividades:
+
+                hecho = actividad in avance_hitos
+
+                col1,col2 = st.columns(
+                    [0.1,0.9]
+                )
+
+                with col1:
+
+                    marcado = st.checkbox(
+
+                        "",
+
+                        value=hecho,
+
+                        key=f"{obj['id']}_{actividad}"
+
+                    )
+
+                with col2:
+
+                    st.write(
+                        actividad
+                    )
+
                 if marcado:
 
-                    if actividad not in nuevos_hitos:
+                    if actividad not in avance_hitos:
 
-                        nuevos_hitos.append(
+                        avance_hitos.append(
                             actividad
                         )
 
                 else:
 
-                    if actividad in nuevos_hitos:
+                    if actividad in avance_hitos:
 
-                        nuevos_hitos.remove(
+                        avance_hitos.remove(
                             actividad
                         )
-
-            nuevo_avance = (
-                round(
-                    (
-                        len(nuevos_hitos)
-                        / total
-                    ) * 100,
-                    1
-                )
-                if total > 0
-                else 0
-            )
-
-            if st.button(
-
-                "💾 Guardar avance",
-
-                key=f"guardar_avance_{obj['id']}"
-
-            ):
-
-                query_update = text(
-                    """
-                    UPDATE pai_objetivos
-                    SET
-                        avance_hitos=:avance_hitos,
-                        porcentaje_avance=:porcentaje_avance
-                    WHERE id=:id
-                    """
-                )
-
-                with engine.begin() as conn:
-
-                    conn.execute(
-
-                        query_update,
-
-                        {
-
-                            "avance_hitos":
-                            json.dumps(
-                                nuevos_hitos
-                            ),
-
-                            "porcentaje_avance":
-                            nuevo_avance,
-
-                            "id":
-                            int(obj["id"])
-
-                        }
-
-                    )
-
-                st.success(
-                    "Avance actualizado"
-                )
-
-                st.rerun()
-
-            st.divider()
-
-            # =========================
-            # NOVEDADES
-            # =========================
-
-            st.markdown(
-                "#### 📝 Registrar novedad"
-            )
+            st.markdown("### 📝 Registrar novedad")
 
             tipo_novedad = st.selectbox(
 
@@ -4660,24 +4607,33 @@ with st.expander(
 
             )
 
-            if st.button(
+            guardar_novedad = st.button(
 
                 "💾 Guardar novedad",
 
-                key=f"guardar_nov_{obj['id']}"
+                key=f"guardar_{obj['id']}"
 
-            ):
+            )
+            if guardar_novedad:
+        
+                from sqlalchemy import text
 
-                query_nov = text(
-                    """
+                query_nov = text("""
+
                     INSERT INTO pai_novedades(
 
                         id_objetivo,
+
                         fecha,
+
                         profesional,
+
                         tipo_novedad,
+
                         descripcion,
+
                         avance_generado,
+
                         evidencia
 
                     )
@@ -4685,16 +4641,22 @@ with st.expander(
                     VALUES(
 
                         :id_objetivo,
+
                         NOW(),
+
                         :profesional,
+
                         :tipo_novedad,
+
                         :descripcion,
+
                         :avance_generado,
+
                         :evidencia
 
                     )
-                    """
-                )
+
+                """)
 
                 with engine.begin() as conn:
 
@@ -4704,77 +4666,127 @@ with st.expander(
 
                         {
 
-                            "id_objetivo":
-                            int(obj["id"]),
+                            "id_objetivo": int(obj["id"]),
 
-                            "profesional":
-                            nombre_profesional,
+                            "profesional": nombre_profesional,
 
-                            "tipo_novedad":
-                            tipo_novedad,
+                            "tipo_novedad": tipo_novedad,
 
-                            "descripcion":
-                            descripcion_novedad,
+                            "descripcion": descripcion_novedad,
 
-                            "avance_generado":
-                            nuevo_avance,
+                            "avance_generado": avance,
 
-                            "evidencia":
-                            evidencia
+                            "evidencia": evidencia
 
                         }
 
                     )
 
-                st.success(
-                    "Novedad registrada"
-                )
+                st.success("Novedad registrada")
 
                 st.rerun()
+            from sqlalchemy import text
+
+            query = text("""
+
+            UPDATE pai_objetivos
+
+            SET
+
+            avance_hitos=:avance_hitos,
+
+            porcentaje_avance=:porcentaje_avance
+
+            WHERE id=:id
+
+            """)
+
+        with engine.begin() as conn:
+
+            conn.execute(
+
+                query,
+
+                {
+
+                    "avance_hitos":
+
+                    json.dumps(
+
+                        avance_hitos
+
+                    ),
+
+                    "porcentaje_avance":
+
+                    avance,
+
+                    "id":
+
+                    int(
+
+                        obj["id"]
+
+                    )
+
+                }
+
+            )
 
             st.divider()
-
             # =========================
-            # HISTORIAL
-            # =========================
+    # HISTORIAL NOVEDADES
+    # =========================
 
-            st.markdown(
-                "#### 🕒 Historial"
-            )
+    st.markdown("### 🕒 Historial")
 
-            novedades = pd.read_sql(
+    novedades = pd.read_sql(
+
+        f"""
+
+        SELECT *
+
+        FROM pai_novedades
+
+        WHERE id_objetivo={obj['id']}
+
+        ORDER BY fecha DESC
+
+        """,
+
+        engine
+
+    )
+
+    if novedades.empty:
+
+        st.info(
+
+            "Sin novedades registradas"
+
+        )
+
+    else:
+
+        for _, nov in novedades.iterrows():
+
+            st.info(
+
                 f"""
-                SELECT *
-                FROM pai_novedades
-                WHERE id_objetivo={obj['id']}
-                ORDER BY fecha DESC
-                """,
-                engine
+
+                📅 {nov['fecha']}
+
+                👨‍⚕️ {nov['profesional']}
+
+                📌 {nov['tipo_novedad']}
+
+                📝 {nov['descripcion']}
+
+                📂 {nov['evidencia']}
+
+                """
+
             )
-
-            if novedades.empty:
-
-                st.info(
-                    "Sin novedades registradas"
-                )
-
-            else:
-
-                for _, nov in novedades.iterrows():
-
-                    st.info(
-                        f"""
-📅 {nov['fecha']}
-
-👨‍⚕️ {nov['profesional']}
-
-📌 {nov['tipo_novedad']}
-
-📝 {nov['descripcion']}
-
-📂 {nov['evidencia']}
-                        """
-                    )
 with tab7:
 
     st.title("📈 Seguimiento e Impacto - Reducción de Riesgos y Daños")
@@ -4846,12 +4858,11 @@ with tab7:
     st.divider()
 
     # =========================
-# VALIDACIÓN
-# =========================
-if df.empty:
-    st.info("No hay registros en este rango.")
-
-else:
+    # VALIDACIÓN
+    # =========================
+    if df.empty:
+        st.info("No hay registros en este rango.")
+        st.stop()
 
     # =========================
     # KPIs
@@ -4868,12 +4879,14 @@ else:
     # GRÁFICAS
     # =========================
 
+    # 📈 evolución del avance
     df["fecha"] = pd.to_datetime(df["fecha"])
     evol = df.groupby(df["fecha"].dt.date)["avance_generado"].mean()
 
     st.subheader("📈 Evolución del avance")
     st.line_chart(evol)
 
+    # 👨‍⚕️ productividad
     st.subheader("👨‍⚕️ Intervenciones por profesional")
     prod = df.groupby("profesional")["id"].count().sort_values(ascending=False)
     st.bar_chart(prod)
@@ -5053,8 +5066,8 @@ with tab8:
         except Exception as e:
             st.error(f"❌ Error: {e}")
     
-with tab9:
-    try:
+    with tab9:
+
         st.title("📄 Historia Integral de Atención")
 
         usuarios = pd.read_sql("""
@@ -5062,24 +5075,17 @@ with tab9:
             FROM habitante_de_calle
         """, engine)
 
-        st.write("Usuarios encontrados:", len(usuarios))
-
         documento = st.selectbox(
             "👤 Seleccione usuario",
             usuarios["numero_identificacion"],
             format_func=lambda x:
-                usuarios.loc[
-                    usuarios["numero_identificacion"] == x,
-                    "nombres"
-                ].values[0]
+                usuarios.loc[usuarios["numero_identificacion"]==x, "nombres"].values[0]
                 + " " +
-                usuarios.loc[
-                    usuarios["numero_identificacion"] == x,
-                    "apellidos"
-                ].values[0]
+                usuarios.loc[usuarios["numero_identificacion"]==x, "apellidos"].values[0]
         )
 
         if st.button("📄 Generar PDF"):
+
             pdf = generar_historia_integral(documento, engine)
 
             st.download_button(
@@ -5088,6 +5094,3 @@ with tab9:
                 file_name=f"historia_{documento}.pdf",
                 mime="application/pdf"
             )
-
-    except Exception as e:
-        st.error(f"Error: {e}")
