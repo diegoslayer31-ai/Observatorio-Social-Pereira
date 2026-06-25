@@ -4621,7 +4621,7 @@ with tab6:
             # HISTORIAL NOVEDADES
             # =========================
 
-            st.markdown("### 🕒 Historial")
+        with st.expander("🕒 Ver historial"):
 
             novedades = pd.read_sql(
                 f"""
@@ -4643,43 +4643,29 @@ with tab6:
 
                 for _, nov in novedades.iterrows():
 
-                    with st.container():
+                    st.markdown(
+                        f"""
+                        **📌 {nov['tipo_novedad']}**
 
-                        c1, c2 = st.columns([0.3, 0.7])
+                        📅 {nov['fecha']}
 
-                        with c1:
+                        👨‍⚕️ {nov['profesional']}
 
-                            st.caption(
-                                f"📅 {nov['fecha']:%Y-%m-%d}"
-                            )
+                        📝 {nov['descripcion']}
+                        """
+                    )
 
-                            st.caption(
-                                f"👨‍⚕️ {nov['profesional']}"
-                            )
+                    if nov["evidencia"]:
 
-                        with c2:
+                        st.caption(
+                            f"📂 {nov['evidencia']}"
+                        )
 
-                            st.markdown(
-                                f"**{nov['tipo_novedad']}**"
-                            )
-
-                            st.write(
-                                nov['descripcion']
-                            )
-
-                            if nov["evidencia"]:
-
-                                st.caption(
-                                    f"📂 {nov['evidencia']}"
-                                )
-
-                        st.divider()
+                    st.divider()
 with tab7:
 
     st.title("📈 Seguimiento e Impacto - Reducción de Riesgos y Daños")
 
-    from sqlalchemy import text
-    import pandas as pd
 
     # =========================
     # PROFESIONALES
