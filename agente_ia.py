@@ -5148,40 +5148,5 @@ with tab8:
             st.error(f"❌ Error: {e}")
     
 with tab9:
-    try:
-        st.title("📄 Historia Integral de Atención")
-
-        usuarios = pd.read_sql("""
-            SELECT numero_identificacion, nombres, apellidos
-            FROM habitante_de_calle
-        """, engine)
-
-        st.write("Usuarios encontrados:", len(usuarios))
-
-        documento = st.selectbox(
-            "👤 Seleccione usuario",
-            usuarios["numero_identificacion"],
-            format_func=lambda x:
-                usuarios.loc[
-                    usuarios["numero_identificacion"] == x,
-                    "nombres"
-                ].values[0]
-                + " " +
-                usuarios.loc[
-                    usuarios["numero_identificacion"] == x,
-                    "apellidos"
-                ].values[0]
-        )
-
-        if st.button("📄 Generar PDF"):
-            pdf = generar_historia_integral(documento, engine)
-
-            st.download_button(
-                "⬇️ Descargar Historia Integral",
-                data=pdf,
-                file_name=f"historia_{documento}.pdf",
-                mime="application/pdf"
-            )
-
-    except Exception as e:
-        st.error(f"Error: {e}")
+    st.write("ENTRÓ A TAB9")
+    st.title("📄 Historia Integral de Atención")
