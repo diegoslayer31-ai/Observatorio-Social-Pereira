@@ -4113,9 +4113,7 @@ with tab6:
 
         st.markdown("## ➕ Crear objetivo PAI")
 
-        # =========================
-        # OBJETIVO (FUERA DEL FORMULARIO)
-        # =========================
+    
         # =========================
         # ESTADO INICIAL
         # =========================
@@ -4338,92 +4336,92 @@ with tab6:
             )
 
             st.rerun()
+                # =========================
+        # OBJETIVOS ACTIVOS
         # =========================
-# OBJETIVOS ACTIVOS
-# =========================
 
-st.divider()
-st.markdown("## 🎯 Objetivos activos")
+        st.divider()
+        st.markdown("## 🎯 Objetivos activos")
 
-objetivos = pd.read_sql(
-    f"""
-    SELECT
-        p.*,
-        pr.nombre AS nombre_profesional,
-        pr.rol AS rol_profesional
-    FROM pai_objetivos p
-    LEFT JOIN profesionales pr
-        ON pr.id = p.profesional_referente
-    WHERE p.documento_usuario='{usuario_sel}'
-    ORDER BY p.fecha_apertura DESC
-    """,
-    engine
-)
-
-if objetivos.empty:
-
-    st.info(
-        "Este usuario aún no tiene objetivos."
-    )
-
-else:
-
-    # =========================
-    # INDICADORES GENERALES
-    # =========================
-
-    objetivos_activos = len(
-        objetivos[
-            objetivos["estado"] == "Activo"
-        ]
-    )
-
-    objetivos_cumplidos = len(
-        objetivos[
-            objetivos["porcentaje_avance"] >= 100
-        ]
-    )
-
-    avance_promedio = round(
-        objetivos["porcentaje_avance"]
-        .fillna(0)
-        .mean(),
-        1
-    )
-
-    ods_impactados = len(
-        set(
-            ",".join(
-                objetivos["ods_principal"]
-                .fillna("")
-                .astype(str)
-            ).split(",")
+        objetivos = pd.read_sql(
+            f"""
+            SELECT
+                p.*,
+                pr.nombre AS nombre_profesional,
+                pr.rol AS rol_profesional
+            FROM pai_objetivos p
+            LEFT JOIN profesionales pr
+                ON pr.id = p.profesional_referente
+            WHERE p.documento_usuario='{usuario_sel}'
+            ORDER BY p.fecha_apertura DESC
+            """,
+            engine
         )
-    )
 
-    c1, c2, c3, c4 = st.columns(4)
+        if objetivos.empty:
 
-    c1.metric(
-        "🎯 Activos",
-        objetivos_activos
-    )
+            st.info(
+                "Este usuario aún no tiene objetivos."
+            )
 
-    c2.metric(
-        "✅ Cumplidos",
-        objetivos_cumplidos
-    )
+        else:
 
-    c3.metric(
-        "📈 Avance promedio",
-        f"{avance_promedio}%"
-    )
+            # =========================
+            # INDICADORES GENERALES
+            # =========================
 
-    c4.metric(
-        "🌍 ODS impactados",
-        ods_impactados
-    )
+            objetivos_activos = len(
+                objetivos[
+                    objetivos["estado"] == "Activo"
+                ]
+            )
 
-    st.divider()
+            objetivos_cumplidos = len(
+                objetivos[
+                    objetivos["porcentaje_avance"] >= 100
+                ]
+            )
+
+            avance_promedio = round(
+                objetivos["porcentaje_avance"]
+                .fillna(0)
+                .mean(),
+                1
+            )
+
+            ods_impactados = len(
+                set(
+                    ",".join(
+                        objetivos["ods_principal"]
+                        .fillna("")
+                        .astype(str)
+                    ).split(",")
+                )
+            )
+
+            c1, c2, c3, c4 = st.columns(4)
+
+            c1.metric(
+                "🎯 Activos",
+                objetivos_activos
+            )
+
+            c2.metric(
+                "✅ Cumplidos",
+                objetivos_cumplidos
+            )
+
+            c3.metric(
+                "📈 Avance promedio",
+                f"{avance_promedio}%"
+            )
+
+            c4.metric(
+                "🌍 ODS impactados",
+                ods_impactados
+            )
+
+            st.divider()
 
 
     # =========================
