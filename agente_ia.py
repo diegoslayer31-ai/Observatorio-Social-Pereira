@@ -4347,10 +4347,15 @@ st.markdown("## 🎯 Objetivos activos")
 
 objetivos = pd.read_sql(
     f"""
-    SELECT *
-    FROM pai_objetivos
-    WHERE documento_usuario='{usuario_sel}'
-    ORDER BY fecha_apertura DESC
+    SELECT
+        p.*,
+        pr.nombre AS nombre_profesional,
+        pr.rol AS rol_profesional
+    FROM pai_objetivos p
+    LEFT JOIN profesionales pr
+        ON pr.id = p.profesional_referente
+    WHERE p.documento_usuario='{usuario_sel}'
+    ORDER BY p.fecha_apertura DESC
     """,
     engine
 )
@@ -4420,17 +4425,7 @@ else:
 
     st.divider()
 
-    # =========================
-    # DICCIONARIO PROFESIONALES
-    # =========================
-
-    profesionales_dict = dict(
-        zip(
-            df_profesionales["id"],
-            df_profesionales["nombre"]
-        )
-    )
-
+    
     # =========================
     # RECORRER OBJETIVOS
     # =========================
@@ -4477,11 +4472,6 @@ else:
             )
             if total > 0
             else 0
-        )
-
-        nombre_profesional = profesionales_dict.get(
-            obj["profesional_referente"],
-            "Sin asignar"
         )
 
         with st.expander(
