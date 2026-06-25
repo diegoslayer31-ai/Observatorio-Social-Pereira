@@ -4565,9 +4565,9 @@ with tab6:
 
                         )
 
-                st.success("Novedad registrada")
+                    st.success("Novedad registrada")
 
-                st.rerun()
+                    st.rerun()
             from sqlalchemy import text
 
             query = text("""
