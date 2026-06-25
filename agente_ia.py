@@ -3827,815 +3827,260 @@ with tab6:
 
     import json
     from sqlalchemy import text
+
+    # =========================
+    # PROFESIONALES (UNA VEZ)
+    # =========================
     df_profesionales = pd.read_sql("""
-
-        SELECT id,nombre,rol
-
+        SELECT id, nombre, rol
         FROM profesionales
-
         ORDER BY nombre
-
     """, engine)
 
-    df_profesionales["label"]=(
-
-        df_profesionales["nombre"]
-
-        +" ("
-
-        +df_profesionales["rol"]
-
-        +")"
-
+    df_profesionales["label"] = (
+        df_profesionales["nombre"] + " (" + df_profesionales["rol"] + ")"
     )
+
+    # =========================
+    # BUSCAR USUARIO
+    # =========================
     st.subheader("🔎 Buscar usuario")
 
-    busqueda = st.text_input(
-
-        "Nombre, apellido o documento"
-
-    )
+    busqueda = st.text_input("Nombre, apellido o documento")
 
     df_busqueda = df.copy()
 
     if busqueda:
-
         df_busqueda = df_busqueda[
-
-            df_busqueda["nombres"]
-
-            .astype(str)
-
-            .str.contains(
-
-                busqueda,
-
-                case=False,
-
-                na=False
-
-            )
-
+            df_busqueda["nombres"].astype(str).str.contains(busqueda, case=False, na=False)
             |
-
-            df_busqueda["apellidos"]
-
-            .astype(str)
-
-            .str.contains(
-
-                busqueda,
-
-                case=False,
-
-                na=False
-
-            )
-
+            df_busqueda["apellidos"].astype(str).str.contains(busqueda, case=False, na=False)
             |
-
-            df_busqueda["numero_identificacion"]
-
-            .astype(str)
-
-            .str.contains(
-
-                busqueda,
-
-                na=False
-
-            )
-
+            df_busqueda["numero_identificacion"].astype(str).str.contains(busqueda, na=False)
         ]
 
-    usuario_sel=None
+    usuario_sel = None
 
     if not df_busqueda.empty:
 
-        usuario_sel=st.selectbox(
-
+        usuario_sel = st.selectbox(
             "Seleccione usuario",
-
-            df_busqueda[
-
-                "numero_identificacion"
-
-            ],
-
+            df_busqueda["numero_identificacion"],
             format_func=lambda x:
-
-            (
-
-                df_busqueda[
-
-                    df_busqueda[
-
-                        "numero_identificacion"
-
-                    ]==x
-
+                df_busqueda[df_busqueda["numero_identificacion"] == x][
+                    ["nombres", "apellidos"]
                 ]
-
-                [["nombres","apellidos"]]
-
                 .astype(str)
-
-                .agg(
-
-                    " ".join,
-
-                    axis=1
-
-                )
-
+                .agg(" ".join, axis=1)
                 .values[0]
-
-            )
-
         )
+
+    # =========================
+    # CARGA USUARIO
+    # =========================
     if usuario_sel:
-    
-        usuario = pd.read_sql(f"""
 
+        usuario = pd.read_sql(
+            text("""
+                SELECT *
+                FROM habitante_de_calle
+                WHERE numero_identificacion = :id
+            """),
+            engine,
+            params={"id": usuario_sel}
+        )
+
+        datos = usuario.iloc[0]
+
+        st.divider()
+
+        c1, c2, c3, c4 = st.columns(4)
+
+        c1.metric("Nombre", f"{datos['nombres']} {datos['apellidos']}")
+        c2.metric("Documento", usuario_sel)
+        c3.metric("Edad", datos.get("edad", "N/A"))
+
+        count_obj = pd.read_sql(
+            text("""
+                SELECT COUNT(*) AS total
+                FROM pai_objetivos
+                WHERE documento_usuario = :id
+            """),
+            engine,
+            params={"id": usuario_sel}
+        ).iloc[0]["total"]
+
+        c4.metric("Objetivos", count_obj)
+
+        # =========================
+        # OBJETIVOS
+        # =========================
+        objetivos = pd.read_sql(
+            text("""
+                SELECT p.*, pr.nombre AS nombre_profesional
+                FROM pai_objetivos p
+                LEFT JOIN profesionales pr
+                    ON pr.id = p.profesional_referente
+                WHERE p.documento_usuario = :id
+                ORDER BY p.fecha_apertura DESC
+            """),
+            engine,
+            params={"id": usuario_sel}
+        )
+
+        # precargar novedades (IMPORTANTE OPTIMIZACIÓN)
+        novedades_all = pd.read_sql("""
             SELECT *
-
-            FROM habitante_de_calle
-
-            WHERE numero_identificacion='{usuario_sel}'
-
+            FROM pai_novedades
+            ORDER BY fecha DESC
         """, engine)
 
-        datos=usuario.iloc[0]
-
         st.divider()
-        
-        c1,c2,c3,c4=st.columns(4)
-
-        c1.metric(
-
-            "Nombre",
-
-            f"{datos['nombres']} {datos['apellidos']}"
-
-        )
-
-        c2.metric(
-
-            "Documento",
-
-            usuario_sel
-
-        )
-
-        c3.metric(
-
-            "Edad",
-
-            datos.get(
-
-                "edad",
-
-                "N/A"
-
-            )
-
-        )
-
-        c4.metric(
-
-            "Objetivos",
-
-            len(
-
-                pd.read_sql(
-
-                    f"""
-
-                    SELECT *
-
-                    FROM pai_objetivos
-
-                    WHERE documento_usuario='{usuario_sel}'
-
-                    """,
-
-                    engine
-
-                )
-
-            )
-
-        )
-        # =========================
-        # CREAR OBJETIVO PAI
-        # =========================
-
-        st.markdown("## ➕ Crear objetivo PAI")
-
-        # =========================
-        # OBJETIVO (FUERA DEL FORMULARIO)
-        # =========================
-        # =========================
-        # ESTADO INICIAL
-        # =========================
-        if "objetivo_actual" not in st.session_state:
-            st.session_state.objetivo_actual = list(mapa_politica.keys())[0]
-
-        # =========================
-        # SELECTBOX REACTIVO
-        # =========================
-        objetivo_tipo = st.selectbox(
-            "Objetivo",
-            list(mapa_politica.keys()),
-            key="objetivo_pai"
-        )
-
-        # =========================
-        # SINCRONIZAR ESTADO
-        # =========================
-        st.session_state.objetivo_actual = objetivo_tipo
-
-
-        # =========================
-        # 🔥 DETECTAR CAMBIO (RESIDUOS LIMPIOS)
-        # =========================
-        if "last_objetivo" not in st.session_state:
-            st.session_state.last_objetivo = objetivo_tipo
-
-        if st.session_state.last_objetivo != objetivo_tipo:
-            st.session_state.last_objetivo = objetivo_tipo
-            st.rerun()
-        # =========================
-        # FORMULARIO
-        # =========================
-
-        with st.form("crear_objetivo_pai"):
-
-            opciones_hitos = mapa_hitos.get(
-                st.session_state.objetivo_actual,
-                []
-            )
-
-            subactividades = st.multiselect(
-                "🧭 Subactividades sugeridas",
-                options=opciones_hitos,
-                default=opciones_hitos
-            )
-
-            objetivo_descripcion = st.text_area(
-
-                "Descripción del objetivo"
-
-            )
-
-            fecha_meta = st.date_input(
-
-                "Fecha meta"
-
-            )
-
-            profesional_id = st.selectbox(
-
-                "Profesional responsable",
-
-                df_profesionales["id"],
-
-                format_func=lambda x:
-
-                df_profesionales[
-
-                    df_profesionales["id"] == x
-
-                ]["label"].values[0]
-
-            )
-
-            prioridad = st.selectbox(
-
-                "Prioridad",
-
-                [
-
-                    "Alta",
-
-                    "Media",
-
-                    "Baja"
-
-                ]
-
-            )
-
-            submit = st.form_submit_button(
-
-                "💾 Guardar objetivo"
-
-            )
-
-        # =========================
-        # GUARDAR OBJETIVO
-        # =========================
-
-        if submit:
-
-            import json
-
-            from sqlalchemy import text
-
-            politica = mapa_politica.get(
-
-                objetivo_tipo,
-
-                "Restablecimiento de derechos"
-
-            )
-
-            ods = mapa_ods.get(
-
-                objetivo_tipo,
-
-                ["ODS 10"]
-
-            )
-
-            query = text("""
-
-                INSERT INTO pai_objetivos (
-
-                    documento_usuario,
-
-                    objetivo_tipo,
-
-                    objetivo_descripcion,
-
-                    fecha_apertura,
-
-                    fecha_meta,
-
-                    estado,
-
-                    porcentaje_avance,
-
-                    profesional_referente,
-
-                    ods_principal,
-
-                    observaciones,
-
-                    linea_politica,
-
-                    actividades
-
-                )
-
-                VALUES (
-
-                    :documento_usuario,
-
-                    :objetivo_tipo,
-
-                    :objetivo_descripcion,
-
-                    NOW(),
-
-                    :fecha_meta,
-
-                    'Activo',
-
-                    0,
-
-                    :profesional_referente,
-
-                    :ods_principal,
-
-                    '',
-
-                    :linea_politica,
-
-                    :actividades
-
-                )
-
-            """)
-
-            with engine.begin() as conn:
-
-                conn.execute(
-
-                    query,
-
-                    {
-
-                        "documento_usuario": str(usuario_sel),
-
-                        "objetivo_tipo": objetivo_tipo,
-
-                        "objetivo_descripcion": objetivo_descripcion,
-
-                        "fecha_meta": fecha_meta,
-
-                        "profesional_referente": int(profesional_id),
-
-                        "ods_principal": ", ".join(ods),
-
-                        "linea_politica": politica,
-
-                        "actividades": json.dumps(
-
-                            subactividades
-
-                        )
-
-                    }
-
-                )
-
-            st.success(
-
-                "✅ Objetivo PAI creado"
-
-            )
-
-            st.rerun()
-            # =========================
-        # OBJETIVOS ACTIVOS
-        # =========================
-
-        st.divider()
-
         st.markdown("## 🎯 Objetivos activos")
 
-        objetivos = pd.read_sql(f"""
-
-    SELECT
-        p.*,
-        pr.nombre AS nombre_profesional
-    FROM pai_objetivos p
-    LEFT JOIN profesionales pr
-        ON pr.id = p.profesional_referente
-    WHERE p.documento_usuario='{usuario_sel}'
-    ORDER BY p.fecha_apertura DESC
-
-""", engine)
-        import json
-
         if objetivos.empty:
+            st.info("Este usuario aún no tiene objetivos.")
 
-            st.info(
-                "Este usuario aún no tiene objetivos."
-            )
+        # =========================
+        # LOOP OBJETIVOS
+        # =========================
+        for _, obj in objetivos.iterrows():
 
-        else:
+            obj_id = obj["id"]
 
-            for _, obj in objetivos.iterrows():
-                
-                # =========================
-                # ACTIVIDADES
-                # =========================
+            # =========================
+            # ESTADO LOCAL (NO BD)
+            # =========================
+            if f"hitos_{obj_id}" not in st.session_state:
+                try:
+                    st.session_state[f"hitos_{obj_id}"] = json.loads(obj["avance_hitos"] or "[]")
+                except:
+                    st.session_state[f"hitos_{obj_id}"] = []
 
-                actividades = []
+            actividades = json.loads(obj["actividades"] or "[]")
+            hitos_temp = st.session_state[f"hitos_{obj_id}"]
 
-                if obj["actividades"]:
+            st.markdown(f"### 🎯 {obj['objetivo_tipo']}")
 
-                    try:
+            avance = round((len(hitos_temp) / len(actividades)) * 100, 1) if actividades else 0
 
-                        actividades = json.loads(
-                            obj["actividades"]
-                        )
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Avance", f"{avance}%")
+            c2.metric("Estado", obj["estado"])
+            c3.metric("ODS", obj["ods_principal"])
 
-                    except:
+            st.progress(avance / 100)
 
-                        actividades = []
+            st.caption(f"👨‍⚕️ {obj['nombre_profesional'] or 'Sin asignar'}")
+            st.caption(f"🏛️ {obj['linea_politica']}")
+            st.write(obj["objetivo_descripcion"])
 
-                # =========================
-                # AVANCE HITOS
-                # =========================
+            # =========================
+            # CHECKLIST (SIN BD)
+            # =========================
+            nuevo_estado = []
 
-                avance_hitos = []
+            for actividad in actividades:
 
-                if obj["avance_hitos"]:
-
-                    try:
-
-                        avance_hitos = json.loads(
-                            obj["avance_hitos"]
-                        )
-
-                    except:
-
-                        avance_hitos = []
-
-                # =========================
-                # CALCULAR AVANCE
-                # =========================
-
-                total = len(actividades)
-
-                if total == 0:
-
-                    avance = 0
-
-                else:
-
-                    avance = round(
-
-                        (
-
-                            len(avance_hitos)
-
-                            / total
-
-                        ) * 100,
-
-                        1
-
-                    )
-
-                # =========================
-                # =========================
-                # PROFESIONAL
-                # =========================
-
-                nombre_profesional = (
-                    obj["nombre_profesional"]
-                    if pd.notna(obj["nombre_profesional"])
-                    else "Sin asignar"
-                )
-                # =========================
-                # MOSTRAR OBJETIVO
-                # =========================
-
-                st.markdown(
-
-                    f"### 🎯 {obj['objetivo_tipo']}"
-
+                marcado = st.checkbox(
+                    actividad,
+                    value=actividad in hitos_temp,
+                    key=f"{obj_id}_{actividad}"
                 )
 
-                c1,c2,c3 = st.columns(3)
-
-                c1.metric(
-
-                    "Avance",
-
-                    f"{avance}%"
-
-                )
-
-                c2.metric(
-
-                    "Estado",
-
-                    obj["estado"]
-
-                )
-
-                c3.metric(
-
-                    "ODS",
-
-                    obj["ods_principal"]
-
-                )
-
-                st.caption(
-
-                    f"👨‍⚕️ {nombre_profesional}"
-
-                )
-
-                st.caption(
-
-                    f"🏛️ {obj['linea_politica']}"
-
-                )
-
-                st.write(
-
-                    obj["objetivo_descripcion"]
-
-                )
-
-                st.progress(
-
-                    avance/100
-
-                )
-            
-                for actividad in actividades:
-
-                    hecho = actividad in avance_hitos
-
-                    col1,col2 = st.columns(
-                        [0.1,0.9]
-                    )
-
-                    with col1:
-
-                        marcado = st.checkbox(
-
-                            "",
-
-                            value=hecho,
-
-                            key=f"{obj['id']}_{actividad}"
-
-                        )
-
-                    with col2:
-
-                        st.write(
-                            actividad
-                        )
-
-                    if marcado:
-
-                        if actividad not in avance_hitos:
-
-                            avance_hitos.append(
-                                actividad
-                            )
-
-                    else:
-
-                        if actividad in avance_hitos:
-
-                            avance_hitos.remove(
-                                actividad
-                            )
-                st.markdown("### 📝 Registrar novedad")
-
-                tipo_novedad = st.selectbox(
-
-                    "Actividad realizada",
-
-                    actividades,
-
-                    key=f"tipo_{obj['id']}"
-
-                )
-
-                descripcion_novedad = st.text_area(
-
-                    "Descripción",
-
-                    key=f"desc_{obj['id']}"
-
-                )
-
-                evidencia = st.text_input(
-
-                    "Evidencia",
-
-                    key=f"evid_{obj['id']}"
-
-                )
-
-                guardar_novedad = st.button(
-
-                    "💾 Guardar novedad",
-
-                    key=f"guardar_{obj['id']}"
-
-                )
-                if guardar_novedad:
-                    
-                    query_nov = text("""
-
-                        INSERT INTO pai_novedades(
-
-                            id_objetivo,
-
-                            fecha,
-
-                            profesional,
-
-                            tipo_novedad,
-
-                            descripcion,
-
-                            avance_generado,
-
-                            evidencia
-
-                        )
-
-                        VALUES(
-
-                            :id_objetivo,
-
-                            NOW(),
-
-                            :profesional,
-
-                            :tipo_novedad,
-
-                            :descripcion,
-
-                            :avance_generado,
-
-                            :evidencia
-
-                        )
-
-                    """)
-
-                    with engine.begin() as conn:
-
-                        conn.execute(
-
-                            query_nov,
-
-                            {
-
-                                "id_objetivo": int(obj["id"]),
-
-                                "profesional": nombre_profesional,
-
-                                "tipo_novedad": tipo_novedad,
-
-                                "descripcion": descripcion_novedad,
-
-                                "avance_generado": avance,
-
-                                "evidencia": evidencia
-
-                            }
-
-                        )
-
-                    st.success("Novedad registrada")
-
-                    st.rerun()
-
-
-                # =========================
-                # GUARDAR AVANCE DEL OBJETIVO
-                # =========================
+                if marcado:
+                    nuevo_estado.append(actividad)
+
+            st.session_state[f"hitos_{obj_id}"] = nuevo_estado
+
+            # =========================
+            # GUARDAR SOLO AL FINAL
+            # =========================
+            if st.button("💾 Guardar avances", key=f"save_{obj_id}"):
 
                 query = text("""
-
                     UPDATE pai_objetivos
-
-                    SET
-
-                        avance_hitos=:avance_hitos,
-
-                        porcentaje_avance=:porcentaje_avance
-
-                    WHERE id=:id
-
+                    SET avance_hitos = :hitos,
+                        porcentaje_avance = :avance
+                    WHERE id = :id
                 """)
 
                 with engine.begin() as conn:
+                    conn.execute(query, {
+                        "hitos": json.dumps(nuevo_estado),
+                        "avance": avance,
+                        "id": obj_id
+                    })
 
-                    conn.execute(
+                st.success("Avance guardado")
 
-                        query,
-
-                        {
-
-                            "avance_hitos":
-                            json.dumps(avance_hitos),
-
-                            "porcentaje_avance":
-                            avance,
-
-                            "id":
-                            int(obj["id"])
-
-                        }
-
-                    )
-
-                st.divider()
             # =========================
-            # HISTORIAL NOVEDADES
+            # NOVEDAD (SIN RERUN)
             # =========================
+            st.markdown("### 📝 Registrar novedad")
 
-        with st.expander("🕒 Ver historial"):
-
-            novedades = pd.read_sql(
-                f"""
-                SELECT *
-                FROM pai_novedades
-                WHERE id_objetivo={obj['id']}
-                ORDER BY fecha DESC
-                """,
-                engine
+            tipo_novedad = st.selectbox(
+                "Actividad realizada",
+                actividades,
+                key=f"tipo_{obj_id}"
             )
 
-            if novedades.empty:
+            descripcion = st.text_area(
+                "Descripción",
+                key=f"desc_{obj_id}"
+            )
 
-                st.caption(
-                    "Sin novedades registradas"
-                )
+            evidencia = st.text_input(
+                "Evidencia",
+                key=f"evid_{obj_id}"
+            )
 
-            else:
+            if st.button("💾 Guardar novedad", key=f"nov_{obj_id}"):
 
-                for _, nov in novedades.iterrows():
+                with engine.begin() as conn:
+                    conn.execute(text("""
+                        INSERT INTO pai_novedades(
+                            id_objetivo,
+                            fecha,
+                            profesional,
+                            tipo_novedad,
+                            descripcion,
+                            avance_generado,
+                            evidencia
+                        )
+                        VALUES (
+                            :id_objetivo,
+                            NOW(),
+                            :profesional,
+                            :tipo_novedad,
+                            :descripcion,
+                            :avance_generado,
+                            :evidencia
+                        )
+                    """), {
+                        "id_objetivo": obj_id,
+                        "profesional": obj["nombre_profesional"] or "Sin asignar",
+                        "tipo_novedad": tipo_novedad,
+                        "descripcion": descripcion,
+                        "avance_generado": avance,
+                        "evidencia": evidencia
+                    })
 
-                    st.markdown(
-                        f"""
+                st.success("Novedad registrada")
+
+            # =========================
+            # HISTORIAL (FILTRADO EN MEMORIA)
+            # =========================
+            with st.expander("🕒 Ver historial"):
+
+                nov_obj = novedades_all[novedades_all["id_objetivo"] == obj_id]
+
+                if nov_obj.empty:
+                    st.caption("Sin novedades registradas")
+                else:
+                    for _, nov in nov_obj.iterrows():
+
+                        st.markdown(f"""
                         **📌 {nov['tipo_novedad']}**
 
                         📅 {nov['fecha']}
@@ -4643,16 +4088,14 @@ with tab6:
                         👨‍⚕️ {nov['profesional']}
 
                         📝 {nov['descripcion']}
-                        """
-                    )
+                        """)
 
-                    if nov["evidencia"]:
+                        if pd.notna(nov.get("evidencia")) and nov["evidencia"]:
+                            st.caption(f"📂 {nov['evidencia']}")
 
-                        st.caption(
-                            f"📂 {nov['evidencia']}"
-                        )
+                        st.divider()
 
-                    st.divider()
+            st.divider()
 with tab7:
 
     st.title("📈 Seguimiento e Impacto - Reducción de Riesgos y Daños")
