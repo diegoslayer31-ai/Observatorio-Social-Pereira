@@ -4267,16 +4267,16 @@ with tab6:
 
         objetivos = pd.read_sql(f"""
 
-            SELECT *
+    SELECT
+        p.*,
+        pr.nombre AS nombre_profesional
+    FROM pai_objetivos p
+    LEFT JOIN profesionales pr
+        ON pr.id = p.profesional_referente
+    WHERE p.documento_usuario='{usuario_sel}'
+    ORDER BY p.fecha_apertura DESC
 
-            FROM pai_objetivos
-
-            WHERE documento_usuario='{usuario_sel}'
-
-            ORDER BY fecha_apertura DESC
-
-        """, engine)
-
+""", engine)
         import json
 
         if objetivos.empty:
@@ -4352,33 +4352,15 @@ with tab6:
                     )
 
                 # =========================
+                # =========================
                 # PROFESIONAL
                 # =========================
 
-                nombre_profesional = "Sin asignar"
-
-                if obj["profesional_referente"]:
-
-                    profesional = pd.read_sql(
-
-                        f"""
-
-                        SELECT nombre
-
-                        FROM profesionales
-
-                        WHERE id={obj['profesional_referente']}
-
-                        """,
-
-                        engine
-
-                    )
-
-                    if not profesional.empty:
-
-                        nombre_profesional = profesional.iloc[0]["nombre"]
-
+                nombre_profesional = (
+                    obj["nombre_profesional"]
+                    if pd.notna(obj["nombre_profesional"])
+                    else "Sin asignar"
+                )
                 # =========================
                 # MOSTRAR OBJETIVO
                 # =========================
