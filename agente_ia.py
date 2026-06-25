@@ -4618,62 +4618,62 @@ with tab6:
 
             st.divider()
             # =========================
-# HISTORIAL NOVEDADES
-# =========================
+            # HISTORIAL NOVEDADES
+            # =========================
 
-st.markdown("### 🕒 Historial")
+            st.markdown("### 🕒 Historial")
 
-novedades = pd.read_sql(
-    f"""
-    SELECT *
-    FROM pai_novedades
-    WHERE id_objetivo={obj['id']}
-    ORDER BY fecha DESC
-    """,
-    engine
-)
+            novedades = pd.read_sql(
+                f"""
+                SELECT *
+                FROM pai_novedades
+                WHERE id_objetivo={obj['id']}
+                ORDER BY fecha DESC
+                """,
+                engine
+            )
 
-if novedades.empty:
-
-    st.caption(
-        "Sin novedades registradas"
-    )
-
-else:
-
-    for _, nov in novedades.iterrows():
-
-        with st.container():
-
-            c1, c2 = st.columns([0.3, 0.7])
-
-            with c1:
+            if novedades.empty:
 
                 st.caption(
-                    f"📅 {nov['fecha']:%Y-%m-%d}"
+                    "Sin novedades registradas"
                 )
 
-                st.caption(
-                    f"👨‍⚕️ {nov['profesional']}"
-                )
+            else:
 
-            with c2:
+                for _, nov in novedades.iterrows():
 
-                st.markdown(
-                    f"**{nov['tipo_novedad']}**"
-                )
+                    with st.container():
 
-                st.write(
-                    nov['descripcion']
-                )
+                        c1, c2 = st.columns([0.3, 0.7])
 
-                if nov["evidencia"]:
+                        with c1:
 
-                    st.caption(
-                        f"📂 {nov['evidencia']}"
-                    )
+                            st.caption(
+                                f"📅 {nov['fecha']:%Y-%m-%d}"
+                            )
 
-            st.divider()
+                            st.caption(
+                                f"👨‍⚕️ {nov['profesional']}"
+                            )
+
+                        with c2:
+
+                            st.markdown(
+                                f"**{nov['tipo_novedad']}**"
+                            )
+
+                            st.write(
+                                nov['descripcion']
+                            )
+
+                            if nov["evidencia"]:
+
+                                st.caption(
+                                    f"📂 {nov['evidencia']}"
+                                )
+
+                        st.divider()
 with tab7:
 
     st.title("📈 Seguimiento e Impacto - Reducción de Riesgos y Daños")
