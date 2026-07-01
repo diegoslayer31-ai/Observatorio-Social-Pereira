@@ -3977,6 +3977,55 @@ with tab6:
                 ].values[0],
             key="prof_objetivo"
         )
+        crear_objetivo = st.button("💾 Crear objetivo")
+        if crear_objetivo:
+    
+            with engine.begin() as conn:
+
+                conn.execute(text("""
+                    INSERT INTO pai_objetivos(
+                        documento_usuario,
+                        objetivo_tipo,
+                        objetivo_descripcion,
+                        actividades,
+                        avance_hitos,
+                        porcentaje_avance,
+                        estado,
+                        linea_politica,
+                        ods_principal,
+                        profesional_referente,
+                        fecha_apertura
+                    )
+                    VALUES(
+                        :documento_usuario,
+                        :objetivo_tipo,
+                        :objetivo_descripcion,
+                        :actividades,
+                        :avance_hitos,
+                        :porcentaje_avance,
+                        :estado,
+                        :linea_politica,
+                        :ods_principal,
+                        :profesional_referente,
+                        NOW()
+                    )
+                """), {
+
+                    "documento_usuario": usuario_sel,
+                    "objetivo_tipo": objetivo_tipo,
+                    "objetivo_descripcion": descripcion_objetivo,
+                    "actividades": json.dumps(actividades),
+                    "avance_hitos": json.dumps([]),
+                    "porcentaje_avance": 0,
+                    "estado": "Activo",
+                    "linea_politica": linea_politica,
+                    "ods_principal": ", ".join(ods),
+                    "profesional_referente": profesional_referente
+
+                })
+
+            st.success("✅ Objetivo creado correctamente.")
+            st.rerun()
         st.divider()
         st.markdown("## 🎯 Objetivos activos")
 
