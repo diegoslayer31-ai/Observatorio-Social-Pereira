@@ -3934,7 +3934,49 @@ with tab6:
             FROM pai_novedades
             ORDER BY fecha DESC
         """, engine)
+        # =========================
+        # CREAR OBJETIVO
+        # =========================
+        st.subheader("➕ Crear objetivo")
 
+        objetivo_tipo = st.selectbox(
+            "Tipo de objetivo",
+            list(mapa_politica.keys()),
+            key="nuevo_objetivo"
+        )
+
+        linea_politica = mapa_politica[objetivo_tipo]
+        ods = mapa_ods.get(objetivo_tipo, [])
+        actividades = mapa_hitos.get(objetivo_tipo, [])
+
+        st.write(f"**Línea de política:** {linea_politica}")
+        st.write(f"**ODS:** {', '.join(ods)}")
+
+        st.write("**Actividades que tendrá este objetivo:**")
+
+        for act in actividades:
+            st.checkbox(
+                act,
+                value=True,
+                disabled=True,
+                key=f"preview_{act}"
+            )
+
+        descripcion_objetivo = st.text_area(
+            "Descripción del objetivo",
+            key="descripcion_objetivo"
+        )
+
+        profesional_referente = st.selectbox(
+            "Profesional referente",
+            df_profesionales["id"],
+            format_func=lambda x:
+                df_profesionales.loc[
+                    df_profesionales["id"] == x,
+                    "label"
+                ].values[0],
+            key="prof_objetivo"
+        )
         st.divider()
         st.markdown("## 🎯 Objetivos activos")
 
