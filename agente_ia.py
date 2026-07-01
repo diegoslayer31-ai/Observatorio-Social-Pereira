@@ -20,6 +20,7 @@ from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib.pagesizes import letter
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
 from io import BytesIO
+from datetime import date, timedelta
 
 st.set_page_config(
     page_title="Observatorio Social Asociación Ciudad Futuro",
@@ -3928,7 +3929,7 @@ with tab6:
             params={"id": usuario_sel}
         )
 
-        # precargar novedades (IMPORTANTE OPTIMIZACIÓN)
+        
         novedades_all = pd.read_sql("""
             SELECT *
             FROM pai_novedades
@@ -3966,7 +3967,10 @@ with tab6:
             "Descripción del objetivo",
             key="descripcion_objetivo"
         )
-
+        fecha_cumplimiento = st.date_input(
+        "📅 Fecha estimada de cumplimiento",
+        value=date.today() + timedelta(days=90)
+        )
         profesional_referente = st.selectbox(
             "Profesional referente",
             df_profesionales["id"],
