@@ -3988,36 +3988,38 @@ with tab6:
 
                 conn.execute(text("""
                     INSERT INTO pai_objetivos(
-                        documento_usuario,
-                        objetivo_tipo,
-                        objetivo_descripcion,
-                        actividades,
-                        avance_hitos,
-                        porcentaje_avance,
-                        estado,
-                        linea_politica,
-                        ods_principal,
-                        profesional_referente,
-                        fecha_apertura
+                    documento_usuario,
+                    objetivo_tipo,
+                    objetivo_descripcion,
+                    actividades,
+                    avance_hitos,
+                    porcentaje_avance,
+                    estado,
+                    linea_politica,
+                    ods_principal,
+                    profesional_referente,
+                    fecha_apertura
                     )
                     VALUES(
-                        :documento_usuario,
-                        :objetivo_tipo,
-                        :objetivo_descripcion,
-                        :actividades,
-                        :avance_hitos,
-                        :porcentaje_avance,
-                        :estado,
-                        :linea_politica,
-                        :ods_principal,
-                        :profesional_referente,
-                        NOW()
-                    )
+                    :documento_usuario,
+                    :objetivo_tipo,
+                    :objetivo_descripcion,
+                    :fecha_meta,
+                    :actividades,
+                    :avance_hitos,
+                    :porcentaje_avance,
+                    :estado,
+                    :linea_politica,
+                    :ods_principal,
+                    :profesional_referente,
+                    NOW()
+                )
                 """), {
 
-                    "documento_usuario": usuario_sel,
+                     "documento_usuario": usuario_sel,
                     "objetivo_tipo": objetivo_tipo,
                     "objetivo_descripcion": descripcion_objetivo,
+                    "fecha_meta": fecha_cumplimiento,
                     "actividades": json.dumps(actividades),
                     "avance_hitos": json.dumps([]),
                     "porcentaje_avance": 0,
