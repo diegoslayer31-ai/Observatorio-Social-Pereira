@@ -4387,10 +4387,6 @@ with tab7:
         use_container_width=True,
         hide_index=True
     )
-# =====================================
-# TAB 8 - CARGA MASIVA ACTUALIZADA
-# =====================================
-
 with tab8:
 
     st.title("📥 Carga Masiva de Activos")
@@ -4411,62 +4407,146 @@ with tab8:
                 .astype(str)
                 .str.strip()
                 .str.lower()
-                .str.replace(" ", "_")
+                .str.replace(" ", "_", regex=False)
             )
 
-            st.write("📌 Columnas detectadas:", df_activos.columns.tolist())
+            st.write(
+                "📌 Columnas detectadas:",
+                df_activos.columns.tolist()
+            )
 
-            required = ["numero_identificacion", "modalidad"]
+            required = [
+                "numero_identificacion",
+                "modalidad"
+            ]
 
-            missing = [c for c in required if c not in df_activos.columns]
+            missing = [
+                columna
+                for columna in required
+                if columna not in df_activos.columns
+            ]
 
             if missing:
                 st.error(f"❌ Faltan columnas: {missing}")
                 st.stop()
 
+            # Eliminar filas sin identificación
+            df_activos = df_activos.dropna(
+                subset=["numero_identificacion"]
+            )
+
+            # Limpiar identificación
             df_activos["numero_identificacion"] = (
-                df_activos["numero_identificacion"].astype(str).str.strip()
+                df_activos["numero_identificacion"]
+                .astype(str)
+                .str.strip()
+                .str.replace(r"\.0$", "", regex=True)
             )
 
+            # Limpiar modalidad
             df_activos["modalidad"] = (
-                df_activos["modalidad"].astype(str).str.upper().str.strip()
+                df_activos["modalidad"]
+                .fillna("SIN MODALIDAD")
+                .astype(str)
+                .str.upper()
+                .str.strip()
             )
 
-            df_activos = df_activos.drop_duplicates(subset=["numero_identificacion"])
+            # Eliminar identificaciones vacías
+            df_activos = df_activos[
+                df_activos["numero_identificacion"] != ""
+            ]
 
-            # resumen
-            st.subheader("📊 Modalidad")
-            resumen = df_activos["modalidad"].value_counts().reset_index()
-            resumen.columns = ["modalidad", "cantidad"]
+            # Una persona solamente puede aparecer una vez
+            df_activos = df_activos.drop_duplicates(
+                subset=["numero_identificacion"],
+                keep="last"
+            )
 
-            st.dataframe(resumen)
-            st.bar_chart(resumen.set_index("modalidad"))
+            st.subheader("📊 Resumen del archivo")
 
-            confirmar = st.checkbox("Confirmo actualización")
+            resumen = (
+                df_activos["modalidad"]
+                .value_counts()
+                .reset_index()
+            )
 
-            if confirmar and st.button("Actualizar base"):
+            resumen.columns = [
+                "modalidad",
+                "cantidad"
+            ]
+
+            st.dataframe(
+                resumen,
+                use_container_width=True,
+                hide_index=True
+            )
+
+            st.bar_chart(
+                resumen.set_index("modalidad")
+            )
+
+            st.metric(
+                "Total de personas activas en el archivo",
+                len(df_activos)
+            )
+
+            confirmar = st.checkbox(
+                "Confirmo que este archivo reemplazará la lista actual de activos",
+                key="confirmar_actualizacion_activos"
+            )
+
+            if confirmar and st.button(
+                "Actualizar base",
+                key="btn_actualizar_activos",
+                type="primary"
+            ):
+
+                datos_actualizacion = [
+                    {
+                        "id": str(row["numero_identificacion"]).strip(),
+                        "modalidad": str(row["modalidad"]).strip().upper()
+                    }
+                    for _, row in df_activos.iterrows()
+                ]
 
                 with engine.begin() as conn:
 
-                    for _, row in df_activos.iterrows():
+                    # Desactivar la lista anterior
+                    conn.execute(text("""
+                        UPDATE habitante_de_calle
+                        SET estado_caso = 'INACTIVO',
+                            modalidad = NULL
+                        WHERE estado_caso = 'ACTIVO'
+                    """))
 
-                        doc = str(row["numero_identificacion"]).strip()
-                        modalidad = str(row["modalidad"]).strip().upper()
-
-                        conn.execute(text("""
+                    # Activar la nueva lista
+                    conn.execute(
+                        text("""
                             UPDATE habitante_de_calle
                             SET estado_caso = 'ACTIVO',
                                 modalidad = :modalidad
-                            WHERE TRIM(CAST(numero_identificacion AS TEXT)) = :id
-                        """), {
-                            "modalidad": modalidad,
-                            "id": doc
-                        })
+                            WHERE TRIM(
+                                CAST(numero_identificacion AS TEXT)
+                            ) = :id
+                        """),
+                        datos_actualizacion
+                    )
 
-                st.success("✅ Base actualizada correctamente")
+                    # Verificar cuántos quedaron activos
+                    total_activos = conn.execute(text("""
+                        SELECT COUNT(*)
+                        FROM habitante_de_calle
+                        WHERE estado_caso = 'ACTIVO'
+                    """)).scalar()
+
+                st.success(
+                    f"✅ Base actualizada correctamente. "
+                    f"Actualmente hay {total_activos} registros activos."
+                )
 
         except Exception as e:
-            st.error(f"❌ Error: {e}")
+            st.error(f"❌ Error al procesar el archivo: {e}")
     
     with tab9:
 
