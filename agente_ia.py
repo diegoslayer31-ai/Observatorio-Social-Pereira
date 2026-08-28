@@ -1953,17 +1953,71 @@ def gestion_usuarios_legacy():
 
     if st.button("Actualizar estado"):
 
+        estado_anterior_df = pd.read_sql(
+            text("""
+                SELECT estado_caso, modalidad
+                FROM habitante_de_calle
+                WHERE TRIM(CAST(numero_identificacion AS TEXT)) = :id
+                LIMIT 1
+            """),
+            engine,
+            params={"id": str(usuario_estado).strip()}
+        )
+
+        estado_anterior = (
+            str(estado_anterior_df.iloc[0]["estado_caso"])
+            if not estado_anterior_df.empty else ""
+        )
+        modalidad_actual = (
+            estado_anterior_df.iloc[0]["modalidad"]
+            if not estado_anterior_df.empty else None
+        )
+
         with engine.begin() as conn:
 
             conn.execute(text("""
                 UPDATE habitante_de_calle
                 SET estado_caso = :estado
-                WHERE numero_identificacion = :id
+                WHERE TRIM(CAST(numero_identificacion AS TEXT)) = :id
             """), {
                 "estado": nuevo_estado,
-                "id": usuario_estado
+                "id": str(usuario_estado).strip()
             })
 
+            if estado_anterior.strip().upper() != nuevo_estado.strip().upper():
+                conn.execute(text("""
+                    INSERT INTO movimientos_habitante (
+                        numero_identificacion,
+                        tipo_movimiento,
+                        modalidad,
+                        usuario_registra,
+                        observacion
+                    )
+                    VALUES (
+                        :doc,
+                        'CAMBIO_ESTADO_MANUAL',
+                        :modalidad,
+                        :usuario,
+                        :observacion
+                    )
+                """), {
+                    "doc": str(usuario_estado).strip(),
+                    "modalidad": modalidad_actual,
+                    "usuario": st.session_state.get("usuario_actual", "sistema"),
+                    "observacion": (
+                        f"Cambio manual de estado: "
+                        f"{estado_anterior or 'SIN ESTADO'} -> {nuevo_estado}"
+                    )
+                })
+
+        registrar_auditoria(
+            "ACTUALIZAR_ESTADO",
+            documento=usuario_estado,
+            modulo="Gestión Usuarios",
+            valor_anterior=estado_anterior,
+            valor_nuevo=nuevo_estado
+        )
+        invalidar_cache_datos()
         st.success("Estado actualizado")
         st.rerun()
    
@@ -2699,7 +2753,16 @@ with tab2:
         key="enfermeria_busqueda"
     )
 
-    df_busqueda = df.copy()
+    df_pai_personas = pd.read_sql(
+        text("""
+            SELECT *
+            FROM habitante_de_calle
+            ORDER BY nombres, apellidos
+        """),
+        engine
+    )
+
+    df_busqueda = df_pai_personas.copy()
 
     if busqueda:
 
@@ -5200,7 +5263,8 @@ mapa_hitos = {
 }
 with tab6:
 
-    st.title("📋 PAI")
+    st.title("📋 PAI y Seguimiento Profesional")
+    st.caption("Gestión de objetivos, avances e intervenciones profesionales por usuario.")
 
     import json
     from sqlalchemy import text
@@ -5483,6 +5547,14 @@ with tab6:
                         "id": obj_id
                     })
 
+                registrar_auditoria(
+                    "ACTUALIZAR_AVANCE_PAI",
+                    documento=usuario_sel,
+                    modulo="PAI",
+                    valor_nuevo=f"{avance}%",
+                    observacion=f"Objetivo PAI ID {obj_id}"
+                )
+                invalidar_cache_datos()
                 st.success("Avance guardado")
 
             # =========================
@@ -5537,6 +5609,14 @@ with tab6:
                         "evidencia": evidencia
                     })
 
+                registrar_auditoria(
+                    "REGISTRAR_NOVEDAD_PROFESIONAL",
+                    documento=usuario_sel,
+                    modulo="Seguimiento Profesional",
+                    valor_nuevo=tipo_novedad,
+                    observacion=descripcion[:500] if descripcion else None
+                )
+                invalidar_cache_datos()
                 st.success("Novedad registrada")
 
             # =========================
@@ -5567,388 +5647,1023 @@ with tab6:
                         st.divider()
 
             st.divider()
+
 with tab7:
 
-    st.title("📈 Seguimiento e Impacto - Reducción de Riesgos y Daños")
-
-
-    # =========================
-    # PROFESIONALES
-    # =========================
-    df_profesionales = pd.read_sql("""
-        SELECT id, nombre, rol
-        FROM profesionales
-        ORDER BY nombre
-    """, engine)
-
-    df_profesionales["label"] = (
-        df_profesionales["nombre"] + " (" + df_profesionales["rol"] + ")"
+    st.title("📈 Seguimiento e Impacto")
+    st.caption(
+        "Módulo analítico. Consulta las intervenciones profesionales sin modificar "
+        "la base general de habitantes."
     )
 
-    # =========================
-    # FILTROS
-    # =========================
-    col1, col2, col3 = st.columns(3)
+    # ========================================================
+    # PROFESIONALES
+    # ========================================================
+    try:
+        df_prof_seguimiento = pd.read_sql(
+            text("""
+                SELECT id, nombre, rol
+                FROM profesionales
+                ORDER BY nombre
+            """),
+            engine
+        )
+    except Exception:
+        df_prof_seguimiento = pd.DataFrame(
+            columns=["id", "nombre", "rol"]
+        )
 
-    profesional_sel = col1.selectbox(
+    if not df_prof_seguimiento.empty:
+        df_prof_seguimiento["label"] = (
+            df_prof_seguimiento["nombre"].astype(str)
+            + " ("
+            + df_prof_seguimiento["rol"].astype(str)
+            + ")"
+        )
+
+    # ========================================================
+    # FILTROS
+    # ========================================================
+    c1, c2, c3 = st.columns(3)
+
+    opciones_prof = ["Todos"]
+    if not df_prof_seguimiento.empty:
+        opciones_prof += df_prof_seguimiento["id"].tolist()
+
+    profesional_sel_impacto = c1.selectbox(
         "👨‍⚕️ Profesional",
-        ["Todos"] + df_profesionales["id"].tolist(),
+        opciones_prof,
+        key="seguimiento_profesional_filtro",
         format_func=lambda x: (
             "Todos"
             if x == "Todos"
-            else df_profesionales[df_profesionales["id"] == x]["label"].values[0]
+            else df_prof_seguimiento.loc[
+                df_prof_seguimiento["id"] == x,
+                "label"
+            ].iloc[0]
         )
     )
 
-    fecha_inicio = col2.date_input("📅 Fecha inicio")
-    fecha_fin = col3.date_input("📅 Fecha fin")
+    hoy = date.today()
+    fecha_inicio_impacto = c2.date_input(
+        "📅 Fecha inicio",
+        value=hoy.replace(day=1),
+        key="seguimiento_fecha_inicio"
+    )
+    fecha_fin_impacto = c3.date_input(
+        "📅 Fecha fin",
+        value=hoy,
+        key="seguimiento_fecha_fin"
+    )
 
-    # =========================
-    # QUERY
-    # =========================
-    query = """
-        SELECT *
-        FROM pai_novedades
-        WHERE DATE(fecha) BETWEEN :inicio AND :fin
-    """
+    if fecha_inicio_impacto > fecha_fin_impacto:
+        st.warning("La fecha inicial no puede ser posterior a la fecha final.")
+        df_seguimiento = pd.DataFrame()
+    else:
+        query_seguimiento = """
+            SELECT
+                n.id,
+                n.id_objetivo,
+                n.fecha,
+                n.profesional,
+                n.tipo_novedad,
+                n.descripcion,
+                n.avance_generado,
+                n.evidencia,
+                o.documento_usuario,
+                o.objetivo_tipo,
+                o.estado AS estado_objetivo
+            FROM pai_novedades n
+            LEFT JOIN pai_objetivos o
+                ON o.id = n.id_objetivo
+            WHERE DATE(n.fecha) BETWEEN :inicio AND :fin
+        """
 
-    params = {
-        "inicio": fecha_inicio.strftime("%Y-%m-%d"),
-        "fin": fecha_fin.strftime("%Y-%m-%d")
-    }
+        params_seguimiento = {
+            "inicio": fecha_inicio_impacto.strftime("%Y-%m-%d"),
+            "fin": fecha_fin_impacto.strftime("%Y-%m-%d")
+        }
 
-    # filtro profesional (por nombre real en tu tabla)
-    if profesional_sel != "Todos":
+        if profesional_sel_impacto != "Todos":
+            nombre_profesional = df_prof_seguimiento.loc[
+                df_prof_seguimiento["id"] == profesional_sel_impacto,
+                "nombre"
+            ].iloc[0]
 
-        nombre_profesional = df_profesionales.loc[
-            df_profesionales["id"] == profesional_sel,
-            "nombre"
-        ].values[0]
+            query_seguimiento += " AND n.profesional = :profesional"
+            params_seguimiento["profesional"] = nombre_profesional
 
-        query += " AND profesional = :profesional"
-        params["profesional"] = nombre_profesional
+        query_seguimiento += " ORDER BY n.fecha DESC"
 
-    # =========================
-    # DATA
-    # =========================
-    df = pd.read_sql(text(query), engine, params=params)
-
-    st.divider()
-
-    # =========================
-    # VALIDACIÓN
-    # =========================
-    if df.empty:
-        st.info("No hay registros en este rango.")
-        st.stop()
-
-    # =========================
-    # KPIs
-    # =========================
-    col1, col2, col3 = st.columns(3)
-
-    col1.metric("📌 Registros", len(df))
-    col2.metric("📈 Avance promedio", f"{df['avance_generado'].mean():.1f}%")
-    col3.metric("👨‍⚕️ Profesionales activos", df["profesional"].nunique())
-
-    st.divider()
-
-    # =========================
-    # GRÁFICAS
-    # =========================
-
-    # 📈 evolución del avance
-    df["fecha"] = pd.to_datetime(df["fecha"])
-    evol = df.groupby(df["fecha"].dt.date)["avance_generado"].mean()
-
-    st.subheader("📈 Evolución del avance")
-    st.line_chart(evol)
-
-    # 👨‍⚕️ productividad
-    st.subheader("👨‍⚕️ Intervenciones por profesional")
-    prod = df.groupby("profesional")["id"].count().sort_values(ascending=False)
-    st.bar_chart(prod)
+        df_seguimiento = pd.read_sql(
+            text(query_seguimiento),
+            engine,
+            params=params_seguimiento
+        )
 
     st.divider()
 
-    # =========================
-    # TABLA DETALLADA
-    # =========================
-    st.subheader("📋 Detalle de registros")
+    # ========================================================
+    # NO DETENER EL RESTO DE LA APLICACIÓN
+    # ========================================================
+    if df_seguimiento.empty:
+        st.info(
+            "No hay intervenciones registradas para los filtros seleccionados. "
+            "Los demás módulos continúan disponibles normalmente."
+        )
+    else:
+        df_seguimiento["fecha"] = pd.to_datetime(
+            df_seguimiento["fecha"],
+            errors="coerce"
+        )
+        df_seguimiento["avance_generado"] = pd.to_numeric(
+            df_seguimiento["avance_generado"],
+            errors="coerce"
+        )
 
-    st.dataframe(
-        df[[
+        total_intervenciones = len(df_seguimiento)
+        personas_atendidas = (
+            df_seguimiento["documento_usuario"]
+            .dropna()
+            .astype(str)
+            .nunique()
+        )
+        profesionales_activos = (
+            df_seguimiento["profesional"]
+            .dropna()
+            .nunique()
+        )
+        avance_promedio_impacto = (
+            df_seguimiento["avance_generado"].mean()
+            if df_seguimiento["avance_generado"].notna().any()
+            else 0
+        )
+
+        k1, k2, k3, k4 = st.columns(4)
+        k1.metric("📌 Intervenciones", total_intervenciones)
+        k2.metric("👥 Personas atendidas", personas_atendidas)
+        k3.metric("👨‍⚕️ Profesionales", profesionales_activos)
+        k4.metric(
+            "📈 Avance promedio",
+            f"{avance_promedio_impacto:.1f}%"
+        )
+
+        st.divider()
+
+        g1, g2 = st.columns(2)
+
+        with g1:
+            st.subheader("📈 Evolución de intervenciones")
+            evolucion_intervenciones = (
+                df_seguimiento.dropna(subset=["fecha"])
+                .groupby(df_seguimiento["fecha"].dt.date)
+                .size()
+                .rename("intervenciones")
+            )
+            if not evolucion_intervenciones.empty:
+                st.line_chart(evolucion_intervenciones)
+
+        with g2:
+            st.subheader("👨‍⚕️ Intervenciones por profesional")
+            productividad = (
+                df_seguimiento["profesional"]
+                .fillna("Sin profesional")
+                .value_counts()
+            )
+            if not productividad.empty:
+                st.bar_chart(productividad)
+
+        st.subheader("🎯 Intervenciones por objetivo PAI")
+        objetivos_impacto = (
+            df_seguimiento["objetivo_tipo"]
+            .fillna("Sin objetivo asociado")
+            .value_counts()
+        )
+        if not objetivos_impacto.empty:
+            st.bar_chart(objetivos_impacto)
+
+        st.divider()
+        st.subheader("📋 Detalle de intervenciones")
+
+        columnas_detalle = [
             "fecha",
+            "documento_usuario",
             "profesional",
+            "objetivo_tipo",
             "tipo_novedad",
             "descripcion",
             "avance_generado",
             "evidencia"
-        ]],
-        use_container_width=True
-    )
-        # =========================
-    # ODS
-    # =========================
-
-    st.divider()
-
-    st.subheader("🌎 Contribución a los Objetivos de Desarrollo Sostenible (ODS)")
-
-    total_intervenciones = len(df)
-
-    # ODS 3
-    ods3 = (
-        df["tipo_novedad"]
-        .str.contains(
-            "motivación|salud|acompañamiento|orientación",
-            case=False,
-            na=False
-        )
-        .sum()
-    )
-
-    # ODS 10
-    ods10 = total_intervenciones
-
-    # ODS 16
-    ods16 = (
-        df["evidencia"]
-        .fillna("")
-        .str.strip()
-        .ne("")
-        .sum()
-    )
-
-    col1, col2, col3 = st.columns(3)
-
-    col1.metric(
-        "🩺 ODS 3 Salud y bienestar",
-        f"{(ods3/total_intervenciones)*100:.1f}%"
-    )
-
-    col2.metric(
-        "⚖️ ODS 10 Reducción desigualdades",
-        f"{(ods10/total_intervenciones)*100:.1f}%"
-    )
-
-    col3.metric(
-        "🏛️ ODS 16 Fortalecimiento institucional",
-        f"{(ods16/total_intervenciones)*100:.1f}%"
-    )
-    st.subheader("📋 Aporte institucional a los ODS")
-
-    ods_df = pd.DataFrame({
-        "ODS": [
-            "ODS 3",
-            "ODS 10",
-            "ODS 16"
-        ],
-
-        "Objetivo": [
-            "Salud y bienestar",
-            "Reducción de desigualdades",
-            "Paz, justicia e instituciones sólidas"
-        ],
-
-        "Contribución": [
-            "Intervenciones de reducción de riesgos y daños.",
-            "Inclusión social y disminución de vulnerabilidades.",
-            "Seguimiento, trazabilidad y fortalecimiento institucional."
         ]
-    })
 
-    st.dataframe(
-        ods_df,
-        use_container_width=True,
-        hide_index=True
-    )
+        columnas_existentes = [
+            c for c in columnas_detalle
+            if c in df_seguimiento.columns
+        ]
+
+        st.dataframe(
+            df_seguimiento[columnas_existentes],
+            use_container_width=True,
+            hide_index=True
+        )
+
+        # ====================================================
+        # APORTE A ODS - SOLO COMO LECTURA ANALÍTICA
+        # ====================================================
+        st.divider()
+        st.subheader("🌎 Contribución indicativa a los ODS")
+
+        ods3 = (
+            df_seguimiento["tipo_novedad"]
+            .fillna("")
+            .str.contains(
+                "motivación|salud|acompañamiento|orientación",
+                case=False,
+                regex=True
+            )
+            .sum()
+        )
+
+        ods10 = total_intervenciones
+
+        ods16 = (
+            df_seguimiento["evidencia"]
+            .fillna("")
+            .astype(str)
+            .str.strip()
+            .ne("")
+            .sum()
+        )
+
+        o1, o2, o3 = st.columns(3)
+        o1.metric(
+            "🩺 ODS 3 Salud y bienestar",
+            f"{(ods3 / total_intervenciones) * 100:.1f}%"
+        )
+        o2.metric(
+            "⚖️ ODS 10 Reducción desigualdades",
+            f"{(ods10 / total_intervenciones) * 100:.1f}%"
+        )
+        o3.metric(
+            "🏛️ ODS 16 Trazabilidad",
+            f"{(ods16 / total_intervenciones) * 100:.1f}%"
+        )
+
+        st.caption(
+            "Los porcentajes ODS son una lectura operativa de las intervenciones "
+            "registradas; no sustituyen una medición formal de cumplimiento ODS."
+        )
+
+
 with tab8:
 
-    st.title("📥 Carga Masiva de Activos")
-
-    archivo = st.file_uploader(
-        "Sube archivo Excel",
-        type=["xlsx"],
-        key="upload_activos_tab11"
+    st.title("📥 Conciliación y Carga de Activos")
+    st.caption(
+        "Valida el archivo antes de modificar estados. La carga conserva los "
+        "EGRESADOS, registra trazabilidad y reporta documentos no encontrados."
     )
 
-    if archivo:
+    archivo_activos = st.file_uploader(
+        "Sube archivo Excel",
+        type=["xlsx"],
+        key="upload_activos_tab8_v6"
+    )
+
+    if archivo_activos:
 
         try:
-            df_activos = pd.read_excel(archivo)
+            df_carga = pd.read_excel(archivo_activos)
 
-            df_activos.columns = (
-                df_activos.columns
+            df_carga.columns = (
+                df_carga.columns
                 .astype(str)
                 .str.strip()
                 .str.lower()
+                .str.replace("\n", " ", regex=False)
+                .str.replace("  ", " ", regex=False)
                 .str.replace(" ", "_", regex=False)
             )
 
-            st.write(
-                "📌 Columnas detectadas:",
-                df_activos.columns.tolist()
-            )
-
-            required = [
+            requeridas = [
                 "numero_identificacion",
                 "modalidad"
             ]
 
-            missing = [
-                columna
-                for columna in required
-                if columna not in df_activos.columns
+            faltantes_columnas = [
+                c for c in requeridas
+                if c not in df_carga.columns
             ]
 
-            if missing:
-                st.error(f"❌ Faltan columnas: {missing}")
-                st.stop()
+            if faltantes_columnas:
+                st.error(
+                    "❌ El archivo no puede procesarse porque faltan estas "
+                    f"columnas: {faltantes_columnas}"
+                )
+            else:
+                df_carga = df_carga.dropna(
+                    subset=["numero_identificacion"]
+                ).copy()
 
-            # Eliminar filas sin identificación
-            df_activos = df_activos.dropna(
-                subset=["numero_identificacion"]
-            )
-
-            # Limpiar identificación
-            df_activos["numero_identificacion"] = (
-                df_activos["numero_identificacion"]
-                .astype(str)
-                .str.strip()
-                .str.replace(r"\.0$", "", regex=True)
-            )
-
-            # Limpiar modalidad
-            df_activos["modalidad"] = (
-                df_activos["modalidad"]
-                .fillna("SIN MODALIDAD")
-                .astype(str)
-                .str.upper()
-                .str.strip()
-            )
-
-            # Eliminar identificaciones vacías
-            df_activos = df_activos[
-                df_activos["numero_identificacion"] != ""
-            ]
-
-            # Una persona solamente puede aparecer una vez
-            df_activos = df_activos.drop_duplicates(
-                subset=["numero_identificacion"],
-                keep="last"
-            )
-
-            st.subheader("📊 Resumen del archivo")
-
-            resumen = (
-                df_activos["modalidad"]
-                .value_counts()
-                .reset_index()
-            )
-
-            resumen.columns = [
-                "modalidad",
-                "cantidad"
-            ]
-
-            st.dataframe(
-                resumen,
-                use_container_width=True,
-                hide_index=True
-            )
-
-            st.bar_chart(
-                resumen.set_index("modalidad")
-            )
-
-            st.metric(
-                "Total de personas activas en el archivo",
-                len(df_activos)
-            )
-
-            confirmar = st.checkbox(
-                "Confirmo que este archivo reemplazará la lista actual de activos",
-                key="confirmar_actualizacion_activos"
-            )
-
-            if confirmar and st.button(
-                "Actualizar base",
-                key="btn_actualizar_activos",
-                type="primary"
-            ):
-
-                datos_actualizacion = [
-                    {
-                        "id": str(row["numero_identificacion"]).strip(),
-                        "modalidad": str(row["modalidad"]).strip().upper()
-                    }
-                    for _, row in df_activos.iterrows()
-                ]
-
-                with engine.begin() as conn:
-
-                    # Desactivar la lista anterior
-                    conn.execute(text("""
-                        UPDATE habitante_de_calle
-                        SET estado_caso = 'INACTIVO',
-                            modalidad = NULL
-                        WHERE estado_caso = 'ACTIVO'
-                    """))
-
-                    # Activar la nueva lista
-                    conn.execute(
-                        text("""
-                            UPDATE habitante_de_calle
-                            SET estado_caso = 'ACTIVO',
-                                modalidad = :modalidad
-                            WHERE TRIM(
-                                CAST(numero_identificacion AS TEXT)
-                            ) = :id
-                        """),
-                        datos_actualizacion
-                    )
-
-                    # Verificar cuántos quedaron activos
-                    total_activos = conn.execute(text("""
-                        SELECT COUNT(*)
-                        FROM habitante_de_calle
-                        WHERE estado_caso = 'ACTIVO'
-                    """)).scalar()
-
-                st.success(
-                    f"✅ Base actualizada correctamente. "
-                    f"Actualmente hay {total_activos} registros activos."
+                df_carga["numero_identificacion"] = (
+                    df_carga["numero_identificacion"]
+                    .astype(str)
+                    .str.strip()
+                    .str.replace(r"\.0$", "", regex=True)
                 )
 
+                df_carga["modalidad"] = (
+                    df_carga["modalidad"]
+                    .fillna("")
+                    .astype(str)
+                    .str.upper()
+                    .str.strip()
+                )
+
+                df_carga = df_carga[
+                    df_carga["numero_identificacion"].ne("")
+                ].copy()
+
+                duplicados_archivo = int(
+                    df_carga["numero_identificacion"].duplicated(
+                        keep=False
+                    ).sum()
+                )
+
+                df_carga = df_carga.drop_duplicates(
+                    subset=["numero_identificacion"],
+                    keep="last"
+                ).copy()
+
+                # Base actual independiente del df general de la app
+                df_base_activos = pd.read_sql(
+                    text("""
+                        SELECT
+                            numero_identificacion,
+                            nombres,
+                            apellidos,
+                            estado_caso,
+                            modalidad
+                        FROM habitante_de_calle
+                    """),
+                    engine
+                )
+
+                df_base_activos["doc_normalizado"] = (
+                    df_base_activos["numero_identificacion"]
+                    .astype(str)
+                    .str.strip()
+                    .str.replace(r"\.0$", "", regex=True)
+                )
+
+                df_base_activos["estado_normalizado"] = (
+                    df_base_activos["estado_caso"]
+                    .fillna("")
+                    .astype(str)
+                    .str.upper()
+                    .str.strip()
+                )
+
+                df_base_activos["modalidad_normalizada"] = (
+                    df_base_activos["modalidad"]
+                    .fillna("")
+                    .astype(str)
+                    .str.upper()
+                    .str.strip()
+                )
+
+                docs_base = set(
+                    df_base_activos["doc_normalizado"].tolist()
+                )
+                docs_archivo = set(
+                    df_carga["numero_identificacion"].tolist()
+                )
+
+                docs_encontrados = docs_archivo & docs_base
+                docs_no_encontrados = docs_archivo - docs_base
+
+                activos_actuales_df = df_base_activos[
+                    df_base_activos["estado_normalizado"] == "ACTIVO"
+                ].copy()
+                docs_activos_actuales = set(
+                    activos_actuales_df["doc_normalizado"].tolist()
+                )
+
+                # Solo quienes están ACTIVOS y ya no vienen en el archivo
+                # pasarán a INACTIVO. Los EGRESADOS no se modifican.
+                docs_a_inactivar = (
+                    docs_activos_actuales - docs_encontrados
+                )
+
+                # Encontrados que no estaban activos -> activar
+                base_por_doc = (
+                    df_base_activos
+                    .drop_duplicates("doc_normalizado", keep="last")
+                    .set_index("doc_normalizado")
+                )
+
+                docs_a_activar = set()
+                docs_cambio_modalidad = set()
+
+                modalidad_archivo = dict(
+                    zip(
+                        df_carga["numero_identificacion"],
+                        df_carga["modalidad"]
+                    )
+                )
+
+                for doc in docs_encontrados:
+                    estado_prev = str(
+                        base_por_doc.loc[doc, "estado_normalizado"]
+                    )
+                    modalidad_prev = str(
+                        base_por_doc.loc[doc, "modalidad_normalizada"]
+                    )
+                    modalidad_nueva = modalidad_archivo.get(doc, "")
+
+                    if estado_prev != "ACTIVO":
+                        docs_a_activar.add(doc)
+                    elif modalidad_prev != modalidad_nueva:
+                        docs_cambio_modalidad.add(doc)
+
+                # ------------------------------------------------
+                # PREVISUALIZACIÓN
+                # ------------------------------------------------
+                st.subheader("🔎 Validación previa")
+
+                p1, p2, p3, p4, p5 = st.columns(5)
+                p1.metric("Archivo", len(df_carga))
+                p2.metric("Encontrados", len(docs_encontrados))
+                p3.metric(
+                    "No encontrados",
+                    len(docs_no_encontrados)
+                )
+                p4.metric("A activar", len(docs_a_activar))
+                p5.metric("A inactivar", len(docs_a_inactivar))
+
+                if duplicados_archivo:
+                    st.warning(
+                        f"Se detectaron {duplicados_archivo} filas asociadas "
+                        "a identificaciones duplicadas en el archivo. "
+                        "Se conservará la última aparición de cada persona."
+                    )
+
+                resumen_modalidad = (
+                    df_carga["modalidad"]
+                    .replace("", "SIN MODALIDAD")
+                    .value_counts()
+                    .rename_axis("modalidad")
+                    .reset_index(name="cantidad")
+                )
+
+                st.subheader("📊 Distribución del archivo por modalidad")
+                st.dataframe(
+                    resumen_modalidad,
+                    use_container_width=True,
+                    hide_index=True
+                )
+                st.bar_chart(
+                    resumen_modalidad.set_index("modalidad")
+                )
+
+                if docs_no_encontrados:
+                    st.warning(
+                        "Hay personas del Excel que no existen en "
+                        "habitante_de_calle. No serán creadas automáticamente."
+                    )
+
+                    no_encontrados_df = (
+                        df_carga[
+                            df_carga["numero_identificacion"]
+                            .isin(docs_no_encontrados)
+                        ][["numero_identificacion", "modalidad"]]
+                        .sort_values("numero_identificacion")
+                    )
+
+                    with st.expander(
+                        f"⚠️ Ver {len(no_encontrados_df)} documentos no encontrados"
+                    ):
+                        st.dataframe(
+                            no_encontrados_df,
+                            use_container_width=True,
+                            hide_index=True
+                        )
+
+                if docs_a_inactivar:
+                    detalle_inactivar = df_base_activos[
+                        df_base_activos["doc_normalizado"]
+                        .isin(docs_a_inactivar)
+                    ][
+                        [
+                            "numero_identificacion",
+                            "nombres",
+                            "apellidos",
+                            "modalidad"
+                        ]
+                    ]
+
+                    with st.expander(
+                        f"🟠 Ver {len(detalle_inactivar)} personas que pasarán a INACTIVO"
+                    ):
+                        st.dataframe(
+                            detalle_inactivar,
+                            use_container_width=True,
+                            hide_index=True
+                        )
+
+                if docs_a_activar:
+                    detalle_activar = df_base_activos[
+                        df_base_activos["doc_normalizado"]
+                        .isin(docs_a_activar)
+                    ][
+                        [
+                            "numero_identificacion",
+                            "nombres",
+                            "apellidos",
+                            "estado_caso",
+                            "modalidad"
+                        ]
+                    ]
+
+                    with st.expander(
+                        f"🟢 Ver {len(detalle_activar)} personas que pasarán a ACTIVO"
+                    ):
+                        st.dataframe(
+                            detalle_activar,
+                            use_container_width=True,
+                            hide_index=True
+                        )
+
+                if docs_cambio_modalidad:
+                    st.info(
+                        f"{len(docs_cambio_modalidad)} personas ya activas "
+                        "cambiarán de modalidad."
+                    )
+
+                st.divider()
+
+                confirmar_carga = st.checkbox(
+                    "Confirmo que revisé la conciliación y deseo aplicar estos cambios",
+                    key="confirmar_actualizacion_activos_v6"
+                )
+
+                if confirmar_carga and st.button(
+                    "✅ Aplicar conciliación",
+                    key="btn_actualizar_activos_v6",
+                    type="primary",
+                    use_container_width=True
+                ):
+                    usuario_accion = st.session_state.get(
+                        "usuario_actual",
+                        "sistema"
+                    )
+
+                    with engine.begin() as conn:
+
+                        # 1. INACTIVAR solo activos ausentes del archivo
+                        for doc in sorted(docs_a_inactivar):
+                            fila_prev = base_por_doc.loc[doc]
+                            modalidad_prev = str(
+                                fila_prev["modalidad_normalizada"]
+                            )
+
+                            conn.execute(
+                                text("""
+                                    UPDATE habitante_de_calle
+                                    SET estado_caso = 'INACTIVO',
+                                        modalidad = NULL
+                                    WHERE TRIM(
+                                        CAST(numero_identificacion AS TEXT)
+                                    ) = :doc
+                                      AND UPPER(
+                                        TRIM(COALESCE(estado_caso, ''))
+                                      ) = 'ACTIVO'
+                                """),
+                                {"doc": doc}
+                            )
+
+                            conn.execute(
+                                text("""
+                                    INSERT INTO movimientos_habitante (
+                                        numero_identificacion,
+                                        tipo_movimiento,
+                                        modalidad,
+                                        usuario_registra,
+                                        observacion
+                                    )
+                                    VALUES (
+                                        :doc,
+                                        'INACTIVACION_CARGA',
+                                        :modalidad,
+                                        :usuario,
+                                        'Inactivación por conciliación de archivo de activos'
+                                    )
+                                """),
+                                {
+                                    "doc": doc,
+                                    "modalidad": modalidad_prev or None,
+                                    "usuario": usuario_accion
+                                }
+                            )
+
+                        # 2. ACTIVAR / ACTUALIZAR encontrados
+                        for doc in sorted(docs_encontrados):
+                            modalidad_nueva = modalidad_archivo.get(
+                                doc,
+                                ""
+                            ) or None
+
+                            estado_prev = str(
+                                base_por_doc.loc[
+                                    doc,
+                                    "estado_normalizado"
+                                ]
+                            )
+                            modalidad_prev = str(
+                                base_por_doc.loc[
+                                    doc,
+                                    "modalidad_normalizada"
+                                ]
+                            )
+
+                            conn.execute(
+                                text("""
+                                    UPDATE habitante_de_calle
+                                    SET estado_caso = 'ACTIVO',
+                                        modalidad = :modalidad
+                                    WHERE TRIM(
+                                        CAST(numero_identificacion AS TEXT)
+                                    ) = :doc
+                                """),
+                                {
+                                    "doc": doc,
+                                    "modalidad": modalidad_nueva
+                                }
+                            )
+
+                            if estado_prev != "ACTIVO":
+                                tipo_mov = "ACTIVACION_CARGA"
+                                obs = (
+                                    "Activación por conciliación de archivo de activos"
+                                )
+                            elif modalidad_prev != (modalidad_nueva or ""):
+                                tipo_mov = "CAMBIO_MODALIDAD_CARGA"
+                                obs = (
+                                    f"Cambio de modalidad por conciliación: "
+                                    f"{modalidad_prev or 'SIN MODALIDAD'} -> "
+                                    f"{modalidad_nueva or 'SIN MODALIDAD'}"
+                                )
+                            else:
+                                tipo_mov = None
+                                obs = None
+
+                            if tipo_mov:
+                                conn.execute(
+                                    text("""
+                                        INSERT INTO movimientos_habitante (
+                                            numero_identificacion,
+                                            tipo_movimiento,
+                                            modalidad,
+                                            usuario_registra,
+                                            observacion
+                                        )
+                                        VALUES (
+                                            :doc,
+                                            :tipo_movimiento,
+                                            :modalidad,
+                                            :usuario,
+                                            :observacion
+                                        )
+                                    """),
+                                    {
+                                        "doc": doc,
+                                        "tipo_movimiento": tipo_mov,
+                                        "modalidad": modalidad_nueva,
+                                        "usuario": usuario_accion,
+                                        "observacion": obs
+                                    }
+                                )
+
+                        total_activos_final = conn.execute(
+                            text("""
+                                SELECT COUNT(*)
+                                FROM habitante_de_calle
+                                WHERE UPPER(
+                                    TRIM(COALESCE(estado_caso, ''))
+                                ) = 'ACTIVO'
+                            """)
+                        ).scalar()
+
+                    # Auditoría resumida, fuera de la transacción principal
+                    registrar_auditoria(
+                        "CONCILIACION_MASIVA_ACTIVOS",
+                        modulo="Carga Activos",
+                        valor_anterior=(
+                            f"Activos previos: {len(docs_activos_actuales)}"
+                        ),
+                        valor_nuevo=(
+                            f"Activos finales: {total_activos_final}"
+                        ),
+                        observacion=(
+                            f"Encontrados: {len(docs_encontrados)}; "
+                            f"No encontrados: {len(docs_no_encontrados)}; "
+                            f"Activados: {len(docs_a_activar)}; "
+                            f"Inactivados: {len(docs_a_inactivar)}; "
+                            f"Cambios modalidad: {len(docs_cambio_modalidad)}"
+                        )
+                    )
+
+                    invalidar_cache_datos()
+
+                    st.success(
+                        "✅ Conciliación aplicada correctamente."
+                    )
+                    st.info(
+                        f"Activos finales: {total_activos_final} | "
+                        f"Activados: {len(docs_a_activar)} | "
+                        f"Inactivados: {len(docs_a_inactivar)} | "
+                        f"Cambios de modalidad: {len(docs_cambio_modalidad)} | "
+                        f"No encontrados: {len(docs_no_encontrados)}"
+                    )
+
         except Exception as e:
-            st.error(f"❌ Error al procesar el archivo: {e}")
-    
-    with tab9:
+            st.error(
+                f"❌ Error al procesar la carga de activos: {e}"
+            )
 
-        st.title("📄 Historia Integral de Atención")
 
-        usuarios = pd.read_sql("""
-            SELECT numero_identificacion, nombres, apellidos
+with tab9:
+
+    st.title("📄 Historia Integral de Atención")
+    st.caption(
+        "Consulta consolidada del usuario: estado actual, movimientos, PAI, "
+        "intervenciones profesionales y trazabilidad."
+    )
+
+    usuarios_historia = pd.read_sql(
+        text("""
+            SELECT
+                numero_identificacion,
+                nombres,
+                apellidos,
+                edad,
+                sexo_al_nacer,
+                estado_caso,
+                modalidad
             FROM habitante_de_calle
-        """, engine)
+            ORDER BY nombres, apellidos
+        """),
+        engine
+    )
 
-        documento = st.selectbox(
-            "👤 Seleccione usuario",
-            usuarios["numero_identificacion"],
-            format_func=lambda x:
-                usuarios.loc[usuarios["numero_identificacion"]==x, "nombres"].values[0]
-                + " " +
-                usuarios.loc[usuarios["numero_identificacion"]==x, "apellidos"].values[0]
+    if usuarios_historia.empty:
+        st.info("No hay personas disponibles para consultar.")
+    else:
+        usuarios_historia["doc_normalizado"] = (
+            usuarios_historia["numero_identificacion"]
+            .astype(str)
+            .str.strip()
+            .str.replace(r"\.0$", "", regex=True)
         )
 
-        if st.button("📄 Generar PDF"):
+        usuarios_historia["nombre_completo"] = (
+            usuarios_historia["nombres"].fillna("").astype(str).str.strip()
+            + " "
+            + usuarios_historia["apellidos"].fillna("").astype(str).str.strip()
+        ).str.strip()
 
-            pdf = generar_historia_integral(documento, engine)
+        opciones_historia = usuarios_historia.index.tolist()
 
+        indice_historia = st.selectbox(
+            "👤 Seleccione usuario",
+            opciones_historia,
+            key="historia_usuario_v6",
+            format_func=lambda i: (
+                f"{usuarios_historia.loc[i, 'nombre_completo']} - "
+                f"{usuarios_historia.loc[i, 'doc_normalizado']}"
+            )
+        )
+
+        persona_historia = usuarios_historia.loc[indice_historia]
+        documento_historia = persona_historia["doc_normalizado"]
+
+        h1, h2, h3, h4 = st.columns(4)
+        h1.metric(
+            "📌 Estado",
+            str(persona_historia.get("estado_caso", "") or "Sin dato")
+        )
+        h2.metric(
+            "🏷️ Modalidad",
+            str(persona_historia.get("modalidad", "") or "Sin dato")
+        )
+        h3.metric(
+            "🎂 Edad",
+            str(persona_historia.get("edad", "") or "Sin dato")
+        )
+        h4.metric(
+            "⚧ Sexo",
+            str(persona_historia.get("sexo_al_nacer", "") or "Sin dato")
+        )
+
+        st.divider()
+
+        # ====================================================
+        # RESUMEN DE HISTORIA
+        # ====================================================
+        movimientos_hist = pd.read_sql(
+            text("""
+                SELECT
+                    fecha_movimiento,
+                    tipo_movimiento,
+                    modalidad,
+                    usuario_registra,
+                    observacion
+                FROM movimientos_habitante
+                WHERE TRIM(
+                    CAST(numero_identificacion AS TEXT)
+                ) = :doc
+                ORDER BY fecha_movimiento DESC
+            """),
+            engine,
+            params={"doc": documento_historia}
+        )
+
+        objetivos_hist = pd.read_sql(
+            text("""
+                SELECT
+                    id,
+                    fecha_apertura,
+                    objetivo_tipo,
+                    objetivo_descripcion,
+                    estado,
+                    porcentaje_avance
+                FROM pai_objetivos
+                WHERE TRIM(
+                    CAST(documento_usuario AS TEXT)
+                ) = :doc
+                ORDER BY fecha_apertura DESC
+            """),
+            engine,
+            params={"doc": documento_historia}
+        )
+
+        novedades_hist = pd.read_sql(
+            text("""
+                SELECT
+                    n.fecha,
+                    n.profesional,
+                    n.tipo_novedad,
+                    n.descripcion,
+                    n.avance_generado,
+                    o.objetivo_tipo
+                FROM pai_novedades n
+                INNER JOIN pai_objetivos o
+                    ON o.id = n.id_objetivo
+                WHERE TRIM(
+                    CAST(o.documento_usuario AS TEXT)
+                ) = :doc
+                ORDER BY n.fecha DESC
+            """),
+            engine,
+            params={"doc": documento_historia}
+        )
+
+        try:
+            auditoria_hist = pd.read_sql(
+                text("""
+                    SELECT
+                        fecha_hora,
+                        usuario,
+                        modulo,
+                        accion,
+                        valor_anterior,
+                        valor_nuevo,
+                        observacion
+                    FROM auditoria_sistema
+                    WHERE TRIM(
+                        COALESCE(numero_identificacion, '')
+                    ) = :doc
+                    ORDER BY fecha_hora DESC
+                    LIMIT 100
+                """),
+                engine,
+                params={"doc": documento_historia}
+            )
+        except Exception:
+            auditoria_hist = pd.DataFrame()
+
+        avance_pai_hist = 0.0
+        if (
+            not objetivos_hist.empty
+            and "porcentaje_avance" in objetivos_hist.columns
+        ):
+            avance_serie = pd.to_numeric(
+                objetivos_hist["porcentaje_avance"],
+                errors="coerce"
+            )
+            if avance_serie.notna().any():
+                avance_pai_hist = float(avance_serie.mean())
+
+        r1, r2, r3, r4 = st.columns(4)
+        r1.metric("🔄 Movimientos", len(movimientos_hist))
+        r2.metric("🎯 Objetivos PAI", len(objetivos_hist))
+        r3.metric("📝 Intervenciones", len(novedades_hist))
+        r4.metric("📈 Avance PAI", f"{avance_pai_hist:.1f}%")
+
+        st.markdown("### 🧭 Historia en pantalla")
+
+        hist_tab1, hist_tab2, hist_tab3, hist_tab4 = st.tabs([
+            "🔄 Movimientos",
+            "🎯 PAI",
+            "📝 Seguimiento profesional",
+            "🛡️ Auditoría"
+        ])
+
+        with hist_tab1:
+            if movimientos_hist.empty:
+                st.info("Sin movimientos registrados.")
+            else:
+                st.dataframe(
+                    movimientos_hist,
+                    use_container_width=True,
+                    hide_index=True
+                )
+
+        with hist_tab2:
+            if objetivos_hist.empty:
+                st.info("Sin objetivos PAI registrados.")
+            else:
+                st.dataframe(
+                    objetivos_hist,
+                    use_container_width=True,
+                    hide_index=True
+                )
+
+        with hist_tab3:
+            if novedades_hist.empty:
+                st.info("Sin intervenciones profesionales registradas.")
+            else:
+                st.dataframe(
+                    novedades_hist,
+                    use_container_width=True,
+                    hide_index=True
+                )
+
+        with hist_tab4:
+            if auditoria_hist.empty:
+                st.info(
+                    "Aún no hay eventos de auditoría para esta persona."
+                )
+            else:
+                st.dataframe(
+                    auditoria_hist,
+                    use_container_width=True,
+                    hide_index=True
+                )
+
+        st.divider()
+
+        if st.button(
+            "📄 Generar Historia Integral PDF",
+            key="generar_historia_integral_v6",
+            use_container_width=True
+        ):
+            try:
+                pdf_historia = generar_historia_integral(
+                    documento_historia,
+                    engine
+                )
+                st.session_state[
+                    "historia_integral_pdf_v6"
+                ] = pdf_historia.getvalue()
+                st.session_state[
+                    "historia_integral_doc_v6"
+                ] = documento_historia
+
+                registrar_auditoria(
+                    "GENERAR_HISTORIA_INTEGRAL",
+                    documento=documento_historia,
+                    modulo="Historia Integral"
+                )
+
+                st.success("✅ Historia integral generada.")
+            except Exception as e:
+                st.error(
+                    f"❌ No fue posible generar la historia: {e}"
+                )
+
+        if (
+            st.session_state.get("historia_integral_pdf_v6")
+            and st.session_state.get(
+                "historia_integral_doc_v6"
+            ) == documento_historia
+        ):
             st.download_button(
                 "⬇️ Descargar Historia Integral",
-                data=pdf,
-                file_name=f"historia_{documento}.pdf",
-                mime="application/pdf"
+                data=st.session_state[
+                    "historia_integral_pdf_v6"
+                ],
+                file_name=f"historia_{documento_historia}.pdf",
+                mime="application/pdf",
+                use_container_width=True,
+                key="descargar_historia_integral_v6"
             )
