@@ -156,6 +156,7 @@ from reportlab.platypus import (
 
 from reportlab.lib.styles import getSampleStyleSheet
 import uuid
+import urllib.parse
 def generar_historia_integral(documento, engine):
     
     buffer = BytesIO()
@@ -2300,6 +2301,61 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
+
+def _texto_whatsapp_movimiento(
+    tipo,
+    nombres,
+    apellidos,
+    documento,
+    modalidad="",
+    fecha=None,
+    hora=None,
+    detalle="",
+    responsable=""
+):
+    """Construye un reporte corto para compartir por WhatsApp."""
+    fecha_txt = (
+        fecha.strftime("%d/%m/%Y")
+        if hasattr(fecha, "strftime")
+        else str(fecha or "")
+    )
+    hora_txt = (
+        hora.strftime("%H:%M")
+        if hasattr(hora, "strftime")
+        else str(hora or "")
+    )
+
+    lineas = [
+        f"*{tipo.upper()}*",
+        f"*NOMBRE COMPLETO:* {str(nombres).strip()} {str(apellidos).strip()}",
+        f"*CC:* {str(documento).strip()}",
+    ]
+
+    if modalidad:
+        lineas.append(f"*ALBERGUE:* {str(modalidad).strip()}")
+    if fecha_txt:
+        lineas.append(f"*FECHA:* {fecha_txt}")
+    if hora_txt:
+        lineas.append(f"*HORA:* {hora_txt}")
+    if detalle:
+        lineas.append(f"*OBSERVACIÓN:* {str(detalle).strip()}")
+    if responsable:
+        lineas.append(f"*REGISTRA:* {str(responsable).strip()}")
+
+    return "\n".join(lineas)
+
+
+def _boton_whatsapp(texto, key):
+    """Abre WhatsApp con el reporte ya diligenciado."""
+    enlace = "https://wa.me/?text=" + urllib.parse.quote(texto)
+    st.link_button(
+        "🟢 Compartir reporte por WhatsApp",
+        enlace,
+        use_container_width=True
+    )
+    st.code(texto, language=None)
+
+
 def gestion_usuarios_movil():
 
     st.title("📱 Gestión de Usuarios")
@@ -2694,6 +2750,33 @@ def gestion_usuarios_movil():
     except Exception:
         pass
 
+    # Alerta de permiso actualmente abierto
+    try:
+        permiso_actual = pd.read_sql(
+            text("""
+                SELECT fecha_salida, hora_salida,
+                       fecha_regreso_estimada, hora_regreso_estimada,
+                       motivo
+                FROM permisos_usuarios
+                WHERE TRIM(CAST(numero_identificacion AS TEXT)) = :doc
+                  AND UPPER(TRIM(COALESCE(estado_permiso,''))) = 'ABIERTO'
+                ORDER BY fecha_salida DESC, hora_salida DESC
+                LIMIT 1
+            """),
+            engine,
+            params={"doc": documento}
+        )
+        if not permiso_actual.empty:
+            pp = permiso_actual.iloc[0]
+            st.warning(
+                "🚪 Usuario actualmente fuera con permiso. "
+                f"Regreso estimado: "
+                f"{pp.get('fecha_regreso_estimada')} "
+                f"{pp.get('hora_regreso_estimada')}."
+            )
+    except Exception:
+        pass
+
     # --------------------------------------------------------
     # Acciones por rol
     # --------------------------------------------------------
@@ -2702,6 +2785,8 @@ def gestion_usuarios_movil():
     if rol_visible == "INSPIRADOR":
         acciones = [
             "➕ Ingreso / Reingreso",
+            "🚪 Salida de permiso",
+            "↩️ Regreso de permiso",
             "⛔ Sanción / Expulsión",
             "🧾 Completar información",
             "📚 Ver historia"
@@ -2838,8 +2923,376 @@ def gestion_usuarios_movil():
                     observacion=observacion.strip()[:500]
                 )
                 invalidar_cache_datos()
+
+                reporte = _texto_whatsapp_movimiento(
+                    tipo_mov,
+                    u.get("nombres"),
+                    u.get("apellidos"),
+                    documento,
+                    modalidad=modalidad,
+                    fecha=date.today(),
+                    detalle=observacion.strip(),
+                    responsable=st.session_state.get(
+                        "usuario_actual", "inspirador"
+                    )
+                )
+                st.session_state[
+                    f"reporte_whatsapp_{documento}"
+                ] = reporte
+
                 st.success(f"✅ {tipo_mov.title()} registrado correctamente.")
-                st.rerun()
+                _boton_whatsapp(
+                    reporte,
+                    f"wa_ingreso_{documento}"
+                )
+
+    # --------------------------------------------------------
+    # Salida de permiso
+    # --------------------------------------------------------
+    elif accion == "🚪 Salida de permiso":
+
+        st.markdown("#### 🚪 Salida de permiso")
+
+        # Verificar que no tenga un permiso abierto
+        try:
+            permiso_abierto = pd.read_sql(
+                text("""
+                    SELECT *
+                    FROM permisos_usuarios
+                    WHERE TRIM(CAST(numero_identificacion AS TEXT)) = :doc
+                      AND UPPER(TRIM(COALESCE(estado_permiso,''))) = 'ABIERTO'
+                    ORDER BY fecha_salida DESC, hora_salida DESC
+                    LIMIT 1
+                """),
+                engine,
+                params={"doc": documento}
+            )
+        except Exception:
+            permiso_abierto = pd.DataFrame()
+
+        if not permiso_abierto.empty:
+            p = permiso_abierto.iloc[0]
+            st.warning(
+                "Este usuario ya tiene un permiso abierto "
+                f"desde {p.get('fecha_salida')} {p.get('hora_salida')}."
+            )
+        else:
+            c1, c2 = st.columns(2)
+            fecha_salida = c1.date_input(
+                "Fecha de salida",
+                value=date.today(),
+                key=f"perm_fecha_salida_{documento}"
+            )
+            hora_salida = c2.time_input(
+                "Hora de salida",
+                key=f"perm_hora_salida_{documento}"
+            )
+
+            c3, c4 = st.columns(2)
+            fecha_regreso_est = c3.date_input(
+                "Fecha estimada de regreso",
+                value=date.today(),
+                key=f"perm_fecha_reg_est_{documento}"
+            )
+            hora_regreso_est = c4.time_input(
+                "Hora estimada de regreso",
+                key=f"perm_hora_reg_est_{documento}"
+            )
+
+            motivo_permiso = st.text_area(
+                "Motivo del permiso *",
+                key=f"perm_motivo_{documento}"
+            )
+
+            autoriza = st.text_input(
+                "Autoriza",
+                value=str(st.session_state.get("usuario_actual", "")).replace(
+                    "sistema", ""
+                ),
+                key=f"perm_autoriza_{documento}"
+            )
+
+            observacion_permiso = st.text_area(
+                "Observación",
+                key=f"perm_obs_{documento}"
+            )
+
+            conf_permiso = st.checkbox(
+                "Confirmo la salida de permiso",
+                key=f"perm_conf_{documento}"
+            )
+
+            if st.button(
+                "🚪 Registrar salida",
+                use_container_width=True,
+                type="primary",
+                key=f"perm_guardar_{documento}"
+            ):
+                if not motivo_permiso.strip():
+                    st.error("Debe registrar el motivo del permiso.")
+                elif not conf_permiso:
+                    st.error("Debe confirmar la salida.")
+                else:
+                    usuario_registra = st.session_state.get(
+                        "usuario_actual", "inspirador"
+                    )
+
+                    with engine.begin() as conn:
+                        conn.execute(
+                            text("""
+                                INSERT INTO permisos_usuarios (
+                                    numero_identificacion,
+                                    fecha_salida,
+                                    hora_salida,
+                                    motivo,
+                                    autoriza,
+                                    fecha_regreso_estimada,
+                                    hora_regreso_estimada,
+                                    estado_permiso,
+                                    observacion,
+                                    usuario_registra
+                                )
+                                VALUES (
+                                    :doc,
+                                    :fecha_salida,
+                                    :hora_salida,
+                                    :motivo,
+                                    :autoriza,
+                                    :fecha_regreso_est,
+                                    :hora_regreso_est,
+                                    'ABIERTO',
+                                    :observacion,
+                                    :usuario
+                                )
+                            """),
+                            {
+                                "doc": documento,
+                                "fecha_salida": fecha_salida,
+                                "hora_salida": hora_salida,
+                                "motivo": motivo_permiso.strip(),
+                                "autoriza": autoriza.strip(),
+                                "fecha_regreso_est": fecha_regreso_est,
+                                "hora_regreso_est": hora_regreso_est,
+                                "observacion": observacion_permiso.strip(),
+                                "usuario": usuario_registra
+                            }
+                        )
+
+                        conn.execute(
+                            text("""
+                                INSERT INTO movimientos_habitante (
+                                    numero_identificacion,
+                                    tipo_movimiento,
+                                    modalidad,
+                                    usuario_registra,
+                                    observacion
+                                )
+                                VALUES (
+                                    :doc,
+                                    'SALIDA_PERMISO',
+                                    :modalidad,
+                                    :usuario,
+                                    :observacion
+                                )
+                            """),
+                            {
+                                "doc": documento,
+                                "modalidad": u.get("modalidad"),
+                                "usuario": usuario_registra,
+                                "observacion": motivo_permiso.strip()
+                            }
+                        )
+
+                    registrar_auditoria(
+                        "SALIDA_PERMISO",
+                        documento=documento,
+                        modulo="Gestión Móvil",
+                        valor_nuevo="PERMISO ABIERTO",
+                        observacion=motivo_permiso.strip()[:500]
+                    )
+
+                    reporte = _texto_whatsapp_movimiento(
+                        "SALIDA DE PERMISO",
+                        u.get("nombres"),
+                        u.get("apellidos"),
+                        documento,
+                        modalidad=u.get("modalidad"),
+                        fecha=fecha_salida,
+                        hora=hora_salida,
+                        detalle=(
+                            f"{motivo_permiso.strip()} | "
+                            f"Regreso estimado: "
+                            f"{fecha_regreso_est.strftime('%d/%m/%Y')} "
+                            f"{hora_regreso_est.strftime('%H:%M')}"
+                        ),
+                        responsable=usuario_registra
+                    )
+
+                    st.session_state[
+                        f"reporte_whatsapp_{documento}"
+                    ] = reporte
+                    st.success("✅ Salida de permiso registrada.")
+                    invalidar_cache_datos()
+
+        reporte_guardado = st.session_state.get(
+            f"reporte_whatsapp_{documento}"
+        )
+        if reporte_guardado:
+            _boton_whatsapp(
+                reporte_guardado,
+                f"wa_permiso_{documento}"
+            )
+
+    # --------------------------------------------------------
+    # Regreso de permiso
+    # --------------------------------------------------------
+    elif accion == "↩️ Regreso de permiso":
+
+        st.markdown("#### ↩️ Regreso de permiso")
+
+        try:
+            permisos_abiertos = pd.read_sql(
+                text("""
+                    SELECT *
+                    FROM permisos_usuarios
+                    WHERE TRIM(CAST(numero_identificacion AS TEXT)) = :doc
+                      AND UPPER(TRIM(COALESCE(estado_permiso,''))) = 'ABIERTO'
+                    ORDER BY fecha_salida DESC, hora_salida DESC
+                """),
+                engine,
+                params={"doc": documento}
+            )
+        except Exception as e:
+            permisos_abiertos = pd.DataFrame()
+            st.warning(
+                "No fue posible consultar permisos. "
+                "Verifique que la tabla permisos_usuarios exista."
+            )
+
+        if permisos_abiertos.empty:
+            st.info("Este usuario no tiene permisos abiertos.")
+        else:
+            permiso = permisos_abiertos.iloc[0]
+
+            st.info(
+                f"Permiso abierto desde {permiso.get('fecha_salida')} "
+                f"{permiso.get('hora_salida')}."
+            )
+
+            c1, c2 = st.columns(2)
+            fecha_regreso_real = c1.date_input(
+                "Fecha de regreso",
+                value=date.today(),
+                key=f"perm_fecha_reg_real_{documento}"
+            )
+            hora_regreso_real = c2.time_input(
+                "Hora de regreso",
+                key=f"perm_hora_reg_real_{documento}"
+            )
+
+            obs_regreso = st.text_area(
+                "Observación del regreso",
+                key=f"perm_obs_regreso_{documento}"
+            )
+
+            conf_regreso = st.checkbox(
+                "Confirmo el regreso del usuario",
+                key=f"perm_conf_regreso_{documento}"
+            )
+
+            if st.button(
+                "↩️ Registrar regreso",
+                use_container_width=True,
+                type="primary",
+                key=f"perm_guardar_regreso_{documento}"
+            ):
+                if not conf_regreso:
+                    st.error("Debe confirmar el regreso.")
+                else:
+                    usuario_registra = st.session_state.get(
+                        "usuario_actual", "inspirador"
+                    )
+                    permiso_id = int(permiso["id"])
+
+                    with engine.begin() as conn:
+                        conn.execute(
+                            text("""
+                                UPDATE permisos_usuarios
+                                SET fecha_regreso_real = :fecha,
+                                    hora_regreso_real = :hora,
+                                    estado_permiso = 'CERRADO',
+                                    observacion_regreso = :obs,
+                                    cerrado_en = NOW()
+                                WHERE id = :id
+                            """),
+                            {
+                                "fecha": fecha_regreso_real,
+                                "hora": hora_regreso_real,
+                                "obs": obs_regreso.strip(),
+                                "id": permiso_id
+                            }
+                        )
+
+                        conn.execute(
+                            text("""
+                                INSERT INTO movimientos_habitante (
+                                    numero_identificacion,
+                                    tipo_movimiento,
+                                    modalidad,
+                                    usuario_registra,
+                                    observacion
+                                )
+                                VALUES (
+                                    :doc,
+                                    'REGRESO_PERMISO',
+                                    :modalidad,
+                                    :usuario,
+                                    :observacion
+                                )
+                            """),
+                            {
+                                "doc": documento,
+                                "modalidad": u.get("modalidad"),
+                                "usuario": usuario_registra,
+                                "observacion": obs_regreso.strip()
+                            }
+                        )
+
+                    registrar_auditoria(
+                        "REGRESO_PERMISO",
+                        documento=documento,
+                        modulo="Gestión Móvil",
+                        valor_anterior="PERMISO ABIERTO",
+                        valor_nuevo="PERMISO CERRADO",
+                        observacion=obs_regreso.strip()[:500]
+                    )
+
+                    reporte = _texto_whatsapp_movimiento(
+                        "REGRESO DE PERMISO",
+                        u.get("nombres"),
+                        u.get("apellidos"),
+                        documento,
+                        modalidad=u.get("modalidad"),
+                        fecha=fecha_regreso_real,
+                        hora=hora_regreso_real,
+                        detalle=obs_regreso.strip(),
+                        responsable=usuario_registra
+                    )
+
+                    st.session_state[
+                        f"reporte_whatsapp_{documento}"
+                    ] = reporte
+                    st.success("✅ Regreso de permiso registrado.")
+                    invalidar_cache_datos()
+
+            reporte_guardado = st.session_state.get(
+                f"reporte_whatsapp_{documento}"
+            )
+            if reporte_guardado:
+                _boton_whatsapp(
+                    reporte_guardado,
+                    f"wa_regreso_{documento}"
+                )
 
     # --------------------------------------------------------
     # Sanción / Expulsión
@@ -3207,6 +3660,37 @@ def gestion_usuarios_movil():
                     use_container_width=True,
                     hide_index=True
                 )
+
+            try:
+                permisos_hist = pd.read_sql(
+                    text("""
+                        SELECT
+                            fecha_salida,
+                            hora_salida,
+                            motivo,
+                            fecha_regreso_estimada,
+                            hora_regreso_estimada,
+                            fecha_regreso_real,
+                            hora_regreso_real,
+                            estado_permiso,
+                            autoriza
+                        FROM permisos_usuarios
+                        WHERE TRIM(CAST(numero_identificacion AS TEXT))=:doc
+                        ORDER BY fecha_salida DESC, hora_salida DESC
+                        LIMIT 20
+                    """),
+                    engine,
+                    params={"doc": documento}
+                )
+                if not permisos_hist.empty:
+                    st.markdown("##### 🚪 Historial de permisos")
+                    st.dataframe(
+                        permisos_hist,
+                        use_container_width=True,
+                        hide_index=True
+                    )
+            except Exception:
+                pass
         except Exception as e:
             st.warning(f"No fue posible consultar la historia: {e}")
 
