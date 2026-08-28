@@ -3122,11 +3122,13 @@ with tab4:
             df_egresados = pd.DataFrame()
             total_egresados = 0
 
-        # Se conserva la lógica histórica del módulo:
-        # egresos registrados / población general analizada.
+        # Tasa institucional de referencia:
+        # egresos registrados / población total de la base general.
+        total_base_general = len(df_reporte)
+
         tasa_egreso = round(
-            total_egresados / total * 100, 1
-        ) if total else 0.0
+            total_egresados / total_base_general * 100, 1
+        ) if total_base_general else 0.0
 
         urbano_activos = 0
         granja_activos = 0
@@ -3157,20 +3159,25 @@ with tab4:
 
         k1, k2, k3, k4, k5 = st.columns(5)
 
-        k1.metric("👥 Personas", f"{total:,}".replace(",", "."))
+        k1.metric(
+            "👥 Población caracterizada",
+            f"{total_base_general:,}".replace(",", ".")
+        )
         k2.metric(
-            "🎂 Edad promedio",
-            f"{edad_promedio:.1f}" if edad_promedio else "S/D"
+            "🔎 Personas según filtros",
+            f"{total:,}".replace(",", ".")
         )
         k3.metric("🟢 Activos", total_activos)
         k4.metric("🏆 Egresos registrados", total_egresados)
         k5.metric("📈 Tasa de egreso", f"{tasa_egreso:.1f}%")
 
-        k6, k7, k8, k9 = st.columns(4)
-        k6.metric("🏙️ Urbano activos", urbano_activos)
-        k7.metric("🌱 Granja activos", granja_activos)
-        k8.metric("🏥 Dato salud", f"{cobertura_salud:.1f}%")
-        k9.metric("🎓 Dato educación", f"{cobertura_educacion:.1f}%")
+        k6, k7, k8 = st.columns(3)
+        k6.metric(
+            "🎂 Edad promedio",
+            f"{edad_promedio:.1f}" if edad_promedio else "S/D"
+        )
+        k7.metric("🏙️ Urbano activos", urbano_activos)
+        k8.metric("🌱 Granja activos", granja_activos)
 
         # --------------------------------------------------------
         # PERFIL SOCIODEMOGRÁFICO
@@ -3309,10 +3316,9 @@ with tab4:
                 st.plotly_chart(fig_enf, use_container_width=True)
 
         # --------------------------------------------------------
-        # CALIDAD DEL DATO
+        # CALIDAD DEL DATO - VISTA COMPACTA
         # --------------------------------------------------------
         st.markdown("---")
-        st.subheader("🧪 Calidad de la información")
 
         campos_calidad = [
             (col_doc, "Identificación"),
@@ -3350,29 +3356,20 @@ with tab4:
 
         df_calidad = pd.DataFrame(calidad)
 
-        if not df_calidad.empty:
-            q1, q2 = st.columns([1, 1.4])
+        with st.expander("🔍 Ver calidad y completitud de la base"):
+            st.caption(
+                "Control técnico de diligenciamiento. "
+                "No corresponde a un indicador de impacto social."
+            )
 
-            with q1:
+            if not df_calidad.empty:
                 st.dataframe(
                     df_calidad,
                     use_container_width=True,
                     hide_index=True
                 )
-
-            with q2:
-                fig_calidad = px.bar(
-                    df_calidad,
-                    x="Campo",
-                    y="Completitud %",
-                    text="Completitud %",
-                    range_y=[0, 100],
-                    title="Completitud de variables clave"
-                )
-                st.plotly_chart(
-                    fig_calidad,
-                    use_container_width=True
-                )
+            else:
+                st.info("No hay variables disponibles para evaluar completitud.")
 
         # --------------------------------------------------------
         # HALLAZGOS AUTOMÁTICOS
@@ -3419,7 +3416,7 @@ with tab4:
         st.subheader("📝 Síntesis institucional")
 
         conclusiones = [
-            f"El universo analizado contiene {total} personas.",
+            f"La base general contiene {total_base_general} personas caracterizadas y el análisis filtrado incluye {total} registros.",
             (
                 f"La edad promedio es {edad_promedio:.1f} años."
                 if edad_promedio
@@ -3427,7 +3424,7 @@ with tab4:
             ),
             (
                 f"Se identifican {total_egresados} egresos registrados en personas_caracterizacion, "
-                f"equivalentes al {tasa_egreso:.1f}% del universo filtrado."
+                f"equivalentes al {tasa_egreso:.1f}% de la población total registrada en habitante_de_calle."
             )
         ]
 
@@ -3478,248 +3475,1076 @@ with tab4:
 
         with ex2:
             if st.button(
-                "📄 Generar informe ejecutivo PDF",
+                "📄 Generar informe institucional completo",
                 use_container_width=True,
                 key="generar_pdf_reportes"
             ):
                 try:
+                    import textwrap
+                    from reportlab.lib.enums import TA_LEFT, TA_CENTER
+                    from reportlab.platypus import KeepTogether
+
                     buffer_pdf = BytesIO()
 
                     doc_pdf = SimpleDocTemplate(
                         buffer_pdf,
                         pagesize=letter,
-                        rightMargin=1.5 * cm,
-                        leftMargin=1.5 * cm,
-                        topMargin=1.5 * cm,
-                        bottomMargin=1.5 * cm
+                        rightMargin=1.35 * cm,
+                        leftMargin=1.35 * cm,
+                        topMargin=1.25 * cm,
+                        bottomMargin=1.25 * cm,
+                        title="Informe Institucional - Observatorio Social",
+                        author="Asociación Ciudad Futuro"
                     )
 
                     estilos = getSampleStyleSheet()
 
-                    estilo_titulo = ParagraphStyle(
-                        "TituloReporte",
+                    estilo_portada = ParagraphStyle(
+                        "Portada",
                         parent=estilos["Title"],
                         alignment=TA_CENTER,
                         fontName="Helvetica-Bold",
-                        fontSize=18,
-                        leading=22,
-                        textColor=colors.HexColor("#17365D")
+                        fontSize=22,
+                        leading=27,
+                        textColor=colors.HexColor("#17365D"),
+                        spaceAfter=12
+                    )
+
+                    estilo_subportada = ParagraphStyle(
+                        "SubPortada",
+                        parent=estilos["Heading2"],
+                        alignment=TA_CENTER,
+                        fontName="Helvetica-Bold",
+                        fontSize=13,
+                        leading=17,
+                        textColor=colors.HexColor("#44546A"),
+                        spaceAfter=8
+                    )
+
+                    estilo_h1 = ParagraphStyle(
+                        "H1Reporte",
+                        parent=estilos["Heading1"],
+                        fontName="Helvetica-Bold",
+                        fontSize=15,
+                        leading=18,
+                        textColor=colors.HexColor("#17365D"),
+                        spaceBefore=8,
+                        spaceAfter=8
                     )
 
                     estilo_h2 = ParagraphStyle(
-                        "SubtituloReporte",
+                        "H2Reporte",
                         parent=estilos["Heading2"],
                         fontName="Helvetica-Bold",
-                        fontSize=12,
-                        leading=15,
+                        fontSize=11.5,
+                        leading=14,
                         textColor=colors.HexColor("#1F4E78"),
-                        spaceBefore=10,
+                        spaceBefore=8,
                         spaceAfter=6
                     )
 
                     estilo_cuerpo = ParagraphStyle(
                         "CuerpoReporte",
                         parent=estilos["BodyText"],
+                        fontName="Helvetica",
                         fontSize=9,
-                        leading=12,
-                        textColor=colors.HexColor("#333333")
+                        leading=12.5,
+                        textColor=colors.HexColor("#333333"),
+                        spaceAfter=6
+                    )
+
+                    estilo_nota = ParagraphStyle(
+                        "NotaReporte",
+                        parent=estilos["BodyText"],
+                        fontName="Helvetica-Oblique",
+                        fontSize=8,
+                        leading=10.5,
+                        textColor=colors.HexColor("#666666"),
+                        spaceAfter=5
+                    )
+
+                    estilo_destacado = ParagraphStyle(
+                        "DestacadoReporte",
+                        parent=estilos["BodyText"],
+                        fontName="Helvetica-Bold",
+                        fontSize=9.5,
+                        leading=12.5,
+                        textColor=colors.HexColor("#17365D"),
+                        spaceAfter=6
                     )
 
                     contenido = []
                     temporales = []
 
+                    # ------------------------------------------------
+                    # FUNCIONES PARA EL PDF
+                    # ------------------------------------------------
+                    def _fmt_num(valor):
+                        try:
+                            return f"{int(valor):,}".replace(",", ".")
+                        except Exception:
+                            return str(valor)
+
+                    def _guardar_fig_mpl(fig):
+                        tmp = tempfile.NamedTemporaryFile(
+                            delete=False,
+                            suffix=".png"
+                        )
+                        tmp.close()
+                        fig.savefig(
+                            tmp.name,
+                            dpi=170,
+                            bbox_inches="tight"
+                        )
+                        plt.close(fig)
+                        temporales.append(tmp.name)
+                        return tmp.name
+
+                    def _tabla_pdf(datos, anchos=None, fontsize=8.5):
+                        tabla = Table(
+                            datos,
+                            colWidths=anchos,
+                            repeatRows=1
+                        )
+                        tabla.setStyle(TableStyle([
+                            (
+                                "BACKGROUND", (0, 0), (-1, 0),
+                                colors.HexColor("#17365D")
+                            ),
+                            (
+                                "TEXTCOLOR", (0, 0), (-1, 0),
+                                colors.white
+                            ),
+                            (
+                                "FONTNAME", (0, 0), (-1, 0),
+                                "Helvetica-Bold"
+                            ),
+                            (
+                                "GRID", (0, 0), (-1, -1),
+                                0.35, colors.HexColor("#B7C9DD")
+                            ),
+                            (
+                                "ROWBACKGROUNDS", (0, 1), (-1, -1),
+                                [
+                                    colors.white,
+                                    colors.HexColor("#F5F7FA")
+                                ]
+                            ),
+                            (
+                                "VALIGN", (0, 0), (-1, -1),
+                                "MIDDLE"
+                            ),
+                            (
+                                "FONTSIZE", (0, 0), (-1, -1),
+                                fontsize
+                            ),
+                            (
+                                "TOPPADDING", (0, 0), (-1, -1),
+                                5
+                            ),
+                            (
+                                "BOTTOMPADDING", (0, 0), (-1, -1),
+                                5
+                            )
+                        ]))
+                        return tabla
+
+                    def _interpretacion_categoria(
+                        dataframe,
+                        columna,
+                        nombre_variable
+                    ):
+                        serie = _serie_limpia(dataframe, columna)
+                        if serie.empty:
+                            return (
+                                f"No se dispone de información suficiente "
+                                f"para analizar {nombre_variable.lower()}."
+                            )
+
+                        conteo = serie.value_counts()
+                        categoria = str(conteo.index[0])
+                        cantidad = int(conteo.iloc[0])
+                        porcentaje = round(
+                            cantidad / len(serie) * 100,
+                            1
+                        )
+
+                        return (
+                            f"La categoría con mayor frecuencia en "
+                            f"{nombre_variable.lower()} es "
+                            f"<b>{_texto_pdf(categoria)}</b>, con "
+                            f"<b>{cantidad}</b> registros "
+                            f"({porcentaje}% de los registros con dato)."
+                        )
+
+                    def _agregar_barras_categoria(
+                        titulo_seccion,
+                        dataframe,
+                        columna,
+                        numero_seccion,
+                        top_n=10
+                    ):
+                        tabla_cat = _tabla_categoria(
+                            dataframe,
+                            columna,
+                            top_n
+                        )
+
+                        if tabla_cat.empty:
+                            return False
+
+                        contenido.append(PageBreak())
+                        contenido.append(
+                            Paragraph(
+                                f"{numero_seccion}. {_texto_pdf(titulo_seccion)}",
+                                estilo_h1
+                            )
+                        )
+
+                        graf = tabla_cat.sort_values("cantidad").copy()
+                        graf["categoria_corta"] = graf["categoria"].astype(
+                            str
+                        ).apply(
+                            lambda x: "\n".join(
+                                textwrap.wrap(x, width=30)
+                            )
+                        )
+
+                        fig, ax = plt.subplots(figsize=(8.2, 4.8))
+                        ax.barh(
+                            graf["categoria_corta"],
+                            graf["cantidad"]
+                        )
+                        ax.set_title(titulo_seccion)
+                        ax.set_xlabel("Número de personas")
+                        ax.set_ylabel("")
+                        ax.grid(
+                            axis="x",
+                            alpha=0.18
+                        )
+
+                        for i, valor in enumerate(graf["cantidad"]):
+                            ax.text(
+                                valor,
+                                i,
+                                f" {int(valor)}",
+                                va="center",
+                                fontsize=8
+                            )
+
+                        ruta = _guardar_fig_mpl(fig)
+                        contenido.append(
+                            Image(
+                                ruta,
+                                width=17 * cm,
+                                height=9.5 * cm
+                            )
+                        )
+                        contenido.append(Spacer(1, 5))
+
+                        contenido.append(
+                            Paragraph(
+                                _interpretacion_categoria(
+                                    dataframe,
+                                    columna,
+                                    titulo_seccion
+                                ),
+                                estilo_cuerpo
+                            )
+                        )
+
+                        datos = [[
+                            "Categoría",
+                            "Cantidad",
+                            "%"
+                        ]]
+
+                        for _, fila in tabla_cat.head(8).iterrows():
+                            datos.append([
+                                Paragraph(
+                                    _texto_pdf(fila["categoria"]),
+                                    estilo_cuerpo
+                                ),
+                                str(int(fila["cantidad"])),
+                                f'{float(fila["porcentaje"]):.1f}%'
+                            ])
+
+                        contenido.append(
+                            _tabla_pdf(
+                                datos,
+                                anchos=[
+                                    11.3 * cm,
+                                    2.7 * cm,
+                                    2.5 * cm
+                                ],
+                                fontsize=8
+                            )
+                        )
+                        return True
+
+                    # ------------------------------------------------
+                    # PORTADA
+                    # ------------------------------------------------
+                    contenido.append(Spacer(1, 1.6 * cm))
                     contenido.append(
                         Paragraph(
-                            "OBSERVATORIO SOCIAL DE PEREIRA",
-                            estilo_titulo
+                            "OBSERVATORIO SOCIAL",
+                            estilo_portada
                         )
                     )
                     contenido.append(
                         Paragraph(
-                            "Informe Ejecutivo Institucional",
-                            estilo_h2
+                            "Habitante de Calle - Pereira 2026",
+                            estilo_subportada
                         )
                     )
-                    contenido.append(Spacer(1, 12))
+                    contenido.append(Spacer(1, 0.45 * cm))
                     contenido.append(
                         Paragraph(
-                            "Fecha de generación: "
-                            + datetime.now().strftime("%d/%m/%Y %H:%M"),
-                            estilo_cuerpo
+                            "INFORME INSTITUCIONAL DE CARACTERIZACIÓN, "
+                            "SEGUIMIENTO E IMPACTO",
+                            estilo_portada
+                        )
+                    )
+                    contenido.append(Spacer(1, 0.8 * cm))
+
+                    portada_datos = [
+                        ["Entidad / Operador", "Asociación Ciudad Futuro"],
+                        [
+                            "Fecha de generación",
+                            datetime.now().strftime("%d/%m/%Y %H:%M")
+                        ],
+                        [
+                            "Base general",
+                            "habitante_de_calle"
+                        ],
+                        [
+                            "Base de egresos",
+                            "personas_caracterizacion"
+                        ],
+                        [
+                            "Población caracterizada",
+                            _fmt_num(total_base_general)
+                        ],
+                        [
+                            "Registros incluidos en el análisis",
+                            _fmt_num(total)
+                        ]
+                    ]
+
+                    contenido.append(
+                        _tabla_pdf(
+                            portada_datos,
+                            anchos=[6.3 * cm, 10.2 * cm],
+                            fontsize=9
                         )
                     )
 
                     if filtros_texto:
+                        contenido.append(Spacer(1, 0.5 * cm))
                         contenido.append(
                             Paragraph(
-                                "Filtros aplicados: "
-                                + _texto_pdf(" | ".join(filtros_texto)),
+                                "<b>Filtros aplicados:</b> "
+                                + _texto_pdf(
+                                    " | ".join(filtros_texto)
+                                ),
                                 estilo_cuerpo
                             )
                         )
-
-                    contenido.append(Spacer(1, 12))
-                    contenido.append(
-                        Paragraph(
-                            "1. Indicadores estratégicos",
-                            estilo_h2
-                        )
-                    )
-
-                    datos_pdf = [
-                        ["Indicador", "Valor"],
-                        ["Personas analizadas", str(total)],
-                        ["Edad promedio", f"{edad_promedio:.1f}"],
-                        ["Activos", str(total_activos)],
-                        ["Egresos registrados", str(total_egresados)],
-                        ["Tasa de egreso", f"{tasa_egreso:.1f}%"],
-                        ["Urbano activos", str(urbano_activos)],
-                        ["Granja activos", str(granja_activos)]
-                    ]
-
-                    tabla_pdf = Table(
-                        datos_pdf,
-                        colWidths=[10 * cm, 5.5 * cm],
-                        repeatRows=1
-                    )
-
-                    tabla_pdf.setStyle(TableStyle([
-                        (
-                            "BACKGROUND", (0, 0), (-1, 0),
-                            colors.HexColor("#17365D")
-                        ),
-                        (
-                            "TEXTCOLOR", (0, 0), (-1, 0),
-                            colors.white
-                        ),
-                        (
-                            "FONTNAME", (0, 0), (-1, 0),
-                            "Helvetica-Bold"
-                        ),
-                        (
-                            "GRID", (0, 0), (-1, -1),
-                            0.4, colors.HexColor("#B7C9DD")
-                        ),
-                        (
-                            "ROWBACKGROUNDS", (0, 1), (-1, -1),
-                            [colors.white, colors.HexColor("#F3F6FA")]
-                        ),
-                        ("FONTSIZE", (0, 0), (-1, -1), 9),
-                        ("TOPPADDING", (0, 0), (-1, -1), 6),
-                        ("BOTTOMPADDING", (0, 0), (-1, -1), 6)
-                    ]))
-
-                    contenido.append(tabla_pdf)
-                    contenido.append(Spacer(1, 14))
-
-                    contenido.append(
-                        Paragraph(
-                            "2. Hallazgos principales",
-                            estilo_h2
-                        )
-                    )
-
-                    if hallazgos:
-                        for h in hallazgos:
-                            contenido.append(
-                                Paragraph(
-                                    "• " + _texto_pdf(h),
-                                    estilo_cuerpo
-                                )
-                            )
                     else:
+                        contenido.append(Spacer(1, 0.5 * cm))
                         contenido.append(
                             Paragraph(
-                                "No se identificaron alertas automáticas relevantes.",
+                                "<b>Alcance:</b> informe generado sin "
+                                "filtros adicionales sobre la base general.",
                                 estilo_cuerpo
                             )
                         )
 
-                    # Gráfica de edad
-                    if col_edad and df_f[col_edad].notna().any():
-                        fig_pdf_edad = px.histogram(
-                            df_f.dropna(subset=[col_edad]),
-                            x=col_edad,
-                            nbins=18,
-                            title="Distribución por edad"
+                    contenido.append(Spacer(1, 0.8 * cm))
+                    contenido.append(
+                        Paragraph(
+                            "Documento generado automáticamente a partir "
+                            "de la información disponible en el sistema. "
+                            "Los resultados deben interpretarse conforme "
+                            "a la calidad y actualización de los registros.",
+                            estilo_nota
                         )
-                        ruta = _grafica_png(fig_pdf_edad)
-                        if ruta:
-                            temporales.append(ruta)
-                            contenido.append(PageBreak())
-                            contenido.append(
-                                Paragraph(
-                                    "3. Distribución por edad",
-                                    estilo_h2
-                                )
-                            )
-                            contenido.append(
-                                Image(
-                                    ruta,
-                                    width=17 * cm,
-                                    height=10 * cm
-                                )
-                            )
+                    )
 
-                    # Gráfica de sexo
-                    if not sexo_tabla.empty:
-                        fig_pdf_sexo = px.pie(
-                            sexo_tabla,
-                            names="categoria",
-                            values="cantidad",
-                            hole=0.42,
-                            title="Sexo al nacer"
-                        )
-                        ruta = _grafica_png(fig_pdf_sexo)
-                        if ruta:
-                            temporales.append(ruta)
-                            contenido.append(PageBreak())
-                            contenido.append(
-                                Paragraph(
-                                    "4. Sexo al nacer",
-                                    estilo_h2
-                                )
-                            )
-                            contenido.append(
-                                Image(
-                                    ruta,
-                                    width=16 * cm,
-                                    height=9.5 * cm
-                                )
-                            )
-
+                    # ------------------------------------------------
+                    # 1. RESUMEN EJECUTIVO
+                    # ------------------------------------------------
                     contenido.append(PageBreak())
                     contenido.append(
                         Paragraph(
-                            "5. Conclusiones institucionales",
-                            estilo_h2
+                            "1. Resumen ejecutivo",
+                            estilo_h1
                         )
                     )
 
-                    for conclusion in conclusiones:
-                        contenido.append(
-                            Paragraph(
-                                "• " + _texto_pdf(conclusion),
-                                estilo_cuerpo
-                            )
-                        )
-
-                    contenido.append(Spacer(1, 10))
                     contenido.append(
                         Paragraph(
-                            "Nota: los resultados corresponden a los registros "
-                            "disponibles y a los filtros seleccionados al momento "
-                            "de generar el informe.",
+                            (
+                                f"El Observatorio Social registra "
+                                f"<b>{_fmt_num(total_base_general)}</b> "
+                                f"personas en la base general "
+                                f"<b>habitante_de_calle</b>. "
+                                f"El presente análisis incluye "
+                                f"<b>{_fmt_num(total)}</b> registros "
+                                f"de acuerdo con los filtros seleccionados."
+                            ),
                             estilo_cuerpo
                         )
                     )
 
+                    contenido.append(
+                        Paragraph(
+                            (
+                                f"De manera complementaria, la base "
+                                f"<b>personas_caracterizacion</b> registra "
+                                f"<b>{_fmt_num(total_egresados)}</b> egresos. "
+                                f"Como indicador institucional de referencia, "
+                                f"estos egresos equivalen al "
+                                f"<b>{tasa_egreso:.1f}%</b> de la población "
+                                f"registrada en la base general."
+                            ),
+                            estilo_cuerpo
+                        )
+                    )
+
+                    if edad_promedio:
+                        contenido.append(
+                            Paragraph(
+                                (
+                                    f"La edad promedio del universo analizado "
+                                    f"es de <b>{edad_promedio:.1f} años</b> "
+                                    f"y la mediana es de "
+                                    f"<b>{edad_mediana:.1f} años</b>."
+                                ),
+                                estilo_cuerpo
+                            )
+                        )
+
+                    resumen_kpis = [
+                        ["Indicador", "Resultado"],
+                        [
+                            "Población caracterizada",
+                            _fmt_num(total_base_general)
+                        ],
+                        [
+                            "Registros según filtros",
+                            _fmt_num(total)
+                        ],
+                        [
+                            "Activos en universo filtrado",
+                            _fmt_num(total_activos)
+                        ],
+                        [
+                            "Egresos registrados",
+                            _fmt_num(total_egresados)
+                        ],
+                        [
+                            "Tasa institucional de egreso",
+                            f"{tasa_egreso:.1f}%"
+                        ],
+                        [
+                            "Edad promedio",
+                            (
+                                f"{edad_promedio:.1f} años"
+                                if edad_promedio else "Sin dato"
+                            )
+                        ],
+                        [
+                            "Urbano activos",
+                            _fmt_num(urbano_activos)
+                        ],
+                        [
+                            "Granja activos",
+                            _fmt_num(granja_activos)
+                        ]
+                    ]
+
+                    contenido.append(Spacer(1, 8))
+                    contenido.append(
+                        _tabla_pdf(
+                            resumen_kpis,
+                            anchos=[10.5 * cm, 6 * cm],
+                            fontsize=9
+                        )
+                    )
+
+                    # ------------------------------------------------
+                    # 2. PERFIL POR EDAD Y SEXO
+                    # ------------------------------------------------
+                    contenido.append(PageBreak())
+                    contenido.append(
+                        Paragraph(
+                            "2. Perfil sociodemográfico",
+                            estilo_h1
+                        )
+                    )
+
+                    # EDAD
+                    if col_edad and df_f[col_edad].notna().any():
+                        edades = df_f[col_edad].dropna()
+
+                        fig, ax = plt.subplots(figsize=(8.2, 4.4))
+                        ax.hist(
+                            edades,
+                            bins=18
+                        )
+                        ax.axvline(
+                            edad_promedio,
+                            linestyle="--",
+                            linewidth=1.5,
+                            label=f"Promedio: {edad_promedio:.1f}"
+                        )
+                        ax.set_title("Distribución de edad")
+                        ax.set_xlabel("Edad")
+                        ax.set_ylabel("Personas")
+                        ax.legend()
+                        ax.grid(
+                            axis="y",
+                            alpha=0.18
+                        )
+
+                        ruta = _guardar_fig_mpl(fig)
+
+                        contenido.append(
+                            Paragraph(
+                                "2.1 Distribución por edad",
+                                estilo_h2
+                            )
+                        )
+                        contenido.append(
+                            Image(
+                                ruta,
+                                width=17 * cm,
+                                height=9.2 * cm
+                            )
+                        )
+
+                        menores_29 = int((edades <= 28).sum())
+                        adultos = int(
+                            ((edades >= 29) & (edades <= 59)).sum()
+                        )
+                        mayores = int((edades >= 60).sum())
+
+                        contenido.append(
+                            Paragraph(
+                                (
+                                    f"En el universo analizado se identifican "
+                                    f"<b>{menores_29}</b> personas de 28 años "
+                                    f"o menos, <b>{adultos}</b> entre 29 y 59 "
+                                    f"años y <b>{mayores}</b> de 60 años o más. "
+                                    f"La edad promedio es "
+                                    f"<b>{edad_promedio:.1f} años</b>."
+                                ),
+                                estilo_cuerpo
+                            )
+                        )
+
+                    # SEXO
+                    if not sexo_tabla.empty:
+                        contenido.append(
+                            Paragraph(
+                                "2.2 Sexo al nacer",
+                                estilo_h2
+                            )
+                        )
+
+                        fig, ax = plt.subplots(figsize=(7.2, 4.4))
+                        ax.pie(
+                            sexo_tabla["cantidad"],
+                            labels=sexo_tabla["categoria"],
+                            autopct="%1.1f%%",
+                            startangle=90
+                        )
+                        ax.set_title("Distribución por sexo al nacer")
+                        ax.axis("equal")
+
+                        ruta = _guardar_fig_mpl(fig)
+                        contenido.append(
+                            Image(
+                                ruta,
+                                width=14.5 * cm,
+                                height=8.8 * cm
+                            )
+                        )
+                        contenido.append(
+                            Paragraph(
+                                _interpretacion_categoria(
+                                    df_f,
+                                    col_sexo,
+                                    "Sexo al nacer"
+                                ),
+                                estilo_cuerpo
+                            )
+                        )
+
+                    # ------------------------------------------------
+                    # 3-8. CARACTERIZACIÓN SOCIAL
+                    # ------------------------------------------------
+                    seccion = 3
+
+                    bloques = [
+                        (
+                            "Nivel educativo",
+                            col_educacion,
+                            12
+                        ),
+                        (
+                            "Seguridad social en salud",
+                            col_salud,
+                            12
+                        ),
+                        (
+                            "Condición ocupacional",
+                            col_ocupacion,
+                            12
+                        ),
+                        (
+                            "Departamento de procedencia",
+                            col_procedencia,
+                            10
+                        ),
+                        (
+                            "Tipo de consumo",
+                            col_consumo,
+                            12
+                        ),
+                        (
+                            "Orientación sexual / diversidad",
+                            col_orientacion,
+                            10
+                        ),
+                        (
+                            "Grupos étnicos",
+                            col_etnia,
+                            10
+                        ),
+                        (
+                            "Enfermedad mental - variable registrada",
+                            col_enfermedad,
+                            8
+                        )
+                    ]
+
+                    for titulo_bloque, columna_bloque, top_bloque in bloques:
+                        if columna_bloque:
+                            agregado = _agregar_barras_categoria(
+                                titulo_bloque,
+                                df_f,
+                                columna_bloque,
+                                seccion,
+                                top_bloque
+                            )
+                            if agregado:
+                                seccion += 1
+
+                    # ------------------------------------------------
+                    # ESTADO Y MODALIDAD
+                    # ------------------------------------------------
+                    if col_estado or col_modalidad:
+                        contenido.append(PageBreak())
+                        contenido.append(
+                            Paragraph(
+                                f"{seccion}. Seguimiento institucional",
+                                estilo_h1
+                            )
+                        )
+
+                        if col_estado:
+                            tabla_estado = _tabla_categoria(
+                                df_f,
+                                col_estado,
+                                10
+                            )
+                            if not tabla_estado.empty:
+                                contenido.append(
+                                    Paragraph(
+                                        "Estado del caso",
+                                        estilo_h2
+                                    )
+                                )
+                                fig, ax = plt.subplots(
+                                    figsize=(7.8, 4.1)
+                                )
+                                ax.bar(
+                                    tabla_estado["categoria"],
+                                    tabla_estado["cantidad"]
+                                )
+                                ax.set_title("Estado del caso")
+                                ax.set_ylabel("Personas")
+                                ax.tick_params(
+                                    axis="x",
+                                    rotation=25
+                                )
+                                ax.grid(
+                                    axis="y",
+                                    alpha=0.18
+                                )
+                                ruta = _guardar_fig_mpl(fig)
+                                contenido.append(
+                                    Image(
+                                        ruta,
+                                        width=16.5 * cm,
+                                        height=8.5 * cm
+                                    )
+                                )
+
+                        if col_modalidad:
+                            tabla_modalidad = _tabla_categoria(
+                                df_f,
+                                col_modalidad,
+                                10
+                            )
+                            if not tabla_modalidad.empty:
+                                contenido.append(
+                                    Paragraph(
+                                        "Modalidad de atención",
+                                        estilo_h2
+                                    )
+                                )
+                                fig, ax = plt.subplots(
+                                    figsize=(7.8, 4.1)
+                                )
+                                ax.bar(
+                                    tabla_modalidad["categoria"],
+                                    tabla_modalidad["cantidad"]
+                                )
+                                ax.set_title("Modalidad de atención")
+                                ax.set_ylabel("Personas")
+                                ax.grid(
+                                    axis="y",
+                                    alpha=0.18
+                                )
+                                ruta = _guardar_fig_mpl(fig)
+                                contenido.append(
+                                    Image(
+                                        ruta,
+                                        width=16.5 * cm,
+                                        height=8.5 * cm
+                                    )
+                                )
+
+                        contenido.append(
+                            Paragraph(
+                                (
+                                    f"En el universo filtrado se encuentran "
+                                    f"<b>{total_activos}</b> registros con "
+                                    f"estado ACTIVO. Dentro de las modalidades "
+                                    f"registradas se contabilizan "
+                                    f"<b>{urbano_activos}</b> activos en Urbano "
+                                    f"y <b>{granja_activos}</b> activos en Granja."
+                                ),
+                                estilo_cuerpo
+                            )
+                        )
+
+                        seccion += 1
+
+                    # ------------------------------------------------
+                    # CALIDAD DE LA INFORMACIÓN
+                    # ------------------------------------------------
+                    if not df_calidad.empty:
+                        contenido.append(PageBreak())
+                        contenido.append(
+                            Paragraph(
+                                f"{seccion}. Calidad y completitud de la información",
+                                estilo_h1
+                            )
+                        )
+
+                        calidad_plot = df_calidad.sort_values(
+                            "Completitud %"
+                        ).copy()
+
+                        fig, ax = plt.subplots(figsize=(8.2, 4.8))
+                        ax.barh(
+                            calidad_plot["Campo"],
+                            calidad_plot["Completitud %"]
+                        )
+                        ax.set_xlim(0, 100)
+                        ax.set_xlabel("Completitud (%)")
+                        ax.set_title(
+                            "Completitud de variables clave"
+                        )
+                        ax.grid(
+                            axis="x",
+                            alpha=0.18
+                        )
+
+                        for i, valor in enumerate(
+                            calidad_plot["Completitud %"]
+                        ):
+                            ax.text(
+                                valor,
+                                i,
+                                f" {valor:.1f}%",
+                                va="center",
+                                fontsize=8
+                            )
+
+                        ruta = _guardar_fig_mpl(fig)
+                        contenido.append(
+                            Image(
+                                ruta,
+                                width=17 * cm,
+                                height=9.5 * cm
+                            )
+                        )
+
+                        datos_calidad_pdf = [[
+                            "Variable",
+                            "Completos",
+                            "Faltantes",
+                            "%"
+                        ]]
+
+                        for _, r in df_calidad.iterrows():
+                            datos_calidad_pdf.append([
+                                r["Campo"],
+                                str(int(r["Completos"])),
+                                str(int(r["Faltantes"])),
+                                f'{float(r["Completitud %"]):.1f}%'
+                            ])
+
+                        contenido.append(
+                            _tabla_pdf(
+                                datos_calidad_pdf,
+                                anchos=[
+                                    8 * cm,
+                                    3 * cm,
+                                    3 * cm,
+                                    2.5 * cm
+                                ],
+                                fontsize=7.8
+                            )
+                        )
+
+                        incompletas = df_calidad[
+                            df_calidad["Completitud %"] < 80
+                        ]
+
+                        if not incompletas.empty:
+                            lista_incompletas = ", ".join(
+                                [
+                                    f"{r['Campo']} "
+                                    f"({float(r['Completitud %']):.1f}%)"
+                                    for _, r in incompletas.iterrows()
+                                ]
+                            )
+                            contenido.append(
+                                Paragraph(
+                                    (
+                                        "Las variables con completitud inferior "
+                                        "al 80% son: "
+                                        f"<b>{_texto_pdf(lista_incompletas)}</b>. "
+                                        "Se recomienda priorizar su actualización "
+                                        "para fortalecer la lectura de resultados."
+                                    ),
+                                    estilo_cuerpo
+                                )
+                            )
+
+                        seccion += 1
+
+                    # ------------------------------------------------
+                    # HALLAZGOS Y CONCLUSIONES
+                    # ------------------------------------------------
+                    contenido.append(PageBreak())
+                    contenido.append(
+                        Paragraph(
+                            f"{seccion}. Hallazgos principales",
+                            estilo_h1
+                        )
+                    )
+
+                    hallazgos_pdf = []
+
+                    if edad_promedio:
+                        hallazgos_pdf.append(
+                            f"La población analizada presenta una edad "
+                            f"promedio de {edad_promedio:.1f} años."
+                        )
+
+                    for columna, nombre_variable in [
+                        (col_sexo, "sexo al nacer"),
+                        (col_educacion, "nivel educativo"),
+                        (col_salud, "seguridad social en salud"),
+                        (col_ocupacion, "condición ocupacional"),
+                        (col_procedencia, "procedencia"),
+                        (col_consumo, "tipo de consumo"),
+                        (col_etnia, "grupo étnico")
+                    ]:
+                        serie = _serie_limpia(df_f, columna)
+                        if not serie.empty:
+                            conteo = serie.value_counts()
+                            cat = str(conteo.index[0])
+                            cant = int(conteo.iloc[0])
+                            pct = round(
+                                cant / len(serie) * 100,
+                                1
+                            )
+                            hallazgos_pdf.append(
+                                f"En {nombre_variable}, la categoría "
+                                f"predominante es {cat}, con {cant} registros "
+                                f"({pct}% de los registros con información)."
+                            )
+
+                    hallazgos_pdf.append(
+                        f"La base de egresos registra {total_egresados} "
+                        f"egresos, equivalentes al {tasa_egreso:.1f}% "
+                        f"de la población total registrada en la base general."
+                    )
+
+                    if not df_calidad.empty:
+                        promedio_calidad = round(
+                            float(
+                                df_calidad["Completitud %"].mean()
+                            ),
+                            1
+                        )
+                        hallazgos_pdf.append(
+                            f"La completitud promedio de las variables "
+                            f"clave evaluadas es de {promedio_calidad}%."
+                        )
+
+                    for h in hallazgos_pdf:
+                        contenido.append(
+                            Paragraph(
+                                "• " + _texto_pdf(h),
+                                estilo_cuerpo
+                            )
+                        )
+
+                    contenido.append(
+                        Paragraph(
+                            f"{seccion + 1}. Conclusiones institucionales",
+                            estilo_h1
+                        )
+                    )
+
+                    conclusiones_pdf = [
+                        (
+                            f"El sistema consolida una base general de "
+                            f"{_fmt_num(total_base_general)} personas, "
+                            "permitiendo analizar características "
+                            "sociodemográficas, sociales y de seguimiento."
+                        ),
+                        (
+                            f"El análisis actual comprende "
+                            f"{_fmt_num(total)} registros según los filtros "
+                            "seleccionados, por lo que los resultados de "
+                            "caracterización deben leerse sobre ese universo."
+                        ),
+                        (
+                            f"La información de egresos se administra en una "
+                            f"base diferenciada, personas_caracterizacion, "
+                            f"en la cual se identifican "
+                            f"{_fmt_num(total_egresados)} egresos."
+                        ),
+                        (
+                            "Las distribuciones presentadas permiten orientar "
+                            "la planeación de acciones de salud, inclusión "
+                            "social, educación, reducción de riesgos, "
+                            "acompañamiento psicosocial y seguimiento a "
+                            "trayectorias de superación de vida en calle."
+                        ),
+                        (
+                            "La calidad del dato debe mantenerse como un "
+                            "componente transversal del Observatorio, dado "
+                            "que las variables incompletas limitan la "
+                            "interpretación de los indicadores."
+                        )
+                    ]
+
+                    for c in conclusiones_pdf:
+                        contenido.append(
+                            Paragraph(
+                                "• " + _texto_pdf(c),
+                                estilo_cuerpo
+                            )
+                        )
+
+                    # ------------------------------------------------
+                    # METODOLOGÍA Y FUENTES
+                    # ------------------------------------------------
+                    contenido.append(PageBreak())
+                    contenido.append(
+                        Paragraph(
+                            f"{seccion + 2}. Nota metodológica y fuentes",
+                            estilo_h1
+                        )
+                    )
+
+                    metodologia = [
+                        (
+                            "<b>Fuente principal:</b> tabla "
+                            "<i>habitante_de_calle</i>, utilizada para "
+                            "caracterización general, filtros, estado, "
+                            "modalidad y variables sociodemográficas."
+                        ),
+                        (
+                            "<b>Fuente de egresos:</b> tabla "
+                            "<i>personas_caracterizacion</i>, utilizada "
+                            "para contabilizar los egresos registrados."
+                        ),
+                        (
+                            "<b>Universo:</b> la población caracterizada "
+                            "corresponde al total de registros disponibles "
+                            "en la base general al momento de generar el "
+                            "informe."
+                        ),
+                        (
+                            "<b>Filtros:</b> cuando el usuario selecciona "
+                            "sexo, estado, modalidad, salud, rango de edad "
+                            "o búsqueda individual, las gráficas de "
+                            "caracterización se recalculan sobre el "
+                            "subconjunto resultante."
+                        ),
+                        (
+                            "<b>Tasa institucional de egreso:</b> se presenta "
+                            "como relación de referencia entre los egresos "
+                            "registrados en personas_caracterizacion y la "
+                            "población total de habitante_de_calle."
+                        ),
+                        (
+                            "<b>Limitación:</b> este indicador no debe "
+                            "interpretarse como una tasa longitudinal de "
+                            "cohorte mientras las dos bases no estén "
+                            "relacionadas mediante una metodología única de "
+                            "seguimiento temporal y personas únicas."
+                        )
+                    ]
+
+                    for m in metodologia:
+                        contenido.append(
+                            Paragraph(
+                                m,
+                                estilo_cuerpo
+                            )
+                        )
+
+                    contenido.append(Spacer(1, 0.6 * cm))
+                    contenido.append(
+                        Paragraph(
+                            "Fin del informe.",
+                            estilo_destacado
+                        )
+                    )
+
+                    # ------------------------------------------------
+                    # CREAR DOCUMENTO
+                    # ------------------------------------------------
                     doc_pdf.build(contenido)
                     buffer_pdf.seek(0)
 
-                    st.session_state["pdf_reporte_institucional"] = (
-                        buffer_pdf.getvalue()
-                    )
+                    st.session_state[
+                        "pdf_reporte_institucional"
+                    ] = buffer_pdf.getvalue()
 
                     for archivo_tmp in temporales:
                         try:
@@ -3727,18 +4552,26 @@ with tab4:
                         except Exception:
                             pass
 
-                    st.success("✅ Informe generado correctamente.")
+                    st.success(
+                        "✅ Informe institucional completo generado."
+                    )
 
                 except Exception as e:
-                    st.error(f"Error generando el informe: {e}")
+                    st.error(
+                        f"Error generando el informe: {e}"
+                    )
 
-            if st.session_state.get("pdf_reporte_institucional"):
+            if st.session_state.get(
+                "pdf_reporte_institucional"
+            ):
                 st.download_button(
-                    "⬇️ Descargar informe ejecutivo PDF",
-                    data=st.session_state["pdf_reporte_institucional"],
+                    "⬇️ Descargar informe institucional PDF",
+                    data=st.session_state[
+                        "pdf_reporte_institucional"
+                    ],
                     file_name=(
-                        "Informe_Observatorio_Social_"
-                        + datetime.now().strftime("%Y%m%d")
+                        "Informe_Institucional_Observatorio_Social_"
+                        + datetime.now().strftime("%Y%m%d_%H%M")
                         + ".pdf"
                     ),
                     mime="application/pdf",
