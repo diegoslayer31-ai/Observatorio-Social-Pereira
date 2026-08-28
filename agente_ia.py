@@ -20,7 +20,7 @@ from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib.pagesizes import letter
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
 from io import BytesIO
-from datetime import date, timedelta
+from datetime import date, timedelta, datetime
 
 st.set_page_config(
     page_title="Observatorio Social Asociación Ciudad Futuro",
