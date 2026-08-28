@@ -2848,6 +2848,252 @@ def registrar_egreso_profesional_v12(u, documento):
         st.rerun()
 
 
+
+def panel_inspirador_simple_v14():
+    """Panel operativo simple integrado a Gestión Móvil."""
+    responsable = st.session_state.get("usuario_actual", "inspirador")
+    ahora = datetime.now()
+
+    # Permisos actualmente abiertos
+    try:
+        permisos = pd.read_sql(
+            text("""
+                SELECT
+                    p.id,
+                    TRIM(CAST(p.numero_identificacion AS TEXT)) AS documento,
+                    p.fecha_salida,
+                    p.hora_salida,
+                    p.fecha_regreso_estimada,
+                    p.hora_regreso_estimada,
+                    p.motivo,
+                    h.nombres,
+                    h.apellidos,
+                    h.modalidad
+                FROM permisos_usuarios p
+                LEFT JOIN habitante_de_calle h
+                  ON TRIM(CAST(h.numero_identificacion AS TEXT))
+                   = TRIM(CAST(p.numero_identificacion AS TEXT))
+                WHERE UPPER(TRIM(COALESCE(p.estado_permiso,'')))='ABIERTO'
+                ORDER BY p.fecha_regreso_estimada, p.hora_regreso_estimada
+            """),
+            engine
+        )
+    except Exception:
+        permisos = pd.DataFrame()
+
+    vencidos = 0
+    if not permisos.empty:
+        permisos["regreso_dt"] = pd.to_datetime(
+            permisos["fecha_regreso_estimada"].astype(str)
+            + " "
+            + permisos["hora_regreso_estimada"].astype(str),
+            errors="coerce"
+        )
+        permisos["vencido"] = permisos["regreso_dt"].apply(
+            lambda x: bool(
+                pd.notna(x) and x.to_pydatetime() < ahora
+            )
+        )
+        vencidos = int(permisos["vencido"].sum())
+
+    st.markdown("### 🚪 Personas actualmente con permiso")
+    c1, c2 = st.columns(2)
+    c1.metric("Fuera con permiso", len(permisos))
+    c2.metric("🔴 Pendientes vencidos", vencidos)
+
+    if permisos.empty:
+        st.success("✅ En este momento no hay permisos abiertos.")
+    else:
+        permisos["nombre_completo"] = (
+            permisos["nombres"].fillna("").astype(str).str.strip()
+            + " "
+            + permisos["apellidos"].fillna("").astype(str).str.strip()
+        ).str.strip()
+
+        permisos["etiqueta"] = permisos.apply(
+            lambda r: (
+                f"{'🔴' if r.get('vencido') else '🟢'} "
+                f"{r.get('nombre_completo','')} · "
+                f"CC {r.get('documento','')} · "
+                f"{r.get('modalidad','')}"
+            ),
+            axis=1
+        )
+
+        permiso_id = st.selectbox(
+            "Seleccione la persona que regresó",
+            permisos["id"].tolist(),
+            format_func=lambda x: permisos.loc[
+                permisos["id"] == x, "etiqueta"
+            ].iloc[0],
+            key="v14_regreso_permiso"
+        )
+
+        fila = permisos.loc[
+            permisos["id"] == permiso_id
+        ].iloc[0]
+
+        st.caption(
+            f"Salida: {fila.get('fecha_salida','')} "
+            f"{fila.get('hora_salida','')} · "
+            f"Regreso esperado: {fila.get('fecha_regreso_estimada','')} "
+            f"{fila.get('hora_regreso_estimada','')}"
+        )
+
+        if st.button(
+            "⬅️ REGISTRAR REGRESO",
+            use_container_width=True,
+            type="primary",
+            key="v14_btn_regreso"
+        ):
+            with engine.begin() as conn:
+                actualizado = conn.execute(
+                    text("""
+                        UPDATE permisos_usuarios
+                        SET estado_permiso='CERRADO',
+                            fecha_regreso_real=CURRENT_DATE,
+                            hora_regreso_real=CURRENT_TIME,
+                            observacion_regreso='REGRESA AL ALBERGUE',
+                            usuario_registra_regreso=:usuario
+                        WHERE id=:id
+                          AND UPPER(TRIM(COALESCE(estado_permiso,'')))='ABIERTO'
+                    """),
+                    {
+                        "usuario": responsable,
+                        "id": int(permiso_id)
+                    }
+                )
+
+                if actualizado.rowcount:
+                    conn.execute(
+                        text("""
+                            INSERT INTO movimientos_habitante (
+                                numero_identificacion,
+                                tipo_movimiento,
+                                modalidad,
+                                usuario_registra,
+                                observacion
+                            )
+                            VALUES (
+                                :doc,
+                                'REGRESO_PERMISO',
+                                :modalidad,
+                                :usuario,
+                                'REGRESA AL ALBERGUE'
+                            )
+                        """),
+                        {
+                            "doc": str(fila.get("documento", "")).strip(),
+                            "modalidad": fila.get("modalidad"),
+                            "usuario": responsable
+                        }
+                    )
+
+            invalidar_cache_datos()
+            st.success(
+                f"✅ Regreso registrado: {fila.get('nombre_completo','')}."
+            )
+            st.rerun()
+
+    # Novedad rápida
+    with st.expander("📝 Registrar novedad del turno"):
+        with st.form("v14_novedad_simple"):
+            prioridad = st.selectbox(
+                "Prioridad",
+                ["NORMAL", "IMPORTANTE", "URGENTE"]
+            )
+            novedad = st.text_area(
+                "Novedad",
+                placeholder="Escriba únicamente lo que debe conocer el siguiente turno."
+            )
+            guardar = st.form_submit_button(
+                "💾 Guardar novedad",
+                use_container_width=True
+            )
+
+        if guardar:
+            if not novedad.strip():
+                st.error("Escriba la novedad.")
+            else:
+                with engine.begin() as conn:
+                    conn.execute(
+                        text("""
+                            INSERT INTO novedades_turno (
+                                tipo_novedad,
+                                novedad,
+                                prioridad,
+                                estado,
+                                usuario_registra
+                            )
+                            VALUES (
+                                'GENERAL',
+                                :novedad,
+                                :prioridad,
+                                'PENDIENTE',
+                                :usuario
+                            )
+                        """),
+                        {
+                            "novedad": novedad.strip(),
+                            "prioridad": prioridad,
+                            "usuario": responsable
+                        }
+                    )
+                st.success("✅ Novedad registrada.")
+                st.rerun()
+
+    # Reporte WhatsApp simple
+    with st.expander("📲 Reporte rápido para WhatsApp"):
+        try:
+            pendientes = pd.read_sql(
+                text("""
+                    SELECT prioridad, novedad
+                    FROM novedades_turno
+                    WHERE estado='PENDIENTE'
+                    ORDER BY creado_en DESC
+                    LIMIT 8
+                """),
+                engine
+            )
+        except Exception:
+            pendientes = pd.DataFrame()
+
+        detalle_perm = []
+        if not permisos.empty:
+            for _, r in permisos.iterrows():
+                detalle_perm.append(
+                    f"• {'VENCIDO - ' if r.get('vencido') else ''}"
+                    f"{r.get('nombre_completo','')} "
+                    f"(CC {r.get('documento','')})"
+                )
+
+        detalle_nov = []
+        if not pendientes.empty:
+            for _, r in pendientes.iterrows():
+                detalle_nov.append(
+                    f"• [{r.get('prioridad')}] {r.get('novedad')}"
+                )
+
+        reporte = "\\n".join([
+            "*REPORTE OPERATIVO - ALBERGUE*",
+            f"*Fecha:* {ahora.strftime('%d/%m/%Y %H:%M')}",
+            f"*Personas con permiso:* {len(permisos)}",
+            f"*Permisos vencidos:* {vencidos}",
+            "",
+            "*Fuera con permiso:*",
+            *(detalle_perm if detalle_perm else ["• Ninguno"]),
+            "",
+            "*Novedades pendientes:*",
+            *(detalle_nov if detalle_nov else ["• Ninguna"]),
+            "",
+            f"*Registra:* {responsable}"
+        ])
+
+        _boton_whatsapp(
+            reporte,
+            "v14_whatsapp_operativo"
+        )
+
 def gestion_usuarios_movil():
 
     st.title("📱 Gestión de Usuarios")
@@ -2867,6 +3113,12 @@ def gestion_usuarios_movil():
     st.info(
         f"👤 {nombre_login} · Perfil: {rol_visible.title()}"
     )
+
+    # V14: el Inspirador trabaja desde una sola pantalla.
+    if rol_visible == "INSPIRADOR":
+        panel_inspirador_simple_v14()
+        st.divider()
+        st.markdown("### 👤 Gestión de usuarios")
 
     # --------------------------------------------------------
     # Entrada principal móvil
@@ -2898,7 +3150,7 @@ def gestion_usuarios_movil():
     # ========================================================
     if modo == "➕ Nuevo usuario":
 
-        if rol_visible not in ["INSPIRADOR", "COORDINACION"]:
+        if rol_visible not in ["INSPIRADOR", "COORDINACION", "MANAGER"]:
             st.error("Este perfil no tiene habilitado el registro de nuevos usuarios.")
             return
 
@@ -6262,24 +6514,16 @@ with st.sidebar:
 
         if st.button(
             "📱 Gestión Móvil",
-            use_container_width=True
+            use_container_width=True,
+            type="primary"
         ):
             st.session_state.page = "gestion_movil"
             st.rerun()
 
-        if st.button(
-            "🕐 Control de Turno",
-            use_container_width=True
-        ):
-            st.session_state.page = "control_turno_v13"
-            st.rerun()
-
-        if st.button(
-            "📚 Historia Integral",
-            use_container_width=True
-        ):
-            st.session_state.page = "historia_integral_v12"
-            st.rerun()
+        st.caption(
+            "Ingresos · reingresos · permisos · sanciones · "
+            "caracterización · novedades"
+        )
 
     elif rol_menu == "PROFESIONAL":
 
@@ -6731,6 +6975,14 @@ if st.session_state.page == "genero_diversidad":
 rol_router = st.session_state.get(
     "rol_actual", ""
 )
+
+# V14: Inspiradores operan únicamente desde Gestión Móvil.
+if (
+    rol_router == "INSPIRADOR"
+    and st.session_state.page != "gestion_movil"
+):
+    st.session_state.page = "gestion_movil"
+    st.rerun()
 
 if st.session_state.page == "gestion_movil":
 
