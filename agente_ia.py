@@ -5282,6 +5282,276 @@ with tab6:
         df_profesionales["nombre"] + " (" + df_profesionales["rol"] + ")"
     )
 
+    # ========================================================
+    # TABLERO DE SUPERVISIÓN PAI
+    # ========================================================
+    st.subheader("🧭 Supervisión de cumplimiento PAI")
+    st.caption(
+        "Control automático de objetivos, vencimientos y seguimiento por profesional."
+    )
+
+    df_control_pai = pd.read_sql(
+        text("""
+            SELECT
+                p.id,
+                p.documento_usuario,
+                p.objetivo_tipo,
+                p.objetivo_descripcion,
+                p.porcentaje_avance,
+                p.estado,
+                p.fecha_apertura,
+                p.fecha_meta,
+                p.fecha_cumplimiento_real,
+                p.fecha_ultimo_seguimiento,
+                p.profesional_referente,
+                pr.nombre AS profesional,
+                pr.rol
+            FROM pai_objetivos p
+            LEFT JOIN profesionales pr
+                ON pr.id = p.profesional_referente
+            ORDER BY p.fecha_meta NULLS LAST, p.fecha_apertura DESC
+        """),
+        engine
+    )
+
+    if not df_control_pai.empty:
+        hoy_control = pd.Timestamp(date.today())
+
+        df_control_pai["fecha_meta"] = pd.to_datetime(
+            df_control_pai["fecha_meta"], errors="coerce"
+        )
+        df_control_pai["fecha_apertura"] = pd.to_datetime(
+            df_control_pai["fecha_apertura"], errors="coerce"
+        )
+        df_control_pai["fecha_cumplimiento_real"] = pd.to_datetime(
+            df_control_pai["fecha_cumplimiento_real"], errors="coerce"
+        )
+        df_control_pai["fecha_ultimo_seguimiento"] = pd.to_datetime(
+            df_control_pai["fecha_ultimo_seguimiento"], errors="coerce"
+        )
+        df_control_pai["porcentaje_avance"] = pd.to_numeric(
+            df_control_pai["porcentaje_avance"], errors="coerce"
+        ).fillna(0)
+
+        def _estado_control_pai(row):
+            avance = float(row.get("porcentaje_avance", 0) or 0)
+            fecha_meta = row.get("fecha_meta")
+            ultimo = row.get("fecha_ultimo_seguimiento")
+
+            if avance >= 100 or str(row.get("estado", "")).strip().upper() == "CUMPLIDO":
+                return "🟢 CUMPLIDO"
+
+            if pd.isna(fecha_meta):
+                return "⚪ SIN FECHA META"
+
+            dias = (fecha_meta.normalize() - hoy_control).days
+
+            if dias < 0:
+                return "🔴 VENCIDO"
+
+            if dias <= 7:
+                return "🟡 PRÓXIMO A VENCER"
+
+            if pd.isna(ultimo):
+                return "⚫ SIN SEGUIMIENTO"
+
+            dias_sin_seg = (hoy_control - ultimo.normalize()).days
+            if dias_sin_seg > 15:
+                return "🟠 SEGUIMIENTO ATRASADO"
+
+            return "🔵 EN TÉRMINO"
+
+        df_control_pai["semaforo"] = df_control_pai.apply(
+            _estado_control_pai, axis=1
+        )
+
+        df_control_pai["dias_para_meta"] = (
+            df_control_pai["fecha_meta"].dt.normalize() - hoy_control
+        ).dt.days
+
+        df_control_pai["dias_sin_seguimiento"] = (
+            hoy_control - df_control_pai["fecha_ultimo_seguimiento"].dt.normalize()
+        ).dt.days
+
+        total_obj_control = len(df_control_pai)
+        cumplidos_control = int(
+            df_control_pai["semaforo"].eq("🟢 CUMPLIDO").sum()
+        )
+        vencidos_control = int(
+            df_control_pai["semaforo"].eq("🔴 VENCIDO").sum()
+        )
+        proximos_control = int(
+            df_control_pai["semaforo"].eq("🟡 PRÓXIMO A VENCER").sum()
+        )
+        sin_seg_control = int(
+            df_control_pai["semaforo"].isin([
+                "⚫ SIN SEGUIMIENTO",
+                "🟠 SEGUIMIENTO ATRASADO"
+            ]).sum()
+        )
+
+        s1, s2, s3, s4, s5 = st.columns(5)
+        s1.metric("🎯 Objetivos", total_obj_control)
+        s2.metric("🟢 Cumplidos", cumplidos_control)
+        s3.metric("🔴 Vencidos", vencidos_control)
+        s4.metric("🟡 Vencen ≤ 7 días", proximos_control)
+        s5.metric("⚠️ Sin seguimiento", sin_seg_control)
+
+        st.markdown("#### 👨‍⚕️ Cumplimiento por profesional")
+
+        resumen_prof = (
+            df_control_pai.assign(
+                cumplido=df_control_pai["semaforo"].eq("🟢 CUMPLIDO"),
+                vencido=df_control_pai["semaforo"].eq("🔴 VENCIDO"),
+                proximo=df_control_pai["semaforo"].eq("🟡 PRÓXIMO A VENCER"),
+                sin_seguimiento=df_control_pai["semaforo"].isin([
+                    "⚫ SIN SEGUIMIENTO",
+                    "🟠 SEGUIMIENTO ATRASADO"
+                ])
+            )
+            .groupby(["profesional", "rol"], dropna=False)
+            .agg(
+                objetivos=("id", "count"),
+                cumplidos=("cumplido", "sum"),
+                vencidos=("vencido", "sum"),
+                proximos=("proximo", "sum"),
+                sin_seguimiento=("sin_seguimiento", "sum")
+            )
+            .reset_index()
+        )
+
+        resumen_prof["profesional"] = resumen_prof["profesional"].fillna("Sin asignar")
+        resumen_prof["rol"] = resumen_prof["rol"].fillna("Sin rol")
+        resumen_prof["cumplimiento_%"] = (
+            resumen_prof["cumplidos"] / resumen_prof["objetivos"] * 100
+        ).round(1)
+
+        st.dataframe(
+            resumen_prof.rename(columns={
+                "profesional": "Profesional",
+                "rol": "Rol",
+                "objetivos": "Objetivos",
+                "cumplidos": "Cumplidos",
+                "vencidos": "Vencidos",
+                "proximos": "Próximos",
+                "sin_seguimiento": "Sin seguimiento",
+                "cumplimiento_%": "% cumplimiento"
+            }),
+            use_container_width=True,
+            hide_index=True
+        )
+
+        st.markdown("#### 🚨 Alertas de seguimiento")
+
+        f1, f2 = st.columns(2)
+
+        opciones_estado_control = [
+            "Todos",
+            "🔴 VENCIDO",
+            "🟡 PRÓXIMO A VENCER",
+            "🟠 SEGUIMIENTO ATRASADO",
+            "⚫ SIN SEGUIMIENTO",
+            "🔵 EN TÉRMINO",
+            "🟢 CUMPLIDO",
+            "⚪ SIN FECHA META"
+        ]
+
+        filtro_estado_control = f1.selectbox(
+            "Estado de control",
+            opciones_estado_control,
+            key="pai_filtro_estado_control"
+        )
+
+        profesionales_control = (
+            ["Todos"]
+            + sorted(
+                df_control_pai["profesional"]
+                .fillna("Sin asignar")
+                .astype(str)
+                .unique()
+                .tolist()
+            )
+        )
+
+        filtro_prof_control = f2.selectbox(
+            "Profesional",
+            profesionales_control,
+            key="pai_filtro_profesional_control"
+        )
+
+        df_alertas_pai = df_control_pai.copy()
+        df_alertas_pai["profesional"] = (
+            df_alertas_pai["profesional"].fillna("Sin asignar")
+        )
+
+        if filtro_estado_control != "Todos":
+            df_alertas_pai = df_alertas_pai[
+                df_alertas_pai["semaforo"] == filtro_estado_control
+            ]
+
+        if filtro_prof_control != "Todos":
+            df_alertas_pai = df_alertas_pai[
+                df_alertas_pai["profesional"] == filtro_prof_control
+            ]
+
+        columnas_alerta = [
+            "semaforo",
+            "documento_usuario",
+            "objetivo_tipo",
+            "profesional",
+            "rol",
+            "fecha_meta",
+            "porcentaje_avance",
+            "dias_para_meta",
+            "fecha_ultimo_seguimiento",
+            "dias_sin_seguimiento"
+        ]
+
+        st.dataframe(
+            df_alertas_pai[columnas_alerta].rename(columns={
+                "semaforo": "Estado",
+                "documento_usuario": "Documento",
+                "objetivo_tipo": "Objetivo",
+                "profesional": "Profesional",
+                "rol": "Rol",
+                "fecha_meta": "Fecha meta",
+                "porcentaje_avance": "Avance %",
+                "dias_para_meta": "Días para meta",
+                "fecha_ultimo_seguimiento": "Último seguimiento",
+                "dias_sin_seguimiento": "Días sin seguimiento"
+            }),
+            use_container_width=True,
+            hide_index=True
+        )
+
+        st.caption(
+            "🔴 Vencido: fecha meta superada sin cumplimiento. "
+            "🟡 Próximo: vence en 7 días o menos. "
+            "🟠 Seguimiento atrasado: más de 15 días desde la última novedad. "
+            "⚫ Sin seguimiento: no registra novedad profesional."
+        )
+
+        csv_control_pai = df_alertas_pai[columnas_alerta].to_csv(
+            index=False
+        ).encode("utf-8-sig")
+
+        st.download_button(
+            "⬇️ Descargar control PAI en CSV",
+            data=csv_control_pai,
+            file_name=(
+                "control_pai_"
+                + datetime.now().strftime("%Y%m%d_%H%M")
+                + ".csv"
+            ),
+            mime="text/csv",
+            use_container_width=True,
+            key="descargar_control_pai_v7"
+        )
+    else:
+        st.info("Aún no existen objetivos PAI para supervisar.")
+
+    st.divider()
+
     # =========================
     # BUSCAR USUARIO
     # =========================
@@ -5289,7 +5559,16 @@ with tab6:
 
     busqueda = st.text_input("Nombre, apellido o documento")
 
-    df_busqueda = df.copy()
+    df_pai_personas = pd.read_sql(
+        text("""
+            SELECT *
+            FROM habitante_de_calle
+            ORDER BY nombres, apellidos
+        """),
+        engine
+    )
+
+    df_busqueda = df_pai_personas.copy()
 
     if busqueda:
         df_busqueda = df_busqueda[
@@ -5438,7 +5717,8 @@ with tab6:
                         linea_politica,
                         ods_principal,
                         profesional_referente,
-                        fecha_apertura
+                        fecha_apertura,
+                        fecha_meta
                     )
                     VALUES(
                         :documento_usuario,
@@ -5451,7 +5731,8 @@ with tab6:
                         :linea_politica,
                         :ods_principal,
                         :profesional_referente,
-                        NOW()
+                        NOW(),
+                        :fecha_meta
                     )
                 """), {
 
@@ -5464,10 +5745,22 @@ with tab6:
                     "estado": "Activo",
                     "linea_politica": linea_politica,
                     "ods_principal": ", ".join(ods),
-                    "profesional_referente": profesional_referente
+                    "profesional_referente": profesional_referente,
+                    "fecha_meta": fecha_cumplimiento
 
                 })
 
+            registrar_auditoria(
+                "CREAR_OBJETIVO_PAI",
+                documento=usuario_sel,
+                modulo="PAI",
+                valor_nuevo=objetivo_tipo,
+                observacion=(
+                    f"Profesional ID {profesional_referente}; "
+                    f"fecha meta {fecha_cumplimiento}"
+                )
+            )
+            invalidar_cache_datos()
             st.success("✅ Objetivo creado correctamente.")
             st.rerun()
         st.divider()
@@ -5499,12 +5792,38 @@ with tab6:
 
             avance = round((len(hitos_temp) / len(actividades)) * 100, 1) if actividades else 0
 
-            c1, c2, c3 = st.columns(3)
+            fecha_meta_obj = pd.to_datetime(
+                obj.get("fecha_meta"), errors="coerce"
+            )
+
+            if avance >= 100:
+                semaforo_obj = "🟢 CUMPLIDO"
+            elif pd.isna(fecha_meta_obj):
+                semaforo_obj = "⚪ SIN FECHA META"
+            else:
+                dias_obj = (
+                    fecha_meta_obj.normalize()
+                    - pd.Timestamp(date.today())
+                ).days
+                if dias_obj < 0:
+                    semaforo_obj = f"🔴 VENCIDO ({abs(dias_obj)} días)"
+                elif dias_obj <= 7:
+                    semaforo_obj = f"🟡 VENCE EN {dias_obj} días"
+                else:
+                    semaforo_obj = f"🔵 EN TÉRMINO ({dias_obj} días)"
+
+            c1, c2, c3, c4 = st.columns(4)
             c1.metric("Avance", f"{avance}%")
             c2.metric("Estado", obj["estado"])
-            c3.metric("ODS", obj["ods_principal"])
+            c3.metric("Control", semaforo_obj)
+            c4.metric(
+                "Fecha meta",
+                fecha_meta_obj.strftime("%d/%m/%Y")
+                if not pd.isna(fecha_meta_obj)
+                else "Sin fecha"
+            )
 
-            st.progress(avance / 100)
+            st.progress(min(max(avance / 100, 0), 1))
 
             st.caption(f"👨‍⚕️ {obj['nombre_profesional'] or 'Sin asignar'}")
             st.caption(f"🏛️ {obj['linea_politica']}")
@@ -5536,7 +5855,16 @@ with tab6:
                 query = text("""
                     UPDATE pai_objetivos
                     SET avance_hitos = :hitos,
-                        porcentaje_avance = :avance
+                        porcentaje_avance = :avance,
+                        estado = CASE
+                            WHEN :avance >= 100 THEN 'CUMPLIDO'
+                            ELSE 'Activo'
+                        END,
+                        fecha_cumplimiento_real = CASE
+                            WHEN :avance >= 100
+                                THEN COALESCE(fecha_cumplimiento_real, NOW())
+                            ELSE NULL
+                        END
                     WHERE id = :id
                 """)
 
@@ -5555,7 +5883,13 @@ with tab6:
                     observacion=f"Objetivo PAI ID {obj_id}"
                 )
                 invalidar_cache_datos()
-                st.success("Avance guardado")
+                if avance >= 100:
+                    st.success(
+                        "✅ Objetivo completado al 100% y marcado como CUMPLIDO."
+                    )
+                else:
+                    st.success("Avance guardado")
+                st.rerun()
 
             # =========================
             # NOVEDAD (SIN RERUN)
@@ -5609,6 +5943,15 @@ with tab6:
                         "evidencia": evidencia
                     })
 
+                    conn.execute(
+                        text("""
+                            UPDATE pai_objetivos
+                            SET fecha_ultimo_seguimiento = NOW()
+                            WHERE id = :id
+                        """),
+                        {"id": obj_id}
+                    )
+
                 registrar_auditoria(
                     "REGISTRAR_NOVEDAD_PROFESIONAL",
                     documento=usuario_sel,
@@ -5617,7 +5960,10 @@ with tab6:
                     observacion=descripcion[:500] if descripcion else None
                 )
                 invalidar_cache_datos()
-                st.success("Novedad registrada")
+                st.success(
+                    "✅ Novedad registrada y fecha de último seguimiento actualizada."
+                )
+                st.rerun()
 
             # =========================
             # HISTORIAL (FILTRADO EN MEMORIA)
@@ -6495,7 +6841,11 @@ with tab9:
                     objetivo_tipo,
                     objetivo_descripcion,
                     estado,
-                    porcentaje_avance
+                    porcentaje_avance,
+                    fecha_meta,
+                    fecha_cumplimiento_real,
+                    fecha_ultimo_seguimiento,
+                    profesional_referente
                 FROM pai_objetivos
                 WHERE TRIM(
                     CAST(documento_usuario AS TEXT)
@@ -6563,11 +6913,39 @@ with tab9:
             if avance_serie.notna().any():
                 avance_pai_hist = float(avance_serie.mean())
 
-        r1, r2, r3, r4 = st.columns(4)
+        vencidos_hist = 0
+        proximos_hist = 0
+
+        if not objetivos_hist.empty and "fecha_meta" in objetivos_hist.columns:
+            fechas_meta_hist = pd.to_datetime(
+                objetivos_hist["fecha_meta"], errors="coerce"
+            )
+            avances_hist = pd.to_numeric(
+                objetivos_hist["porcentaje_avance"], errors="coerce"
+            ).fillna(0)
+            dias_hist = (
+                fechas_meta_hist.dt.normalize()
+                - pd.Timestamp(date.today())
+            ).dt.days
+
+            vencidos_hist = int(
+                ((dias_hist < 0) & (avances_hist < 100)).sum()
+            )
+            proximos_hist = int(
+                (
+                    (dias_hist >= 0)
+                    & (dias_hist <= 7)
+                    & (avances_hist < 100)
+                ).sum()
+            )
+
+        r1, r2, r3, r4, r5, r6 = st.columns(6)
         r1.metric("🔄 Movimientos", len(movimientos_hist))
         r2.metric("🎯 Objetivos PAI", len(objetivos_hist))
         r3.metric("📝 Intervenciones", len(novedades_hist))
         r4.metric("📈 Avance PAI", f"{avance_pai_hist:.1f}%")
+        r5.metric("🔴 Vencidos", vencidos_hist)
+        r6.metric("🟡 Próximos", proximos_hist)
 
         st.markdown("### 🧭 Historia en pantalla")
 
