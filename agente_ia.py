@@ -399,741 +399,714 @@ def generar_historia_integral(documento, engine):
 
 
 def gestion_usuarios():
-    
-    st.title("⚙️ Gestión de usuarios")
 
-    # ==================================
-    # CARGAR BASE
-    # ==================================
+    st.title("👥 Gestión de Usuarios")
+    st.caption(
+        "Consulta, actualización operativa y registro de usuarios en una sola pantalla."
+    )
 
-    df = pd.read_sql(
-        """
-        SELECT *
-        FROM habitante_de_calle
-        """,
+    # ========================================================
+    # BASE GENERAL
+    # ========================================================
+    df_gestion = pd.read_sql(
+        text("""
+            SELECT *
+            FROM habitante_de_calle
+            ORDER BY nombres, apellidos
+        """),
         engine
     )
 
-    if df.empty:
-
-        st.warning("No hay usuarios registrados")
-
+    if df_gestion.empty:
+        st.warning("No hay usuarios registrados.")
         return
 
-    # ==================================
-    # NORMALIZAR
-    # ==================================
+    for columna in ["modalidad", "estado_caso"]:
+        if columna not in df_gestion.columns:
+            df_gestion[columna] = ""
 
-    df["modalidad"] = (
-        df["modalidad"]
+    df_gestion["modalidad"] = (
+        df_gestion["modalidad"]
+        .fillna("")
         .astype(str)
         .str.upper()
         .str.strip()
     )
 
-    df["estado_caso"] = (
-        df["estado_caso"]
+    df_gestion["estado_caso"] = (
+        df_gestion["estado_caso"]
+        .fillna("")
         .astype(str)
         .str.upper()
         .str.strip()
     )
 
-    df["numero_identificacion"] = (
-        df["numero_identificacion"]
+    df_gestion["numero_identificacion"] = (
+        df_gestion["numero_identificacion"]
+        .fillna("")
         .astype(str)
         .str.strip()
-        .str.replace(".0", "", regex=False)
+        .str.replace(r"\.0$", "", regex=True)
     )
 
-    df["nombre"] = (
-        df["nombres"].astype(str)
+    df_gestion["nombre_completo"] = (
+        df_gestion["nombres"].fillna("").astype(str).str.strip()
         + " "
-        + df["apellidos"].astype(str)
+        + df_gestion["apellidos"].fillna("").astype(str).str.strip()
+    ).str.strip()
+
+    # ========================================================
+    # INDICADORES COMPACTOS
+    # ========================================================
+    total_gestion = len(df_gestion)
+    activos_gestion = int(
+        df_gestion["estado_caso"].eq("ACTIVO").sum()
+    )
+    urbano_gestion = int(
+        (
+            df_gestion["estado_caso"].eq("ACTIVO")
+            & df_gestion["modalidad"].eq("URBANO")
+        ).sum()
+    )
+    granja_gestion = int(
+        (
+            df_gestion["estado_caso"].eq("ACTIVO")
+            & df_gestion["modalidad"].eq("GRANJA")
+        ).sum()
+    )
+    egresados_gestion = int(
+        df_gestion["estado_caso"].eq("EGRESADO").sum()
     )
 
-    # ==================================
-    # INDICADORES
-    # ==================================
-
-    urbano = len(
-        df[
-            (df["modalidad"] == "URBANO")
-            &
-            (df["estado_caso"] == "ACTIVO")
-        ]
-    )
-
-    granja = len(
-        df[
-            (df["modalidad"] == "GRANJA")
-            &
-            (df["estado_caso"] == "ACTIVO")
-        ]
-    )
-
-    egresados = len(
-        df[
-            df["estado_caso"] == "EGRESADO"
-        ]
-    )
-
-    total = len(df)
-
-    c1, c2, c3, c4 = st.columns(4)
-
-    c1.metric("🏙️ Urbano", urbano)
-
-    c2.metric("🌱 Granja", granja)
-
-    c3.metric("📤 Egresados", egresados)
-
-    c4.metric("👥 Total", total)
+    m1, m2, m3, m4, m5 = st.columns(5)
+    m1.metric("👥 Total", total_gestion)
+    m2.metric("🟢 Activos", activos_gestion)
+    m3.metric("🏙️ Urbano", urbano_gestion)
+    m4.metric("🌱 Granja", granja_gestion)
+    m5.metric("📤 Egresados", egresados_gestion)
 
     st.divider()
 
-    # ==================================
-    # LISTADO
-    # ==================================
+    tab_consulta, tab_nuevo, tab_listado = st.tabs([
+        "🔎 Consultar / actualizar",
+        "➕ Nuevo usuario",
+        "📋 Listado"
+    ])
 
-    st.subheader("📋 Usuarios")
+    # ========================================================
+    # TAB 1 - CONSULTA Y ACTUALIZACIÓN
+    # ========================================================
+    with tab_consulta:
 
-    columnas = [
+        col_buscar, col_filtro = st.columns([3, 1])
 
-        "nombres",
+        with col_buscar:
+            indice_usuario = st.selectbox(
+                "Buscar por nombre o documento",
+                df_gestion.index.tolist(),
+                key="gestion_usuario_v8",
+                format_func=lambda i: (
+                    f"{df_gestion.loc[i, 'nombre_completo']} - "
+                    f"{df_gestion.loc[i, 'numero_identificacion']}"
+                )
+            )
 
-        "apellidos",
+        with col_filtro:
+            st.caption("Estado actual")
+            persona_tmp = df_gestion.loc[indice_usuario]
+            estado_tmp = persona_tmp.get("estado_caso", "") or "SIN DATO"
+            st.markdown(f"### {estado_tmp}")
 
-        "numero_identificacion",
+        persona = df_gestion.loc[indice_usuario]
+        documento = str(persona["numero_identificacion"]).strip()
 
-        "modalidad",
+        # ----------------------------------------------------
+        # RESUMEN PAI
+        # ----------------------------------------------------
+        try:
+            resumen_pai = pd.read_sql(
+                text("""
+                    SELECT
+                        COUNT(*) AS objetivos,
+                        COUNT(*) FILTER (
+                            WHERE UPPER(TRIM(COALESCE(estado,''))) = 'CUMPLIDO'
+                               OR COALESCE(porcentaje_avance,0) >= 100
+                        ) AS cumplidos,
+                        COUNT(*) FILTER (
+                            WHERE fecha_meta < CURRENT_DATE
+                              AND COALESCE(porcentaje_avance,0) < 100
+                        ) AS vencidos,
+                        COUNT(*) FILTER (
+                            WHERE fecha_meta BETWEEN CURRENT_DATE
+                                AND CURRENT_DATE + INTERVAL '7 days'
+                              AND COALESCE(porcentaje_avance,0) < 100
+                        ) AS proximos,
+                        MAX(fecha_ultimo_seguimiento) AS ultimo_seguimiento
+                    FROM pai_objetivos
+                    WHERE TRIM(CAST(documento_usuario AS TEXT)) = :doc
+                """),
+                engine,
+                params={"doc": documento}
+            )
+        except Exception:
+            resumen_pai = pd.DataFrame()
 
-        "estado_caso"
+        objetivos = cumplidos = vencidos = proximos = 0
+        ultimo_seg = None
 
-    ]
+        if not resumen_pai.empty:
+            objetivos = int(resumen_pai.iloc[0]["objetivos"] or 0)
+            cumplidos = int(resumen_pai.iloc[0]["cumplidos"] or 0)
+            vencidos = int(resumen_pai.iloc[0]["vencidos"] or 0)
+            proximos = int(resumen_pai.iloc[0]["proximos"] or 0)
+            ultimo_seg = resumen_pai.iloc[0]["ultimo_seguimiento"]
 
-    columnas = [
+        # ----------------------------------------------------
+        # FICHA BREVE
+        # ----------------------------------------------------
+        st.markdown("### 👤 Ficha rápida")
 
-        c for c in columnas
+        f1, f2, f3, f4, f5 = st.columns(5)
+        f1.metric("📌 Estado", persona.get("estado_caso", "") or "Sin dato")
+        f2.metric("🏠 Modalidad", persona.get("modalidad", "") or "Sin dato")
+        f3.metric("🎯 PAI", objetivos)
+        f4.metric("🔴 PAI vencidos", vencidos)
+        f5.metric("🟢 Cumplidos", cumplidos)
 
-        if c in df.columns
+        if ultimo_seg is not None and not pd.isna(ultimo_seg):
+            st.caption(
+                "🕒 Último seguimiento profesional: "
+                + pd.to_datetime(ultimo_seg).strftime("%d/%m/%Y %H:%M")
+            )
+        elif objetivos:
+            st.warning("⚠️ Esta persona tiene PAI pero no registra seguimiento reciente.")
 
-    ]
-
-    st.dataframe(
-
-        df[columnas],
-
-        use_container_width=True
-
-    )
-
-    st.divider()
-        # ==================================
-    # BUSCADOR
-    # ==================================
-
-    st.subheader("🔎 Buscar usuario")
-
-    usuario = st.selectbox(
-
-        "Seleccione usuario",
-
-        df.index,
-
-        format_func=lambda x:
-
-        f"{df.loc[x,'nombre']} - {df.loc[x,'numero_identificacion']}"
-
-    )
-
-    persona = df.loc[usuario]
-
-    st.info(f"""
-
-    👤 {persona['nombre']}
-
-    🪪 {persona['numero_identificacion']}
-
-    📌 Estado: {persona['estado_caso']}
-
-    🏷️ Modalidad: {persona['modalidad']}
-
-    """)
-
-    st.divider()
-
-    # ==================================
-    # 📝 ÚLTIMAS 10 NOVEDADES
-    # ==================================
-
-    st.subheader("📝 Últimas 10 novedades")
-
-    try:
-
-        documento = str(
-            persona["numero_identificacion"]
-        ).strip()
-
-        df_novedades = pd.read_sql(
-            text("""
-                SELECT
-                    n.fecha,
-                    n.profesional,
-                    o.objetivo_tipo,
-                    n.descripcion
-                FROM pai_novedades n
-                INNER JOIN pai_objetivos o
-                    ON n.id_objetivo = o.id
-                WHERE o.documento_usuario = :documento
-                ORDER BY n.fecha DESC
-                LIMIT 10
-            """),
-            engine,
-            params={"documento": documento}
-        )
-
-        if df_novedades.empty:
-
+        if vencidos:
+            st.error(
+                f"🔴 Atención: esta persona tiene {vencidos} objetivo(s) PAI vencido(s)."
+            )
+        elif proximos:
             st.warning(
-                "⚠️ No existen novedades registradas."
+                f"🟡 Tiene {proximos} objetivo(s) PAI que vencen en los próximos 7 días."
             )
 
-        else:
+        # ----------------------------------------------------
+        # ACTUALIZACIÓN OPERATIVA SIMPLE
+        # ----------------------------------------------------
+        st.markdown("### ✏️ Actualización operativa")
 
-            st.success(
-                f"Se encontraron {len(df_novedades)} novedades."
-            )
+        a1, a2, a3 = st.columns([1, 1, 1])
 
-            st.dataframe(
+        estados_disponibles = [
+            "ACTIVO",
+            "INACTIVO",
+            "EGRESADO"
+        ]
 
-                df_novedades,
-
-                use_container_width=True
-
-            )
-
-    except Exception as e:
-
-        st.warning(
-            "Error cargando novedades"
+        estado_actual = (
+            persona.get("estado_caso", "")
+            if persona.get("estado_caso", "") in estados_disponibles
+            else "ACTIVO"
         )
 
-        st.caption(str(e))
+        modalidad_actual = persona.get("modalidad", "")
+        modalidades = ["URBANO", "GRANJA"]
 
-    st.divider()
-    # ==================================
-    # ACTUALIZAR ESTADO Y MODALIDAD
-    # ==================================
-
-    c5, c6 = st.columns(2)
-
-    with c5:
-
-        st.subheader("📌 Estado")
-
-        nuevo_estado = st.selectbox(
-
-            "Cambiar estado",
-
-            [
-
-                "ACTIVO",
-
-                "EGRESADO"
-
-            ]
-
+        nuevo_estado = a1.selectbox(
+            "Estado",
+            estados_disponibles,
+            index=estados_disponibles.index(estado_actual),
+            key=f"gestion_estado_{documento}"
         )
 
-        if st.button("💾 Actualizar estado"):
-
-            with engine.begin() as conn:
-
-                conn.execute(text("""
-
-                    UPDATE habitante_de_calle
-
-                    SET estado_caso=:estado
-
-                    WHERE numero_identificacion=:doc
-
-                """), {
-
-                    "estado": nuevo_estado,
-
-                    "doc": persona["numero_identificacion"]
-
-                })
-
-            registrar_auditoria("ACTUALIZAR_ESTADO", persona["numero_identificacion"], "gestion_usuarios", persona["estado_caso"], nuevo_estado)
-            invalidar_cache_datos()
-            st.success("Estado actualizado")
-
-            st.rerun()
-
-    with c6:
-
-        st.subheader("🏠 Modalidad")
-
-        nueva_modalidad = st.selectbox(
-
-            "Cambiar modalidad",
-
-            [
-
-                "URBANO",
-
-                "GRANJA"
-
-            ]
-
-        )
-
-        if st.button("💾 Actualizar modalidad"):
-
-            with engine.begin() as conn:
-
-                conn.execute(text("""
-
-                    UPDATE habitante_de_calle
-
-                    SET modalidad=:modalidad
-
-                    WHERE numero_identificacion=:doc
-
-                """), {
-
-                    "modalidad": nueva_modalidad,
-
-                    "doc": persona["numero_identificacion"]
-
-                })
-
-            registrar_auditoria("ACTUALIZAR_MODALIDAD", persona["numero_identificacion"], "gestion_usuarios", persona["modalidad"], nueva_modalidad)
-            invalidar_cache_datos()
-            st.success("Modalidad actualizada")
-
-            st.rerun()
-
-    st.divider()
-
-    # ==================================
-    # NUEVO USUARIO
-    # ==================================
-
-    st.subheader("➕ Registrar nuevo usuario")
-
-    with st.form("nuevo_usuario"):
-
-        st.markdown("### 👤 Datos personales")
-
-        nombres = st.text_input("Nombres")
-
-        apellidos = st.text_input("Apellidos")
-
-        sexo = st.selectbox(
-
-            "Sexo al nacer",
-
-            [
-
-                "Masculino",
-
-                "Femenino"
-
-            ]
-
-        )
-
-        fecha_nacimiento = st.date_input(
-
-            "Fecha nacimiento"
-
-        )
-
-        edad = st.number_input(
-
-            "Edad",
-
-            0,
-
-            120,
-
-            18
-
-        )
-
-        tipo_id = st.selectbox(
-
-            "Tipo identificación",
-
-            [
-
-                "CC",
-
-                "TI",
-
-                "CE",
-
-                "PEP",
-
-                "Otro"
-
-            ]
-
-        )
-
-        numero_id = st.text_input(
-
-            "Número identificación"
-
-        )
-
-        st.markdown("### 🌎 Enfoque diferencial")
-
-        discapacidad = st.selectbox(
-
-            "Discapacidad",
-
-            [
-
-                "No",
-
-                "Sí"
-
-            ]
-
-        )
-
-        migracion = st.selectbox(
-
-            "Migración",
-
-            [
-
-                "NO",
-
-                "SI"
-
-            ]
-
-        )
-
-        etnia = st.selectbox(
-
-            "Grupo étnico",
-
-            [
-
-                "Ninguno",
-
-                "Afrodescendiente",
-
-                "Indígena",
-
-                "Mestizo"
-
-            ]
-
-        )
-
-        st.markdown("### 🏥 Salud")
-
-        seguridad_salud = st.selectbox(
-
-            "Seguridad social",
-
-            [
-
-                "Subsidiado",
-
-                "Contributivo",
-
-                "Especial",
-
-                "No afiliado"
-
-            ]
-
-        )
-
-        st.markdown("### 🎓 Educación")
-
-        educacion = st.selectbox(
-
-            "Nivel educativo",
-
-            [
-
-                "Ninguno",
-
-                "Primaria",
-
-                "Secundaria",
-
-                "Técnico",
-
-                "Tecnólogo",
-
-                "Universitario"
-
-            ]
-
-        )
-
-        st.markdown("### 📍 Ubicación")
-
-        barrio = st.text_input(
-
-            "Barrio"
-
-        )
-
-        comuna = st.text_input(
-
-            "Comuna"
-
-        )
-
-        direccion = st.text_input(
-
-            "Dirección"
-
-        )
-
-        telefono = st.text_input(
-
-            "Teléfono"
-
-        )
-
-        correo = st.text_input(
-
-            "Correo"
-
-        )
-
-        st.markdown("### 💊 Programa")
-
-        consumo = st.selectbox(
-
-            "Tipo consumo",
-
-            [
-
-                "No",
-
-                "Marihuana",
-
-                "Cocaína",
-
-                "Bazuco",
-
-                "Alcohol",
-
-                "Heroína",
-
-                "Policonsumo"
-
-            ]
-
-        )
-
-        enfermedad = st.selectbox(
-
-            "Enfermedad mental",
-
-            [
-
-                "No",
-
-                "Sí"
-
-            ]
-
-        )
-
-        modalidad = st.selectbox(
-
+        nueva_modalidad = a2.selectbox(
             "Modalidad",
+            modalidades,
+            index=(
+                modalidades.index(modalidad_actual)
+                if modalidad_actual in modalidades
+                else 0
+            ),
+            key=f"gestion_modalidad_{documento}"
+        )
 
-            [
+        with a3:
+            st.write("")
+            st.write("")
+            guardar_cambios = st.button(
+                "💾 Guardar cambios",
+                key=f"gestion_guardar_{documento}",
+                use_container_width=True,
+                type="primary"
+            )
 
-                "URBANO",
+        if guardar_cambios:
 
-                "GRANJA"
+            estado_anterior = str(persona.get("estado_caso", "") or "")
+            modalidad_anterior = str(persona.get("modalidad", "") or "")
 
+            hubo_cambio = (
+                nuevo_estado != estado_anterior
+                or nueva_modalidad != modalidad_anterior
+            )
+
+            if not hubo_cambio:
+                st.info("No hay cambios para guardar.")
+            else:
+                with engine.begin() as conn:
+                    conn.execute(
+                        text("""
+                            UPDATE habitante_de_calle
+                            SET estado_caso = :estado,
+                                modalidad = :modalidad
+                            WHERE TRIM(
+                                CAST(numero_identificacion AS TEXT)
+                            ) = :doc
+                        """),
+                        {
+                            "estado": nuevo_estado,
+                            "modalidad": nueva_modalidad,
+                            "doc": documento
+                        }
+                    )
+
+                    tipo_movimiento = "ACTUALIZACION_USUARIO"
+
+                    if estado_anterior != nuevo_estado:
+                        if nuevo_estado == "EGRESADO":
+                            tipo_movimiento = "EGRESO"
+                        elif estado_anterior == "EGRESADO" and nuevo_estado == "ACTIVO":
+                            tipo_movimiento = "REINGRESO"
+                        elif nuevo_estado == "INACTIVO":
+                            tipo_movimiento = "INACTIVACION"
+                        elif nuevo_estado == "ACTIVO":
+                            tipo_movimiento = "ACTIVACION"
+
+                    conn.execute(
+                        text("""
+                            INSERT INTO movimientos_habitante (
+                                numero_identificacion,
+                                tipo_movimiento,
+                                modalidad,
+                                usuario_registra,
+                                observacion
+                            )
+                            VALUES (
+                                :doc,
+                                :tipo,
+                                :modalidad,
+                                :usuario,
+                                :observacion
+                            )
+                        """),
+                        {
+                            "doc": documento,
+                            "tipo": tipo_movimiento,
+                            "modalidad": nueva_modalidad,
+                            "usuario": st.session_state.get(
+                                "usuario_actual", "sistema"
+                            ),
+                            "observacion": (
+                                f"Gestión usuarios: estado "
+                                f"{estado_anterior or 'SIN DATO'} -> {nuevo_estado}; "
+                                f"modalidad "
+                                f"{modalidad_anterior or 'SIN DATO'} -> {nueva_modalidad}"
+                            )
+                        }
+                    )
+
+                registrar_auditoria(
+                    "ACTUALIZAR_USUARIO",
+                    documento=documento,
+                    modulo="Gestión Usuarios",
+                    valor_anterior=(
+                        f"Estado={estado_anterior}; "
+                        f"Modalidad={modalidad_anterior}"
+                    ),
+                    valor_nuevo=(
+                        f"Estado={nuevo_estado}; "
+                        f"Modalidad={nueva_modalidad}"
+                    )
+                )
+
+                invalidar_cache_datos()
+                st.success("✅ Usuario actualizado correctamente.")
+                st.rerun()
+
+        # ----------------------------------------------------
+        # HISTORIAL RECIENTE EN EXPANDERS
+        # ----------------------------------------------------
+        st.divider()
+
+        e1, e2, e3 = st.columns(3)
+
+        with e1:
+            with st.expander("📝 Últimos seguimientos"):
+                try:
+                    df_novedades_gestion = pd.read_sql(
+                        text("""
+                            SELECT
+                                n.fecha,
+                                n.profesional,
+                                o.objetivo_tipo,
+                                n.tipo_novedad,
+                                n.descripcion
+                            FROM pai_novedades n
+                            INNER JOIN pai_objetivos o
+                                ON o.id = n.id_objetivo
+                            WHERE TRIM(
+                                CAST(o.documento_usuario AS TEXT)
+                            ) = :doc
+                            ORDER BY n.fecha DESC
+                            LIMIT 10
+                        """),
+                        engine,
+                        params={"doc": documento}
+                    )
+
+                    if df_novedades_gestion.empty:
+                        st.caption("Sin seguimientos registrados.")
+                    else:
+                        st.dataframe(
+                            df_novedades_gestion,
+                            use_container_width=True,
+                            hide_index=True
+                        )
+                except Exception as e:
+                    st.caption(f"No fue posible cargar seguimientos: {e}")
+
+        with e2:
+            with st.expander("🔄 Movimientos recientes"):
+                try:
+                    movimientos_gestion = pd.read_sql(
+                        text("""
+                            SELECT
+                                fecha_movimiento,
+                                tipo_movimiento,
+                                modalidad,
+                                observacion
+                            FROM movimientos_habitante
+                            WHERE TRIM(
+                                CAST(numero_identificacion AS TEXT)
+                            ) = :doc
+                            ORDER BY fecha_movimiento DESC
+                            LIMIT 10
+                        """),
+                        engine,
+                        params={"doc": documento}
+                    )
+
+                    if movimientos_gestion.empty:
+                        st.caption("Sin movimientos registrados.")
+                    else:
+                        st.dataframe(
+                            movimientos_gestion,
+                            use_container_width=True,
+                            hide_index=True
+                        )
+                except Exception as e:
+                    st.caption(f"No fue posible cargar movimientos: {e}")
+
+        with e3:
+            with st.expander("🎯 Resumen PAI"):
+                try:
+                    pai_gestion = pd.read_sql(
+                        text("""
+                            SELECT
+                                objetivo_tipo,
+                                profesional_referente,
+                                porcentaje_avance,
+                                estado,
+                                fecha_meta,
+                                fecha_ultimo_seguimiento
+                            FROM pai_objetivos
+                            WHERE TRIM(
+                                CAST(documento_usuario AS TEXT)
+                            ) = :doc
+                            ORDER BY fecha_meta NULLS LAST
+                        """),
+                        engine,
+                        params={"doc": documento}
+                    )
+
+                    if pai_gestion.empty:
+                        st.caption("Sin objetivos PAI.")
+                    else:
+                        st.dataframe(
+                            pai_gestion,
+                            use_container_width=True,
+                            hide_index=True
+                        )
+                except Exception as e:
+                    st.caption(f"No fue posible cargar PAI: {e}")
+
+    # ========================================================
+    # TAB 2 - NUEVO USUARIO
+    # ========================================================
+    with tab_nuevo:
+
+        st.subheader("➕ Registrar nuevo usuario")
+        st.caption(
+            "Formulario reducido con los datos esenciales. "
+            "La caracterización ampliada puede completarse posteriormente."
+        )
+
+        with st.form("nuevo_usuario_v8"):
+
+            n1, n2, n3 = st.columns(3)
+
+            nombres = n1.text_input("Nombres *")
+            apellidos = n2.text_input("Apellidos *")
+            numero_id = n3.text_input("Número de identificación *")
+
+            n4, n5, n6 = st.columns(3)
+
+            tipo_id = n4.selectbox(
+                "Tipo identificación",
+                ["CC", "TI", "CE", "PEP", "Otro"]
+            )
+
+            sexo = n5.selectbox(
+                "Sexo al nacer",
+                ["Masculino", "Femenino"]
+            )
+
+            fecha_nacimiento = n6.date_input(
+                "Fecha de nacimiento",
+                value=date.today() - timedelta(days=30 * 365)
+            )
+
+            n7, n8 = st.columns(2)
+
+            modalidad_nuevo = n7.selectbox(
+                "Modalidad",
+                ["URBANO", "GRANJA"]
+            )
+
+            salud_nuevo = n8.selectbox(
+                "Seguridad social",
+                [
+                    "Subsidiado",
+                    "Contributivo",
+                    "Especial",
+                    "No afiliado"
+                ]
+            )
+
+            telefono_nuevo = st.text_input("Teléfono")
+
+            guardar_nuevo = st.form_submit_button(
+                "💾 Registrar usuario",
+                use_container_width=True,
+                type="primary"
+            )
+
+        if guardar_nuevo:
+
+            doc_nuevo = limpiar_documento(numero_id)
+
+            if not nombres.strip() or not apellidos.strip() or not doc_nuevo:
+                st.error(
+                    "Nombres, apellidos y número de identificación son obligatorios."
+                )
+            else:
+                valido, mensaje = validar_documento_no_duplicado(doc_nuevo)
+
+                if not valido:
+                    st.error(mensaje)
+                else:
+                    edad_nuevo = max(
+                        0,
+                        date.today().year
+                        - fecha_nacimiento.year
+                        - (
+                            (date.today().month, date.today().day)
+                            < (
+                                fecha_nacimiento.month,
+                                fecha_nacimiento.day
+                            )
+                        )
+                    )
+
+                    with engine.begin() as conn:
+                        conn.execute(
+                            text("""
+                                INSERT INTO habitante_de_calle (
+                                    nombres,
+                                    apellidos,
+                                    sexo_al_nacer,
+                                    fecha_nacimiento,
+                                    edad,
+                                    tipo_identificacion,
+                                    numero_identificacion,
+                                    tipo_seguridad_salud,
+                                    telefono,
+                                    estado_caso,
+                                    modalidad,
+                                    fecha_ingreso_albergue,
+                                    numero_atenciones
+                                )
+                                VALUES (
+                                    :nombres,
+                                    :apellidos,
+                                    :sexo,
+                                    :fecha_nacimiento,
+                                    :edad,
+                                    :tipo_id,
+                                    :numero_id,
+                                    :salud,
+                                    :telefono,
+                                    'ACTIVO',
+                                    :modalidad,
+                                    CURRENT_DATE,
+                                    0
+                                )
+                            """),
+                            {
+                                "nombres": nombres.strip(),
+                                "apellidos": apellidos.strip(),
+                                "sexo": sexo,
+                                "fecha_nacimiento": fecha_nacimiento,
+                                "edad": edad_nuevo,
+                                "tipo_id": tipo_id,
+                                "numero_id": doc_nuevo,
+                                "salud": salud_nuevo,
+                                "telefono": telefono_nuevo.strip(),
+                                "modalidad": modalidad_nuevo
+                            }
+                        )
+
+                        conn.execute(
+                            text("""
+                                INSERT INTO movimientos_habitante (
+                                    numero_identificacion,
+                                    tipo_movimiento,
+                                    modalidad,
+                                    usuario_registra,
+                                    observacion
+                                )
+                                VALUES (
+                                    :doc,
+                                    'INGRESO',
+                                    :modalidad,
+                                    :usuario,
+                                    'Registro inicial desde Gestión de Usuarios'
+                                )
+                            """),
+                            {
+                                "doc": doc_nuevo,
+                                "modalidad": modalidad_nuevo,
+                                "usuario": st.session_state.get(
+                                    "usuario_actual", "sistema"
+                                )
+                            }
+                        )
+
+                    registrar_auditoria(
+                        "CREAR_USUARIO",
+                        documento=doc_nuevo,
+                        modulo="Gestión Usuarios",
+                        valor_nuevo=(
+                            f"{nombres.strip()} {apellidos.strip()} - "
+                            f"{modalidad_nuevo}"
+                        )
+                    )
+
+                    invalidar_cache_datos()
+                    st.success("✅ Usuario registrado correctamente.")
+                    st.rerun()
+
+    # ========================================================
+    # TAB 3 - LISTADO
+    # ========================================================
+    with tab_listado:
+
+        l1, l2, l3 = st.columns(3)
+
+        filtro_estado = l1.multiselect(
+            "Estado",
+            ["ACTIVO", "INACTIVO", "EGRESADO"],
+            key="gestion_lista_estado"
+        )
+
+        filtro_modalidad = l2.multiselect(
+            "Modalidad",
+            ["URBANO", "GRANJA"],
+            key="gestion_lista_modalidad"
+        )
+
+        texto_lista = l3.text_input(
+            "Nombre / documento",
+            key="gestion_lista_texto"
+        )
+
+        df_lista = df_gestion.copy()
+
+        if filtro_estado:
+            df_lista = df_lista[
+                df_lista["estado_caso"].isin(filtro_estado)
             ]
 
+        if filtro_modalidad:
+            df_lista = df_lista[
+                df_lista["modalidad"].isin(filtro_modalidad)
+            ]
+
+        if texto_lista.strip():
+            patron = texto_lista.strip().lower()
+            df_lista = df_lista[
+                df_lista["nombre_completo"]
+                .str.lower()
+                .str.contains(patron, na=False)
+                |
+                df_lista["numero_identificacion"]
+                .str.contains(patron, na=False)
+            ]
+
+        columnas_lista = [
+            "nombre_completo",
+            "numero_identificacion",
+            "estado_caso",
+            "modalidad",
+            "edad",
+            "tipo_seguridad_salud"
+        ]
+
+        columnas_lista = [
+            c for c in columnas_lista
+            if c in df_lista.columns
+        ]
+
+        st.caption(f"Registros mostrados: {len(df_lista)}")
+
+        st.dataframe(
+            df_lista[columnas_lista].rename(columns={
+                "nombre_completo": "Nombre",
+                "numero_identificacion": "Documento",
+                "estado_caso": "Estado",
+                "modalidad": "Modalidad",
+                "edad": "Edad",
+                "tipo_seguridad_salud": "Salud"
+            }),
+            use_container_width=True,
+            hide_index=True
         )
 
-        guardar = st.form_submit_button(
-
-            "💾 Guardar usuario"
-
-        )
-
-    if guardar:
-
-        with engine.begin() as conn:
-
-            conn.execute(text("""
-
-            INSERT INTO habitante_de_calle(
-
-                nombres,
-
-                apellidos,
-
-                sexo_al_nacer,
-
-                fecha_nacimiento,
-
-                edad,
-
-                tipo_identificacion,
-
-                numero_identificacion,
-
-                personas_con_discapacidad,
-
-                indicador_migracion,
-
-                grupos_etnicos,
-
-                tipo_seguridad_salud,
-
-                nivel_educativo,
-
-                barrio_vereda,
-
-                comuna_corregimiento,
-
-                direccion,
-
-                telefono,
-
-                correo,
-
-                tipo_consumo,
-
-                enfermedad_mental,
-
-                estado_caso,
-
-                modalidad,
-
-                fecha_ingreso_albergue,
-
-                numero_atenciones
-
-            )
-
-            VALUES(
-
-                :nombres,
-
-                :apellidos,
-
-                :sexo,
-
-                :fecha_nacimiento,
-
-                :edad,
-
-                :tipo_id,
-
-                :numero_id,
-
-                :discapacidad,
-
-                :migracion,
-
-                :etnia,
-
-                :seguridad_salud,
-
-                :educacion,
-
-                :barrio,
-
-                :comuna,
-
-                :direccion,
-
-                :telefono,
-
-                :correo,
-
-                :consumo,
-
-                :enfermedad,
-
-                'ACTIVO',
-
-                :modalidad,
-
-                CURRENT_DATE,
-
-                0
-
-            )
-
-            """), {
-
-                "nombres": nombres,
-
-                "apellidos": apellidos,
-
-                "sexo": sexo,
-
-                "fecha_nacimiento": fecha_nacimiento,
-
-                "edad": edad,
-
-                "tipo_id": tipo_id,
-
-                "numero_id": numero_id,
-
-                "discapacidad": discapacidad,
-
-                "migracion": migracion,
-
-                "etnia": etnia,
-
-                "seguridad_salud": seguridad_salud,
-
-                "educacion": educacion,
-
-                "barrio": barrio,
-
-                "comuna": comuna,
-
-                "direccion": direccion,
-
-                "telefono": telefono,
-
-                "correo": correo,
-
-                "consumo": consumo,
-
-                "enfermedad": enfermedad,
-
-                "modalidad": modalidad
-
-            })
-
-        st.success("✅ Usuario registrado")
-
-        st.rerun()
 
 # ============================================================
 # DASHBOARD EJECUTIVO
 # ============================================================
 def dashboard_ejecutivo():
-    st.title("📊 Dashboard Ejecutivo")
 
-    df_dash = pd.read_sql(
+    st.title("🎛️ Dashboard de Coordinación")
+    st.caption(
+        "Vista gerencial de ocupación, PAI, seguimiento profesional, egresos y alertas."
+    )
+
+    # ========================================================
+    # POBLACIÓN GENERAL
+    # ========================================================
+    df_coord = pd.read_sql(
         text("""
             SELECT *
             FROM habitante_de_calle
@@ -1141,123 +1114,449 @@ def dashboard_ejecutivo():
         engine
     )
 
-    if df_dash.empty:
+    if df_coord.empty:
         st.info("No hay información disponible.")
         return
 
-    if "estado_caso" in df_dash.columns:
-        estado = df_dash["estado_caso"].astype(str).str.strip().str.upper()
-    else:
-        estado = pd.Series("", index=df_dash.index)
+    estado_coord = (
+        df_coord["estado_caso"]
+        .fillna("")
+        .astype(str)
+        .str.upper()
+        .str.strip()
+        if "estado_caso" in df_coord.columns
+        else pd.Series("", index=df_coord.index)
+    )
 
-    if "modalidad" in df_dash.columns:
-        modalidad = df_dash["modalidad"].astype(str).str.strip().str.upper()
-    else:
-        modalidad = pd.Series("", index=df_dash.index)
+    modalidad_coord = (
+        df_coord["modalidad"]
+        .fillna("")
+        .astype(str)
+        .str.upper()
+        .str.strip()
+        if "modalidad" in df_coord.columns
+        else pd.Series("", index=df_coord.index)
+    )
 
-    total = len(df_dash)
-    activos = int((estado == "ACTIVO").sum())
-    urbano = int(((estado == "ACTIVO") & (modalidad == "URBANO")).sum())
-    granja = int(((estado == "ACTIVO") & (modalidad == "GRANJA")).sum())
+    total_coord = len(df_coord)
+    activos_coord = int(estado_coord.eq("ACTIVO").sum())
+    urbano_coord = int(
+        (estado_coord.eq("ACTIVO") & modalidad_coord.eq("URBANO")).sum()
+    )
+    granja_coord = int(
+        (estado_coord.eq("ACTIVO") & modalidad_coord.eq("GRANJA")).sum()
+    )
+
+    # ========================================================
+    # EGRESOS / MOVIMIENTOS
+    # ========================================================
+    try:
+        egresos_coord = int(
+            pd.read_sql(
+                text("""
+                    SELECT COUNT(*) AS total
+                    FROM personas_caracterizacion
+                    WHERE UPPER(TRIM(COALESCE(estado_caso,''))) = 'EGRESADO'
+                """),
+                engine
+            ).iloc[0]["total"] or 0
+        )
+    except Exception:
+        egresos_coord = 0
 
     try:
-        egresos_df = pd.read_sql(
+        mov_30 = pd.read_sql(
             text("""
-                SELECT COUNT(*) AS total
-                FROM personas_caracterizacion
-                WHERE UPPER(TRIM(estado_caso)) = 'EGRESADO'
+                SELECT
+                    tipo_movimiento,
+                    COUNT(*) AS total
+                FROM movimientos_habitante
+                WHERE fecha_movimiento >= CURRENT_DATE - INTERVAL '30 days'
+                GROUP BY tipo_movimiento
             """),
             engine
         )
-        egresos = int(egresos_df.iloc[0]["total"] or 0)
     except Exception:
-        egresos = 0
+        mov_30 = pd.DataFrame(columns=["tipo_movimiento", "total"])
 
-    c1, c2, c3, c4, c5 = st.columns(5)
-    c1.metric("👥 Población", total)
-    c2.metric("🟢 Activos", activos)
-    c3.metric("🏙️ Urbano", urbano)
-    c4.metric("🌱 Granja", granja)
-    c5.metric("🏆 Egresos", egresos)
+    reingresos_30 = 0
+    if not mov_30.empty:
+        reingresos_30 = int(
+            mov_30.loc[
+                mov_30["tipo_movimiento"]
+                .astype(str)
+                .str.upper()
+                .str.contains("REINGRESO", na=False),
+                "total"
+            ].sum()
+        )
 
-    st.markdown("---")
+    # ========================================================
+    # CONTROL PAI GLOBAL
+    # ========================================================
+    try:
+        df_pai_coord = pd.read_sql(
+            text("""
+                SELECT
+                    p.id,
+                    p.documento_usuario,
+                    p.objetivo_tipo,
+                    p.porcentaje_avance,
+                    p.estado,
+                    p.fecha_meta,
+                    p.fecha_ultimo_seguimiento,
+                    p.profesional_referente,
+                    pr.nombre AS profesional,
+                    pr.rol
+                FROM pai_objetivos p
+                LEFT JOIN profesionales pr
+                    ON pr.id = p.profesional_referente
+            """),
+            engine
+        )
+    except Exception:
+        df_pai_coord = pd.DataFrame()
 
-    d1, d2 = st.columns(2)
+    pai_total = pai_cumplidos = pai_vencidos = pai_proximos = 0
+    pai_sin_seg = 0
+    resumen_coord_prof = pd.DataFrame()
+    alertas_pai_coord = pd.DataFrame()
 
-    with d1:
-        if "edad" in df_dash.columns:
-            edades = pd.to_numeric(df_dash["edad"], errors="coerce")
-            if edades.notna().any():
-                fig = px.histogram(
-                    pd.DataFrame({"edad": edades.dropna()}),
+    if not df_pai_coord.empty:
+
+        hoy_coord = pd.Timestamp(date.today())
+
+        df_pai_coord["fecha_meta"] = pd.to_datetime(
+            df_pai_coord["fecha_meta"], errors="coerce"
+        )
+        df_pai_coord["fecha_ultimo_seguimiento"] = pd.to_datetime(
+            df_pai_coord["fecha_ultimo_seguimiento"], errors="coerce"
+        )
+        df_pai_coord["porcentaje_avance"] = pd.to_numeric(
+            df_pai_coord["porcentaje_avance"], errors="coerce"
+        ).fillna(0)
+
+        df_pai_coord["dias_meta"] = (
+            df_pai_coord["fecha_meta"].dt.normalize() - hoy_coord
+        ).dt.days
+
+        df_pai_coord["dias_sin_seguimiento"] = (
+            hoy_coord
+            - df_pai_coord["fecha_ultimo_seguimiento"].dt.normalize()
+        ).dt.days
+
+        es_cumplido = (
+            df_pai_coord["porcentaje_avance"].ge(100)
+            |
+            df_pai_coord["estado"]
+            .fillna("")
+            .astype(str)
+            .str.upper()
+            .str.strip()
+            .eq("CUMPLIDO")
+        )
+
+        es_vencido = (
+            ~es_cumplido
+            & df_pai_coord["dias_meta"].lt(0)
+        )
+
+        es_proximo = (
+            ~es_cumplido
+            & df_pai_coord["dias_meta"].between(0, 7, inclusive="both")
+        )
+
+        sin_seguimiento = (
+            ~es_cumplido
+            & (
+                df_pai_coord["fecha_ultimo_seguimiento"].isna()
+                | df_pai_coord["dias_sin_seguimiento"].gt(15)
+            )
+        )
+
+        pai_total = len(df_pai_coord)
+        pai_cumplidos = int(es_cumplido.sum())
+        pai_vencidos = int(es_vencido.sum())
+        pai_proximos = int(es_proximo.sum())
+        pai_sin_seg = int(sin_seguimiento.sum())
+
+        df_pai_coord["cumplido"] = es_cumplido
+        df_pai_coord["vencido"] = es_vencido
+        df_pai_coord["proximo"] = es_proximo
+        df_pai_coord["sin_seguimiento"] = sin_seguimiento
+
+        df_pai_coord["profesional"] = (
+            df_pai_coord["profesional"]
+            .fillna("Sin asignar")
+        )
+        df_pai_coord["rol"] = (
+            df_pai_coord["rol"]
+            .fillna("Sin rol")
+        )
+
+        resumen_coord_prof = (
+            df_pai_coord
+            .groupby(["profesional", "rol"], dropna=False)
+            .agg(
+                objetivos=("id", "count"),
+                cumplidos=("cumplido", "sum"),
+                vencidos=("vencido", "sum"),
+                proximos=("proximo", "sum"),
+                sin_seguimiento=("sin_seguimiento", "sum")
+            )
+            .reset_index()
+        )
+
+        resumen_coord_prof["cumplimiento_%"] = (
+            resumen_coord_prof["cumplidos"]
+            / resumen_coord_prof["objetivos"]
+            * 100
+        ).round(1)
+
+        alertas_pai_coord = df_pai_coord[
+            df_pai_coord["vencido"]
+            | df_pai_coord["proximo"]
+            | df_pai_coord["sin_seguimiento"]
+        ].copy()
+
+    # ========================================================
+    # FILA 1 - INDICADORES OPERATIVOS
+    # ========================================================
+    st.markdown("### 🏠 Operación actual")
+
+    c1, c2, c3, c4, c5, c6 = st.columns(6)
+    c1.metric("👥 Población", total_coord)
+    c2.metric("🟢 Activos", activos_coord)
+    c3.metric("🏙️ Urbano", f"{urbano_coord}/100")
+    c4.metric("🌱 Granja", granja_coord)
+    c5.metric("🏆 Egresos", egresos_coord)
+    c6.metric("🔁 Reingresos 30d", reingresos_30)
+
+    if urbano_coord >= 100:
+        st.error("🚨 Urbano alcanzó o superó la capacidad de 100 cupos.")
+    elif urbano_coord >= 90:
+        st.warning(
+            f"⚠️ Urbano está en {urbano_coord}% de su capacidad."
+        )
+
+    st.divider()
+
+    # ========================================================
+    # FILA 2 - PAI
+    # ========================================================
+    st.markdown("### 🎯 Control PAI")
+
+    p1, p2, p3, p4, p5 = st.columns(5)
+    p1.metric("🎯 Objetivos", pai_total)
+    p2.metric("🟢 Cumplidos", pai_cumplidos)
+    p3.metric("🔴 Vencidos", pai_vencidos)
+    p4.metric("🟡 Vencen ≤7 días", pai_proximos)
+    p5.metric("⚠️ Sin seguimiento", pai_sin_seg)
+
+    # ========================================================
+    # SEMÁFORO EJECUTIVO
+    # ========================================================
+    alertas_coord = []
+
+    if pai_vencidos:
+        alertas_coord.append(
+            ("error", f"{pai_vencidos} objetivos PAI están vencidos.")
+        )
+
+    if pai_sin_seg:
+        alertas_coord.append(
+            (
+                "warning",
+                f"{pai_sin_seg} objetivos no tienen seguimiento "
+                "o llevan más de 15 días sin actualización."
+            )
+        )
+
+    if pai_proximos:
+        alertas_coord.append(
+            (
+                "warning",
+                f"{pai_proximos} objetivos vencen en los próximos 7 días."
+            )
+        )
+
+    sin_estado_coord = int(
+        estado_coord.isin(["", "NAN", "NONE"]).sum()
+    )
+    if sin_estado_coord:
+        alertas_coord.append(
+            ("warning", f"{sin_estado_coord} registros están sin estado del caso.")
+        )
+
+    st.markdown("### 🚨 Alertas de coordinación")
+
+    if alertas_coord:
+        for nivel, mensaje in alertas_coord:
+            if nivel == "error":
+                st.error(mensaje)
+            else:
+                st.warning(mensaje)
+    else:
+        st.success("✅ No se identifican alertas críticas en este momento.")
+
+    st.divider()
+
+    # ========================================================
+    # CUMPLIMIENTO POR PROFESIONAL
+    # ========================================================
+    st.markdown("### 👨‍⚕️ Cumplimiento por profesional")
+
+    if resumen_coord_prof.empty:
+        st.info("No hay objetivos PAI disponibles para analizar.")
+    else:
+        resumen_mostrar = resumen_coord_prof.sort_values(
+            ["vencidos", "sin_seguimiento", "cumplimiento_%"],
+            ascending=[False, False, True]
+        )
+
+        st.dataframe(
+            resumen_mostrar.rename(columns={
+                "profesional": "Profesional",
+                "rol": "Rol",
+                "objetivos": "Objetivos",
+                "cumplidos": "Cumplidos",
+                "vencidos": "Vencidos",
+                "proximos": "Próximos",
+                "sin_seguimiento": "Sin seguimiento",
+                "cumplimiento_%": "% cumplimiento"
+            }),
+            use_container_width=True,
+            hide_index=True
+        )
+
+        graf_prof = (
+            resumen_coord_prof[
+                ["profesional", "cumplimiento_%"]
+            ]
+            .sort_values("cumplimiento_%")
+            .set_index("profesional")
+        )
+
+        st.bar_chart(graf_prof)
+
+    # ========================================================
+    # ALERTAS PAI DETALLADAS
+    # ========================================================
+    if not alertas_pai_coord.empty:
+
+        with st.expander(
+            f"🔎 Ver detalle de {len(alertas_pai_coord)} alertas PAI"
+        ):
+            detalle_alertas = alertas_pai_coord[
+                [
+                    "documento_usuario",
+                    "objetivo_tipo",
+                    "profesional",
+                    "rol",
+                    "porcentaje_avance",
+                    "fecha_meta",
+                    "dias_meta",
+                    "fecha_ultimo_seguimiento",
+                    "dias_sin_seguimiento",
+                    "vencido",
+                    "proximo",
+                    "sin_seguimiento"
+                ]
+            ].copy()
+
+            st.dataframe(
+                detalle_alertas.rename(columns={
+                    "documento_usuario": "Documento",
+                    "objetivo_tipo": "Objetivo",
+                    "profesional": "Profesional",
+                    "rol": "Rol",
+                    "porcentaje_avance": "Avance %",
+                    "fecha_meta": "Fecha meta",
+                    "dias_meta": "Días para meta",
+                    "fecha_ultimo_seguimiento": "Último seguimiento",
+                    "dias_sin_seguimiento": "Días sin seguimiento",
+                    "vencido": "Vencido",
+                    "proximo": "Próximo",
+                    "sin_seguimiento": "Sin seguimiento"
+                }),
+                use_container_width=True,
+                hide_index=True
+            )
+
+    st.divider()
+
+    # ========================================================
+    # PERFIL DE POBLACIÓN
+    # ========================================================
+    st.markdown("### 📊 Lectura rápida de población")
+
+    g1, g2 = st.columns(2)
+
+    with g1:
+        if "edad" in df_coord.columns:
+            edades_coord = pd.to_numeric(
+                df_coord["edad"], errors="coerce"
+            )
+            if edades_coord.notna().any():
+                fig_edad_coord = px.histogram(
+                    pd.DataFrame(
+                        {"edad": edades_coord.dropna()}
+                    ),
                     x="edad",
                     nbins=18,
                     title="Distribución por edad"
                 )
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(
+                    fig_edad_coord,
+                    use_container_width=True
+                )
 
-    with d2:
-        if "sexo_al_nacer" in df_dash.columns:
-            sexo = (
-                df_dash["sexo_al_nacer"]
+    with g2:
+        if "sexo_al_nacer" in df_coord.columns:
+            sexo_coord = (
+                df_coord["sexo_al_nacer"]
+                .fillna("Sin dato")
                 .astype(str)
                 .str.strip()
                 .replace({"": "Sin dato"})
+                .value_counts()
+                .rename_axis("sexo")
+                .reset_index(name="cantidad")
             )
-            fig = px.pie(
-                pd.DataFrame({"sexo": sexo}),
-                names="sexo",
-                title="Sexo al nacer",
-                hole=0.4
-            )
-            st.plotly_chart(fig, use_container_width=True)
 
-    st.markdown("---")
-    st.subheader("🚨 Alertas que requieren atención")
+            if not sexo_coord.empty:
+                fig_sexo_coord = px.pie(
+                    sexo_coord,
+                    names="sexo",
+                    values="cantidad",
+                    title="Sexo al nacer",
+                    hole=0.45
+                )
+                st.plotly_chart(
+                    fig_sexo_coord,
+                    use_container_width=True
+                )
 
-    alertas = []
+    # ========================================================
+    # DESCARGA PARA COORDINACIÓN
+    # ========================================================
+    if not resumen_coord_prof.empty:
+        csv_coord = resumen_coord_prof.to_csv(
+            index=False
+        ).encode("utf-8-sig")
 
-    if "numero_identificacion" in df_dash.columns:
-        sin_doc = int(
-            df_dash["numero_identificacion"]
-            .astype(str)
-            .str.strip()
-            .isin(["", "nan", "None"])
-            .sum()
+        st.download_button(
+            "⬇️ Descargar seguimiento por profesional",
+            data=csv_coord,
+            file_name=(
+                "dashboard_coordinacion_"
+                + datetime.now().strftime("%Y%m%d_%H%M")
+                + ".csv"
+            ),
+            mime="text/csv",
+            use_container_width=True,
+            key="descargar_dashboard_coordinacion_v8"
         )
-        if sin_doc:
-            alertas.append(f"{sin_doc} registros sin identificación válida.")
-
-    if "estado_caso" in df_dash.columns:
-        sin_estado = int(
-            df_dash["estado_caso"]
-            .astype(str)
-            .str.strip()
-            .isin(["", "nan", "None"])
-            .sum()
-        )
-        if sin_estado:
-            alertas.append(f"{sin_estado} registros sin estado del caso.")
-
-    if "modalidad" in df_dash.columns:
-        sin_modalidad = int(
-            df_dash["modalidad"]
-            .astype(str)
-            .str.strip()
-            .isin(["", "nan", "None"])
-            .sum()
-        )
-        if sin_modalidad:
-            alertas.append(f"{sin_modalidad} registros sin modalidad.")
-
-    if urbano >= 90:
-        alertas.append(f"Urbano está en {urbano}% de su capacidad de 100 cupos.")
-
-    if alertas:
-        for alerta in alertas:
-            st.warning(alerta)
-    else:
-        st.success("No se identifican alertas automáticas críticas.")
 
 
 # =========================
@@ -1419,7 +1718,7 @@ with st.sidebar:
         st.session_state.page = "home"
         st.rerun()
 
-    if st.button("📊 Dashboard Ejecutivo"):
+    if st.button("🎛️ Dashboard Coordinación"):
         st.session_state.page = "dashboard_ejecutivo"
         st.rerun()
 
