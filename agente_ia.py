@@ -4155,8 +4155,8 @@ def gestion_usuarios_movil():
 # ============================================================
 def gestion_personal_v12_1():
 
-    if st.session_state.get("rol_actual") != "COORDINACION":
-        st.error("Acceso exclusivo para Coordinación.")
+    if st.session_state.get("rol_actual") not in ["COORDINACION", "MANAGER"]:
+        st.error("Acceso exclusivo para Coordinación o Manager.")
         return
 
     st.title("👥 Personal autorizado")
@@ -4177,7 +4177,8 @@ def gestion_personal_v12_1():
                 [
                     "INSPIRADOR",
                     "PROFESIONAL",
-                    "COORDINACION"
+                    "COORDINACION",
+                    "MANAGER"
                 ]
             )
             clave = st.text_input(
@@ -4299,7 +4300,8 @@ def gestion_personal_v12_1():
         roles = [
             "INSPIRADOR",
             "PROFESIONAL",
-            "COORDINACION"
+            "COORDINACION",
+            "MANAGER"
         ]
 
         c1, c2 = st.columns(2)
@@ -5414,6 +5416,8 @@ with st.sidebar:
         f"{st.session_state.get('rol_actual','')} · "
         f"CC {st.session_state.get('documento_funcionario','')}"
     )
+    if st.session_state.get("rol_actual") == "MANAGER":
+        st.success("🛡️ Acceso total de Manager")
     st.markdown("---")
 
     rol_menu = st.session_state.get(
@@ -5457,7 +5461,7 @@ with st.sidebar:
             "en el módulo institucional existente."
         )
 
-    elif rol_menu == "COORDINACION":
+    elif rol_menu in ["COORDINACION", "MANAGER"]:
 
         if st.button(
             "🏠 Inicio",
@@ -5900,9 +5904,9 @@ elif st.session_state.page == "historia_integral_v12":
 
 elif st.session_state.page == "funcionarios_sistema_v12":
 
-    if rol_router != "COORDINACION":
+    if rol_router not in ["COORDINACION", "MANAGER"]:
         st.error(
-            "Acceso exclusivo para Coordinación."
+            "Acceso exclusivo para Coordinación o Manager."
         )
     else:
         gestion_personal_v12_1()
@@ -5911,9 +5915,9 @@ elif st.session_state.page == "funcionarios_sistema_v12":
 
 elif st.session_state.page == "dashboard_ejecutivo":
 
-    if rol_router != "COORDINACION":
+    if rol_router not in ["COORDINACION", "MANAGER"]:
         st.error(
-            "Acceso exclusivo para Coordinación."
+            "Acceso exclusivo para Coordinación o Manager."
         )
     else:
         dashboard_ejecutivo()
@@ -5922,9 +5926,9 @@ elif st.session_state.page == "dashboard_ejecutivo":
 
 elif st.session_state.page == "gestion_usuarios":
 
-    if rol_router != "COORDINACION":
+    if rol_router not in ["COORDINACION", "MANAGER"]:
         st.error(
-            "Acceso exclusivo para Coordinación."
+            "Acceso exclusivo para Coordinación o Manager."
         )
     else:
         gestion_usuarios()
@@ -5933,9 +5937,9 @@ elif st.session_state.page == "gestion_usuarios":
 
 elif st.session_state.page == "genero_diversidad":
 
-    if rol_router != "COORDINACION":
+    if rol_router not in ["COORDINACION", "MANAGER"]:
         st.error(
-            "Acceso exclusivo para Coordinación."
+            "Acceso exclusivo para Coordinación o Manager."
         )
     else:
         formulario_genero_diversidad()
