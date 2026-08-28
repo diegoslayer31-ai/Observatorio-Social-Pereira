@@ -5038,10 +5038,139 @@ def control_turno_v13():
 
     with tab2:
         st.markdown("#### Personas fuera con permiso")
+        st.caption(
+            "Seleccione directamente una persona con permiso abierto "
+            "para registrar su regreso."
+        )
 
         if permisos_det.empty:
             st.success("No hay permisos abiertos.")
         else:
+            # V13.1 - regreso rápido
+            permisos_sel = permisos_det.copy()
+            permisos_sel["nombre_completo"] = (
+                permisos_sel["nombres"].fillna("").astype(str).str.strip()
+                + " "
+                + permisos_sel["apellidos"].fillna("").astype(str).str.strip()
+            ).str.strip()
+
+            permisos_sel["etiqueta"] = permisos_sel.apply(
+                lambda r: (
+                    f"{r.get('nombre_completo','')} · "
+                    f"CC {r.get('documento','')} · "
+                    f"{r.get('modalidad','')} · "
+                    f"{r.get('situacion','')}"
+                ),
+                axis=1
+            )
+
+            st.markdown("##### ⬅️ Registrar regreso rápido")
+
+            permiso_id_regreso = st.selectbox(
+                "¿Quién regresó?",
+                permisos_sel["id"].tolist(),
+                format_func=lambda x: permisos_sel.loc[
+                    permisos_sel["id"] == x, "etiqueta"
+                ].iloc[0],
+                key="v131_permiso_regreso"
+            )
+
+            fila_regreso = permisos_sel.loc[
+                permisos_sel["id"] == permiso_id_regreso
+            ].iloc[0]
+
+            obs_regreso_rapido = st.text_input(
+                "Observación",
+                value="REGRESA AL ALBERGUE",
+                key="v131_obs_regreso"
+            )
+
+            confirmar_regreso_rapido = st.checkbox(
+                "Confirmo que la persona ya regresó",
+                key="v131_confirma_regreso"
+            )
+
+            if st.button(
+                "⬅️ Registrar regreso",
+                use_container_width=True,
+                type="primary",
+                key="v131_btn_regreso"
+            ):
+                if not confirmar_regreso_rapido:
+                    st.error("Confirme que la persona ya regresó.")
+                else:
+                    doc_regreso = str(
+                        fila_regreso.get("documento", "")
+                    ).strip()
+
+                    with engine.begin() as conn:
+                        conn.execute(
+                            text("""
+                                UPDATE permisos_usuarios
+                                SET estado_permiso='CERRADO',
+                                    fecha_regreso_real=CURRENT_DATE,
+                                    hora_regreso_real=CURRENT_TIME,
+                                    observacion_regreso=:observacion,
+                                    usuario_registra_regreso=:usuario
+                                WHERE id=:id
+                                  AND UPPER(TRIM(COALESCE(estado_permiso,'')))='ABIERTO'
+                            """),
+                            {
+                                "observacion": obs_regreso_rapido.strip(),
+                                "usuario": responsable,
+                                "id": int(permiso_id_regreso)
+                            }
+                        )
+
+                        conn.execute(
+                            text("""
+                                INSERT INTO movimientos_habitante (
+                                    numero_identificacion,
+                                    tipo_movimiento,
+                                    modalidad,
+                                    usuario_registra,
+                                    observacion
+                                )
+                                VALUES (
+                                    :documento,
+                                    'REGRESO_PERMISO',
+                                    :modalidad,
+                                    :usuario,
+                                    :observacion
+                                )
+                            """),
+                            {
+                                "documento": doc_regreso,
+                                "modalidad": fila_regreso.get("modalidad"),
+                                "usuario": responsable,
+                                "observacion": obs_regreso_rapido.strip()
+                            }
+                        )
+
+                    try:
+                        registrar_auditoria(
+                            accion="REGRESO_PERMISO",
+                            modulo="CONTROL_TURNO",
+                            numero_identificacion=doc_regreso,
+                            valor_anterior="FUERA CON PERMISO",
+                            valor_nuevo="PRESENTE",
+                            observacion=obs_regreso_rapido.strip()
+                        )
+                    except Exception:
+                        pass
+
+                    try:
+                        invalidar_cache_datos()
+                    except Exception:
+                        pass
+
+                    st.success(
+                        f"✅ Regreso registrado: "
+                        f"{fila_regreso.get('nombre_completo','')}."
+                    )
+                    st.rerun()
+
+            st.divider()
             cols_perm = [
                 "documento",
                 "nombres",
