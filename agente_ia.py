@@ -33,6 +33,116 @@ engine = create_engine(st.secrets["DATABASE_URL"])
 if "page" not in st.session_state:
     st.session_state.page = "home"
 
+# ============================================================
+# CONFIGURACIÓN Y UTILIDADES CENTRALES
+# ============================================================
+@st.cache_data(ttl=60, show_spinner=False)
+def cargar_tabla(nombre_tabla: str):
+    """Carga una tabla completa con caché corta para reducir consultas repetidas."""
+    tablas_permitidas = {
+        "habitante_de_calle",
+        "personas_caracterizacion",
+        "pai_objetivos",
+        "pai_novedades",
+        "movimientos_habitante",
+        "caracterizacion_genero_diversidad",
+    }
+    if nombre_tabla not in tablas_permitidas:
+        raise ValueError("Tabla no autorizada.")
+    return pd.read_sql(text(f'SELECT * FROM "{nombre_tabla}"'), engine)
+
+
+def limpiar_documento(valor):
+    """Normaliza identificaciones para búsquedas y comparaciones."""
+    if valor is None:
+        return ""
+    valor = str(valor).strip()
+    if valor.endswith(".0"):
+        valor = valor[:-2]
+    return valor
+
+
+def registrar_auditoria(
+    accion,
+    documento=None,
+    modulo=None,
+    valor_anterior=None,
+    valor_nuevo=None,
+    observacion=None,
+):
+    """
+    Registra auditoría si existe la tabla auditoria_sistema.
+    Si aún no existe, no bloquea la operación principal.
+    """
+    usuario = st.session_state.get("usuario_actual", "sistema")
+    try:
+        with engine.begin() as conn:
+            conn.execute(
+                text("""
+                    INSERT INTO auditoria_sistema (
+                        fecha_hora,
+                        usuario,
+                        modulo,
+                        accion,
+                        numero_identificacion,
+                        valor_anterior,
+                        valor_nuevo,
+                        observacion
+                    )
+                    VALUES (
+                        NOW(),
+                        :usuario,
+                        :modulo,
+                        :accion,
+                        :documento,
+                        :valor_anterior,
+                        :valor_nuevo,
+                        :observacion
+                    )
+                """),
+                {
+                    "usuario": usuario,
+                    "modulo": modulo,
+                    "accion": accion,
+                    "documento": limpiar_documento(documento),
+                    "valor_anterior": None if valor_anterior is None else str(valor_anterior),
+                    "valor_nuevo": None if valor_nuevo is None else str(valor_nuevo),
+                    "observacion": observacion,
+                },
+            )
+    except Exception:
+        # La auditoría es complementaria: no debe romper el flujo principal
+        pass
+
+
+def validar_documento_no_duplicado(numero_documento):
+    """Comprueba si ya existe una identificación en habitante_de_calle."""
+    doc = limpiar_documento(numero_documento)
+    if not doc:
+        return False, "El número de identificación es obligatorio."
+
+    consulta = pd.read_sql(
+        text("""
+            SELECT COUNT(*) AS total
+            FROM habitante_de_calle
+            WHERE TRIM(numero_identificacion::TEXT) = :doc
+        """),
+        engine,
+        params={"doc": doc},
+    )
+    existe = int(consulta.iloc[0]["total"] or 0) > 0
+    if existe:
+        return False, "Ya existe una persona registrada con esta identificación."
+    return True, "OK"
+
+
+def invalidar_cache_datos():
+    """Limpia la caché después de operaciones de escritura."""
+    try:
+        cargar_tabla.clear()
+    except Exception:
+        pass
+
 
 from sqlalchemy import create_engine, text
 #from ollama import Client
@@ -464,31 +574,23 @@ def gestion_usuarios():
             persona["numero_identificacion"]
         ).strip()
 
-        df_novedades = pd.read_sql(f"""
-
-            SELECT
-
-                n.fecha,
-
-                n.profesional,
-
-                o.objetivo_tipo,
-
-                n.descripcion
-
-            FROM pai_novedades n
-
-            INNER JOIN pai_objetivos o
-
-            ON n.id_objetivo = o.id
-
-            WHERE o.documento_usuario = '{documento}'
-
-            ORDER BY n.fecha DESC
-
-            LIMIT 10
-
-        """, engine)
+        df_novedades = pd.read_sql(
+            text("""
+                SELECT
+                    n.fecha,
+                    n.profesional,
+                    o.objetivo_tipo,
+                    n.descripcion
+                FROM pai_novedades n
+                INNER JOIN pai_objetivos o
+                    ON n.id_objetivo = o.id
+                WHERE o.documento_usuario = :documento
+                ORDER BY n.fecha DESC
+                LIMIT 10
+            """),
+            engine,
+            params={"documento": documento}
+        )
 
         if df_novedades.empty:
 
@@ -563,6 +665,8 @@ def gestion_usuarios():
 
                 })
 
+            registrar_auditoria("ACTUALIZAR_ESTADO", persona["numero_identificacion"], "gestion_usuarios", persona["estado_caso"], nuevo_estado)
+            invalidar_cache_datos()
             st.success("Estado actualizado")
 
             st.rerun()
@@ -605,6 +709,8 @@ def gestion_usuarios():
 
                 })
 
+            registrar_auditoria("ACTUALIZAR_MODALIDAD", persona["numero_identificacion"], "gestion_usuarios", persona["modalidad"], nueva_modalidad)
+            invalidar_cache_datos()
             st.success("Modalidad actualizada")
 
             st.rerun()
@@ -1020,6 +1126,140 @@ def gestion_usuarios():
         st.success("✅ Usuario registrado")
 
         st.rerun()
+
+# ============================================================
+# DASHBOARD EJECUTIVO
+# ============================================================
+def dashboard_ejecutivo():
+    st.title("📊 Dashboard Ejecutivo")
+
+    df_dash = pd.read_sql(
+        text("""
+            SELECT *
+            FROM habitante_de_calle
+        """),
+        engine
+    )
+
+    if df_dash.empty:
+        st.info("No hay información disponible.")
+        return
+
+    if "estado_caso" in df_dash.columns:
+        estado = df_dash["estado_caso"].astype(str).str.strip().str.upper()
+    else:
+        estado = pd.Series("", index=df_dash.index)
+
+    if "modalidad" in df_dash.columns:
+        modalidad = df_dash["modalidad"].astype(str).str.strip().str.upper()
+    else:
+        modalidad = pd.Series("", index=df_dash.index)
+
+    total = len(df_dash)
+    activos = int((estado == "ACTIVO").sum())
+    urbano = int(((estado == "ACTIVO") & (modalidad == "URBANO")).sum())
+    granja = int(((estado == "ACTIVO") & (modalidad == "GRANJA")).sum())
+
+    try:
+        egresos_df = pd.read_sql(
+            text("""
+                SELECT COUNT(*) AS total
+                FROM personas_caracterizacion
+                WHERE UPPER(TRIM(estado_caso)) = 'EGRESADO'
+            """),
+            engine
+        )
+        egresos = int(egresos_df.iloc[0]["total"] or 0)
+    except Exception:
+        egresos = 0
+
+    c1, c2, c3, c4, c5 = st.columns(5)
+    c1.metric("👥 Población", total)
+    c2.metric("🟢 Activos", activos)
+    c3.metric("🏙️ Urbano", urbano)
+    c4.metric("🌱 Granja", granja)
+    c5.metric("🏆 Egresos", egresos)
+
+    st.markdown("---")
+
+    d1, d2 = st.columns(2)
+
+    with d1:
+        if "edad" in df_dash.columns:
+            edades = pd.to_numeric(df_dash["edad"], errors="coerce")
+            if edades.notna().any():
+                fig = px.histogram(
+                    pd.DataFrame({"edad": edades.dropna()}),
+                    x="edad",
+                    nbins=18,
+                    title="Distribución por edad"
+                )
+                st.plotly_chart(fig, use_container_width=True)
+
+    with d2:
+        if "sexo_al_nacer" in df_dash.columns:
+            sexo = (
+                df_dash["sexo_al_nacer"]
+                .astype(str)
+                .str.strip()
+                .replace({"": "Sin dato"})
+            )
+            fig = px.pie(
+                pd.DataFrame({"sexo": sexo}),
+                names="sexo",
+                title="Sexo al nacer",
+                hole=0.4
+            )
+            st.plotly_chart(fig, use_container_width=True)
+
+    st.markdown("---")
+    st.subheader("🚨 Alertas que requieren atención")
+
+    alertas = []
+
+    if "numero_identificacion" in df_dash.columns:
+        sin_doc = int(
+            df_dash["numero_identificacion"]
+            .astype(str)
+            .str.strip()
+            .isin(["", "nan", "None"])
+            .sum()
+        )
+        if sin_doc:
+            alertas.append(f"{sin_doc} registros sin identificación válida.")
+
+    if "estado_caso" in df_dash.columns:
+        sin_estado = int(
+            df_dash["estado_caso"]
+            .astype(str)
+            .str.strip()
+            .isin(["", "nan", "None"])
+            .sum()
+        )
+        if sin_estado:
+            alertas.append(f"{sin_estado} registros sin estado del caso.")
+
+    if "modalidad" in df_dash.columns:
+        sin_modalidad = int(
+            df_dash["modalidad"]
+            .astype(str)
+            .str.strip()
+            .isin(["", "nan", "None"])
+            .sum()
+        )
+        if sin_modalidad:
+            alertas.append(f"{sin_modalidad} registros sin modalidad.")
+
+    if urbano >= 90:
+        alertas.append(f"Urbano está en {urbano}% de su capacidad de 100 cupos.")
+
+    if alertas:
+        for alerta in alertas:
+            st.warning(alerta)
+    else:
+        st.success("No se identifican alertas automáticas críticas.")
+
+
 # =========================
 # ESTILO INSTITUCIONAL
 # =========================
@@ -1177,6 +1417,10 @@ with st.sidebar:
 
     if st.button("🏠 Inicio"):
         st.session_state.page = "home"
+        st.rerun()
+
+    if st.button("📊 Dashboard Ejecutivo"):
+        st.session_state.page = "dashboard_ejecutivo"
         st.rerun()
 
     if st.button("⚙️ Gestión usuarios"):
@@ -1554,7 +1798,7 @@ elif st.session_state.page == "genero_diversidad":
     formulario_genero_diversidad()
     st.stop()
    
-def gestion_usuarios():
+def gestion_usuarios_legacy():
     
     st.title("⚙️ Gestión de usuarios")
 
@@ -1644,6 +1888,8 @@ def gestion_usuarios():
                         "modalidad": persona["modalidad"]
                     })
 
+                registrar_auditoria("REGISTRAR_EGRESO", persona["numero_identificacion"], "gestion_usuarios", "ACTIVO", "EGRESADO")
+                invalidar_cache_datos()
                 st.success("✔ Egreso registrado")
                 st.rerun()
 
@@ -1686,6 +1932,8 @@ def gestion_usuarios():
                         "modalidad": persona["modalidad"]
                     })
 
+                registrar_auditoria("REGISTRAR_REINGRESO", persona["numero_identificacion"], "gestion_usuarios", "EGRESADO", "ACTIVO")
+                invalidar_cache_datos()
                 st.success("✔ Reingreso registrado")
                 st.rerun()
 
@@ -1746,9 +1994,8 @@ Adherencia al tratamiento • Indicadores de impacto social
 # =====================================
 # POSTGRESQL / SUPABASE
 # =====================================
-engine = create_engine(
-    st.secrets["DATABASE_URL"]
-)
+# engine reutiliza la conexión definida al inicio
+
 
 # =========================
 # OLLAMA
@@ -1758,9 +2005,8 @@ engine = create_engine(
 # =========================
 # POSTGRESQL / SUPABASE
 # =========================
-engine = create_engine(
-    st.secrets["DATABASE_URL"]
-)
+# engine reutiliza la conexión definida al inicio
+
 # =========================
 # TÍTULO
 # =========================
@@ -4615,7 +4861,9 @@ with tab5:
             key="clave_registro"
         )
 
-        if clave == "Pereira2026":
+        clave_formulario = st.secrets.get("FORM_PASSWORD", "Pereira2026")
+
+        if clave == clave_formulario:
 
             st.success("✅ Acceso autorizado")
 
