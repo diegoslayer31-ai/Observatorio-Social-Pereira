@@ -45,7 +45,7 @@ def _tabla_usuarios_disponible():
                     SELECT 1
                     FROM information_schema.tables
                     WHERE table_schema='public'
-                      AND table_name='usuarios_sistema'
+                      AND table_name='funcionarios_sistema'
                 )
             """)).scalar())
     except Exception:
@@ -73,7 +73,7 @@ def _autenticar_funcionario(cedula, clave):
                             :clave,
                             password_hash
                         ) AS clave_ok
-                    FROM public.usuarios_sistema
+                    FROM public.funcionarios_sistema
                     WHERE TRIM(cedula) = :cedula
                     LIMIT 1
                 """),
@@ -118,13 +118,13 @@ def exigir_login_v12():
         ">
             <h1>🔐 Observatorio Social</h1>
             <p><b>Asociación Ciudad Futuro</b></p>
-            <p style="opacity:.7">Ingreso de funcionarios</p>
+            <p style="opacity:.7">Acceso del equipo</p>
         </div>
     """, unsafe_allow_html=True)
 
     if not _tabla_usuarios_disponible():
         st.error(
-            "Falta crear la tabla usuarios_sistema. "
+            "Falta crear la tabla funcionarios_sistema. "
             "Ejecute primero la migración SQL de la V12 en Supabase."
         )
         st.stop()
@@ -172,7 +172,7 @@ def exigir_login_v12():
                 with engine.begin() as conn:
                     conn.execute(
                         text("""
-                            UPDATE public.usuarios_sistema
+                            UPDATE public.funcionarios_sistema
                             SET ultimo_acceso=NOW()
                             WHERE cedula=:cedula
                         """),
@@ -4153,15 +4153,15 @@ def gestion_usuarios_movil():
 # ============================================================
 # V12 - ADMINISTRACIÓN DE USUARIOS DEL SISTEMA
 # ============================================================
-def gestion_funcionarios_v12():
+def gestion_personal_v12_1():
 
     if st.session_state.get("rol_actual") != "COORDINACION":
         st.error("Acceso exclusivo para Coordinación.")
         return
 
-    st.title("👥 Usuarios del sistema")
+    st.title("👥 Personal autorizado")
     st.caption(
-        "Administración de Inspiradores, Profesionales y Coordinación."
+        "Administración del personal autorizado: Inspiradores, Profesionales y Coordinación."
     )
 
     tab_crear, tab_admin = st.tabs(
@@ -4213,7 +4213,7 @@ def gestion_funcionarios_v12():
                     with engine.begin() as conn:
                         conn.execute(
                             text("""
-                                INSERT INTO public.usuarios_sistema (
+                                INSERT INTO public.funcionarios_sistema (
                                     cedula,
                                     nombre,
                                     rol,
@@ -4246,7 +4246,7 @@ def gestion_funcionarios_v12():
                         )
 
                     st.success(
-                        "✅ Cuenta creada correctamente."
+                        "✅ Acceso creado correctamente."
                     )
 
                 except Exception:
@@ -4266,7 +4266,7 @@ def gestion_funcionarios_v12():
                     activo,
                     creado_en,
                     ultimo_acceso
-                FROM public.usuarios_sistema
+                FROM public.funcionarios_sistema
                 ORDER BY activo DESC, nombre
             """),
             engine
@@ -4340,7 +4340,7 @@ def gestion_funcionarios_v12():
                 with engine.begin() as conn:
                     conn.execute(
                         text("""
-                            UPDATE public.usuarios_sistema
+                            UPDATE public.funcionarios_sistema
                             SET
                                 rol=:rol,
                                 activo=:activo,
@@ -4354,7 +4354,7 @@ def gestion_funcionarios_v12():
                         }
                     )
 
-                st.success("✅ Cuenta actualizada.")
+                st.success("✅ Acceso actualizado.")
                 st.rerun()
 
         st.markdown("#### 🔑 Restablecer contraseña")
@@ -4387,7 +4387,7 @@ def gestion_funcionarios_v12():
                 with engine.begin() as conn:
                     conn.execute(
                         text("""
-                            UPDATE public.usuarios_sistema
+                            UPDATE public.funcionarios_sistema
                             SET
                                 password_hash=crypt(
                                     :clave,
@@ -5495,10 +5495,10 @@ with st.sidebar:
             st.rerun()
 
         if st.button(
-            "👥 Usuarios del sistema",
+            "👥 Personal autorizado",
             use_container_width=True
         ):
-            st.session_state.page = "usuarios_sistema_v12"
+            st.session_state.page = "funcionarios_sistema_v12"
             st.rerun()
 
         if st.button(
@@ -5898,14 +5898,14 @@ elif st.session_state.page == "historia_integral_v12":
     historia_integral_v12()
     st.stop()
 
-elif st.session_state.page == "usuarios_sistema_v12":
+elif st.session_state.page == "funcionarios_sistema_v12":
 
     if rol_router != "COORDINACION":
         st.error(
             "Acceso exclusivo para Coordinación."
         )
     else:
-        gestion_funcionarios_v12()
+        gestion_personal_v12_1()
 
     st.stop()
 
