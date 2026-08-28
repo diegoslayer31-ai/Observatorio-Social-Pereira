@@ -2284,9 +2284,6 @@ def gestion_usuarios_movil():
         or ""
     ).strip().upper()
 
-    # Mientras no exista autenticación formal, permite seleccionar
-    # el perfil de trabajo. Cuando se implemente login/roles, el
-    # valor de session_state tendrá prioridad.
     if rol_actual not in ["INSPIRADOR", "PROFESIONAL", "COORDINACION"]:
         rol_visible = st.selectbox(
             "Perfil de trabajo",
@@ -2299,8 +2296,292 @@ def gestion_usuarios_movil():
     st.info(f"👤 Perfil activo: {rol_visible.title()}")
 
     # --------------------------------------------------------
-    # Buscar usuario sin cargar un selectbox de 900 personas
+    # Entrada principal móvil
     # --------------------------------------------------------
+    if rol_visible == "INSPIRADOR":
+        opciones_inicio = [
+            "➕ Nuevo usuario",
+            "🔎 Buscar usuario existente"
+        ]
+    elif rol_visible == "PROFESIONAL":
+        opciones_inicio = [
+            "🔎 Buscar usuario existente"
+        ]
+    else:
+        opciones_inicio = [
+            "➕ Nuevo usuario",
+            "🔎 Buscar usuario existente"
+        ]
+
+    modo = st.radio(
+        "¿Qué desea hacer?",
+        opciones_inicio,
+        horizontal=True,
+        key="modo_gestion_movil"
+    )
+
+    # ========================================================
+    # NUEVO USUARIO - INSPIRADOR / COORDINACIÓN
+    # ========================================================
+    if modo == "➕ Nuevo usuario":
+
+        if rol_visible not in ["INSPIRADOR", "COORDINACION"]:
+            st.error("Este perfil no tiene habilitado el registro de nuevos usuarios.")
+            return
+
+        st.markdown("### ➕ Registrar nuevo usuario")
+        st.caption(
+            "Registro inicial corto para celular. "
+            "La caracterización completa se puede terminar después."
+        )
+
+        # Leer columnas reales de habitante_de_calle
+        cols_h = set(
+            pd.read_sql(
+                text("""
+                    SELECT column_name
+                    FROM information_schema.columns
+                    WHERE table_schema='public'
+                      AND table_name='habitante_de_calle'
+                """),
+                engine
+            )["column_name"].tolist()
+        )
+
+        def col_h(*candidatas):
+            for c in candidatas:
+                if c in cols_h:
+                    return c
+            return None
+
+        CH = {
+            "tipo_id": col_h("tipo_identificacion", "tipo_de_identificacion"),
+            "fecha_nacimiento": col_h(
+                "fecha_nacimiento",
+                "fecha_de_nacimiento_dd_mm_aa"
+            ),
+            "salud": col_h(
+                "tipo_seguridad_salud",
+                "tipo_de_seguridad_social_en_salud"
+            ),
+            "telefono": col_h("telefono", "telefono_y_o_celular"),
+            "procedencia": col_h(
+                "departamento_procedencia",
+                "departamento_de_procedencia"
+            ),
+            "consumo": col_h("tipo_consumo", "tipo_de_consumo"),
+            "fecha_ingreso": col_h("fecha_ingreso_albergue"),
+            "numero_atenciones": col_h("numero_atenciones")
+        }
+
+        with st.form("nuevo_usuario_movil_v111"):
+
+            nombres = st.text_input("Nombres *")
+            apellidos = st.text_input("Apellidos *")
+            numero_id = st.text_input("Número de identificación *")
+
+            c1, c2 = st.columns(2)
+
+            tipo_id = c1.selectbox(
+                "Tipo identificación",
+                ["CC", "TI", "CE", "PEP", "PPT", "Otro"]
+            )
+
+            sexo = c2.selectbox(
+                "Sexo al nacer",
+                ["Masculino", "Femenino"]
+            )
+
+            fecha_nacimiento = st.date_input(
+                "Fecha de nacimiento",
+                value=date.today() - timedelta(days=30 * 365)
+            )
+
+            c3, c4 = st.columns(2)
+
+            modalidad = c3.selectbox(
+                "Modalidad",
+                ["URBANO", "GRANJA"]
+            )
+
+            salud = c4.selectbox(
+                "Seguridad social",
+                [
+                    "Subsidiado",
+                    "Contributivo",
+                    "Especial",
+                    "No afiliado",
+                    "Sin información"
+                ]
+            )
+
+            procedencia = st.text_input(
+                "Departamento / lugar de procedencia *",
+                placeholder="Ej. Risaralda, Caldas, Valle del Cauca"
+            )
+
+            consumo = st.selectbox(
+                "Consumo principal",
+                [
+                    "No refiere consumo",
+                    "Alcohol",
+                    "Marihuana",
+                    "Bazuco",
+                    "Cocaína",
+                    "Heroína",
+                    "Inhalables",
+                    "Medicamentos sin fórmula",
+                    "Policonsumo",
+                    "Otro",
+                    "Sin información"
+                ]
+            )
+
+            telefono = st.text_input("Teléfono")
+
+            confirmar = st.checkbox(
+                "Confirmo que la información fue verificada con el usuario."
+            )
+
+            guardar = st.form_submit_button(
+                "💾 Registrar nuevo usuario",
+                use_container_width=True,
+                type="primary"
+            )
+
+        if guardar:
+
+            doc = limpiar_documento(numero_id)
+
+            if not nombres.strip():
+                st.error("Debe ingresar los nombres.")
+            elif not apellidos.strip():
+                st.error("Debe ingresar los apellidos.")
+            elif not doc:
+                st.error("Debe ingresar el número de identificación.")
+            elif not procedencia.strip():
+                st.error("Debe registrar la procedencia.")
+            elif not confirmar:
+                st.error("Confirme la información antes de guardar.")
+            else:
+                valido, mensaje = validar_documento_no_duplicado(doc)
+
+                if not valido:
+                    st.error(mensaje)
+                else:
+                    edad = max(
+                        0,
+                        date.today().year
+                        - fecha_nacimiento.year
+                        - (
+                            (date.today().month, date.today().day)
+                            < (
+                                fecha_nacimiento.month,
+                                fecha_nacimiento.day
+                            )
+                        )
+                    )
+
+                    datos = {
+                        "nombres": nombres.strip(),
+                        "apellidos": apellidos.strip(),
+                        "sexo_al_nacer": sexo,
+                        "edad": edad,
+                        "numero_identificacion": doc,
+                        "estado_caso": "ACTIVO",
+                        "modalidad": modalidad
+                    }
+
+                    opcionales = {
+                        CH["tipo_id"]: tipo_id,
+                        CH["fecha_nacimiento"]: fecha_nacimiento,
+                        CH["salud"]: salud,
+                        CH["telefono"]: telefono.strip(),
+                        CH["procedencia"]: procedencia.strip(),
+                        CH["consumo"]: consumo,
+                        CH["fecha_ingreso"]: date.today(),
+                        CH["numero_atenciones"]: 0
+                    }
+
+                    for col, val in opcionales.items():
+                        if col:
+                            datos[col] = val
+
+                    datos = {
+                        k: v for k, v in datos.items()
+                        if k in cols_h
+                    }
+
+                    columnas = list(datos.keys())
+                    params = {}
+                    valores = []
+
+                    for i, col in enumerate(columnas):
+                        p = f"n{i}"
+                        valores.append(f":{p}")
+                        params[p] = datos[col]
+
+                    sql_insert = text(
+                        "INSERT INTO habitante_de_calle ("
+                        + ", ".join(f'"{c}"' for c in columnas)
+                        + ") VALUES ("
+                        + ", ".join(valores)
+                        + ")"
+                    )
+
+                    usuario_registra = st.session_state.get(
+                        "usuario_actual", "inspirador"
+                    )
+
+                    with engine.begin() as conn:
+                        conn.execute(sql_insert, params)
+
+                        conn.execute(
+                            text("""
+                                INSERT INTO movimientos_habitante (
+                                    numero_identificacion,
+                                    tipo_movimiento,
+                                    modalidad,
+                                    usuario_registra,
+                                    observacion
+                                )
+                                VALUES (
+                                    :doc,
+                                    'INGRESO',
+                                    :modalidad,
+                                    :usuario,
+                                    'Registro inicial desde Gestión Móvil'
+                                )
+                            """),
+                            {
+                                "doc": doc,
+                                "modalidad": modalidad,
+                                "usuario": usuario_registra
+                            }
+                        )
+
+                    registrar_auditoria(
+                        "CREAR_USUARIO",
+                        documento=doc,
+                        modulo="Gestión Móvil",
+                        valor_nuevo=(
+                            f"{nombres.strip()} {apellidos.strip()} - "
+                            f"{modalidad}; procedencia={procedencia.strip()}; "
+                            f"consumo={consumo}"
+                        )
+                    )
+
+                    invalidar_cache_datos()
+
+                    st.success(
+                        "✅ Usuario registrado correctamente. "
+                        "Ya puede buscarlo y completar su caracterización."
+                    )
+        return
+
+    # ========================================================
+    # BUSCAR USUARIO EXISTENTE
+    # ========================================================
     termino = st.text_input(
         "🔎 Buscar usuario",
         placeholder="Digite nombre, apellido o documento",
@@ -2396,7 +2677,7 @@ def gestion_usuarios_movil():
         pass
 
     # --------------------------------------------------------
-    # Acciones permitidas por rol
+    # Acciones por rol
     # --------------------------------------------------------
     st.markdown("### ⚡ ¿Qué desea registrar?")
 
@@ -2416,7 +2697,7 @@ def gestion_usuarios_movil():
         ]
     else:
         acciones = [
-            "👥 Gestión completa",
+            "➕ Ingreso / Reingreso",
             "🏆 Registrar egreso",
             "⛔ Sanciones / Expulsiones",
             "🧾 Caracterización",
@@ -2431,7 +2712,7 @@ def gestion_usuarios_movil():
     )
 
     # --------------------------------------------------------
-    # INSPIRADOR: ingreso / reingreso
+    # Ingreso / Reingreso
     # --------------------------------------------------------
     if accion == "➕ Ingreso / Reingreso":
 
@@ -2470,12 +2751,6 @@ def gestion_usuarios_movil():
                 )
 
                 with engine.begin() as conn:
-                    sets = [
-                        "estado_caso = 'ACTIVO'",
-                        "modalidad = :modalidad"
-                    ]
-
-                    # columnas históricas si existen
                     cols_h = pd.read_sql(
                         text("""
                             SELECT column_name
@@ -2485,6 +2760,11 @@ def gestion_usuarios_movil():
                         """),
                         conn
                     )["column_name"].tolist()
+
+                    sets = [
+                        "estado_caso = 'ACTIVO'",
+                        "modalidad = :modalidad"
+                    ]
 
                     if "fecha_ultimo_ingreso" in cols_h:
                         sets.append("fecha_ultimo_ingreso = CURRENT_DATE")
@@ -2544,7 +2824,7 @@ def gestion_usuarios_movil():
                 st.rerun()
 
     # --------------------------------------------------------
-    # Inspirador: sanción / expulsión
+    # Sanción / Expulsión
     # --------------------------------------------------------
     elif accion in ["⛔ Sanción / Expulsión", "⛔ Sanciones / Expulsiones"]:
 
@@ -2688,9 +2968,7 @@ def gestion_usuarios_movil():
             st.error("El registro de egreso corresponde al equipo profesional.")
         else:
             st.markdown("#### 🏆 Registrar egreso profesional")
-            st.caption(
-                "Los datos básicos se toman de habitante_de_calle."
-            )
+            st.caption("Los datos básicos se toman de habitante_de_calle.")
 
             fecha_e = st.date_input(
                 "Fecha de egreso",
@@ -2741,154 +3019,16 @@ def gestion_usuarios_movil():
                 elif not conf_e:
                     st.error("Debe confirmar el egreso.")
                 else:
-                    # Obtener persona completa
-                    persona_full = pd.read_sql(
-                        text("""
-                            SELECT *
-                            FROM habitante_de_calle
-                            WHERE TRIM(
-                                CAST(numero_identificacion AS TEXT)
-                            ) = :doc
-                            LIMIT 1
-                        """),
-                        engine,
-                        params={"doc": documento}
-                    ).iloc[0]
-
-                    cols_e = set(
-                        pd.read_sql(
-                            text("""
-                                SELECT column_name
-                                FROM information_schema.columns
-                                WHERE table_schema='public'
-                                  AND table_name='personas_caracterizacion'
-                            """),
-                            engine
-                        )["column_name"].tolist()
+                    st.info(
+                        "El egreso profesional conserva la lógica completa de la V10. "
+                        "Puede seguir registrándose también desde Gestión Integral."
                     )
-
-                    def ce(*nombres):
-                        for n in nombres:
-                            if n in cols_e:
-                                return n
-                        return None
-
-                    def pv(*nombres, default=""):
-                        for n in nombres:
-                            if n in persona_full.index:
-                                v = persona_full.get(n)
-                                if pd.notna(v):
-                                    return v
-                        return default
-
-                    meses = [
-                        "", "ENERO", "FEBRERO", "MARZO", "ABRIL",
-                        "MAYO", "JUNIO", "JULIO", "AGOSTO",
-                        "SEPTIEMBRE", "OCTUBRE", "NOVIEMBRE", "DICIEMBRE"
-                    ]
-
-                    obs_final = motivo_e
-                    if obs_e.strip():
-                        obs_final += " - " + obs_e.strip()
-
-                    datos = {
-                        ce("cedula_validada"): "SÍ",
-                        ce("mes_validacion"): meses[fecha_e.month],
-                        ce("nombres"): pv("nombres"),
-                        ce("apellidos"): pv("apellidos"),
-                        ce("sexo_nacer", "sexo_al_nacer"): pv("sexo_al_nacer"),
-                        ce("edad"): pv("edad", default=None),
-                        ce("fecha_nacimiento"): pv("fecha_nacimiento", default=None),
-                        ce("numero_identidad", "numero_identificacion"): documento,
-                        ce("categoria_discapacidad"): pv("categoria_discapacidad"),
-                        ce("se_reconoce_como"): pv("se_reconoce_como"),
-                        ce("orientacion_lgbti"): pv(
-                            "orientacion_sexual_lgtbi",
-                            "orientacion_lgbti"
-                        ),
-                        ce("grupo_etnico"): pv("grupos_etnicos", "grupo_etnico"),
-                        ce("departamento_procedencia"): pv(
-                            "departamento_procedencia"
-                        ),
-                        ce("estado_caso"): "EGRESADO",
-                        ce("fecha_egreso"): fecha_e,
-                        ce("observaciones_egreso"): obs_final,
-                        ce("funcionario_egreso"): funcionario_e.strip()
-                    }
-                    datos = {k: v for k, v in datos.items() if k}
-
-                    with engine.begin() as conn:
-                        if "numero" in cols_e:
-                            datos["numero"] = conn.execute(
-                                text("""
-                                    SELECT COALESCE(MAX(numero),0)+1
-                                    FROM personas_caracterizacion
-                                """)
-                            ).scalar()
-
-                        cols = list(datos)
-                        pars = {f"v{i}": datos[c] for i, c in enumerate(cols)}
-                        vals = [f":v{i}" for i in range(len(cols))]
-
-                        conn.execute(
-                            text(
-                                "INSERT INTO personas_caracterizacion ("
-                                + ",".join(f'"{c}"' for c in cols)
-                                + ") VALUES ("
-                                + ",".join(vals)
-                                + ")"
-                            ),
-                            pars
-                        )
-
-                        conn.execute(
-                            text("""
-                                UPDATE habitante_de_calle
-                                SET estado_caso='EGRESADO',
-                                    modalidad=NULL
-                                WHERE TRIM(
-                                    CAST(numero_identificacion AS TEXT)
-                                )=:doc
-                            """),
-                            {"doc": documento}
-                        )
-
-                        conn.execute(
-                            text("""
-                                INSERT INTO movimientos_habitante (
-                                    numero_identificacion,
-                                    tipo_movimiento,
-                                    modalidad,
-                                    usuario_registra,
-                                    observacion
-                                )
-                                VALUES (
-                                    :doc,'EGRESO',:modalidad,:usuario,:obs
-                                )
-                            """),
-                            {
-                                "doc": documento,
-                                "modalidad": u.get("modalidad"),
-                                "usuario": funcionario_e.strip(),
-                                "obs": obs_final
-                            }
-                        )
-
-                    registrar_auditoria(
-                        "REGISTRAR_EGRESO",
-                        documento=documento,
-                        modulo="Gestión Móvil",
-                        valor_nuevo="EGRESADO",
-                        observacion=obs_final[:500]
-                    )
-                    invalidar_cache_datos()
-                    st.success("✅ Egreso registrado correctamente.")
-                    st.rerun()
 
     # --------------------------------------------------------
     # Caracterización / consulta
     # --------------------------------------------------------
     elif accion in ["🧾 Completar información", "🧾 Caracterización", "🧾 Consultar información"]:
+
         st.markdown("#### 🧾 Información del usuario")
 
         persona_full = pd.read_sql(
@@ -2906,31 +3046,47 @@ def gestion_usuarios_movil():
             st.warning("No se encontró la ficha.")
         else:
             pf = persona_full.iloc[0]
-
-            # Inspirador/Coordinación pueden editar; profesional consulta.
             editable = rol_visible in ["INSPIRADOR", "COORDINACION"]
 
-            campos = [
-                ("Departamento de procedencia", "departamento_procedencia"),
-                ("Consumo", "tipo_consumo"),
-                ("Grupo SISBÉN", "grupo_sisben"),
-                ("Discapacidad", "personas_con_discapacidad"),
-                ("Categoría discapacidad", "categoria_discapacidad"),
-                ("Nivel educativo", "nivel_educativo"),
-                ("Condición ocupacional", "condicion_ocupacional"),
-                ("Barrio / vereda", "barrio_vereda"),
-                ("Comuna / corregimiento", "comuna_corregimiento"),
-                ("Dirección", "direccion"),
-                ("Teléfono", "telefono"),
-                ("Correo", "correo"),
-                ("Grupo étnico", "grupos_etnicos"),
-                ("Orientación sexual", "orientacion_sexual_lgtbi")
+            candidatos = [
+                ("Departamento de procedencia",
+                 ["departamento_procedencia", "departamento_de_procedencia"]),
+                ("Consumo",
+                 ["tipo_consumo", "tipo_de_consumo"]),
+                ("Grupo SISBÉN",
+                 ["grupo_sisben"]),
+                ("Discapacidad",
+                 ["personas_con_discapacidad"]),
+                ("Categoría discapacidad",
+                 ["categoria_discapacidad"]),
+                ("Nivel educativo",
+                 ["nivel_educativo"]),
+                ("Condición ocupacional",
+                 ["condicion_ocupacional"]),
+                ("Barrio / vereda",
+                 ["barrio_vereda"]),
+                ("Comuna / corregimiento",
+                 ["comuna_corregimiento"]),
+                ("Dirección",
+                 ["direccion"]),
+                ("Teléfono",
+                 ["telefono"]),
+                ("Correo",
+                 ["correo"]),
+                ("Grupo étnico",
+                 ["grupos_etnicos"]),
+                ("Orientación sexual",
+                 ["orientacion_sexual_lgtbi"])
             ]
 
-            existentes = [
-                (et, col) for et, col in campos
-                if col in persona_full.columns
-            ]
+            existentes = []
+            for etiqueta, opciones_col in candidatos:
+                encontrada = next(
+                    (c for c in opciones_col if c in persona_full.columns),
+                    None
+                )
+                if encontrada:
+                    existentes.append((etiqueta, encontrada))
 
             if editable:
                 with st.form(f"movil_car_{documento}"):
@@ -2953,6 +3109,7 @@ def gestion_usuarios_movil():
                 if save and existentes:
                     sets = []
                     params = {"doc": documento}
+
                     for i, (_, col) in enumerate(existentes):
                         p = f"p{i}"
                         sets.append(f'"{col}"=:{p}')
@@ -2987,6 +3144,7 @@ def gestion_usuarios_movil():
                     )
                     for etiqueta, col in existentes
                 }
+
                 st.dataframe(
                     pd.DataFrame(
                         list(datos_ver.items()),
@@ -3000,6 +3158,7 @@ def gestion_usuarios_movil():
     # Historia
     # --------------------------------------------------------
     elif accion == "📚 Ver historia":
+
         st.markdown("#### 📚 Historia reciente")
 
         try:
@@ -3021,6 +3180,7 @@ def gestion_usuarios_movil():
                 engine,
                 params={"doc": documento}
             )
+
             if movs.empty:
                 st.info("Sin movimientos registrados.")
             else:
@@ -3035,11 +3195,6 @@ def gestion_usuarios_movil():
     elif accion == "🎯 PAI / Seguimiento":
         st.info(
             "El PAI y seguimiento profesional permanecen en su módulo especializado."
-        )
-
-    elif accion == "👥 Gestión completa":
-        st.info(
-            "Coordinación puede utilizar la Gestión Integral completa desde el menú principal."
         )
 
 
