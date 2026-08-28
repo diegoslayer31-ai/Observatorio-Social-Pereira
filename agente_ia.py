@@ -2270,6 +2270,36 @@ def gestion_usuarios():
 # ============================================================
 # V11 - VISTA MÓVIL PARA TRABAJO EN CAMPO
 # ============================================================
+# ============================================================
+# V11.2 - AJUSTES RESPONSIVE PARA CELULAR
+# ============================================================
+st.markdown("""
+<style>
+@media (max-width: 768px) {
+    .block-container {
+        padding-top: 1rem !important;
+        padding-left: 0.8rem !important;
+        padding-right: 0.8rem !important;
+        padding-bottom: 4rem !important;
+    }
+    div[data-testid="stButton"] > button,
+    div[data-testid="stFormSubmitButton"] > button {
+        width: 100% !important;
+        min-height: 3rem !important;
+        font-size: 1rem !important;
+        border-radius: 0.75rem !important;
+    }
+    div[data-testid="stTextInput"] input,
+    div[data-testid="stDateInput"] input {
+        min-height: 2.8rem !important;
+    }
+    h1 { font-size: 1.65rem !important; }
+    h2 { font-size: 1.4rem !important; }
+    h3 { font-size: 1.2rem !important; }
+}
+</style>
+""", unsafe_allow_html=True)
+
 def gestion_usuarios_movil():
 
     st.title("📱 Gestión de Usuarios")
@@ -2278,22 +2308,10 @@ def gestion_usuarios_movil():
     # --------------------------------------------------------
     # Rol operativo
     # --------------------------------------------------------
-    rol_actual = str(
-        st.session_state.get("rol_actual", "")
-        or st.session_state.get("rol", "")
-        or ""
-    ).strip().upper()
-
-    if rol_actual not in ["INSPIRADOR", "PROFESIONAL", "COORDINACION"]:
-        rol_visible = st.selectbox(
-            "Perfil de trabajo",
-            ["INSPIRADOR", "PROFESIONAL", "COORDINACION"],
-            key="rol_movil_temporal"
-        )
-    else:
-        rol_visible = rol_actual
-
-    st.info(f"👤 Perfil activo: {rol_visible.title()}")
+    # Acceso móvil provisional exclusivo para Inspiradores.
+    # Más adelante el rol vendrá del login real.
+    rol_visible = "INSPIRADOR"
+    st.info("👤 Perfil activo: Inspirador")
 
     # --------------------------------------------------------
     # Entrada principal móvil
@@ -3842,10 +3860,8 @@ with st.sidebar:
         st.rerun()
 
     if st.button("📱 Gestión Móvil"):
-
-        gestion_usuarios_movil()
-
-        st.stop()
+        st.session_state.page = "gestion_movil"
+        st.rerun()
 
 
     if st.button("🎛️ Dashboard Coordinación"):
@@ -4218,7 +4234,10 @@ if st.session_state.page == "genero_diversidad":
 # ROUTER
 # =====================================
 
-if st.session_state.page == "gestion_usuarios":
+if st.session_state.page == "gestion_movil":
+    gestion_usuarios_movil()
+    st.stop()
+elif st.session_state.page == "gestion_usuarios":
     
     gestion_usuarios()
     st.stop()
