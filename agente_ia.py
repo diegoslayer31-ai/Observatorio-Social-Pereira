@@ -33,6 +33,165 @@ engine = create_engine(st.secrets["DATABASE_URL"])
 if "page" not in st.session_state:
     st.session_state.page = "home"
 
+
+# ============================================================
+# V12 - AUTENTICACIÓN POR CÉDULA Y ROLES
+# ============================================================
+def _tabla_usuarios_disponible():
+    try:
+        with engine.connect() as conn:
+            return bool(conn.execute(text("""
+                SELECT EXISTS (
+                    SELECT 1
+                    FROM information_schema.tables
+                    WHERE table_schema='public'
+                      AND table_name='usuarios_sistema'
+                )
+            """)).scalar())
+    except Exception:
+        return False
+
+
+def _autenticar_funcionario(cedula, clave):
+    doc = str(cedula or "").strip()
+    if doc.endswith(".0"):
+        doc = doc[:-2]
+
+    if not doc or not clave:
+        return None
+
+    try:
+        with engine.connect() as conn:
+            fila = conn.execute(
+                text("""
+                    SELECT
+                        cedula,
+                        nombre,
+                        rol,
+                        activo,
+                        password_hash = crypt(
+                            :clave,
+                            password_hash
+                        ) AS clave_ok
+                    FROM public.usuarios_sistema
+                    WHERE TRIM(cedula) = :cedula
+                    LIMIT 1
+                """),
+                {"cedula": doc, "clave": clave}
+            ).mappings().first()
+
+        if not fila:
+            return None
+        if not bool(fila["activo"]):
+            return None
+        if not bool(fila["clave_ok"]):
+            return None
+        return dict(fila)
+
+    except Exception:
+        return None
+
+
+def cerrar_sesion_v12():
+    for clave in [
+        "autenticado",
+        "usuario_actual",
+        "documento_funcionario",
+        "rol_actual",
+        "nombre_funcionario",
+    ]:
+        st.session_state.pop(clave, None)
+
+    st.session_state.page = "home"
+    st.rerun()
+
+
+def exigir_login_v12():
+    if st.session_state.get("autenticado"):
+        return
+
+    st.markdown("""
+        <div style="
+            max-width:520px;
+            margin:3rem auto 1rem auto;
+            text-align:center;
+        ">
+            <h1>🔐 Observatorio Social</h1>
+            <p><b>Asociación Ciudad Futuro</b></p>
+            <p style="opacity:.7">Ingreso de funcionarios</p>
+        </div>
+    """, unsafe_allow_html=True)
+
+    if not _tabla_usuarios_disponible():
+        st.error(
+            "Falta crear la tabla usuarios_sistema. "
+            "Ejecute primero la migración SQL de la V12 en Supabase."
+        )
+        st.stop()
+
+    with st.form("login_v12"):
+        cedula = st.text_input(
+            "Número de cédula",
+            placeholder="Digite su cédula"
+        )
+        clave = st.text_input(
+            "Contraseña",
+            type="password"
+        )
+        entrar = st.form_submit_button(
+            "🔐 Ingresar",
+            use_container_width=True,
+            type="primary"
+        )
+
+    if entrar:
+        usuario = _autenticar_funcionario(cedula, clave)
+
+        if not usuario:
+            st.error(
+                "Cédula o contraseña incorrecta, "
+                "o el usuario se encuentra inactivo."
+            )
+        else:
+            rol = str(usuario["rol"]).strip().upper()
+            nombre = str(usuario["nombre"]).strip()
+            doc = str(usuario["cedula"]).strip()
+
+            st.session_state["autenticado"] = True
+            st.session_state["rol_actual"] = rol
+            st.session_state["nombre_funcionario"] = nombre
+            st.session_state["documento_funcionario"] = doc
+
+            # Esta cadena queda almacenada automáticamente en movimientos
+            # y auditoría para identificar al funcionario.
+            st.session_state["usuario_actual"] = (
+                f"{nombre} | CC {doc} | {rol}"
+            )
+
+            try:
+                with engine.begin() as conn:
+                    conn.execute(
+                        text("""
+                            UPDATE public.usuarios_sistema
+                            SET ultimo_acceso=NOW()
+                            WHERE cedula=:cedula
+                        """),
+                        {"cedula": doc}
+                    )
+            except Exception:
+                pass
+
+            if rol in ["INSPIRADOR", "PROFESIONAL"]:
+                st.session_state.page = "gestion_movil"
+            else:
+                st.session_state.page = "dashboard_ejecutivo"
+
+            st.rerun()
+
+    st.stop()
+
+
+
 # ============================================================
 # CONFIGURACIÓN Y UTILIDADES CENTRALES
 # ============================================================
@@ -2356,6 +2515,339 @@ def _boton_whatsapp(texto, key):
     st.code(texto, language=None)
 
 
+
+def registrar_egreso_profesional_v12(u, documento):
+
+    st.markdown("#### 🏆 Registrar egreso profesional")
+    st.caption(
+        "El egreso se almacena en personas_caracterizacion y "
+        "actualiza la situación de la persona en la base general."
+    )
+
+    estado_actual = str(
+        u.get("estado_caso") or ""
+    ).strip().upper()
+
+    if estado_actual == "EGRESADO":
+        st.warning(
+            "Esta persona ya figura actualmente como EGRESADO."
+        )
+
+    fecha_e = st.date_input(
+        "Fecha de egreso",
+        value=date.today(),
+        key=f"v12_fecha_egreso_{documento}"
+    )
+
+    motivo_e = st.selectbox(
+        "Tipo de egreso",
+        [
+            "PLAN RETORNO",
+            "VINCULACION FAMILIAR",
+            "VINCULACION LABORAL",
+            "TRASLADO A CENTRO DE PROTECCION",
+            "INGRESO A TRATAMIENTO",
+            "AUTONOMIA / SUPERACION DE VIDA EN CALLE",
+            "OTRO"
+        ],
+        key=f"v12_motivo_egreso_{documento}"
+    )
+
+    cedula_validada = st.selectbox(
+        "Cédula validada",
+        ["SI", "NO", "NO APLICA"],
+        key=f"v12_cedula_validada_{documento}"
+    )
+
+    obs_e = st.text_area(
+        "Observaciones",
+        key=f"v12_obs_egreso_{documento}"
+    )
+
+    responsable = st.session_state.get(
+        "usuario_actual", "profesional"
+    )
+    st.caption(f"Registrado por: {responsable}")
+
+    confirmar = st.checkbox(
+        "Confirmo que corresponde a un egreso real",
+        key=f"v12_conf_egreso_{documento}"
+    )
+
+    if st.button(
+        "🏆 Confirmar egreso",
+        use_container_width=True,
+        type="primary",
+        key=f"v12_guardar_egreso_{documento}"
+    ):
+
+        if estado_actual == "EGRESADO":
+            st.error(
+                "No se puede registrar otro egreso mientras "
+                "la persona siga en estado EGRESADO."
+            )
+            return
+
+        if not confirmar:
+            st.error("Debe confirmar el egreso.")
+            return
+
+        persona_df = pd.read_sql(
+            text("""
+                SELECT *
+                FROM habitante_de_calle
+                WHERE TRIM(
+                    CAST(numero_identificacion AS TEXT)
+                )=:doc
+                LIMIT 1
+            """),
+            engine,
+            params={"doc": documento}
+        )
+
+        if persona_df.empty:
+            st.error("No se encontró la persona en la base general.")
+            return
+
+        persona = persona_df.iloc[0]
+
+        columnas_e = set(
+            pd.read_sql(
+                text("""
+                    SELECT column_name
+                    FROM information_schema.columns
+                    WHERE table_schema='public'
+                      AND table_name='personas_caracterizacion'
+                """),
+                engine
+            )["column_name"].tolist()
+        )
+
+        def ce(*nombres):
+            for nombre in nombres:
+                if nombre in columnas_e:
+                    return nombre
+            return None
+
+        def pv(*nombres, default=None):
+            for nombre in nombres:
+                if nombre in persona.index:
+                    valor = persona.get(nombre)
+                    if pd.notna(valor):
+                        return valor
+            return default
+
+        col_doc_egreso = ce(
+            "numero_identidad",
+            "numero_identificacion"
+        )
+        col_fecha_egreso = ce("fecha_egreso")
+
+        if col_doc_egreso and col_fecha_egreso:
+            consulta_dup = text(
+                f"""
+                SELECT COUNT(*) AS total
+                FROM personas_caracterizacion
+                WHERE TRIM(CAST("{col_doc_egreso}" AS TEXT))=:doc
+                  AND "{col_fecha_egreso}"=:fecha
+                """
+            )
+            dup = pd.read_sql(
+                consulta_dup,
+                engine,
+                params={
+                    "doc": documento,
+                    "fecha": fecha_e
+                }
+            )
+            if int(dup.iloc[0]["total"] or 0) > 0:
+                st.error(
+                    "Ya existe un egreso para esta persona en esa fecha."
+                )
+                return
+
+        meses = [
+            "", "ENERO", "FEBRERO", "MARZO", "ABRIL",
+            "MAYO", "JUNIO", "JULIO", "AGOSTO",
+            "SEPTIEMBRE", "OCTUBRE", "NOVIEMBRE", "DICIEMBRE"
+        ]
+
+        observacion_final = motivo_e
+        if obs_e.strip():
+            observacion_final += " - " + obs_e.strip()
+
+        datos = {
+            ce("cedula_validada"): cedula_validada,
+            ce("mes_validacion"): meses[fecha_e.month],
+            ce("nombres"): pv("nombres", default=""),
+            ce("apellidos"): pv("apellidos", default=""),
+            ce("sexo_nacer", "sexo_al_nacer"): pv(
+                "sexo_al_nacer",
+                "sexo_nacer",
+                default=""
+            ),
+            ce("edad"): pv("edad"),
+            ce("fecha_nacimiento"): pv(
+                "fecha_nacimiento",
+                "fecha_de_nacimiento_dd_mm_aa"
+            ),
+            col_doc_egreso: documento,
+            ce("categoria_discapacidad"): pv(
+                "categoria_discapacidad",
+                default=""
+            ),
+            ce("se_reconoce_como"): pv(
+                "se_reconoce_como",
+                default=""
+            ),
+            ce(
+                "orientacion_lgbti",
+                "orientacion_sexual_lgtbi"
+            ): pv(
+                "orientacion_sexual_lgtbi",
+                "orientacion_lgbti",
+                default=""
+            ),
+            ce("grupo_etnico", "grupos_etnicos"): pv(
+                "grupos_etnicos",
+                "grupos_etnicos_afro_indigena",
+                "grupo_etnico",
+                default=""
+            ),
+            ce("departamento_procedencia"): pv(
+                "departamento_procedencia",
+                "departamento_de_procedencia",
+                default=""
+            ),
+            ce("estado_caso"): "EGRESADO",
+            col_fecha_egreso: fecha_e,
+            ce("observaciones_egreso"): observacion_final,
+            ce("funcionario_egreso"): responsable
+        }
+
+        datos = {
+            k: v for k, v in datos.items()
+            if k and k in columnas_e
+        }
+
+        with engine.begin() as conn:
+
+            if "numero" in columnas_e:
+                # Evita que dos profesionales obtengan el mismo consecutivo.
+                conn.execute(
+                    text("""
+                        SELECT pg_advisory_xact_lock(
+                            hashtext(
+                                'personas_caracterizacion_numero'
+                            )
+                        )
+                    """)
+                )
+
+                datos["numero"] = conn.execute(
+                    text("""
+                        SELECT COALESCE(MAX(numero),0)+1
+                        FROM personas_caracterizacion
+                    """)
+                ).scalar()
+
+            columnas = list(datos.keys())
+            params_ins = {}
+            valores = []
+
+            for i, columna in enumerate(columnas):
+                par = f"e{i}"
+                params_ins[par] = datos[columna]
+                valores.append(f":{par}")
+
+            conn.execute(
+                text(
+                    "INSERT INTO personas_caracterizacion ("
+                    + ", ".join(
+                        f'"{c}"' for c in columnas
+                    )
+                    + ") VALUES ("
+                    + ", ".join(valores)
+                    + ")"
+                ),
+                params_ins
+            )
+
+            columnas_h = set(
+                conn.execute(
+                    text("""
+                        SELECT column_name
+                        FROM information_schema.columns
+                        WHERE table_schema='public'
+                          AND table_name='habitante_de_calle'
+                    """)
+                ).scalars().all()
+            )
+
+            sets_h = [
+                "estado_caso='EGRESADO'",
+                "modalidad=NULL"
+            ]
+            params_h = {"doc": documento}
+
+            if "fecha_ultimo_egreso" in columnas_h:
+                sets_h.append(
+                    "fecha_ultimo_egreso=:fecha_egreso"
+                )
+                params_h["fecha_egreso"] = fecha_e
+
+            conn.execute(
+                text(
+                    "UPDATE habitante_de_calle SET "
+                    + ", ".join(sets_h)
+                    + """
+                    WHERE TRIM(
+                        CAST(numero_identificacion AS TEXT)
+                    )=:doc
+                    """
+                ),
+                params_h
+            )
+
+            conn.execute(
+                text("""
+                    INSERT INTO movimientos_habitante (
+                        numero_identificacion,
+                        tipo_movimiento,
+                        modalidad,
+                        usuario_registra,
+                        observacion
+                    )
+                    VALUES (
+                        :doc,
+                        'EGRESO',
+                        :modalidad,
+                        :usuario,
+                        :observacion
+                    )
+                """),
+                {
+                    "doc": documento,
+                    "modalidad": u.get("modalidad"),
+                    "usuario": responsable,
+                    "observacion": observacion_final
+                }
+            )
+
+        registrar_auditoria(
+            "REGISTRAR_EGRESO",
+            documento=documento,
+            modulo="Gestión Profesional",
+            valor_anterior=estado_actual,
+            valor_nuevo="EGRESADO",
+            observacion=observacion_final[:500]
+        )
+
+        invalidar_cache_datos()
+        st.success("✅ Egreso registrado correctamente.")
+        st.rerun()
+
+
 def gestion_usuarios_movil():
 
     st.title("📱 Gestión de Usuarios")
@@ -2364,10 +2856,17 @@ def gestion_usuarios_movil():
     # --------------------------------------------------------
     # Rol operativo
     # --------------------------------------------------------
-    # Acceso móvil provisional exclusivo para Inspiradores.
-    # Más adelante el rol vendrá del login real.
-    rol_visible = "INSPIRADOR"
-    st.info("👤 Perfil activo: Inspirador")
+    rol_visible = str(
+        st.session_state.get("rol_actual", "INSPIRADOR")
+    ).strip().upper()
+
+    nombre_login = st.session_state.get(
+        "nombre_funcionario", "Funcionario"
+    )
+
+    st.info(
+        f"👤 {nombre_login} · Perfil: {rol_visible.title()}"
+    )
 
     # --------------------------------------------------------
     # Entrada principal móvil
@@ -3436,64 +3935,14 @@ def gestion_usuarios_movil():
     elif accion == "🏆 Registrar egreso":
 
         if rol_visible not in ["PROFESIONAL", "COORDINACION"]:
-            st.error("El registro de egreso corresponde al equipo profesional.")
+            st.error(
+                "El registro de egreso corresponde al equipo profesional."
+            )
         else:
-            st.markdown("#### 🏆 Registrar egreso profesional")
-            st.caption("Los datos básicos se toman de habitante_de_calle.")
-
-            fecha_e = st.date_input(
-                "Fecha de egreso",
-                value=date.today(),
-                key=f"movil_fecha_egreso_{documento}"
+            registrar_egreso_profesional_v12(
+                u,
+                documento
             )
-
-            motivo_e = st.selectbox(
-                "Tipo de egreso",
-                [
-                    "PLAN RETORNO",
-                    "VINCULACIÓN FAMILIAR",
-                    "VINCULACIÓN LABORAL",
-                    "TRASLADO A CENTRO DE PROTECCIÓN",
-                    "INGRESO A TRATAMIENTO",
-                    "AUTONOMÍA / SUPERACIÓN DE VIDA EN CALLE",
-                    "OTRO"
-                ],
-                key=f"movil_motivo_egreso_{documento}"
-            )
-
-            funcionario_e = st.text_input(
-                "Profesional que registra",
-                value=str(
-                    st.session_state.get("usuario_actual", "")
-                ).replace("sistema", ""),
-                key=f"movil_funcionario_egreso_{documento}"
-            )
-
-            obs_e = st.text_area(
-                "Observaciones",
-                key=f"movil_obs_egreso_{documento}"
-            )
-
-            conf_e = st.checkbox(
-                "Confirmo que corresponde a un egreso real",
-                key=f"movil_conf_egreso_{documento}"
-            )
-
-            if st.button(
-                "🏆 Confirmar egreso",
-                use_container_width=True,
-                type="primary",
-                key=f"movil_guardar_egreso_{documento}"
-            ):
-                if not funcionario_e.strip():
-                    st.error("Indique el profesional que registra.")
-                elif not conf_e:
-                    st.error("Debe confirmar el egreso.")
-                else:
-                    st.info(
-                        "El egreso profesional conserva la lógica completa de la V10. "
-                        "Puede seguir registrándose también desde Gestión Integral."
-                    )
 
     # --------------------------------------------------------
     # Caracterización / consulta
@@ -3698,6 +4147,626 @@ def gestion_usuarios_movil():
         st.info(
             "El PAI y seguimiento profesional permanecen en su módulo especializado."
         )
+
+
+
+# ============================================================
+# V12 - ADMINISTRACIÓN DE USUARIOS DEL SISTEMA
+# ============================================================
+def gestion_funcionarios_v12():
+
+    if st.session_state.get("rol_actual") != "COORDINACION":
+        st.error("Acceso exclusivo para Coordinación.")
+        return
+
+    st.title("👥 Usuarios del sistema")
+    st.caption(
+        "Administración de Inspiradores, Profesionales y Coordinación."
+    )
+
+    tab_crear, tab_admin = st.tabs(
+        ["➕ Crear cuenta", "📋 Administrar"]
+    )
+
+    with tab_crear:
+        with st.form("crear_funcionario_v12"):
+            nombre = st.text_input("Nombre completo *")
+            cedula = st.text_input("Cédula *")
+            rol = st.selectbox(
+                "Rol",
+                [
+                    "INSPIRADOR",
+                    "PROFESIONAL",
+                    "COORDINACION"
+                ]
+            )
+            clave = st.text_input(
+                "Contraseña inicial *",
+                type="password"
+            )
+            clave2 = st.text_input(
+                "Confirmar contraseña *",
+                type="password"
+            )
+
+            crear = st.form_submit_button(
+                "✅ Crear cuenta",
+                use_container_width=True,
+                type="primary"
+            )
+
+        if crear:
+            doc = limpiar_documento(cedula)
+
+            if not nombre.strip() or not doc:
+                st.error(
+                    "Nombre y cédula son obligatorios."
+                )
+            elif len(clave) < 8:
+                st.error(
+                    "La contraseña debe tener mínimo 8 caracteres."
+                )
+            elif clave != clave2:
+                st.error("Las contraseñas no coinciden.")
+            else:
+                try:
+                    with engine.begin() as conn:
+                        conn.execute(
+                            text("""
+                                INSERT INTO public.usuarios_sistema (
+                                    cedula,
+                                    nombre,
+                                    rol,
+                                    password_hash,
+                                    activo,
+                                    creado_por
+                                )
+                                VALUES (
+                                    :cedula,
+                                    :nombre,
+                                    :rol,
+                                    crypt(
+                                        :clave,
+                                        gen_salt('bf')
+                                    ),
+                                    TRUE,
+                                    :creado_por
+                                )
+                            """),
+                            {
+                                "cedula": doc,
+                                "nombre": nombre.strip(),
+                                "rol": rol,
+                                "clave": clave,
+                                "creado_por": st.session_state.get(
+                                    "usuario_actual",
+                                    "coordinacion"
+                                )
+                            }
+                        )
+
+                    st.success(
+                        "✅ Cuenta creada correctamente."
+                    )
+
+                except Exception:
+                    st.error(
+                        "No fue posible crear la cuenta. "
+                        "Verifique que la cédula no esté registrada."
+                    )
+
+    with tab_admin:
+
+        usuarios = pd.read_sql(
+            text("""
+                SELECT
+                    cedula,
+                    nombre,
+                    rol,
+                    activo,
+                    creado_en,
+                    ultimo_acceso
+                FROM public.usuarios_sistema
+                ORDER BY activo DESC, nombre
+            """),
+            engine
+        )
+
+        st.dataframe(
+            usuarios,
+            use_container_width=True,
+            hide_index=True
+        )
+
+        if usuarios.empty:
+            return
+
+        indices = usuarios.index.tolist()
+
+        ix = st.selectbox(
+            "Seleccione un funcionario",
+            indices,
+            format_func=lambda i: (
+                f"{usuarios.loc[i,'nombre']} · "
+                f"{usuarios.loc[i,'cedula']} · "
+                f"{usuarios.loc[i,'rol']}"
+            )
+        )
+
+        usr = usuarios.loc[ix]
+        doc = str(usr["cedula"]).strip()
+
+        roles = [
+            "INSPIRADOR",
+            "PROFESIONAL",
+            "COORDINACION"
+        ]
+
+        c1, c2 = st.columns(2)
+
+        rol_nuevo = c1.selectbox(
+            "Rol",
+            roles,
+            index=roles.index(
+                str(usr["rol"]).upper()
+            ),
+            key=f"v12_rol_{doc}"
+        )
+
+        activo_nuevo = c2.checkbox(
+            "Cuenta activa",
+            value=bool(usr["activo"]),
+            key=f"v12_activo_{doc}"
+        )
+
+        if st.button(
+            "💾 Guardar rol / estado",
+            use_container_width=True,
+            key=f"v12_guardar_usr_{doc}"
+        ):
+
+            if (
+                doc
+                == st.session_state.get(
+                    "documento_funcionario"
+                )
+                and not activo_nuevo
+            ):
+                st.error(
+                    "No puede desactivar su propia cuenta "
+                    "durante la sesión."
+                )
+            else:
+                with engine.begin() as conn:
+                    conn.execute(
+                        text("""
+                            UPDATE public.usuarios_sistema
+                            SET
+                                rol=:rol,
+                                activo=:activo,
+                                actualizado_en=NOW()
+                            WHERE cedula=:cedula
+                        """),
+                        {
+                            "rol": rol_nuevo,
+                            "activo": activo_nuevo,
+                            "cedula": doc
+                        }
+                    )
+
+                st.success("✅ Cuenta actualizada.")
+                st.rerun()
+
+        st.markdown("#### 🔑 Restablecer contraseña")
+
+        nueva = st.text_input(
+            "Nueva contraseña",
+            type="password",
+            key=f"v12_pass_{doc}"
+        )
+
+        nueva2 = st.text_input(
+            "Confirmar nueva contraseña",
+            type="password",
+            key=f"v12_pass2_{doc}"
+        )
+
+        if st.button(
+            "🔑 Restablecer contraseña",
+            use_container_width=True,
+            key=f"v12_reset_{doc}"
+        ):
+
+            if len(nueva) < 8:
+                st.error(
+                    "La contraseña debe tener mínimo 8 caracteres."
+                )
+            elif nueva != nueva2:
+                st.error("Las contraseñas no coinciden.")
+            else:
+                with engine.begin() as conn:
+                    conn.execute(
+                        text("""
+                            UPDATE public.usuarios_sistema
+                            SET
+                                password_hash=crypt(
+                                    :clave,
+                                    gen_salt('bf')
+                                ),
+                                actualizado_en=NOW()
+                            WHERE cedula=:cedula
+                        """),
+                        {
+                            "clave": nueva,
+                            "cedula": doc
+                        }
+                    )
+
+                st.success(
+                    "✅ Contraseña restablecida."
+                )
+
+
+# ============================================================
+# V12 - HISTORIA INTEGRAL UNIFICADA
+# ============================================================
+def historia_integral_v12():
+
+    st.title("📚 Historia Integral")
+    st.caption(
+        "Ingreso, reingresos, permisos, sanciones, expulsiones, "
+        "PAI, seguimientos y egresos en una sola línea de tiempo."
+    )
+
+    termino = st.text_input(
+        "🔎 Buscar persona",
+        placeholder="Nombre, apellido o documento",
+        key="v12_hist_buscar"
+    )
+
+    if len(termino.strip()) < 2:
+        st.info("Digite al menos 2 caracteres.")
+        return
+
+    patron = f"%{termino.strip()}%"
+
+    personas = pd.read_sql(
+        text("""
+            SELECT
+                numero_identificacion,
+                nombres,
+                apellidos,
+                estado_caso,
+                modalidad
+            FROM habitante_de_calle
+            WHERE CAST(numero_identificacion AS TEXT) ILIKE :patron
+               OR COALESCE(nombres,'') ILIKE :patron
+               OR COALESCE(apellidos,'') ILIKE :patron
+               OR (
+                    COALESCE(nombres,'') || ' ' ||
+                    COALESCE(apellidos,'')
+                  ) ILIKE :patron
+            ORDER BY nombres, apellidos
+            LIMIT 20
+        """),
+        engine,
+        params={"patron": patron}
+    )
+
+    if personas.empty:
+        st.warning("No se encontraron personas.")
+        return
+
+    indices = personas.index.tolist()
+
+    ix = st.selectbox(
+        "Seleccione la persona",
+        indices,
+        format_func=lambda i: (
+            f"{personas.loc[i,'nombres']} "
+            f"{personas.loc[i,'apellidos']} · "
+            f"{personas.loc[i,'numero_identificacion']}"
+        ),
+        key="v12_hist_persona"
+    )
+
+    persona = personas.loc[ix]
+    doc = str(
+        persona["numero_identificacion"]
+    ).strip()
+
+    st.markdown(
+        f"### 👤 {persona['nombres']} {persona['apellidos']}\n"
+        f"**Documento:** {doc}  \n"
+        f"**Estado:** {persona.get('estado_caso') or 'Sin dato'} · "
+        f"**Modalidad:** {persona.get('modalidad') or 'Sin modalidad'}"
+    )
+
+    eventos = []
+
+    def agregar(
+        fecha,
+        evento,
+        detalle=""
+    ):
+        fecha_pd = pd.to_datetime(
+            fecha,
+            errors="coerce"
+        )
+        if pd.isna(fecha_pd):
+            return
+
+        eventos.append({
+            "Fecha": fecha_pd,
+            "Evento": evento,
+            "Detalle": detalle
+        })
+
+    # MOVIMIENTOS
+    try:
+        mov = pd.read_sql(
+            text("""
+                SELECT *
+                FROM movimientos_habitante
+                WHERE TRIM(
+                    CAST(numero_identificacion AS TEXT)
+                )=:doc
+                ORDER BY fecha_movimiento DESC
+            """),
+            engine,
+            params={"doc": doc}
+        )
+
+        for _, r in mov.iterrows():
+            agregar(
+                r.get("fecha_movimiento"),
+                str(
+                    r.get("tipo_movimiento")
+                    or "MOVIMIENTO"
+                ),
+                " | ".join(
+                    x for x in [
+                        f"Modalidad: {r.get('modalidad')}"
+                        if pd.notna(r.get("modalidad"))
+                        else "",
+                        f"Registra: {r.get('usuario_registra')}"
+                        if pd.notna(r.get("usuario_registra"))
+                        else "",
+                        f"Obs.: {r.get('observacion')}"
+                        if pd.notna(r.get("observacion"))
+                        else ""
+                    ]
+                    if x
+                )
+            )
+    except Exception:
+        pass
+
+    # PERMISOS
+    try:
+        permisos = pd.read_sql(
+            text("""
+                SELECT *
+                FROM permisos_usuarios
+                WHERE TRIM(
+                    CAST(numero_identificacion AS TEXT)
+                )=:doc
+            """),
+            engine,
+            params={"doc": doc}
+        )
+
+        for _, r in permisos.iterrows():
+            agregar(
+                r.get("creado_en")
+                if "creado_en" in permisos.columns
+                else r.get("fecha_salida"),
+                "PERMISO",
+                (
+                    f"Salida: {r.get('fecha_salida')} "
+                    f"{r.get('hora_salida')} | "
+                    f"Regreso estimado: "
+                    f"{r.get('fecha_regreso_estimada')} "
+                    f"{r.get('hora_regreso_estimada')} | "
+                    f"Regreso real: "
+                    f"{r.get('fecha_regreso_real')} "
+                    f"{r.get('hora_regreso_real')} | "
+                    f"Estado: {r.get('estado_permiso')} | "
+                    f"Motivo: {r.get('motivo')}"
+                )
+            )
+    except Exception:
+        pass
+
+    # SANCIONES Y EXPULSIONES
+    try:
+        sanciones = pd.read_sql(
+            text("""
+                SELECT *
+                FROM sanciones_usuarios
+                WHERE TRIM(
+                    CAST(numero_identificacion AS TEXT)
+                )=:doc
+            """),
+            engine,
+            params={"doc": doc}
+        )
+
+        for _, r in sanciones.iterrows():
+            agregar(
+                r.get("creado_en"),
+                str(
+                    r.get("tipo_medida")
+                    or "MEDIDA"
+                ),
+                (
+                    f"Motivo: {r.get('motivo')} | "
+                    f"Inicio: {r.get('fecha_inicio')} | "
+                    f"Fin: {r.get('fecha_fin')} | "
+                    f"Estado: {r.get('estado_medida')} | "
+                    f"Registra: {r.get('usuario_registra')}"
+                )
+            )
+    except Exception:
+        pass
+
+    # PAI
+    try:
+        pai = pd.read_sql(
+            text("""
+                SELECT *
+                FROM pai_objetivos
+                WHERE TRIM(
+                    CAST(documento_usuario AS TEXT)
+                )=:doc
+            """),
+            engine,
+            params={"doc": doc}
+        )
+
+        for _, r in pai.iterrows():
+            agregar(
+                r.get("fecha_apertura"),
+                "PAI - OBJETIVO",
+                (
+                    f"{r.get('objetivo_descripcion')} | "
+                    f"Estado: {r.get('estado')} | "
+                    f"Avance: {r.get('porcentaje_avance')}% | "
+                    f"Meta: {r.get('fecha_meta')}"
+                )
+            )
+    except Exception:
+        pass
+
+    # SEGUIMIENTOS PAI
+    try:
+        novedades = pd.read_sql(
+            text("""
+                SELECT *
+                FROM pai_novedades
+                WHERE TRIM(
+                    CAST(documento_usuario AS TEXT)
+                )=:doc
+            """),
+            engine,
+            params={"doc": doc}
+        )
+
+        fecha_col = next(
+            (
+                c for c in [
+                    "fecha_registro",
+                    "fecha",
+                    "creado_en",
+                    "fecha_novedad"
+                ]
+                if c in novedades.columns
+            ),
+            None
+        )
+
+        if fecha_col:
+            for _, r in novedades.iterrows():
+                detalle = " | ".join(
+                    str(r.get(c))
+                    for c in [
+                        "actividad",
+                        "observacion",
+                        "profesional"
+                    ]
+                    if c in novedades.columns
+                    and pd.notna(r.get(c))
+                )
+
+                agregar(
+                    r.get(fecha_col),
+                    "SEGUIMIENTO PAI",
+                    detalle
+                )
+    except Exception:
+        pass
+
+    # EGRESOS
+    try:
+        cols_e = set(
+            pd.read_sql(
+                text("""
+                    SELECT column_name
+                    FROM information_schema.columns
+                    WHERE table_schema='public'
+                      AND table_name='personas_caracterizacion'
+                """),
+                engine
+            )["column_name"].tolist()
+        )
+
+        col_doc = (
+            "numero_identidad"
+            if "numero_identidad" in cols_e
+            else "numero_identificacion"
+        )
+
+        egresos = pd.read_sql(
+            text(
+                f"""
+                SELECT *
+                FROM personas_caracterizacion
+                WHERE TRIM(
+                    CAST("{col_doc}" AS TEXT)
+                )=:doc
+                  AND UPPER(
+                    TRIM(
+                        COALESCE(estado_caso,'')
+                    )
+                  )='EGRESADO'
+                """
+            ),
+            engine,
+            params={"doc": doc}
+        )
+
+        for _, r in egresos.iterrows():
+            agregar(
+                r.get("fecha_egreso"),
+                "EGRESO",
+                (
+                    f"{r.get('observaciones_egreso')} | "
+                    f"Profesional: "
+                    f"{r.get('funcionario_egreso')}"
+                )
+            )
+    except Exception:
+        pass
+
+    if not eventos:
+        st.info(
+            "No hay eventos históricos registrados."
+        )
+        return
+
+    timeline = pd.DataFrame(eventos)
+    timeline = timeline.dropna(
+        subset=["Fecha"]
+    ).sort_values(
+        "Fecha",
+        ascending=False
+    )
+
+    st.dataframe(
+        timeline,
+        use_container_width=True,
+        hide_index=True
+    )
+
+    st.download_button(
+        "⬇️ Descargar historia en CSV",
+        timeline.to_csv(
+            index=False
+        ).encode("utf-8-sig"),
+        file_name=f"historia_integral_{doc}.csv",
+        mime="text/csv",
+        use_container_width=True
+    )
 
 
 # ============================================================
@@ -4320,6 +5389,8 @@ p, label, span {
 </style>
 """, unsafe_allow_html=True)
 
+exigir_login_v12()
+
 # =====================================
 # SIDEBAR
 # =====================================
@@ -4330,34 +5401,121 @@ with st.sidebar:
 
     st.markdown("---")
     st.markdown("### Asociación Ciudad Futuro")
+    st.caption(
+        "Sistema Integral de Atención, "
+        "Seguimiento y Observatorio Social"
+    )
 
-    st.caption("""
-    Sistema Integral de Atención,
-    Seguimiento y Observatorio Social
-    """)
+    st.markdown("---")
+    st.markdown(
+        f"**{st.session_state.get('nombre_funcionario','')}**"
+    )
+    st.caption(
+        f"{st.session_state.get('rol_actual','')} · "
+        f"CC {st.session_state.get('documento_funcionario','')}"
+    )
+    st.markdown("---")
+
+    rol_menu = st.session_state.get(
+        "rol_actual", ""
+    )
+
+    if rol_menu == "INSPIRADOR":
+
+        if st.button(
+            "📱 Gestión Móvil",
+            use_container_width=True
+        ):
+            st.session_state.page = "gestion_movil"
+            st.rerun()
+
+        if st.button(
+            "📚 Historia Integral",
+            use_container_width=True
+        ):
+            st.session_state.page = "historia_integral_v12"
+            st.rerun()
+
+    elif rol_menu == "PROFESIONAL":
+
+        if st.button(
+            "🩺 Gestión Profesional",
+            use_container_width=True
+        ):
+            st.session_state.page = "gestion_movil"
+            st.rerun()
+
+        if st.button(
+            "📚 Historia Integral",
+            use_container_width=True
+        ):
+            st.session_state.page = "historia_integral_v12"
+            st.rerun()
+
+        st.caption(
+            "PAI y seguimiento profesional continúan "
+            "en el módulo institucional existente."
+        )
+
+    elif rol_menu == "COORDINACION":
+
+        if st.button(
+            "🏠 Inicio",
+            use_container_width=True
+        ):
+            st.session_state.page = "home"
+            st.rerun()
+
+        if st.button(
+            "🎛️ Dashboard Coordinación",
+            use_container_width=True
+        ):
+            st.session_state.page = "dashboard_ejecutivo"
+            st.rerun()
+
+        if st.button(
+            "📱 Gestión Móvil",
+            use_container_width=True
+        ):
+            st.session_state.page = "gestion_movil"
+            st.rerun()
+
+        if st.button(
+            "⚙️ Gestión usuarios",
+            use_container_width=True
+        ):
+            st.session_state.page = "gestion_usuarios"
+            st.rerun()
+
+        if st.button(
+            "📚 Historia Integral",
+            use_container_width=True
+        ):
+            st.session_state.page = "historia_integral_v12"
+            st.rerun()
+
+        if st.button(
+            "👥 Usuarios del sistema",
+            use_container_width=True
+        ):
+            st.session_state.page = "usuarios_sistema_v12"
+            st.rerun()
+
+        if st.button(
+            "♀️ Género y Diversidad",
+            use_container_width=True
+        ):
+            st.session_state.page = "genero_diversidad"
+            st.rerun()
 
     st.markdown("---")
 
+    if st.button(
+        "🚪 Cerrar sesión",
+        use_container_width=True
+    ):
+        cerrar_sesion_v12()
 
-    if st.button("🏠 Inicio"):
-        st.session_state.page = "home"
-        st.rerun()
-
-    if st.button("📱 Gestión Móvil"):
-        st.session_state.page = "gestion_movil"
-        st.rerun()
-
-
-    if st.button("🎛️ Dashboard Coordinación"):
-        st.session_state.page = "dashboard_ejecutivo"
-        st.rerun()
-
-    if st.button("⚙️ Gestión usuarios"):
-        st.session_state.page = "gestion_usuarios"
-        st.rerun()
-    if st.button("♀️ Género y Diversidad"):
-        st.session_state.page = "genero_diversidad"
-        st.rerun()
 # =====================================
 # FUNCIÓN GÉNERO Y DIVERSIDAD (ACTUALIZADA)
 # =====================================
@@ -4715,21 +5873,87 @@ if st.session_state.page == "genero_diversidad":
         st.warning("Error cargando indicadores")
         st.caption(str(e))
 # =====================================
-# ROUTER
+# ROUTER V12
 # =====================================
 
+rol_router = st.session_state.get(
+    "rol_actual", ""
+)
+
 if st.session_state.page == "gestion_movil":
-    gestion_usuarios_movil()
+
+    if rol_router not in [
+        "INSPIRADOR",
+        "PROFESIONAL",
+        "COORDINACION"
+    ]:
+        st.error("No tiene permisos para este módulo.")
+    else:
+        gestion_usuarios_movil()
+
     st.stop()
+
+elif st.session_state.page == "historia_integral_v12":
+
+    historia_integral_v12()
+    st.stop()
+
+elif st.session_state.page == "usuarios_sistema_v12":
+
+    if rol_router != "COORDINACION":
+        st.error(
+            "Acceso exclusivo para Coordinación."
+        )
+    else:
+        gestion_funcionarios_v12()
+
+    st.stop()
+
+elif st.session_state.page == "dashboard_ejecutivo":
+
+    if rol_router != "COORDINACION":
+        st.error(
+            "Acceso exclusivo para Coordinación."
+        )
+    else:
+        dashboard_ejecutivo()
+
+    st.stop()
+
 elif st.session_state.page == "gestion_usuarios":
-    
-    gestion_usuarios()
+
+    if rol_router != "COORDINACION":
+        st.error(
+            "Acceso exclusivo para Coordinación."
+        )
+    else:
+        gestion_usuarios()
+
     st.stop()
+
 elif st.session_state.page == "genero_diversidad":
 
-    formulario_genero_diversidad()
+    if rol_router != "COORDINACION":
+        st.error(
+            "Acceso exclusivo para Coordinación."
+        )
+    else:
+        formulario_genero_diversidad()
+
     st.stop()
-   
+
+# Inspiradores y profesionales no entran al escritorio general.
+if (
+    st.session_state.page == "home"
+    and rol_router in [
+        "INSPIRADOR",
+        "PROFESIONAL"
+    ]
+):
+    st.session_state.page = "gestion_movil"
+    st.rerun()
+
+
 def gestion_usuarios_legacy():
     
     st.title("⚙️ Gestión de usuarios")
