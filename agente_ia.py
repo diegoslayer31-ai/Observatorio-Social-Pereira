@@ -4771,6 +4771,711 @@ def historia_integral_v12():
     )
 
 
+
+# ============================================================
+# V13 - CONTROL DE TURNO, PRESENCIA Y NOVEDADES
+# ============================================================
+def control_turno_v13():
+
+    rol = str(st.session_state.get("rol_actual", "")).upper()
+    if rol not in ["INSPIRADOR", "COORDINACION", "MANAGER"]:
+        st.error("Este módulo está habilitado para Inspiradores, Coordinación y Manager.")
+        return
+
+    st.title("🕐 Control de Turno y Presencia")
+    st.caption(
+        "Estado operativo del albergue en tiempo real. "
+        "La presencia se calcula automáticamente a partir de usuarios activos y permisos abiertos."
+    )
+
+    ahora = datetime.now()
+    responsable = st.session_state.get("usuario_actual", "sistema")
+
+    # --------------------------------------------------------
+    # Base activa
+    # --------------------------------------------------------
+    activos = pd.read_sql(
+        text("""
+            SELECT
+                TRIM(CAST(numero_identificacion AS TEXT)) AS documento,
+                nombres,
+                apellidos,
+                estado_caso,
+                modalidad
+            FROM habitante_de_calle
+            WHERE UPPER(TRIM(COALESCE(estado_caso,''))) = 'ACTIVO'
+              AND modalidad IS NOT NULL
+              AND TRIM(CAST(modalidad AS TEXT)) <> ''
+        """),
+        engine
+    )
+
+    # --------------------------------------------------------
+    # Permisos abiertos
+    # --------------------------------------------------------
+    try:
+        permisos = pd.read_sql(
+            text("""
+                SELECT
+                    id,
+                    TRIM(CAST(numero_identificacion AS TEXT)) AS documento,
+                    fecha_salida,
+                    hora_salida,
+                    fecha_regreso_estimada,
+                    hora_regreso_estimada,
+                    motivo,
+                    autoriza,
+                    observacion,
+                    usuario_registra
+                FROM permisos_usuarios
+                WHERE UPPER(TRIM(COALESCE(estado_permiso,''))) = 'ABIERTO'
+                ORDER BY fecha_regreso_estimada, hora_regreso_estimada
+            """),
+            engine
+        )
+    except Exception:
+        permisos = pd.DataFrame()
+
+    docs_fuera = set()
+    if not permisos.empty:
+        docs_fuera = set(permisos["documento"].astype(str).str.strip())
+
+    presentes = activos[
+        ~activos["documento"].astype(str).str.strip().isin(docs_fuera)
+    ].copy()
+
+    fuera = activos[
+        activos["documento"].astype(str).str.strip().isin(docs_fuera)
+    ].copy()
+
+    # Unir datos del permiso para saber vencimiento.
+    permisos_det = pd.DataFrame()
+    if not permisos.empty:
+        permisos_det = permisos.merge(
+            activos[
+                ["documento", "nombres", "apellidos", "modalidad"]
+            ],
+            on="documento",
+            how="left"
+        )
+
+        permisos_det["regreso_estimado_dt"] = pd.to_datetime(
+            permisos_det["fecha_regreso_estimada"].astype(str)
+            + " "
+            + permisos_det["hora_regreso_estimada"].astype(str),
+            errors="coerce"
+        )
+
+        permisos_det["situacion"] = permisos_det[
+            "regreso_estimado_dt"
+        ].apply(
+            lambda x: (
+                "🔴 VENCIDO"
+                if pd.notna(x) and x.to_pydatetime() < ahora
+                else "🟢 EN TIEMPO"
+            )
+        )
+
+        vencidos = permisos_det[
+            permisos_det["situacion"] == "🔴 VENCIDO"
+        ].copy()
+    else:
+        vencidos = pd.DataFrame()
+
+    # --------------------------------------------------------
+    # Movimientos del día
+    # --------------------------------------------------------
+    try:
+        movimientos_hoy = pd.read_sql(
+            text("""
+                SELECT
+                    fecha_movimiento,
+                    numero_identificacion,
+                    tipo_movimiento,
+                    modalidad,
+                    usuario_registra,
+                    observacion
+                FROM movimientos_habitante
+                WHERE fecha_movimiento >= CURRENT_DATE
+                  AND fecha_movimiento < CURRENT_DATE + INTERVAL '1 day'
+                ORDER BY fecha_movimiento DESC
+            """),
+            engine
+        )
+    except Exception:
+        movimientos_hoy = pd.DataFrame()
+
+    ingresos_hoy = 0
+    reingresos_hoy = 0
+    salidas_permiso_hoy = 0
+    regresos_permiso_hoy = 0
+
+    if not movimientos_hoy.empty:
+        tipos_hoy = movimientos_hoy["tipo_movimiento"].astype(str).str.upper()
+        ingresos_hoy = int((tipos_hoy == "INGRESO").sum())
+        reingresos_hoy = int((tipos_hoy == "REINGRESO").sum())
+        salidas_permiso_hoy = int((tipos_hoy == "SALIDA_PERMISO").sum())
+        regresos_permiso_hoy = int((tipos_hoy == "REGRESO_PERMISO").sum())
+
+    # --------------------------------------------------------
+    # Capacidades configuradas
+    # --------------------------------------------------------
+    try:
+        capacidades = pd.read_sql(
+            text("""
+                SELECT modalidad, capacidad
+                FROM capacidades_modalidad
+                WHERE activo = TRUE
+                ORDER BY modalidad
+            """),
+            engine
+        )
+    except Exception:
+        capacidades = pd.DataFrame()
+
+    # --------------------------------------------------------
+    # KPIs
+    # --------------------------------------------------------
+    k1, k2, k3, k4 = st.columns(4)
+    k1.metric("🏠 Presentes", len(presentes))
+    k2.metric("🚪 Con permiso", len(permisos_det))
+    k3.metric("⚠️ Permisos vencidos", len(vencidos))
+    k4.metric("🔁 Reingresos hoy", reingresos_hoy)
+
+    k5, k6, k7, k8 = st.columns(4)
+    k5.metric("➕ Ingresos hoy", ingresos_hoy)
+    k6.metric("➡️ Salidas permiso hoy", salidas_permiso_hoy)
+    k7.metric("⬅️ Regresos hoy", regresos_permiso_hoy)
+    k8.metric("👥 Activos con modalidad", len(activos))
+
+    # --------------------------------------------------------
+    # Ocupación por modalidad
+    # --------------------------------------------------------
+    st.markdown("### 🏘️ Ocupación actual")
+
+    if presentes.empty:
+        ocupacion = pd.DataFrame(columns=["modalidad", "presentes"])
+    else:
+        ocupacion = (
+            presentes.groupby("modalidad")
+            .size()
+            .reset_index(name="presentes")
+        )
+
+    if not capacidades.empty:
+        ocupacion = capacidades.merge(
+            ocupacion,
+            on="modalidad",
+            how="left"
+        )
+        ocupacion["presentes"] = ocupacion["presentes"].fillna(0).astype(int)
+        ocupacion["cupos_disponibles"] = (
+            ocupacion["capacidad"] - ocupacion["presentes"]
+        )
+        ocupacion["ocupacion_%"] = (
+            ocupacion["presentes"] / ocupacion["capacidad"] * 100
+        ).round(1)
+
+        st.dataframe(
+            ocupacion,
+            use_container_width=True,
+            hide_index=True
+        )
+    else:
+        if not ocupacion.empty:
+            st.dataframe(
+                ocupacion,
+                use_container_width=True,
+                hide_index=True
+            )
+        st.info(
+            "Aún no hay capacidades configuradas. "
+            "Coordinación o Manager puede definirlas en Configuración de cupos."
+        )
+
+    # --------------------------------------------------------
+    # Tabs operativos
+    # --------------------------------------------------------
+    tab1, tab2, tab3, tab4, tab5 = st.tabs([
+        "🏠 Presentes",
+        "🚪 Permisos",
+        "📝 Novedades",
+        "🤝 Entrega de turno",
+        "📲 Reporte WhatsApp"
+    ])
+
+    with tab1:
+        st.markdown("#### Personas presentes")
+        if presentes.empty:
+            st.info("No hay personas presentes según los registros actuales.")
+        else:
+            vista_presentes = presentes[
+                ["documento", "nombres", "apellidos", "modalidad"]
+            ].sort_values(["modalidad", "nombres", "apellidos"])
+
+            filtro_mod = st.selectbox(
+                "Filtrar modalidad",
+                ["TODAS"] + sorted(
+                    vista_presentes["modalidad"]
+                    .dropna()
+                    .astype(str)
+                    .unique()
+                    .tolist()
+                ),
+                key="v13_filtro_presentes"
+            )
+
+            if filtro_mod != "TODAS":
+                vista_presentes = vista_presentes[
+                    vista_presentes["modalidad"].astype(str) == filtro_mod
+                ]
+
+            st.dataframe(
+                vista_presentes,
+                use_container_width=True,
+                hide_index=True
+            )
+
+    with tab2:
+        st.markdown("#### Personas fuera con permiso")
+
+        if permisos_det.empty:
+            st.success("No hay permisos abiertos.")
+        else:
+            cols_perm = [
+                "documento",
+                "nombres",
+                "apellidos",
+                "modalidad",
+                "fecha_salida",
+                "hora_salida",
+                "fecha_regreso_estimada",
+                "hora_regreso_estimada",
+                "situacion",
+                "motivo"
+            ]
+            cols_perm = [c for c in cols_perm if c in permisos_det.columns]
+
+            st.dataframe(
+                permisos_det[cols_perm],
+                use_container_width=True,
+                hide_index=True
+            )
+
+            if not vencidos.empty:
+                st.error(
+                    f"⚠️ Hay {len(vencidos)} permiso(s) cuyo regreso estimado ya venció."
+                )
+
+    with tab3:
+        st.markdown("#### 📝 Novedades del turno")
+        st.caption(
+            "Aquí se registran novedades operativas que debe conocer el siguiente turno."
+        )
+
+        with st.form("v13_nueva_novedad"):
+            tipo_nov = st.selectbox(
+                "Tipo de novedad",
+                [
+                    "GENERAL",
+                    "USUARIO",
+                    "CONVIVENCIA",
+                    "SALUD",
+                    "SEGURIDAD",
+                    "INFRAESTRUCTURA",
+                    "ALIMENTACIÓN",
+                    "OTRA"
+                ]
+            )
+
+            doc_nov = st.text_input(
+                "Documento del usuario relacionado (opcional)"
+            )
+
+            novedad = st.text_area(
+                "Novedad *",
+                placeholder="Describa claramente la situación y lo que queda pendiente."
+            )
+
+            prioridad = st.selectbox(
+                "Prioridad",
+                ["NORMAL", "IMPORTANTE", "URGENTE"]
+            )
+
+            guardar_nov = st.form_submit_button(
+                "💾 Registrar novedad",
+                use_container_width=True,
+                type="primary"
+            )
+
+        if guardar_nov:
+            if not novedad.strip():
+                st.error("Debe escribir la novedad.")
+            else:
+                with engine.begin() as conn:
+                    conn.execute(
+                        text("""
+                            INSERT INTO novedades_turno (
+                                tipo_novedad,
+                                numero_identificacion,
+                                novedad,
+                                prioridad,
+                                estado,
+                                usuario_registra
+                            )
+                            VALUES (
+                                :tipo,
+                                NULLIF(:doc,''),
+                                :novedad,
+                                :prioridad,
+                                'PENDIENTE',
+                                :usuario
+                            )
+                        """),
+                        {
+                            "tipo": tipo_nov,
+                            "doc": str(doc_nov).strip(),
+                            "novedad": novedad.strip(),
+                            "prioridad": prioridad,
+                            "usuario": responsable
+                        }
+                    )
+                st.success("✅ Novedad registrada.")
+                st.rerun()
+
+        novedades = pd.read_sql(
+            text("""
+                SELECT
+                    id,
+                    creado_en,
+                    prioridad,
+                    tipo_novedad,
+                    numero_identificacion,
+                    novedad,
+                    estado,
+                    usuario_registra
+                FROM novedades_turno
+                WHERE estado = 'PENDIENTE'
+                ORDER BY
+                    CASE prioridad
+                        WHEN 'URGENTE' THEN 1
+                        WHEN 'IMPORTANTE' THEN 2
+                        ELSE 3
+                    END,
+                    creado_en DESC
+            """),
+            engine
+        )
+
+        if novedades.empty:
+            st.success("No hay novedades pendientes.")
+        else:
+            st.dataframe(
+                novedades,
+                use_container_width=True,
+                hide_index=True
+            )
+
+            if rol in ["COORDINACION", "MANAGER"]:
+                ids_nov = novedades["id"].tolist()
+                nov_cerrar = st.selectbox(
+                    "Marcar novedad como resuelta",
+                    ids_nov,
+                    format_func=lambda x: (
+                        f"#{x} · "
+                        + str(
+                            novedades.loc[
+                                novedades["id"] == x,
+                                "novedad"
+                            ].iloc[0]
+                        )[:80]
+                    ),
+                    key="v13_cerrar_novedad"
+                )
+
+                if st.button(
+                    "✅ Marcar como resuelta",
+                    use_container_width=True,
+                    key="v13_btn_cerrar_novedad"
+                ):
+                    with engine.begin() as conn:
+                        conn.execute(
+                            text("""
+                                UPDATE novedades_turno
+                                SET estado='RESUELTA',
+                                    resuelto_en=NOW(),
+                                    resuelto_por=:usuario
+                                WHERE id=:id
+                            """),
+                            {
+                                "usuario": responsable,
+                                "id": int(nov_cerrar)
+                            }
+                        )
+                    st.success("Novedad cerrada.")
+                    st.rerun()
+
+    with tab4:
+        st.markdown("#### 🤝 Entrega / recibo de turno")
+
+        pendientes_count = 0
+        try:
+            pendientes_count = int(
+                pd.read_sql(
+                    text("""
+                        SELECT COUNT(*) AS total
+                        FROM novedades_turno
+                        WHERE estado='PENDIENTE'
+                    """),
+                    engine
+                ).iloc[0]["total"]
+            )
+        except Exception:
+            pass
+
+        with st.form("v13_entrega_turno"):
+            turno = st.selectbox(
+                "Turno",
+                ["MAÑANA", "TARDE", "NOCHE"]
+            )
+
+            recibe = st.text_input(
+                "Nombre de quien recibe el turno *",
+                placeholder="Nombre del inspirador que recibe"
+            )
+
+            resumen_turno = st.text_area(
+                "Resumen / recomendaciones",
+                placeholder="Pendientes, situaciones especiales, recomendaciones..."
+            )
+
+            confirmar_turno = st.checkbox(
+                "Confirmo la entrega del turno"
+            )
+
+            guardar_turno = st.form_submit_button(
+                "🤝 Registrar entrega de turno",
+                use_container_width=True,
+                type="primary"
+            )
+
+        if guardar_turno:
+            if not recibe.strip():
+                st.error("Debe indicar quién recibe el turno.")
+            elif not confirmar_turno:
+                st.error("Debe confirmar la entrega.")
+            else:
+                with engine.begin() as conn:
+                    conn.execute(
+                        text("""
+                            INSERT INTO entregas_turno (
+                                turno,
+                                entrega_por,
+                                recibe_por,
+                                presentes,
+                                permisos_abiertos,
+                                permisos_vencidos,
+                                novedades_pendientes,
+                                resumen
+                            )
+                            VALUES (
+                                :turno,
+                                :entrega,
+                                :recibe,
+                                :presentes,
+                                :permisos,
+                                :vencidos,
+                                :novedades,
+                                :resumen
+                            )
+                        """),
+                        {
+                            "turno": turno,
+                            "entrega": responsable,
+                            "recibe": recibe.strip(),
+                            "presentes": len(presentes),
+                            "permisos": len(permisos_det),
+                            "vencidos": len(vencidos),
+                            "novedades": pendientes_count,
+                            "resumen": resumen_turno.strip()
+                        }
+                    )
+
+                st.success("✅ Entrega de turno registrada.")
+                st.rerun()
+
+        ultimas_entregas = pd.read_sql(
+            text("""
+                SELECT
+                    creado_en,
+                    turno,
+                    entrega_por,
+                    recibe_por,
+                    presentes,
+                    permisos_abiertos,
+                    permisos_vencidos,
+                    novedades_pendientes,
+                    resumen
+                FROM entregas_turno
+                ORDER BY creado_en DESC
+                LIMIT 10
+            """),
+            engine
+        )
+
+        if not ultimas_entregas.empty:
+            st.markdown("##### Últimas entregas")
+            st.dataframe(
+                ultimas_entregas,
+                use_container_width=True,
+                hide_index=True
+            )
+
+    with tab5:
+        st.markdown("#### 📲 Reporte operativo para WhatsApp")
+
+        modalidades_txt = []
+        if presentes.empty:
+            modalidades_txt.append("Sin personas presentes registradas")
+        else:
+            resumen_mod = (
+                presentes.groupby("modalidad")
+                .size()
+                .sort_values(ascending=False)
+            )
+            for mod, cantidad in resumen_mod.items():
+                modalidades_txt.append(
+                    f"• {mod}: {int(cantidad)} presentes"
+                )
+
+        vencidos_txt = []
+        if not vencidos.empty:
+            for _, r in vencidos.head(15).iterrows():
+                vencidos_txt.append(
+                    f"• {r.get('nombres','')} {r.get('apellidos','')} "
+                    f"- CC {r.get('documento','')} "
+                    f"- regreso {r.get('fecha_regreso_estimada','')} "
+                    f"{r.get('hora_regreso_estimada','')}"
+                )
+
+        try:
+            nov_pend = pd.read_sql(
+                text("""
+                    SELECT prioridad, novedad
+                    FROM novedades_turno
+                    WHERE estado='PENDIENTE'
+                    ORDER BY
+                        CASE prioridad
+                            WHEN 'URGENTE' THEN 1
+                            WHEN 'IMPORTANTE' THEN 2
+                            ELSE 3
+                        END,
+                        creado_en DESC
+                    LIMIT 10
+                """),
+                engine
+            )
+        except Exception:
+            nov_pend = pd.DataFrame()
+
+        novedades_txt = []
+        if not nov_pend.empty:
+            for _, r in nov_pend.iterrows():
+                novedades_txt.append(
+                    f"• [{r.get('prioridad')}] {r.get('novedad')}"
+                )
+
+        reporte = "\n".join([
+            "*REPORTE DE TURNO - ALBERGUE*",
+            f"*FECHA:* {ahora.strftime('%d/%m/%Y')}",
+            f"*HORA:* {ahora.strftime('%H:%M')}",
+            "",
+            f"*PRESENTES:* {len(presentes)}",
+            *modalidades_txt,
+            "",
+            f"*CON PERMISO:* {len(permisos_det)}",
+            f"*PERMISOS VENCIDOS:* {len(vencidos)}",
+            f"*INGRESOS HOY:* {ingresos_hoy}",
+            f"*REINGRESOS HOY:* {reingresos_hoy}",
+            f"*SALIDAS DE PERMISO HOY:* {salidas_permiso_hoy}",
+            f"*REGRESOS DE PERMISO HOY:* {regresos_permiso_hoy}",
+            "",
+            "*PENDIENTES DE REGRESO:*",
+            *(vencidos_txt if vencidos_txt else ["• Ninguno"]),
+            "",
+            "*NOVEDADES PENDIENTES:*",
+            *(novedades_txt if novedades_txt else ["• Ninguna"]),
+            "",
+            f"*GENERA:* {responsable}"
+        ])
+
+        _boton_whatsapp(
+            reporte,
+            "v13_reporte_turno_whatsapp"
+        )
+
+    # --------------------------------------------------------
+    # Configuración de cupos
+    # --------------------------------------------------------
+    if rol in ["COORDINACION", "MANAGER"]:
+        with st.expander("⚙️ Configuración de cupos por modalidad"):
+            st.caption(
+                "Esta capacidad se utiliza únicamente para el tablero operativo."
+            )
+
+            modalidad_cfg = st.text_input(
+                "Modalidad",
+                placeholder="Ej. URBANO",
+                key="v13_modalidad_cfg"
+            )
+            capacidad_cfg = st.number_input(
+                "Capacidad",
+                min_value=1,
+                step=1,
+                value=100,
+                key="v13_capacidad_cfg"
+            )
+
+            if st.button(
+                "💾 Guardar capacidad",
+                use_container_width=True,
+                key="v13_guardar_capacidad"
+            ):
+                if not modalidad_cfg.strip():
+                    st.error("Indique la modalidad.")
+                else:
+                    with engine.begin() as conn:
+                        conn.execute(
+                            text("""
+                                INSERT INTO capacidades_modalidad (
+                                    modalidad,
+                                    capacidad,
+                                    activo,
+                                    actualizado_por
+                                )
+                                VALUES (
+                                    :modalidad,
+                                    :capacidad,
+                                    TRUE,
+                                    :usuario
+                                )
+                                ON CONFLICT (modalidad)
+                                DO UPDATE SET
+                                    capacidad=EXCLUDED.capacidad,
+                                    activo=TRUE,
+                                    actualizado_por=EXCLUDED.actualizado_por,
+                                    actualizado_en=NOW()
+                            """),
+                            {
+                                "modalidad": modalidad_cfg.strip(),
+                                "capacidad": int(capacidad_cfg),
+                                "usuario": responsable
+                            }
+                        )
+                    st.success("Capacidad actualizada.")
+                    st.rerun()
+
+
 # ============================================================
 # DASHBOARD EJECUTIVO
 # ============================================================
@@ -5434,6 +6139,13 @@ with st.sidebar:
             st.rerun()
 
         if st.button(
+            "🕐 Control de Turno",
+            use_container_width=True
+        ):
+            st.session_state.page = "control_turno_v13"
+            st.rerun()
+
+        if st.button(
             "📚 Historia Integral",
             use_container_width=True
         ):
@@ -5482,6 +6194,13 @@ with st.sidebar:
             use_container_width=True
         ):
             st.session_state.page = "gestion_movil"
+            st.rerun()
+
+        if st.button(
+            "🕐 Control de Turno",
+            use_container_width=True
+        ):
+            st.session_state.page = "control_turno_v13"
             st.rerun()
 
         if st.button(
@@ -5889,11 +6608,28 @@ if st.session_state.page == "gestion_movil":
     if rol_router not in [
         "INSPIRADOR",
         "PROFESIONAL",
-        "COORDINACION"
+        "COORDINACION",
+        "MANAGER"
     ]:
         st.error("No tiene permisos para este módulo.")
     else:
         gestion_usuarios_movil()
+
+    st.stop()
+
+elif st.session_state.page == "control_turno_v13":
+
+    if rol_router not in [
+        "INSPIRADOR",
+        "COORDINACION",
+        "MANAGER"
+    ]:
+        st.error(
+            "Control de Turno está habilitado para "
+            "Inspiradores, Coordinación y Manager."
+        )
+    else:
+        control_turno_v13()
 
     st.stop()
 
