@@ -400,10 +400,139 @@ def generar_historia_integral(documento, engine):
 
 def gestion_usuarios():
 
-    st.title("👥 Gestión de Usuarios")
+    st.title("👥 Gestión Integral de Usuarios")
     st.caption(
-        "Consulta, actualización operativa y registro de usuarios en una sola pantalla."
+        "Ingreso, actualización operativa, medidas disciplinarias y "
+        "completitud progresiva de la caracterización."
     )
+
+    # ========================================================
+    # UTILIDADES DE ESQUEMA
+    # ========================================================
+    @st.cache_data(ttl=300)
+    def _columnas_habitante():
+        cols = pd.read_sql(
+            text("""
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_schema = 'public'
+                  AND table_name = 'habitante_de_calle'
+            """),
+            engine
+        )
+        return set(cols["column_name"].astype(str).tolist())
+
+    columnas_bd = _columnas_habitante()
+
+    def _col_real(*candidatas):
+        for c in candidatas:
+            if c in columnas_bd:
+                return c
+        return None
+
+    def _valor_persona(persona, *candidatas, default=""):
+        for c in candidatas:
+            if c in persona.index:
+                v = persona.get(c)
+                if pd.notna(v) and str(v).strip().lower() not in ("", "nan", "none"):
+                    return v
+        return default
+
+    def _actualizar_campos_persona(documento, cambios):
+        """
+        cambios = {columna_real: valor}
+        Solo usa columnas previamente verificadas contra information_schema.
+        """
+        cambios = {
+            k: v for k, v in cambios.items()
+            if k and k in columnas_bd
+        }
+        if not cambios:
+            return False
+
+        asignaciones = []
+        params = {"doc": str(documento).strip()}
+
+        for i, (col, valor) in enumerate(cambios.items()):
+            param = f"v{i}"
+            asignaciones.append(f'"{col}" = :{param}')
+            params[param] = valor
+
+        sql = text(
+            """
+            UPDATE habitante_de_calle
+            SET """ + ", ".join(asignaciones) + """
+            WHERE TRIM(CAST(numero_identificacion AS TEXT)) = :doc
+            """
+        )
+
+        with engine.begin() as conn:
+            conn.execute(sql, params)
+
+        return True
+
+    # Columnas posibles según las distintas versiones de tu base
+    C = {
+        "tipo_id": _col_real("tipo_identificacion", "tipo_de_identificacion"),
+        "fecha_nacimiento": _col_real(
+            "fecha_nacimiento",
+            "fecha_de_nacimiento_dd_mm_aa"
+        ),
+        "salud": _col_real(
+            "tipo_seguridad_salud",
+            "tipo_de_seguridad_social_en_salud"
+        ),
+        "telefono": _col_real("telefono", "telefono_y_o_celular"),
+        "procedencia": _col_real(
+            "departamento_procedencia",
+            "departamento_de_procedencia"
+        ),
+        "consumo": _col_real("tipo_consumo", "tipo_de_consumo"),
+        "sisben": _col_real("grupo_sisben"),
+        "discapacidad": _col_real("personas_con_discapacidad"),
+        "categoria_discapacidad": _col_real("categoria_discapacidad"),
+        "cabeza_familia": _col_real("cabeza_de_familia", "cabeza_familia"),
+        "gestante": _col_real(
+            "mujer_gestante_lactante",
+            "mujer_gestante_o_lactante"
+        ),
+        "migracion": _col_real(
+            "experiencia_migratoria",
+            "indicador_migracion"
+        ),
+        "etnia": _col_real(
+            "grupos_etnicos",
+            "grupos_etnicos_afro_indigena"
+        ),
+        "educacion": _col_real(
+            "nivel_educativo",
+            "nivel_educativo_que_tiene_o_cursa"
+        ),
+        "ocupacion": _col_real(
+            "condicion_ocupacional",
+            "perfil_ocupacional_su_principal_fuente_de_ingreso_es"
+        ),
+        "barrio": _col_real(
+            "barrio_vereda",
+            "barrio_o_vereda_de_residencia"
+        ),
+        "comuna": _col_real(
+            "comuna_corregimiento",
+            "comuna_o_corregimiento_de_residencia"
+        ),
+        "zona": _col_real("zona_residencia"),
+        "direccion": _col_real("direccion"),
+        "correo": _col_real("correo"),
+        "orientacion": _col_real(
+            "orientacion_sexual_lgtbi",
+            "orientacion_lgbti",
+            "orientacion_sexual"
+        ),
+        "poblacion": _col_real("poblacion"),
+        "enfermedad_mental": _col_real("enfermedad_mental"),
+        "fecha_ingreso": _col_real("fecha_ingreso_albergue"),
+        "numero_atenciones": _col_real("numero_atenciones")
+    }
 
     # ========================================================
     # BASE GENERAL
@@ -456,12 +585,10 @@ def gestion_usuarios():
     ).str.strip()
 
     # ========================================================
-    # INDICADORES COMPACTOS
+    # INDICADORES
     # ========================================================
     total_gestion = len(df_gestion)
-    activos_gestion = int(
-        df_gestion["estado_caso"].eq("ACTIVO").sum()
-    )
+    activos_gestion = int(df_gestion["estado_caso"].eq("ACTIVO").sum())
     urbano_gestion = int(
         (
             df_gestion["estado_caso"].eq("ACTIVO")
@@ -474,55 +601,58 @@ def gestion_usuarios():
             & df_gestion["modalidad"].eq("GRANJA")
         ).sum()
     )
-    egresados_gestion = int(
-        df_gestion["estado_caso"].eq("EGRESADO").sum()
-    )
+
+    try:
+        sanciones_activas = int(
+            pd.read_sql(
+                text("""
+                    SELECT COUNT(*) AS total
+                    FROM sanciones_usuarios
+                    WHERE UPPER(TRIM(COALESCE(estado_medida,''))) = 'ACTIVA'
+                """),
+                engine
+            ).iloc[0]["total"] or 0
+        )
+        sanciones_disponibles = True
+    except Exception:
+        sanciones_activas = 0
+        sanciones_disponibles = False
 
     m1, m2, m3, m4, m5 = st.columns(5)
     m1.metric("👥 Total", total_gestion)
     m2.metric("🟢 Activos", activos_gestion)
     m3.metric("🏙️ Urbano", urbano_gestion)
     m4.metric("🌱 Granja", granja_gestion)
-    m5.metric("📤 Egresados", egresados_gestion)
+    m5.metric("⛔ Medidas activas", sanciones_activas)
 
     st.divider()
 
-    tab_consulta, tab_nuevo, tab_listado = st.tabs([
+    tab_consulta, tab_nuevo, tab_caracterizacion, tab_listado = st.tabs([
         "🔎 Consultar / actualizar",
-        "➕ Nuevo usuario",
+        "➕ Nuevo ingreso",
+        "🧾 Completar caracterización",
         "📋 Listado"
     ])
 
     # ========================================================
-    # TAB 1 - CONSULTA Y ACTUALIZACIÓN
+    # 1. CONSULTAR / ACTUALIZAR
     # ========================================================
     with tab_consulta:
 
-        col_buscar, col_filtro = st.columns([3, 1])
-
-        with col_buscar:
-            indice_usuario = st.selectbox(
-                "Buscar por nombre o documento",
-                df_gestion.index.tolist(),
-                key="gestion_usuario_v8",
-                format_func=lambda i: (
-                    f"{df_gestion.loc[i, 'nombre_completo']} - "
-                    f"{df_gestion.loc[i, 'numero_identificacion']}"
-                )
+        indice_usuario = st.selectbox(
+            "Buscar por nombre o documento",
+            df_gestion.index.tolist(),
+            key="gestion_usuario_v9",
+            format_func=lambda i: (
+                f"{df_gestion.loc[i, 'nombre_completo']} - "
+                f"{df_gestion.loc[i, 'numero_identificacion']}"
             )
-
-        with col_filtro:
-            st.caption("Estado actual")
-            persona_tmp = df_gestion.loc[indice_usuario]
-            estado_tmp = persona_tmp.get("estado_caso", "") or "SIN DATO"
-            st.markdown(f"### {estado_tmp}")
+        )
 
         persona = df_gestion.loc[indice_usuario]
         documento = str(persona["numero_identificacion"]).strip()
 
-        # ----------------------------------------------------
-        # RESUMEN PAI
-        # ----------------------------------------------------
+        # PAI breve
         try:
             resumen_pai = pd.read_sql(
                 text("""
@@ -536,11 +666,6 @@ def gestion_usuarios():
                             WHERE fecha_meta < CURRENT_DATE
                               AND COALESCE(porcentaje_avance,0) < 100
                         ) AS vencidos,
-                        COUNT(*) FILTER (
-                            WHERE fecha_meta BETWEEN CURRENT_DATE
-                                AND CURRENT_DATE + INTERVAL '7 days'
-                              AND COALESCE(porcentaje_avance,0) < 100
-                        ) AS proximos,
                         MAX(fecha_ultimo_seguimiento) AS ultimo_seguimiento
                     FROM pai_objetivos
                     WHERE TRIM(CAST(documento_usuario AS TEXT)) = :doc
@@ -551,72 +676,93 @@ def gestion_usuarios():
         except Exception:
             resumen_pai = pd.DataFrame()
 
-        objetivos = cumplidos = vencidos = proximos = 0
+        objetivos = cumplidos = vencidos = 0
         ultimo_seg = None
-
         if not resumen_pai.empty:
             objetivos = int(resumen_pai.iloc[0]["objetivos"] or 0)
             cumplidos = int(resumen_pai.iloc[0]["cumplidos"] or 0)
             vencidos = int(resumen_pai.iloc[0]["vencidos"] or 0)
-            proximos = int(resumen_pai.iloc[0]["proximos"] or 0)
             ultimo_seg = resumen_pai.iloc[0]["ultimo_seguimiento"]
 
-        # ----------------------------------------------------
-        # FICHA BREVE
-        # ----------------------------------------------------
+        # Completitud rápida
+        campos_clave = [
+            ("Identificación", "numero_identificacion"),
+            ("Sexo", "sexo_al_nacer"),
+            ("Edad", "edad"),
+            ("Salud", C["salud"]),
+            ("Procedencia", C["procedencia"]),
+            ("Consumo", C["consumo"]),
+            ("Educación", C["educacion"]),
+            ("Ocupación", C["ocupacion"]),
+            ("Discapacidad", C["discapacidad"]),
+            ("Etnia", C["etnia"]),
+            ("Residencia", C["barrio"]),
+            ("Teléfono", C["telefono"]),
+        ]
+
+        completos = 0
+        evaluables = 0
+        pendientes = []
+
+        for etiqueta, col in campos_clave:
+            if not col or col not in persona.index:
+                continue
+            evaluables += 1
+            v = persona.get(col)
+            tiene = (
+                pd.notna(v)
+                and str(v).strip().lower() not in ("", "nan", "none")
+            )
+            if tiene:
+                completos += 1
+            else:
+                pendientes.append(etiqueta)
+
+        completitud = round(
+            completos / evaluables * 100, 1
+        ) if evaluables else 0
+
         st.markdown("### 👤 Ficha rápida")
 
-        f1, f2, f3, f4, f5 = st.columns(5)
+        f1, f2, f3, f4, f5, f6 = st.columns(6)
         f1.metric("📌 Estado", persona.get("estado_caso", "") or "Sin dato")
         f2.metric("🏠 Modalidad", persona.get("modalidad", "") or "Sin dato")
         f3.metric("🎯 PAI", objetivos)
         f4.metric("🔴 PAI vencidos", vencidos)
         f5.metric("🟢 Cumplidos", cumplidos)
+        f6.metric("🧾 Caracterización", f"{completitud:.0f}%")
+
+        if pendientes:
+            st.caption("Pendiente por completar: " + ", ".join(pendientes))
 
         if ultimo_seg is not None and not pd.isna(ultimo_seg):
             st.caption(
-                "🕒 Último seguimiento profesional: "
+                "🕒 Último seguimiento: "
                 + pd.to_datetime(ultimo_seg).strftime("%d/%m/%Y %H:%M")
             )
-        elif objetivos:
-            st.warning("⚠️ Esta persona tiene PAI pero no registra seguimiento reciente.")
-
-        if vencidos:
-            st.error(
-                f"🔴 Atención: esta persona tiene {vencidos} objetivo(s) PAI vencido(s)."
-            )
-        elif proximos:
-            st.warning(
-                f"🟡 Tiene {proximos} objetivo(s) PAI que vencen en los próximos 7 días."
-            )
 
         # ----------------------------------------------------
-        # ACTUALIZACIÓN OPERATIVA SIMPLE
+        # ACTUALIZACIÓN OPERATIVA
         # ----------------------------------------------------
-        st.markdown("### ✏️ Actualización operativa")
+        st.markdown("### ✏️ Estado y modalidad")
 
-        a1, a2, a3 = st.columns([1, 1, 1])
+        a1, a2, a3 = st.columns(3)
 
-        estados_disponibles = [
-            "ACTIVO",
-            "INACTIVO",
-            "EGRESADO"
-        ]
-
+        estados_disponibles = ["ACTIVO", "INACTIVO", "EGRESADO"]
         estado_actual = (
             persona.get("estado_caso", "")
             if persona.get("estado_caso", "") in estados_disponibles
             else "ACTIVO"
         )
 
-        modalidad_actual = persona.get("modalidad", "")
         modalidades = ["URBANO", "GRANJA"]
+        modalidad_actual = persona.get("modalidad", "")
 
         nuevo_estado = a1.selectbox(
             "Estado",
             estados_disponibles,
             index=estados_disponibles.index(estado_actual),
-            key=f"gestion_estado_{documento}"
+            key=f"gestion_estado_v9_{documento}"
         )
 
         nueva_modalidad = a2.selectbox(
@@ -627,7 +773,7 @@ def gestion_usuarios():
                 if modalidad_actual in modalidades
                 else 0
             ),
-            key=f"gestion_modalidad_{documento}"
+            key=f"gestion_modalidad_v9_{documento}"
         )
 
         with a3:
@@ -635,22 +781,18 @@ def gestion_usuarios():
             st.write("")
             guardar_cambios = st.button(
                 "💾 Guardar cambios",
-                key=f"gestion_guardar_{documento}",
-                use_container_width=True,
-                type="primary"
+                key=f"gestion_guardar_v9_{documento}",
+                use_container_width=True
             )
 
         if guardar_cambios:
-
             estado_anterior = str(persona.get("estado_caso", "") or "")
             modalidad_anterior = str(persona.get("modalidad", "") or "")
 
-            hubo_cambio = (
-                nuevo_estado != estado_anterior
-                or nueva_modalidad != modalidad_anterior
-            )
-
-            if not hubo_cambio:
+            if (
+                nuevo_estado == estado_anterior
+                and nueva_modalidad == modalidad_anterior
+            ):
                 st.info("No hay cambios para guardar.")
             else:
                 with engine.begin() as conn:
@@ -670,18 +812,6 @@ def gestion_usuarios():
                         }
                     )
 
-                    tipo_movimiento = "ACTUALIZACION_USUARIO"
-
-                    if estado_anterior != nuevo_estado:
-                        if nuevo_estado == "EGRESADO":
-                            tipo_movimiento = "EGRESO"
-                        elif estado_anterior == "EGRESADO" and nuevo_estado == "ACTIVO":
-                            tipo_movimiento = "REINGRESO"
-                        elif nuevo_estado == "INACTIVO":
-                            tipo_movimiento = "INACTIVACION"
-                        elif nuevo_estado == "ACTIVO":
-                            tipo_movimiento = "ACTIVACION"
-
                     conn.execute(
                         text("""
                             INSERT INTO movimientos_habitante (
@@ -693,7 +823,7 @@ def gestion_usuarios():
                             )
                             VALUES (
                                 :doc,
-                                :tipo,
+                                'ACTUALIZACION_USUARIO',
                                 :modalidad,
                                 :usuario,
                                 :observacion
@@ -701,16 +831,13 @@ def gestion_usuarios():
                         """),
                         {
                             "doc": documento,
-                            "tipo": tipo_movimiento,
                             "modalidad": nueva_modalidad,
                             "usuario": st.session_state.get(
                                 "usuario_actual", "sistema"
                             ),
                             "observacion": (
-                                f"Gestión usuarios: estado "
-                                f"{estado_anterior or 'SIN DATO'} -> {nuevo_estado}; "
-                                f"modalidad "
-                                f"{modalidad_anterior or 'SIN DATO'} -> {nueva_modalidad}"
+                                f"Estado {estado_anterior} -> {nuevo_estado}; "
+                                f"modalidad {modalidad_anterior} -> {nueva_modalidad}"
                             )
                         }
                     )
@@ -720,30 +847,349 @@ def gestion_usuarios():
                     documento=documento,
                     modulo="Gestión Usuarios",
                     valor_anterior=(
-                        f"Estado={estado_anterior}; "
-                        f"Modalidad={modalidad_anterior}"
+                        f"Estado={estado_anterior}; Modalidad={modalidad_anterior}"
                     ),
                     valor_nuevo=(
-                        f"Estado={nuevo_estado}; "
-                        f"Modalidad={nueva_modalidad}"
+                        f"Estado={nuevo_estado}; Modalidad={nueva_modalidad}"
                     )
                 )
 
                 invalidar_cache_datos()
-                st.success("✅ Usuario actualizado correctamente.")
+                st.success("✅ Usuario actualizado.")
                 st.rerun()
 
         # ----------------------------------------------------
-        # HISTORIAL RECIENTE EN EXPANDERS
+        # MEDIDAS DISCIPLINARIAS
         # ----------------------------------------------------
         st.divider()
+        st.markdown("### ⛔ Suspensiones y expulsiones")
+        st.caption(
+            "Los llamados de atención continúan manejándose mediante actas. "
+            "Aquí solo se registran medidas que afectan la permanencia del usuario."
+        )
 
+        if not sanciones_disponibles:
+            st.warning(
+                "Falta crear la tabla sanciones_usuarios. "
+                "Ejecuta el SQL de migración V9 una sola vez en Supabase."
+            )
+        else:
+            try:
+                historial_medidas = pd.read_sql(
+                    text("""
+                        SELECT
+                            id,
+                            tipo_medida,
+                            motivo,
+                            fecha_inicio,
+                            fecha_fin,
+                            estado_medida,
+                            observacion,
+                            usuario_registra,
+                            creado_en
+                        FROM sanciones_usuarios
+                        WHERE TRIM(
+                            CAST(numero_identificacion AS TEXT)
+                        ) = :doc
+                        ORDER BY creado_en DESC
+                    """),
+                    engine,
+                    params={"doc": documento}
+                )
+            except Exception:
+                historial_medidas = pd.DataFrame()
+
+            if not historial_medidas.empty:
+                activas_persona = historial_medidas[
+                    historial_medidas["estado_medida"]
+                    .fillna("")
+                    .astype(str)
+                    .str.upper()
+                    .eq("ACTIVA")
+                ]
+                if not activas_persona.empty:
+                    st.error(
+                        f"⛔ Esta persona tiene {len(activas_persona)} "
+                        "medida(s) activa(s)."
+                    )
+
+                with st.expander("📚 Ver historial de medidas"):
+                    st.dataframe(
+                        historial_medidas,
+                        use_container_width=True,
+                        hide_index=True
+                    )
+
+            with st.form(f"medida_v9_{documento}"):
+
+                s1, s2, s3 = st.columns(3)
+
+                tipo_medida = s1.selectbox(
+                    "Medida",
+                    ["SUSPENSIÓN", "EXPULSIÓN"]
+                )
+
+                fecha_inicio_medida = s2.date_input(
+                    "Fecha de inicio",
+                    value=date.today()
+                )
+
+                fecha_fin_medida = s3.date_input(
+                    "Fecha de finalización",
+                    value=date.today() + timedelta(days=3),
+                    help=(
+                        "Para expulsión puede usarse como fecha de revisión "
+                        "si la medida no tiene término definido."
+                    )
+                )
+
+                motivo_medida = st.text_area(
+                    "Motivo de la medida *",
+                    placeholder="Describa el hecho o causal que sustenta la medida."
+                )
+
+                observacion_medida = st.text_area(
+                    "Observación adicional"
+                )
+
+                confirmar_medida = st.checkbox(
+                    "Confirmo que la medida fue definida conforme al procedimiento institucional."
+                )
+
+                guardar_medida = st.form_submit_button(
+                    "⛔ Registrar medida",
+                    use_container_width=True
+                )
+
+            if guardar_medida:
+                if not motivo_medida.strip():
+                    st.error("Debe registrar el motivo de la medida.")
+                elif not confirmar_medida:
+                    st.error("Debe confirmar la aplicación de la medida.")
+                elif fecha_fin_medida < fecha_inicio_medida:
+                    st.error(
+                        "La fecha final no puede ser anterior a la fecha inicial."
+                    )
+                else:
+                    usuario_registra = st.session_state.get(
+                        "usuario_actual", "sistema"
+                    )
+
+                    with engine.begin() as conn:
+                        conn.execute(
+                            text("""
+                                INSERT INTO sanciones_usuarios (
+                                    numero_identificacion,
+                                    tipo_medida,
+                                    motivo,
+                                    fecha_inicio,
+                                    fecha_fin,
+                                    estado_medida,
+                                    observacion,
+                                    usuario_registra
+                                )
+                                VALUES (
+                                    :doc,
+                                    :tipo,
+                                    :motivo,
+                                    :inicio,
+                                    :fin,
+                                    'ACTIVA',
+                                    :observacion,
+                                    :usuario
+                                )
+                            """),
+                            {
+                                "doc": documento,
+                                "tipo": tipo_medida,
+                                "motivo": motivo_medida.strip(),
+                                "inicio": fecha_inicio_medida,
+                                "fin": fecha_fin_medida,
+                                "observacion": observacion_medida.strip(),
+                                "usuario": usuario_registra
+                            }
+                        )
+
+                        # La medida afecta permanencia, pero NO se registra como
+                        # "egreso exitoso". Se conserva diferenciación conceptual.
+                        conn.execute(
+                            text("""
+                                UPDATE habitante_de_calle
+                                SET estado_caso = 'INACTIVO',
+                                    modalidad = NULL
+                                WHERE TRIM(
+                                    CAST(numero_identificacion AS TEXT)
+                                ) = :doc
+                            """),
+                            {"doc": documento}
+                        )
+
+                        conn.execute(
+                            text("""
+                                INSERT INTO movimientos_habitante (
+                                    numero_identificacion,
+                                    tipo_movimiento,
+                                    modalidad,
+                                    usuario_registra,
+                                    observacion
+                                )
+                                VALUES (
+                                    :doc,
+                                    :tipo_mov,
+                                    :modalidad,
+                                    :usuario,
+                                    :observacion
+                                )
+                            """),
+                            {
+                                "doc": documento,
+                                "tipo_mov": (
+                                    "SUSPENSION"
+                                    if tipo_medida == "SUSPENSIÓN"
+                                    else "EXPULSION"
+                                ),
+                                "modalidad": modalidad_actual or None,
+                                "usuario": usuario_registra,
+                                "observacion": motivo_medida.strip()
+                            }
+                        )
+
+                    registrar_auditoria(
+                        "REGISTRAR_MEDIDA_DISCIPLINARIA",
+                        documento=documento,
+                        modulo="Gestión Usuarios",
+                        valor_nuevo=tipo_medida,
+                        observacion=motivo_medida.strip()[:500]
+                    )
+
+                    invalidar_cache_datos()
+                    st.success(
+                        f"✅ {tipo_medida.title()} registrada. "
+                        "El usuario quedó INACTIVO y la medida conserva trazabilidad."
+                    )
+                    st.rerun()
+
+            # Cerrar / levantar medidas activas
+            if not historial_medidas.empty:
+                activas = historial_medidas[
+                    historial_medidas["estado_medida"]
+                    .fillna("")
+                    .astype(str)
+                    .str.upper()
+                    .eq("ACTIVA")
+                ]
+
+                if not activas.empty:
+                    st.markdown("#### ✅ Cerrar o levantar medida")
+
+                    id_medida = st.selectbox(
+                        "Medida activa",
+                        activas["id"].tolist(),
+                        key=f"medida_activa_{documento}",
+                        format_func=lambda x: (
+                            f"#{x} - "
+                            + str(
+                                activas.loc[
+                                    activas["id"] == x,
+                                    "tipo_medida"
+                                ].iloc[0]
+                            )
+                        )
+                    )
+
+                    estado_cierre = st.selectbox(
+                        "Resultado",
+                        ["CUMPLIDA", "REVOCADA"],
+                        key=f"resultado_medida_{documento}"
+                    )
+
+                    reactivar_usuario = st.checkbox(
+                        "Reactivar usuario al cerrar la medida",
+                        value=False,
+                        key=f"reactivar_medida_{documento}"
+                    )
+
+                    if st.button(
+                        "✅ Cerrar medida",
+                        key=f"cerrar_medida_{documento}"
+                    ):
+                        with engine.begin() as conn:
+                            conn.execute(
+                                text("""
+                                    UPDATE sanciones_usuarios
+                                    SET estado_medida = :estado,
+                                        cerrado_en = NOW()
+                                    WHERE id = :id
+                                """),
+                                {
+                                    "estado": estado_cierre,
+                                    "id": int(id_medida)
+                                }
+                            )
+
+                            if reactivar_usuario:
+                                conn.execute(
+                                    text("""
+                                        UPDATE habitante_de_calle
+                                        SET estado_caso = 'ACTIVO'
+                                        WHERE TRIM(
+                                            CAST(numero_identificacion AS TEXT)
+                                        ) = :doc
+                                    """),
+                                    {"doc": documento}
+                                )
+
+                                conn.execute(
+                                    text("""
+                                        INSERT INTO movimientos_habitante (
+                                            numero_identificacion,
+                                            tipo_movimiento,
+                                            modalidad,
+                                            usuario_registra,
+                                            observacion
+                                        )
+                                        VALUES (
+                                            :doc,
+                                            'REACTIVACION_POST_MEDIDA',
+                                            NULL,
+                                            :usuario,
+                                            :observacion
+                                        )
+                                    """),
+                                    {
+                                        "doc": documento,
+                                        "usuario": st.session_state.get(
+                                            "usuario_actual", "sistema"
+                                        ),
+                                        "observacion": (
+                                            f"Medida #{id_medida} cerrada como "
+                                            f"{estado_cierre}"
+                                        )
+                                    }
+                                )
+
+                        registrar_auditoria(
+                            "CERRAR_MEDIDA_DISCIPLINARIA",
+                            documento=documento,
+                            modulo="Gestión Usuarios",
+                            valor_nuevo=estado_cierre,
+                            observacion=f"Medida #{id_medida}"
+                        )
+
+                        invalidar_cache_datos()
+                        st.success("✅ Medida actualizada.")
+                        st.rerun()
+
+        # ----------------------------------------------------
+        # HISTORIA BREVE
+        # ----------------------------------------------------
+        st.divider()
         e1, e2, e3 = st.columns(3)
 
         with e1:
             with st.expander("📝 Últimos seguimientos"):
                 try:
-                    df_novedades_gestion = pd.read_sql(
+                    nov = pd.read_sql(
                         text("""
                             SELECT
                                 n.fecha,
@@ -763,22 +1209,17 @@ def gestion_usuarios():
                         engine,
                         params={"doc": documento}
                     )
-
-                    if df_novedades_gestion.empty:
-                        st.caption("Sin seguimientos registrados.")
+                    if nov.empty:
+                        st.caption("Sin seguimientos.")
                     else:
-                        st.dataframe(
-                            df_novedades_gestion,
-                            use_container_width=True,
-                            hide_index=True
-                        )
+                        st.dataframe(nov, use_container_width=True, hide_index=True)
                 except Exception as e:
-                    st.caption(f"No fue posible cargar seguimientos: {e}")
+                    st.caption(str(e))
 
         with e2:
             with st.expander("🔄 Movimientos recientes"):
                 try:
-                    movimientos_gestion = pd.read_sql(
+                    mov = pd.read_sql(
                         text("""
                             SELECT
                                 fecha_movimiento,
@@ -795,26 +1236,20 @@ def gestion_usuarios():
                         engine,
                         params={"doc": documento}
                     )
-
-                    if movimientos_gestion.empty:
-                        st.caption("Sin movimientos registrados.")
+                    if mov.empty:
+                        st.caption("Sin movimientos.")
                     else:
-                        st.dataframe(
-                            movimientos_gestion,
-                            use_container_width=True,
-                            hide_index=True
-                        )
+                        st.dataframe(mov, use_container_width=True, hide_index=True)
                 except Exception as e:
-                    st.caption(f"No fue posible cargar movimientos: {e}")
+                    st.caption(str(e))
 
         with e3:
-            with st.expander("🎯 Resumen PAI"):
+            with st.expander("🎯 Objetivos PAI"):
                 try:
-                    pai_gestion = pd.read_sql(
+                    pai_u = pd.read_sql(
                         text("""
                             SELECT
                                 objetivo_tipo,
-                                profesional_referente,
                                 porcentaje_avance,
                                 estado,
                                 fecha_meta,
@@ -828,153 +1263,176 @@ def gestion_usuarios():
                         engine,
                         params={"doc": documento}
                     )
-
-                    if pai_gestion.empty:
+                    if pai_u.empty:
                         st.caption("Sin objetivos PAI.")
                     else:
-                        st.dataframe(
-                            pai_gestion,
-                            use_container_width=True,
-                            hide_index=True
-                        )
+                        st.dataframe(pai_u, use_container_width=True, hide_index=True)
                 except Exception as e:
-                    st.caption(f"No fue posible cargar PAI: {e}")
+                    st.caption(str(e))
 
     # ========================================================
-    # TAB 2 - NUEVO USUARIO
+    # 2. NUEVO INGRESO
     # ========================================================
     with tab_nuevo:
 
-        st.subheader("➕ Registrar nuevo usuario")
+        st.subheader("➕ Registro inicial")
         st.caption(
-            "Formulario reducido con los datos esenciales. "
-            "La caracterización ampliada puede completarse posteriormente."
+            "Se capturan los datos necesarios para operar el ingreso. "
+            "La caracterización social completa puede terminarse posteriormente."
         )
 
-        with st.form("nuevo_usuario_v8"):
+        with st.form("nuevo_usuario_v9"):
 
             n1, n2, n3 = st.columns(3)
-
-            nombres = n1.text_input("Nombres *")
-            apellidos = n2.text_input("Apellidos *")
-            numero_id = n3.text_input("Número de identificación *")
+            nombres_n = n1.text_input("Nombres *")
+            apellidos_n = n2.text_input("Apellidos *")
+            numero_n = n3.text_input("Número de identificación *")
 
             n4, n5, n6 = st.columns(3)
 
-            tipo_id = n4.selectbox(
+            tipo_n = n4.selectbox(
                 "Tipo identificación",
-                ["CC", "TI", "CE", "PEP", "Otro"]
+                ["CC", "TI", "CE", "PEP", "PPT", "Otro"]
             )
 
-            sexo = n5.selectbox(
+            sexo_n = n5.selectbox(
                 "Sexo al nacer",
                 ["Masculino", "Femenino"]
             )
 
-            fecha_nacimiento = n6.date_input(
+            fecha_nac_n = n6.date_input(
                 "Fecha de nacimiento",
                 value=date.today() - timedelta(days=30 * 365)
             )
 
-            n7, n8 = st.columns(2)
+            n7, n8, n9 = st.columns(3)
 
-            modalidad_nuevo = n7.selectbox(
+            modalidad_n = n7.selectbox(
                 "Modalidad",
                 ["URBANO", "GRANJA"]
             )
 
-            salud_nuevo = n8.selectbox(
+            salud_n = n8.selectbox(
                 "Seguridad social",
                 [
                     "Subsidiado",
                     "Contributivo",
                     "Especial",
-                    "No afiliado"
+                    "No afiliado",
+                    "Sin información"
                 ]
             )
 
-            telefono_nuevo = st.text_input("Teléfono")
+            procedencia_n = n9.text_input(
+                "Departamento / lugar de procedencia *",
+                placeholder="Ej. Risaralda, Caldas, Valle del Cauca"
+            )
 
-            guardar_nuevo = st.form_submit_button(
-                "💾 Registrar usuario",
+            n10, n11 = st.columns(2)
+
+            consumo_n = n10.selectbox(
+                "Consumo principal",
+                [
+                    "No refiere consumo",
+                    "Alcohol",
+                    "Marihuana",
+                    "Bazuco",
+                    "Cocaína",
+                    "Heroína",
+                    "Inhalables",
+                    "Medicamentos sin fórmula",
+                    "Policonsumo",
+                    "Otro",
+                    "Sin información"
+                ]
+            )
+
+            telefono_n = n11.text_input("Teléfono")
+
+            guardar_n = st.form_submit_button(
+                "💾 Registrar ingreso",
                 use_container_width=True,
                 type="primary"
             )
 
-        if guardar_nuevo:
+        if guardar_n:
 
-            doc_nuevo = limpiar_documento(numero_id)
+            doc_n = limpiar_documento(numero_n)
 
-            if not nombres.strip() or not apellidos.strip() or not doc_nuevo:
+            if (
+                not nombres_n.strip()
+                or not apellidos_n.strip()
+                or not doc_n
+                or not procedencia_n.strip()
+            ):
                 st.error(
-                    "Nombres, apellidos y número de identificación son obligatorios."
+                    "Nombres, apellidos, identificación y procedencia son obligatorios."
                 )
             else:
-                valido, mensaje = validar_documento_no_duplicado(doc_nuevo)
+                valido, mensaje = validar_documento_no_duplicado(doc_n)
 
                 if not valido:
                     st.error(mensaje)
                 else:
-                    edad_nuevo = max(
+                    edad_n = max(
                         0,
                         date.today().year
-                        - fecha_nacimiento.year
+                        - fecha_nac_n.year
                         - (
                             (date.today().month, date.today().day)
-                            < (
-                                fecha_nacimiento.month,
-                                fecha_nacimiento.day
-                            )
+                            < (fecha_nac_n.month, fecha_nac_n.day)
                         )
                     )
 
+                    # INSERT dinámico: usa solamente columnas que realmente existen.
+                    datos_insert = {
+                        "nombres": nombres_n.strip(),
+                        "apellidos": apellidos_n.strip(),
+                        "sexo_al_nacer": sexo_n,
+                        "edad": edad_n,
+                        "numero_identificacion": doc_n,
+                        "estado_caso": "ACTIVO",
+                        "modalidad": modalidad_n
+                    }
+
+                    opcionales = {
+                        C["tipo_id"]: tipo_n,
+                        C["fecha_nacimiento"]: fecha_nac_n,
+                        C["salud"]: salud_n,
+                        C["telefono"]: telefono_n.strip(),
+                        C["procedencia"]: procedencia_n.strip(),
+                        C["consumo"]: consumo_n,
+                        C["fecha_ingreso"]: date.today(),
+                        C["numero_atenciones"]: 0
+                    }
+
+                    for col, val in opcionales.items():
+                        if col:
+                            datos_insert[col] = val
+
+                    cols_insert = [
+                        c for c in datos_insert.keys()
+                        if c in columnas_bd
+                    ]
+
+                    params_insert = {}
+                    placeholders = []
+
+                    for i, col in enumerate(cols_insert):
+                        p = f"p{i}"
+                        placeholders.append(f":{p}")
+                        params_insert[p] = datos_insert[col]
+
+                    sql_insert = text(
+                        "INSERT INTO habitante_de_calle ("
+                        + ", ".join(f'"{c}"' for c in cols_insert)
+                        + ") VALUES ("
+                        + ", ".join(placeholders)
+                        + ")"
+                    )
+
                     with engine.begin() as conn:
-                        conn.execute(
-                            text("""
-                                INSERT INTO habitante_de_calle (
-                                    nombres,
-                                    apellidos,
-                                    sexo_al_nacer,
-                                    fecha_nacimiento,
-                                    edad,
-                                    tipo_identificacion,
-                                    numero_identificacion,
-                                    tipo_seguridad_salud,
-                                    telefono,
-                                    estado_caso,
-                                    modalidad,
-                                    fecha_ingreso_albergue,
-                                    numero_atenciones
-                                )
-                                VALUES (
-                                    :nombres,
-                                    :apellidos,
-                                    :sexo,
-                                    :fecha_nacimiento,
-                                    :edad,
-                                    :tipo_id,
-                                    :numero_id,
-                                    :salud,
-                                    :telefono,
-                                    'ACTIVO',
-                                    :modalidad,
-                                    CURRENT_DATE,
-                                    0
-                                )
-                            """),
-                            {
-                                "nombres": nombres.strip(),
-                                "apellidos": apellidos.strip(),
-                                "sexo": sexo,
-                                "fecha_nacimiento": fecha_nacimiento,
-                                "edad": edad_nuevo,
-                                "tipo_id": tipo_id,
-                                "numero_id": doc_nuevo,
-                                "salud": salud_nuevo,
-                                "telefono": telefono_nuevo.strip(),
-                                "modalidad": modalidad_nuevo
-                            }
-                        )
+                        conn.execute(sql_insert, params_insert)
 
                         conn.execute(
                             text("""
@@ -990,12 +1448,12 @@ def gestion_usuarios():
                                     'INGRESO',
                                     :modalidad,
                                     :usuario,
-                                    'Registro inicial desde Gestión de Usuarios'
+                                    'Registro inicial desde Gestión Integral'
                                 )
                             """),
                             {
-                                "doc": doc_nuevo,
-                                "modalidad": modalidad_nuevo,
+                                "doc": doc_n,
+                                "modalidad": modalidad_n,
                                 "usuario": st.session_state.get(
                                     "usuario_actual", "sistema"
                                 )
@@ -1004,20 +1462,363 @@ def gestion_usuarios():
 
                     registrar_auditoria(
                         "CREAR_USUARIO",
-                        documento=doc_nuevo,
+                        documento=doc_n,
                         modulo="Gestión Usuarios",
                         valor_nuevo=(
-                            f"{nombres.strip()} {apellidos.strip()} - "
-                            f"{modalidad_nuevo}"
+                            f"{nombres_n.strip()} {apellidos_n.strip()} - "
+                            f"{modalidad_n}; procedencia={procedencia_n.strip()}; "
+                            f"consumo={consumo_n}"
                         )
                     )
 
+                    _columnas_habitante.clear()
                     invalidar_cache_datos()
-                    st.success("✅ Usuario registrado correctamente.")
+
+                    st.success(
+                        "✅ Usuario registrado. "
+                        "Ahora puede completarse la caracterización social."
+                    )
                     st.rerun()
 
     # ========================================================
-    # TAB 3 - LISTADO
+    # 3. COMPLETAR CARACTERIZACIÓN
+    # ========================================================
+    with tab_caracterizacion:
+
+        st.subheader("🧾 Caracterización progresiva")
+        st.caption(
+            "Permite completar los campos sociales sin exigir toda la información "
+            "en el momento del ingreso."
+        )
+
+        indice_car = st.selectbox(
+            "Seleccione usuario",
+            df_gestion.index.tolist(),
+            key="caracterizacion_usuario_v9",
+            format_func=lambda i: (
+                f"{df_gestion.loc[i, 'nombre_completo']} - "
+                f"{df_gestion.loc[i, 'numero_identificacion']}"
+            )
+        )
+
+        persona_car = df_gestion.loc[indice_car]
+        doc_car = str(persona_car["numero_identificacion"]).strip()
+
+        campos_control = [
+            ("Salud", C["salud"]),
+            ("Procedencia", C["procedencia"]),
+            ("Consumo", C["consumo"]),
+            ("SISBÉN", C["sisben"]),
+            ("Discapacidad", C["discapacidad"]),
+            ("Etnia", C["etnia"]),
+            ("Educación", C["educacion"]),
+            ("Ocupación", C["ocupacion"]),
+            ("Barrio / vereda", C["barrio"]),
+            ("Comuna", C["comuna"]),
+            ("Teléfono", C["telefono"]),
+            ("Orientación sexual", C["orientacion"]),
+            ("Población diferencial", C["poblacion"]),
+            ("Salud mental", C["enfermedad_mental"])
+        ]
+
+        pendientes_car = []
+        completos_car = 0
+        total_car = 0
+
+        for etiqueta, col in campos_control:
+            if not col or col not in persona_car.index:
+                continue
+            total_car += 1
+            v = persona_car.get(col)
+            tiene = (
+                pd.notna(v)
+                and str(v).strip().lower() not in ("", "nan", "none")
+            )
+            if tiene:
+                completos_car += 1
+            else:
+                pendientes_car.append(etiqueta)
+
+        pct_car = round(
+            completos_car / total_car * 100, 1
+        ) if total_car else 0
+
+        cc1, cc2, cc3 = st.columns(3)
+        cc1.metric("🧾 Completitud", f"{pct_car:.0f}%")
+        cc2.metric("✅ Campos completos", completos_car)
+        cc3.metric("⚠️ Pendientes", len(pendientes_car))
+
+        st.progress(min(max(pct_car / 100, 0), 1))
+
+        if pendientes_car:
+            st.warning(
+                "Pendiente: " + ", ".join(pendientes_car)
+            )
+        else:
+            st.success("✅ Caracterización prioritaria completa.")
+
+        with st.form(f"completar_caracterizacion_v9_{doc_car}"):
+
+            st.markdown("#### 🧍 Datos sociales y diferenciales")
+
+            c1, c2, c3 = st.columns(3)
+
+            sisben_car = c1.text_input(
+                "Grupo SISBÉN",
+                value=str(_valor_persona(
+                    persona_car,
+                    C["sisben"] if C["sisben"] else "__none__"
+                ))
+            )
+
+            discapacidad_actual = str(_valor_persona(
+                persona_car,
+                C["discapacidad"] if C["discapacidad"] else "__none__",
+                default="No"
+            ))
+            discapacidad_car = c2.selectbox(
+                "Persona con discapacidad",
+                ["No", "Sí"],
+                index=1 if discapacidad_actual.strip().lower() in ("sí", "si", "1", "true") else 0
+            )
+
+            categoria_disc_car = c3.text_input(
+                "Categoría de discapacidad",
+                value=str(_valor_persona(
+                    persona_car,
+                    C["categoria_discapacidad"]
+                    if C["categoria_discapacidad"] else "__none__"
+                ))
+            )
+
+            c4, c5, c6 = st.columns(3)
+
+            cabeza_actual = str(_valor_persona(
+                persona_car,
+                C["cabeza_familia"] if C["cabeza_familia"] else "__none__",
+                default="No"
+            ))
+            cabeza_car = c4.selectbox(
+                "Cabeza de familia",
+                ["No", "Sí"],
+                index=1 if cabeza_actual.strip().lower() in ("sí", "si", "1", "true") else 0
+            )
+
+            gestante_actual = str(_valor_persona(
+                persona_car,
+                C["gestante"] if C["gestante"] else "__none__",
+                default="No"
+            ))
+            gestante_car = c5.selectbox(
+                "Gestante / lactante",
+                ["No", "Sí", "No aplica"],
+                index=(
+                    1 if gestante_actual.strip().lower() in ("sí", "si", "1", "true")
+                    else 2 if "aplica" in gestante_actual.lower()
+                    else 0
+                )
+            )
+
+            migracion_car = c6.text_input(
+                "Experiencia migratoria",
+                value=str(_valor_persona(
+                    persona_car,
+                    C["migracion"] if C["migracion"] else "__none__"
+                ))
+            )
+
+            st.markdown("#### 🎓 Educación, ocupación y procedencia")
+
+            c7, c8, c9 = st.columns(3)
+
+            educacion_car = c7.text_input(
+                "Nivel educativo",
+                value=str(_valor_persona(
+                    persona_car,
+                    C["educacion"] if C["educacion"] else "__none__"
+                ))
+            )
+
+            ocupacion_car = c8.text_input(
+                "Condición / perfil ocupacional",
+                value=str(_valor_persona(
+                    persona_car,
+                    C["ocupacion"] if C["ocupacion"] else "__none__"
+                ))
+            )
+
+            procedencia_car = c9.text_input(
+                "Departamento / lugar de procedencia",
+                value=str(_valor_persona(
+                    persona_car,
+                    C["procedencia"] if C["procedencia"] else "__none__"
+                ))
+            )
+
+            st.markdown("#### 🏠 Residencia y contacto")
+
+            c10, c11, c12 = st.columns(3)
+
+            barrio_car = c10.text_input(
+                "Barrio / vereda",
+                value=str(_valor_persona(
+                    persona_car,
+                    C["barrio"] if C["barrio"] else "__none__"
+                ))
+            )
+
+            comuna_car = c11.text_input(
+                "Comuna / corregimiento",
+                value=str(_valor_persona(
+                    persona_car,
+                    C["comuna"] if C["comuna"] else "__none__"
+                ))
+            )
+
+            zona_car = c12.text_input(
+                "Zona de residencia",
+                value=str(_valor_persona(
+                    persona_car,
+                    C["zona"] if C["zona"] else "__none__"
+                ))
+            )
+
+            c13, c14, c15 = st.columns(3)
+
+            direccion_car = c13.text_input(
+                "Dirección",
+                value=str(_valor_persona(
+                    persona_car,
+                    C["direccion"] if C["direccion"] else "__none__"
+                ))
+            )
+
+            telefono_car = c14.text_input(
+                "Teléfono",
+                value=str(_valor_persona(
+                    persona_car,
+                    C["telefono"] if C["telefono"] else "__none__"
+                ))
+            )
+
+            correo_car = c15.text_input(
+                "Correo",
+                value=str(_valor_persona(
+                    persona_car,
+                    C["correo"] if C["correo"] else "__none__"
+                ))
+            )
+
+            st.markdown("#### 🩺 Salud, consumo y diversidad")
+
+            c16, c17, c18 = st.columns(3)
+
+            salud_car = c16.text_input(
+                "Seguridad social en salud",
+                value=str(_valor_persona(
+                    persona_car,
+                    C["salud"] if C["salud"] else "__none__"
+                ))
+            )
+
+            consumo_car = c17.text_input(
+                "Tipo de consumo",
+                value=str(_valor_persona(
+                    persona_car,
+                    C["consumo"] if C["consumo"] else "__none__"
+                ))
+            )
+
+            salud_mental_car = c18.text_input(
+                "Salud / enfermedad mental",
+                value=str(_valor_persona(
+                    persona_car,
+                    C["enfermedad_mental"]
+                    if C["enfermedad_mental"] else "__none__"
+                ))
+            )
+
+            c19, c20, c21 = st.columns(3)
+
+            etnia_car = c19.text_input(
+                "Grupo étnico",
+                value=str(_valor_persona(
+                    persona_car,
+                    C["etnia"] if C["etnia"] else "__none__"
+                ))
+            )
+
+            orientacion_car = c20.text_input(
+                "Orientación sexual / LGBTI",
+                value=str(_valor_persona(
+                    persona_car,
+                    C["orientacion"] if C["orientacion"] else "__none__"
+                ))
+            )
+
+            poblacion_car = c21.text_input(
+                "Población diferencial",
+                value=str(_valor_persona(
+                    persona_car,
+                    C["poblacion"] if C["poblacion"] else "__none__"
+                ))
+            )
+
+            guardar_car = st.form_submit_button(
+                "💾 Guardar caracterización",
+                use_container_width=True,
+                type="primary"
+            )
+
+        if guardar_car:
+
+            cambios_car = {
+                C["sisben"]: sisben_car.strip(),
+                C["discapacidad"]: discapacidad_car,
+                C["categoria_discapacidad"]: categoria_disc_car.strip(),
+                C["cabeza_familia"]: cabeza_car,
+                C["gestante"]: gestante_car,
+                C["migracion"]: migracion_car.strip(),
+                C["educacion"]: educacion_car.strip(),
+                C["ocupacion"]: ocupacion_car.strip(),
+                C["procedencia"]: procedencia_car.strip(),
+                C["barrio"]: barrio_car.strip(),
+                C["comuna"]: comuna_car.strip(),
+                C["zona"]: zona_car.strip(),
+                C["direccion"]: direccion_car.strip(),
+                C["telefono"]: telefono_car.strip(),
+                C["correo"]: correo_car.strip(),
+                C["salud"]: salud_car.strip(),
+                C["consumo"]: consumo_car.strip(),
+                C["enfermedad_mental"]: salud_mental_car.strip(),
+                C["etnia"]: etnia_car.strip(),
+                C["orientacion"]: orientacion_car.strip(),
+                C["poblacion"]: poblacion_car.strip()
+            }
+
+            ok = _actualizar_campos_persona(
+                doc_car,
+                cambios_car
+            )
+
+            if ok:
+                registrar_auditoria(
+                    "ACTUALIZAR_CARACTERIZACION",
+                    documento=doc_car,
+                    modulo="Gestión Usuarios",
+                    observacion="Actualización progresiva de caracterización social."
+                )
+
+                invalidar_cache_datos()
+                st.success("✅ Caracterización actualizada.")
+                st.rerun()
+            else:
+                st.warning(
+                    "No se encontraron columnas compatibles para actualizar."
+                )
+
+    # ========================================================
+    # 4. LISTADO
     # ========================================================
     with tab_listado:
 
@@ -1026,18 +1827,18 @@ def gestion_usuarios():
         filtro_estado = l1.multiselect(
             "Estado",
             ["ACTIVO", "INACTIVO", "EGRESADO"],
-            key="gestion_lista_estado"
+            key="gestion_lista_estado_v9"
         )
 
         filtro_modalidad = l2.multiselect(
             "Modalidad",
             ["URBANO", "GRANJA"],
-            key="gestion_lista_modalidad"
+            key="gestion_lista_modalidad_v9"
         )
 
         texto_lista = l3.text_input(
             "Nombre / documento",
-            key="gestion_lista_texto"
+            key="gestion_lista_texto_v9"
         )
 
         df_lista = df_gestion.copy()
@@ -1057,10 +1858,11 @@ def gestion_usuarios():
             df_lista = df_lista[
                 df_lista["nombre_completo"]
                 .str.lower()
-                .str.contains(patron, na=False)
+                .str.contains(patron, na=False, regex=False)
                 |
                 df_lista["numero_identificacion"]
-                .str.contains(patron, na=False)
+                .str.lower()
+                .str.contains(patron, na=False, regex=False)
             ]
 
         columnas_lista = [
@@ -1068,9 +1870,16 @@ def gestion_usuarios():
             "numero_identificacion",
             "estado_caso",
             "modalidad",
-            "edad",
-            "tipo_seguridad_salud"
+            "edad"
         ]
+
+        for col in [
+            C["procedencia"],
+            C["consumo"],
+            C["salud"]
+        ]:
+            if col and col not in columnas_lista:
+                columnas_lista.append(col)
 
         columnas_lista = [
             c for c in columnas_lista
@@ -1080,14 +1889,7 @@ def gestion_usuarios():
         st.caption(f"Registros mostrados: {len(df_lista)}")
 
         st.dataframe(
-            df_lista[columnas_lista].rename(columns={
-                "nombre_completo": "Nombre",
-                "numero_identificacion": "Documento",
-                "estado_caso": "Estado",
-                "modalidad": "Modalidad",
-                "edad": "Edad",
-                "tipo_seguridad_salud": "Salud"
-            }),
+            df_lista[columnas_lista],
             use_container_width=True,
             hide_index=True
         )
@@ -1324,13 +2126,31 @@ def dashboard_ejecutivo():
     # ========================================================
     st.markdown("### 🏠 Operación actual")
 
-    c1, c2, c3, c4, c5, c6 = st.columns(6)
+    try:
+        medidas_coord = pd.read_sql(
+            text("""
+                SELECT
+                    tipo_medida,
+                    COUNT(*) AS total
+                FROM sanciones_usuarios
+                WHERE UPPER(TRIM(COALESCE(estado_medida,''))) = 'ACTIVA'
+                GROUP BY tipo_medida
+            """),
+            engine
+        )
+        medidas_activas_coord = int(medidas_coord["total"].sum()) if not medidas_coord.empty else 0
+    except Exception:
+        medidas_coord = pd.DataFrame()
+        medidas_activas_coord = 0
+
+    c1, c2, c3, c4, c5, c6, c7 = st.columns(7)
     c1.metric("👥 Población", total_coord)
     c2.metric("🟢 Activos", activos_coord)
     c3.metric("🏙️ Urbano", f"{urbano_coord}/100")
     c4.metric("🌱 Granja", granja_coord)
     c5.metric("🏆 Egresos", egresos_coord)
     c6.metric("🔁 Reingresos 30d", reingresos_30)
+    c7.metric("⛔ Medidas activas", medidas_activas_coord)
 
     if urbano_coord >= 100:
         st.error("🚨 Urbano alcanzó o superó la capacidad de 100 cupos.")
