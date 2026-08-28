@@ -859,6 +859,377 @@ def gestion_usuarios():
                 st.rerun()
 
         # ----------------------------------------------------
+        # EGRESO ESTRUCTURADO
+        # ----------------------------------------------------
+        st.divider()
+        st.markdown("### 🏆 Registrar egreso")
+        st.caption(
+            "El egreso se registra en la base de egresos y, al mismo tiempo, "
+            "actualiza el estado del usuario en habitante_de_calle. "
+            "No se confunde con suspensión o expulsión."
+        )
+
+        # Detectar estructura real de la tabla de egresos.
+        @st.cache_data(ttl=300)
+        def _columnas_tabla_egresos():
+            cols = pd.read_sql(
+                text("""
+                    SELECT column_name
+                    FROM information_schema.columns
+                    WHERE table_schema = 'public'
+                      AND table_name = 'personas_caracterizacion'
+                """),
+                engine
+            )
+            return set(cols["column_name"].astype(str).tolist())
+
+        columnas_egreso = _columnas_tabla_egresos()
+
+        def _col_egreso(*candidatas):
+            for c in candidatas:
+                if c in columnas_egreso:
+                    return c
+            return None
+
+        # Columnas observadas en la tabla/archivo de egresos
+        CE = {
+            "numero": _col_egreso("numero"),
+            "cedula_validada": _col_egreso("cedula_validada"),
+            "mes_validacion": _col_egreso("mes_validacion"),
+            "nombres": _col_egreso("nombres"),
+            "apellidos": _col_egreso("apellidos"),
+            "sexo_nacer": _col_egreso("sexo_nacer", "sexo_al_nacer"),
+            "edad": _col_egreso("edad"),
+            "fecha_nacimiento": _col_egreso("fecha_nacimiento"),
+            "numero_identidad": _col_egreso(
+                "numero_identidad",
+                "numero_identificacion"
+            ),
+            "categoria_discapacidad": _col_egreso("categoria_discapacidad"),
+            "se_reconoce_como": _col_egreso("se_reconoce_como"),
+            "orientacion_lgbti": _col_egreso(
+                "orientacion_lgbti",
+                "orientacion_sexual_lgtbi"
+            ),
+            "grupo_etnico": _col_egreso("grupo_etnico", "grupos_etnicos"),
+            "departamento_procedencia": _col_egreso(
+                "departamento_procedencia"
+            ),
+            "estado_caso": _col_egreso("estado_caso"),
+            "fecha_egreso": _col_egreso("fecha_egreso"),
+            "observaciones_egreso": _col_egreso("observaciones_egreso"),
+            "funcionario_egreso": _col_egreso("funcionario_egreso")
+        }
+
+        if not columnas_egreso:
+            st.warning(
+                "No fue posible leer la estructura de personas_caracterizacion."
+            )
+        else:
+            # Verificar si ya tiene un egreso registrado
+            try:
+                col_doc_busqueda = CE["numero_identidad"]
+                if col_doc_busqueda:
+                    egresos_previos = pd.read_sql(
+                        text(
+                            f"""
+                            SELECT *
+                            FROM personas_caracterizacion
+                            WHERE TRIM(CAST("{col_doc_busqueda}" AS TEXT)) = :doc
+                            ORDER BY
+                                {
+                                    '"fecha_egreso" DESC'
+                                    if CE["fecha_egreso"]
+                                    else "1"
+                                }
+                            """
+                        ),
+                        engine,
+                        params={"doc": documento}
+                    )
+                else:
+                    egresos_previos = pd.DataFrame()
+            except Exception:
+                egresos_previos = pd.DataFrame()
+
+            if not egresos_previos.empty:
+                st.info(
+                    f"ℹ️ Esta persona ya tiene {len(egresos_previos)} "
+                    "registro(s) histórico(s) de egreso."
+                )
+                with st.expander("📚 Ver egresos anteriores"):
+                    cols_ver = [
+                        c for c in [
+                            CE["fecha_egreso"],
+                            CE["observaciones_egreso"],
+                            CE["funcionario_egreso"],
+                            CE["estado_caso"]
+                        ]
+                        if c
+                    ]
+                    if cols_ver:
+                        st.dataframe(
+                            egresos_previos[cols_ver],
+                            use_container_width=True,
+                            hide_index=True
+                        )
+
+            with st.form(f"form_egreso_v10_{documento}"):
+
+                eg1, eg2, eg3 = st.columns(3)
+
+                fecha_egreso_form = eg1.date_input(
+                    "Fecha de egreso *",
+                    value=date.today()
+                )
+
+                cedula_validada_form = eg2.selectbox(
+                    "Cédula validada",
+                    ["SÍ", "NO", "NO APLICA"],
+                    index=0
+                )
+
+                funcionario_default = st.session_state.get(
+                    "usuario_actual", ""
+                )
+                funcionario_egreso_form = eg3.text_input(
+                    "Funcionario que registra *",
+                    value=(
+                        ""
+                        if funcionario_default == "sistema"
+                        else str(funcionario_default)
+                    )
+                )
+
+                st.markdown("#### Resultado / motivo del egreso")
+
+                opciones_egreso = [
+                    "PLAN RETORNO",
+                    "VINCULACIÓN FAMILIAR",
+                    "VINCULACIÓN LABORAL",
+                    "TRASLADO A CENTRO DE PROTECCIÓN",
+                    "INGRESO A TRATAMIENTO",
+                    "AUTONOMÍA / SUPERACIÓN DE VIDA EN CALLE",
+                    "OTRO"
+                ]
+
+                motivo_egreso_form = st.selectbox(
+                    "Tipo de egreso *",
+                    opciones_egreso
+                )
+
+                detalle_egreso_form = st.text_area(
+                    "Observaciones del egreso",
+                    placeholder=(
+                        "Amplíe la información cuando sea necesario: "
+                        "destino, institución, familiar, empleador, etc."
+                    )
+                )
+
+                confirmar_egreso = st.checkbox(
+                    "Confirmo que corresponde a un egreso real y no a una sanción o expulsión."
+                )
+
+                guardar_egreso = st.form_submit_button(
+                    "🏆 Registrar egreso",
+                    use_container_width=True,
+                    type="primary"
+                )
+
+            if guardar_egreso:
+
+                if not funcionario_egreso_form.strip():
+                    st.error("Debe indicar el funcionario que registra el egreso.")
+                elif not confirmar_egreso:
+                    st.error(
+                        "Debe confirmar que corresponde a un egreso real."
+                    )
+                else:
+                    meses_es = {
+                        1: "ENERO",
+                        2: "FEBRERO",
+                        3: "MARZO",
+                        4: "ABRIL",
+                        5: "MAYO",
+                        6: "JUNIO",
+                        7: "JULIO",
+                        8: "AGOSTO",
+                        9: "SEPTIEMBRE",
+                        10: "OCTUBRE",
+                        11: "NOVIEMBRE",
+                        12: "DICIEMBRE"
+                    }
+
+                    # Datos tomados automáticamente de habitante_de_calle
+                    def _p(*candidatas, default=None):
+                        for c in candidatas:
+                            if c and c in persona.index:
+                                v = persona.get(c)
+                                if pd.notna(v):
+                                    return v
+                        return default
+
+                    observacion_final = motivo_egreso_form.strip()
+                    if detalle_egreso_form.strip():
+                        observacion_final += " - " + detalle_egreso_form.strip()
+
+                    datos_egreso = {
+                        CE["cedula_validada"]: cedula_validada_form,
+                        CE["mes_validacion"]: meses_es[fecha_egreso_form.month],
+                        CE["nombres"]: _p("nombres", default=""),
+                        CE["apellidos"]: _p("apellidos", default=""),
+                        CE["sexo_nacer"]: _p(
+                            "sexo_al_nacer",
+                            "sexo_nacer",
+                            default=""
+                        ),
+                        CE["edad"]: _p("edad"),
+                        CE["fecha_nacimiento"]: _p(
+                            "fecha_nacimiento",
+                            "fecha_de_nacimiento_dd_mm_aa"
+                        ),
+                        CE["numero_identidad"]: documento,
+                        CE["categoria_discapacidad"]: _p(
+                            "categoria_discapacidad",
+                            default=""
+                        ),
+                        CE["se_reconoce_como"]: _p(
+                            "se_reconoce_como",
+                            default=""
+                        ),
+                        CE["orientacion_lgbti"]: _p(
+                            "orientacion_sexual_lgtbi",
+                            "orientacion_lgbti",
+                            "orientacion_sexual",
+                            default=""
+                        ),
+                        CE["grupo_etnico"]: _p(
+                            "grupos_etnicos",
+                            "grupo_etnico",
+                            default=""
+                        ),
+                        CE["departamento_procedencia"]: _p(
+                            "departamento_procedencia",
+                            "departamento_de_procedencia",
+                            default=""
+                        ),
+                        CE["estado_caso"]: "EGRESADO",
+                        CE["fecha_egreso"]: fecha_egreso_form,
+                        CE["observaciones_egreso"]: observacion_final,
+                        CE["funcionario_egreso"]: funcionario_egreso_form.strip()
+                    }
+
+                    # Si la tabla usa una columna consecutiva "numero",
+                    # obtener el siguiente valor de forma segura dentro de la transacción.
+                    with engine.begin() as conn:
+
+                        if CE["numero"]:
+                            siguiente_numero = conn.execute(
+                                text("""
+                                    SELECT COALESCE(MAX(numero), 0) + 1
+                                    FROM personas_caracterizacion
+                                """)
+                            ).scalar()
+                            datos_egreso[CE["numero"]] = siguiente_numero
+
+                        datos_egreso = {
+                            k: v for k, v in datos_egreso.items()
+                            if k and k in columnas_egreso
+                        }
+
+                        cols_ins = list(datos_egreso.keys())
+                        params_ins = {}
+                        valores_ins = []
+
+                        for i, col in enumerate(cols_ins):
+                            par = f"e{i}"
+                            valores_ins.append(f":{par}")
+                            params_ins[par] = datos_egreso[col]
+
+                        sql_egreso = text(
+                            "INSERT INTO personas_caracterizacion ("
+                            + ", ".join(f'"{c}"' for c in cols_ins)
+                            + ") VALUES ("
+                            + ", ".join(valores_ins)
+                            + ")"
+                        )
+
+                        conn.execute(sql_egreso, params_ins)
+
+                        # Actualizar base general sin borrar la persona
+                        sets_estado = [
+                            "estado_caso = 'EGRESADO'",
+                            "modalidad = NULL"
+                        ]
+
+                        if "fecha_ultimo_egreso" in columnas_bd:
+                            sets_estado.append(
+                                "fecha_ultimo_egreso = :fecha_egreso"
+                            )
+
+                        conn.execute(
+                            text(
+                                """
+                                UPDATE habitante_de_calle
+                                SET """ + ", ".join(sets_estado) + """
+                                WHERE TRIM(
+                                    CAST(numero_identificacion AS TEXT)
+                                ) = :doc
+                                """
+                            ),
+                            {
+                                "doc": documento,
+                                "fecha_egreso": fecha_egreso_form
+                            }
+                        )
+
+                        # Movimiento institucional
+                        conn.execute(
+                            text("""
+                                INSERT INTO movimientos_habitante (
+                                    numero_identificacion,
+                                    tipo_movimiento,
+                                    modalidad,
+                                    usuario_registra,
+                                    observacion
+                                )
+                                VALUES (
+                                    :doc,
+                                    'EGRESO',
+                                    :modalidad,
+                                    :usuario,
+                                    :observacion
+                                )
+                            """),
+                            {
+                                "doc": documento,
+                                "modalidad": modalidad_actual or None,
+                                "usuario": funcionario_egreso_form.strip(),
+                                "observacion": observacion_final
+                            }
+                        )
+
+                    registrar_auditoria(
+                        "REGISTRAR_EGRESO",
+                        documento=documento,
+                        modulo="Gestión Usuarios",
+                        valor_anterior=str(
+                            persona.get("estado_caso", "") or ""
+                        ),
+                        valor_nuevo="EGRESADO",
+                        observacion=observacion_final[:500]
+                    )
+
+                    _columnas_tabla_egresos.clear()
+                    invalidar_cache_datos()
+
+                    st.success(
+                        "✅ Egreso registrado en personas_caracterizacion, "
+                        "habitante_de_calle y movimientos_habitante."
+                    )
+                    st.rerun()
+
+        # ----------------------------------------------------
         # MEDIDAS DISCIPLINARIAS
         # ----------------------------------------------------
         st.divider()
