@@ -3114,10 +3114,8 @@ def gestion_usuarios_movil():
         f"👤 {nombre_login} · Perfil: {rol_visible.title()}"
     )
 
-    # V14: el Inspirador trabaja desde una sola pantalla.
+    # V14.1: primero Gestión de usuarios.
     if rol_visible == "INSPIRADOR":
-        panel_inspirador_simple_v14()
-        st.divider()
         st.markdown("### 👤 Gestión de usuarios")
 
     # --------------------------------------------------------
@@ -3402,6 +3400,11 @@ def gestion_usuarios_movil():
                         "✅ Usuario registrado correctamente. "
                         "Ya puede buscarlo y completar su caracterización."
                     )
+
+        # V14.1: herramientas operativas debajo de Gestión de usuarios.
+        if rol_visible == "INSPIRADOR":
+            st.divider()
+            panel_inspirador_simple_v14()
         return
 
     # ========================================================
@@ -4405,6 +4408,12 @@ def gestion_usuarios_movil():
 # ============================================================
 # V12 - ADMINISTRACIÓN DE USUARIOS DEL SISTEMA
 # ============================================================
+    # V14.1: herramientas operativas al final de Gestión Móvil.
+    if rol_visible == "INSPIRADOR":
+        st.divider()
+        panel_inspirador_simple_v14()
+
+
 def gestion_personal_v12_1():
 
     if st.session_state.get("rol_actual") not in ["COORDINACION", "MANAGER"]:
