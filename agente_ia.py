@@ -6904,6 +6904,601 @@ def panel_profesional_v15():
             )
 
 
+    st.divider()
+    pai_integral_usuario_v16(
+        doc_sel,
+        profesional_id=prof_id,
+        profesional_nombre=prof_nombre
+    )
+
+    st.divider()
+    cierre_pai_usuario_v16(
+        doc_sel,
+        profesional_id=prof_id,
+        profesional_nombre=prof_nombre
+    )
+
+
+
+# ============================================================
+# V16 - PAI INTEGRAL + COMITÉ DE CASOS
+# ============================================================
+def _semaforo_integral_usuario_v16(documento):
+    """Calcula semáforo integral de un usuario a partir de PAI, sanciones y permisos."""
+    hoy = pd.Timestamp(date.today())
+    puntaje = 0
+    razones = []
+
+    try:
+        objs = pd.read_sql(
+            text("""
+                SELECT
+                    porcentaje_avance,
+                    estado,
+                    fecha_meta,
+                    fecha_ultimo_seguimiento
+                FROM pai_objetivos
+                WHERE TRIM(CAST(documento_usuario AS TEXT))=:doc
+            """),
+            engine,
+            params={"doc": str(documento)}
+        )
+    except Exception:
+        objs = pd.DataFrame()
+
+    if objs.empty:
+        puntaje += 2
+        razones.append("Sin objetivos PAI")
+    else:
+        objs["porcentaje_avance"] = pd.to_numeric(
+            objs["porcentaje_avance"], errors="coerce"
+        ).fillna(0)
+        objs["fecha_meta"] = pd.to_datetime(
+            objs["fecha_meta"], errors="coerce"
+        )
+        objs["fecha_ultimo_seguimiento"] = pd.to_datetime(
+            objs["fecha_ultimo_seguimiento"], errors="coerce"
+        )
+
+        cumplido = (
+            objs["porcentaje_avance"].ge(100)
+            | objs["estado"].fillna("").astype(str).str.upper().eq("CUMPLIDO")
+        )
+        dias_meta = (objs["fecha_meta"].dt.normalize() - hoy).dt.days
+        vencidos = int((~cumplido & dias_meta.lt(0)).sum())
+
+        if vencidos >= 2:
+            puntaje += 3
+            razones.append(f"{vencidos} objetivos vencidos")
+        elif vencidos == 1:
+            puntaje += 2
+            razones.append("1 objetivo vencido")
+
+        dias_seg = (
+            hoy - objs["fecha_ultimo_seguimiento"].dt.normalize()
+        ).dt.days
+        atrasados = int(
+            (
+                ~cumplido
+                & (
+                    objs["fecha_ultimo_seguimiento"].isna()
+                    | dias_seg.gt(15)
+                )
+            ).sum()
+        )
+        if atrasados >= 2:
+            puntaje += 2
+            razones.append(f"{atrasados} objetivos sin seguimiento reciente")
+        elif atrasados == 1:
+            puntaje += 1
+            razones.append("Seguimiento pendiente")
+
+    try:
+        sanc = pd.read_sql(
+            text("""
+                SELECT COUNT(*) AS total
+                FROM sanciones_usuarios
+                WHERE TRIM(CAST(numero_identificacion AS TEXT))=:doc
+                  AND UPPER(TRIM(COALESCE(estado,'')))='ACTIVA'
+            """),
+            engine,
+            params={"doc": str(documento)}
+        )
+        if not sanc.empty and int(sanc.iloc[0]["total"] or 0) > 0:
+            puntaje += 2
+            razones.append("Sanción activa")
+    except Exception:
+        pass
+
+    try:
+        perm = pd.read_sql(
+            text("""
+                SELECT
+                    fecha_regreso_estimada,
+                    hora_regreso_estimada
+                FROM permisos_usuarios
+                WHERE TRIM(CAST(numero_identificacion AS TEXT))=:doc
+                  AND UPPER(TRIM(COALESCE(estado_permiso,'')))='ABIERTO'
+                ORDER BY fecha_salida DESC, hora_salida DESC
+                LIMIT 1
+            """),
+            engine,
+            params={"doc": str(documento)}
+        )
+        if not perm.empty:
+            regreso_dt = pd.to_datetime(
+                str(perm.iloc[0].get("fecha_regreso_estimada", ""))
+                + " "
+                + str(perm.iloc[0].get("hora_regreso_estimada", "")),
+                errors="coerce"
+            )
+            if pd.notna(regreso_dt) and regreso_dt.to_pydatetime() < datetime.now():
+                puntaje += 2
+                razones.append("Permiso vencido")
+    except Exception:
+        pass
+
+    if puntaje >= 5:
+        return "🔴 CRÍTICO", razones
+    if puntaje >= 3:
+        return "🟠 REQUIERE ATENCIÓN", razones
+    if puntaje >= 1:
+        return "🟡 EN SEGUIMIENTO", razones
+    return "🟢 AL DÍA", razones
+
+
+def pai_integral_usuario_v16(documento, profesional_id=None, profesional_nombre=None):
+    st.markdown("### 🧩 PAI Integral por Dimensiones")
+
+    dimensiones = [
+        "Salud",
+        "Salud mental",
+        "Consumo SPA",
+        "Familia / red de apoyo",
+        "Documentación",
+        "Educación",
+        "Empleabilidad",
+        "Vivienda",
+        "Proyecto de vida",
+        "Convivencia",
+        "Inclusión social",
+        "Otro"
+    ]
+
+    try:
+        dim = pd.read_sql(
+            text("""
+                SELECT
+                    id,
+                    dimension,
+                    estado_dimension,
+                    nivel_prioridad,
+                    diagnostico,
+                    objetivo_general,
+                    fecha_revision,
+                    actualizado_en
+                FROM pai_dimensiones
+                WHERE TRIM(CAST(documento_usuario AS TEXT))=:doc
+                ORDER BY dimension
+            """),
+            engine,
+            params={"doc": str(documento)}
+        )
+    except Exception:
+        dim = pd.DataFrame()
+
+    if not dim.empty:
+        st.dataframe(
+            dim[
+                [
+                    "dimension",
+                    "estado_dimension",
+                    "nivel_prioridad",
+                    "diagnostico",
+                    "objetivo_general",
+                    "fecha_revision"
+                ]
+            ],
+            use_container_width=True,
+            hide_index=True
+        )
+    else:
+        st.info("Aún no hay dimensiones PAI registradas para este usuario.")
+
+    with st.expander("➕ Agregar / actualizar dimensión"):
+        dimension = st.selectbox(
+            "Dimensión",
+            dimensiones,
+            key=f"v16_dim_{documento}"
+        )
+        estado_dim = st.selectbox(
+            "Estado",
+            ["PENDIENTE", "EN PROCESO", "ESTABLE", "CERRADA"],
+            key=f"v16_estado_dim_{documento}"
+        )
+        prioridad = st.selectbox(
+            "Prioridad",
+            ["BAJA", "MEDIA", "ALTA", "CRÍTICA"],
+            key=f"v16_prioridad_dim_{documento}"
+        )
+        diagnostico = st.text_area(
+            "Diagnóstico / situación actual",
+            key=f"v16_diag_{documento}"
+        )
+        objetivo_general = st.text_area(
+            "Objetivo general de la dimensión",
+            key=f"v16_objgen_{documento}"
+        )
+        fecha_revision = st.date_input(
+            "Próxima revisión",
+            value=date.today() + timedelta(days=30),
+            key=f"v16_rev_{documento}"
+        )
+
+        if st.button(
+            "💾 Guardar dimensión",
+            use_container_width=True,
+            key=f"v16_guardar_dim_{documento}"
+        ):
+            with engine.begin() as conn:
+                conn.execute(
+                    text("""
+                        INSERT INTO pai_dimensiones(
+                            documento_usuario,
+                            dimension,
+                            estado_dimension,
+                            nivel_prioridad,
+                            diagnostico,
+                            objetivo_general,
+                            fecha_revision,
+                            profesional_referente,
+                            actualizado_por
+                        )
+                        VALUES(
+                            :doc,
+                            :dimension,
+                            :estado,
+                            :prioridad,
+                            :diagnostico,
+                            :objetivo,
+                            :revision,
+                            :profesional_id,
+                            :usuario
+                        )
+                        ON CONFLICT (documento_usuario, dimension)
+                        DO UPDATE SET
+                            estado_dimension=EXCLUDED.estado_dimension,
+                            nivel_prioridad=EXCLUDED.nivel_prioridad,
+                            diagnostico=EXCLUDED.diagnostico,
+                            objetivo_general=EXCLUDED.objetivo_general,
+                            fecha_revision=EXCLUDED.fecha_revision,
+                            profesional_referente=EXCLUDED.profesional_referente,
+                            actualizado_por=EXCLUDED.actualizado_por,
+                            actualizado_en=NOW()
+                    """),
+                    {
+                        "doc": str(documento),
+                        "dimension": dimension,
+                        "estado": estado_dim,
+                        "prioridad": prioridad,
+                        "diagnostico": diagnostico.strip(),
+                        "objetivo": objetivo_general.strip(),
+                        "revision": fecha_revision,
+                        "profesional_id": profesional_id,
+                        "usuario": st.session_state.get(
+                            "usuario_actual", profesional_nombre or "profesional"
+                        )
+                    }
+                )
+            st.success("✅ Dimensión PAI actualizada.")
+            st.rerun()
+
+    semaforo, razones = _semaforo_integral_usuario_v16(documento)
+    st.markdown(f"#### {semaforo}")
+    if razones:
+        st.caption(" · ".join(razones))
+    else:
+        st.caption("Sin alertas relevantes en este momento.")
+
+
+def cierre_pai_usuario_v16(documento, profesional_id=None, profesional_nombre=None):
+    st.markdown("### ✅ Cierre formal del PAI")
+
+    try:
+        cierres = pd.read_sql(
+            text("""
+                SELECT *
+                FROM pai_cierres
+                WHERE TRIM(CAST(documento_usuario AS TEXT))=:doc
+                ORDER BY creado_en DESC
+                LIMIT 1
+            """),
+            engine,
+            params={"doc": str(documento)}
+        )
+    except Exception:
+        cierres = pd.DataFrame()
+
+    if not cierres.empty:
+        c = cierres.iloc[0]
+        st.success(
+            f"PAI cerrado el {c.get('fecha_cierre')} · "
+            f"Resultado: {c.get('resultado_final')}"
+        )
+        st.write(c.get("resumen_cierre", ""))
+        return
+
+    with st.expander("Cerrar PAI de este usuario"):
+        resultado = st.selectbox(
+            "Resultado final",
+            [
+                "METAS CUMPLIDAS",
+                "CUMPLIMIENTO PARCIAL",
+                "NO CUMPLIDO",
+                "EGRESO",
+                "RETIRO VOLUNTARIO",
+                "TRASLADO",
+                "OTRO"
+            ],
+            key=f"v16_resultado_cierre_{documento}"
+        )
+        resumen = st.text_area(
+            "Resumen de cierre *",
+            key=f"v16_resumen_cierre_{documento}"
+        )
+        recomendaciones = st.text_area(
+            "Recomendaciones posteriores",
+            key=f"v16_recom_cierre_{documento}"
+        )
+        confirmar = st.checkbox(
+            "Confirmo el cierre formal del PAI.",
+            key=f"v16_conf_cierre_{documento}"
+        )
+
+        if st.button(
+            "✅ Cerrar PAI",
+            use_container_width=True,
+            type="primary",
+            key=f"v16_btn_cierre_{documento}"
+        ):
+            if not resumen.strip():
+                st.error("Debe registrar un resumen de cierre.")
+            elif not confirmar:
+                st.error("Debe confirmar el cierre.")
+            else:
+                with engine.begin() as conn:
+                    conn.execute(
+                        text("""
+                            INSERT INTO pai_cierres(
+                                documento_usuario,
+                                fecha_cierre,
+                                resultado_final,
+                                resumen_cierre,
+                                recomendaciones,
+                                profesional_referente,
+                                cerrado_por
+                            )
+                            VALUES(
+                                :doc,
+                                CURRENT_DATE,
+                                :resultado,
+                                :resumen,
+                                :recomendaciones,
+                                :profesional_id,
+                                :usuario
+                            )
+                        """),
+                        {
+                            "doc": str(documento),
+                            "resultado": resultado,
+                            "resumen": resumen.strip(),
+                            "recomendaciones": recomendaciones.strip(),
+                            "profesional_id": profesional_id,
+                            "usuario": st.session_state.get(
+                                "usuario_actual", profesional_nombre or "profesional"
+                            )
+                        }
+                    )
+                st.success("✅ PAI cerrado formalmente.")
+                st.rerun()
+
+
+def comite_casos_v16():
+    rol = str(st.session_state.get("rol_actual", "")).upper()
+    if rol not in ["COORDINACION", "MANAGER"]:
+        st.error("Acceso exclusivo para Coordinación y Manager.")
+        return
+
+    st.title("🧠 Comité de Casos")
+    st.caption(
+        "Registro de análisis interdisciplinario, decisiones, compromisos "
+        "y responsables."
+    )
+
+    personas = pd.read_sql(
+        text("""
+            SELECT
+                TRIM(CAST(numero_identificacion AS TEXT)) AS documento,
+                nombres,
+                apellidos,
+                modalidad,
+                estado_caso
+            FROM habitante_de_calle
+            ORDER BY nombres, apellidos
+        """),
+        engine
+    )
+    personas["nombre_completo"] = (
+        personas["nombres"].fillna("").astype(str).str.strip()
+        + " "
+        + personas["apellidos"].fillna("").astype(str).str.strip()
+    ).str.strip()
+
+    docs = personas["documento"].astype(str).tolist()
+
+    with st.form("v16_nuevo_comite"):
+        doc = st.selectbox(
+            "Usuario",
+            docs,
+            format_func=lambda d: (
+                personas.loc[
+                    personas["documento"].astype(str) == str(d),
+                    "nombre_completo"
+                ].iloc[0]
+                + f" · CC {d}"
+            )
+        )
+        fecha_comite = st.date_input("Fecha del comité", value=date.today())
+        situacion = st.text_area("Situación analizada *")
+        decision = st.text_area("Decisiones del comité *")
+        participantes = st.text_area(
+            "Participantes",
+            placeholder="Nombres o perfiles participantes"
+        )
+        crear = st.form_submit_button(
+            "💾 Registrar comité",
+            use_container_width=True,
+            type="primary"
+        )
+
+    if crear:
+        if not situacion.strip() or not decision.strip():
+            st.error("Situación y decisiones son obligatorias.")
+        else:
+            with engine.begin() as conn:
+                res = conn.execute(
+                    text("""
+                        INSERT INTO comites_casos(
+                            documento_usuario,
+                            fecha_comite,
+                            situacion_analizada,
+                            decisiones,
+                            participantes,
+                            registrado_por
+                        )
+                        VALUES(
+                            :doc,
+                            :fecha,
+                            :situacion,
+                            :decision,
+                            :participantes,
+                            :usuario
+                        )
+                        RETURNING id
+                    """),
+                    {
+                        "doc": doc,
+                        "fecha": fecha_comite,
+                        "situacion": situacion.strip(),
+                        "decision": decision.strip(),
+                        "participantes": participantes.strip(),
+                        "usuario": st.session_state.get(
+                            "usuario_actual", "coordinacion"
+                        )
+                    }
+                )
+                comite_id = int(res.scalar())
+            st.session_state["v16_comite_id"] = comite_id
+            st.success("✅ Comité registrado.")
+
+    comites = pd.read_sql(
+        text("""
+            SELECT
+                c.id,
+                c.fecha_comite,
+                c.documento_usuario,
+                h.nombres,
+                h.apellidos,
+                c.situacion_analizada,
+                c.decisiones,
+                c.participantes,
+                c.registrado_por
+            FROM comites_casos c
+            LEFT JOIN habitante_de_calle h
+              ON TRIM(CAST(h.numero_identificacion AS TEXT))
+               = TRIM(CAST(c.documento_usuario AS TEXT))
+            ORDER BY c.fecha_comite DESC, c.id DESC
+            LIMIT 50
+        """),
+        engine
+    )
+
+    st.markdown("### 📋 Comités recientes")
+    if not comites.empty:
+        st.dataframe(comites, use_container_width=True, hide_index=True)
+
+        ids = comites["id"].tolist()
+        comite_sel = st.selectbox(
+            "Comité para agregar compromiso",
+            ids,
+            key="v16_comite_sel"
+        )
+
+        funcionarios = pd.read_sql(
+            text("""
+                SELECT cedula, nombre
+                FROM funcionarios_sistema
+                WHERE activo=TRUE
+                ORDER BY nombre
+            """),
+            engine
+        )
+
+        with st.form("v16_compromiso"):
+            responsable = st.selectbox(
+                "Responsable",
+                funcionarios["cedula"].astype(str).tolist(),
+                format_func=lambda c: (
+                    funcionarios.loc[
+                        funcionarios["cedula"].astype(str) == str(c),
+                        "nombre"
+                    ].iloc[0]
+                    + f" · CC {c}"
+                )
+            )
+            compromiso = st.text_area("Compromiso *")
+            fecha_limite = st.date_input(
+                "Fecha límite",
+                value=date.today() + timedelta(days=15)
+            )
+            guardar = st.form_submit_button(
+                "➕ Agregar compromiso",
+                use_container_width=True
+            )
+
+        if guardar:
+            if not compromiso.strip():
+                st.error("Debe registrar el compromiso.")
+            else:
+                with engine.begin() as conn:
+                    conn.execute(
+                        text("""
+                            INSERT INTO compromisos_comite(
+                                comite_id,
+                                compromiso,
+                                responsable_cedula,
+                                fecha_limite,
+                                estado
+                            )
+                            VALUES(
+                                :comite,
+                                :compromiso,
+                                :responsable,
+                                :fecha,
+                                'PENDIENTE'
+                            )
+                        """),
+                        {
+                            "comite": int(comite_sel),
+                            "compromiso": compromiso.strip(),
+                            "responsable": str(responsable),
+                            "fecha": fecha_limite
+                        }
+                    )
+                st.success("✅ Compromiso agregado.")
+                st.rerun()
+
+
 def supervision_pai_v15():
     rol = str(st.session_state.get("rol_actual", "")).upper()
     if rol not in ["COORDINACION", "MANAGER"]:
@@ -7921,6 +8516,13 @@ with st.sidebar:
             st.rerun()
 
         if st.button(
+            "🧠 Comité de Casos",
+            use_container_width=True
+        ):
+            st.session_state.page = "comite_casos_v16"
+            st.rerun()
+
+        if st.button(
             "📱 Gestión Móvil",
             use_container_width=True
         ):
@@ -8427,6 +9029,15 @@ elif st.session_state.page == "panel_profesional_v15":
         st.error("No tiene permisos para Mi Panel Profesional.")
     else:
         panel_profesional_v15()
+
+    st.stop()
+
+elif st.session_state.page == "comite_casos_v16":
+
+    if rol_router not in ["COORDINACION", "MANAGER"]:
+        st.error("Acceso exclusivo para Coordinación o Manager.")
+    else:
+        comite_casos_v16()
 
     st.stop()
 
