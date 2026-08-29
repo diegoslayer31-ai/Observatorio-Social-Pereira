@@ -6329,6 +6329,8 @@ def panel_profesional_v15():
                 p.fecha_meta,
                 p.fecha_cumplimiento_real,
                 p.fecha_ultimo_seguimiento,
+                p.linea_politica,
+                p.ods_principal,
                 h.nombres,
                 h.apellidos,
                 h.modalidad,
@@ -6665,6 +6667,8 @@ def panel_profesional_v15():
             [
                 "control",
                 "objetivo_tipo",
+                "linea_politica",
+                "ods_principal",
                 "porcentaje_avance",
                 "estado",
                 "fecha_meta",
@@ -6905,11 +6909,16 @@ def panel_profesional_v15():
 
 
     st.divider()
-    pai_integral_usuario_v16(
-        doc_sel,
-        profesional_id=prof_id,
-        profesional_nombre=prof_nombre
+
+    semaforo_integral_v16, razones_integrales_v16 = (
+        _semaforo_integral_usuario_v16(doc_sel)
     )
+    st.markdown("### 🚦 Semáforo integral del caso")
+    st.markdown(f"#### {semaforo_integral_v16}")
+    if razones_integrales_v16:
+        st.caption(" · ".join(razones_integrales_v16))
+    else:
+        st.caption("Sin alertas relevantes en este momento.")
 
     st.divider()
     cierre_pai_usuario_v16(
@@ -6921,7 +6930,7 @@ def panel_profesional_v15():
 
 
 # ============================================================
-# V16 - PAI INTEGRAL + COMITÉ DE CASOS
+# V16.1 - PAI SIMPLIFICADO + SEMÁFORO + CIERRE + COMITÉ DE CASOS
 # ============================================================
 def _semaforo_integral_usuario_v16(documento):
     """Calcula semáforo integral de un usuario a partir de PAI, sanciones y permisos."""
@@ -7045,160 +7054,6 @@ def _semaforo_integral_usuario_v16(documento):
     if puntaje >= 1:
         return "🟡 EN SEGUIMIENTO", razones
     return "🟢 AL DÍA", razones
-
-
-def pai_integral_usuario_v16(documento, profesional_id=None, profesional_nombre=None):
-    st.markdown("### 🧩 PAI Integral por Dimensiones")
-
-    dimensiones = [
-        "Salud",
-        "Salud mental",
-        "Consumo SPA",
-        "Familia / red de apoyo",
-        "Documentación",
-        "Educación",
-        "Empleabilidad",
-        "Vivienda",
-        "Proyecto de vida",
-        "Convivencia",
-        "Inclusión social",
-        "Otro"
-    ]
-
-    try:
-        dim = pd.read_sql(
-            text("""
-                SELECT
-                    id,
-                    dimension,
-                    estado_dimension,
-                    nivel_prioridad,
-                    diagnostico,
-                    objetivo_general,
-                    fecha_revision,
-                    actualizado_en
-                FROM pai_dimensiones
-                WHERE TRIM(CAST(documento_usuario AS TEXT))=:doc
-                ORDER BY dimension
-            """),
-            engine,
-            params={"doc": str(documento)}
-        )
-    except Exception:
-        dim = pd.DataFrame()
-
-    if not dim.empty:
-        st.dataframe(
-            dim[
-                [
-                    "dimension",
-                    "estado_dimension",
-                    "nivel_prioridad",
-                    "diagnostico",
-                    "objetivo_general",
-                    "fecha_revision"
-                ]
-            ],
-            use_container_width=True,
-            hide_index=True
-        )
-    else:
-        st.info("Aún no hay dimensiones PAI registradas para este usuario.")
-
-    with st.expander("➕ Agregar / actualizar dimensión"):
-        dimension = st.selectbox(
-            "Dimensión",
-            dimensiones,
-            key=f"v16_dim_{documento}"
-        )
-        estado_dim = st.selectbox(
-            "Estado",
-            ["PENDIENTE", "EN PROCESO", "ESTABLE", "CERRADA"],
-            key=f"v16_estado_dim_{documento}"
-        )
-        prioridad = st.selectbox(
-            "Prioridad",
-            ["BAJA", "MEDIA", "ALTA", "CRÍTICA"],
-            key=f"v16_prioridad_dim_{documento}"
-        )
-        diagnostico = st.text_area(
-            "Diagnóstico / situación actual",
-            key=f"v16_diag_{documento}"
-        )
-        objetivo_general = st.text_area(
-            "Objetivo general de la dimensión",
-            key=f"v16_objgen_{documento}"
-        )
-        fecha_revision = st.date_input(
-            "Próxima revisión",
-            value=date.today() + timedelta(days=30),
-            key=f"v16_rev_{documento}"
-        )
-
-        if st.button(
-            "💾 Guardar dimensión",
-            use_container_width=True,
-            key=f"v16_guardar_dim_{documento}"
-        ):
-            with engine.begin() as conn:
-                conn.execute(
-                    text("""
-                        INSERT INTO pai_dimensiones(
-                            documento_usuario,
-                            dimension,
-                            estado_dimension,
-                            nivel_prioridad,
-                            diagnostico,
-                            objetivo_general,
-                            fecha_revision,
-                            profesional_referente,
-                            actualizado_por
-                        )
-                        VALUES(
-                            :doc,
-                            :dimension,
-                            :estado,
-                            :prioridad,
-                            :diagnostico,
-                            :objetivo,
-                            :revision,
-                            :profesional_id,
-                            :usuario
-                        )
-                        ON CONFLICT (documento_usuario, dimension)
-                        DO UPDATE SET
-                            estado_dimension=EXCLUDED.estado_dimension,
-                            nivel_prioridad=EXCLUDED.nivel_prioridad,
-                            diagnostico=EXCLUDED.diagnostico,
-                            objetivo_general=EXCLUDED.objetivo_general,
-                            fecha_revision=EXCLUDED.fecha_revision,
-                            profesional_referente=EXCLUDED.profesional_referente,
-                            actualizado_por=EXCLUDED.actualizado_por,
-                            actualizado_en=NOW()
-                    """),
-                    {
-                        "doc": str(documento),
-                        "dimension": dimension,
-                        "estado": estado_dim,
-                        "prioridad": prioridad,
-                        "diagnostico": diagnostico.strip(),
-                        "objetivo": objetivo_general.strip(),
-                        "revision": fecha_revision,
-                        "profesional_id": profesional_id,
-                        "usuario": st.session_state.get(
-                            "usuario_actual", profesional_nombre or "profesional"
-                        )
-                    }
-                )
-            st.success("✅ Dimensión PAI actualizada.")
-            st.rerun()
-
-    semaforo, razones = _semaforo_integral_usuario_v16(documento)
-    st.markdown(f"#### {semaforo}")
-    if razones:
-        st.caption(" · ".join(razones))
-    else:
-        st.caption("Sin alertas relevantes en este momento.")
 
 
 def cierre_pai_usuario_v16(documento, profesional_id=None, profesional_nombre=None):
