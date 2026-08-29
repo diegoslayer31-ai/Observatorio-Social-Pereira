@@ -6011,6 +6011,8 @@ def _profesional_actual_v15():
 
 
 def panel_profesional_v15():
+    import json
+
     rol = str(st.session_state.get("rol_actual", "")).upper()
     cedula_login = str(
         st.session_state.get("documento_funcionario", "")
@@ -6043,8 +6045,8 @@ def panel_profesional_v15():
 
     st.title("🩺 Mi Panel Profesional")
     st.caption(
-        "Control personal de casos, objetivos PAI, vencimientos "
-        "y seguimientos pendientes."
+        "Crear objetivos PAI, registrar avances, hacer seguimiento "
+        "y controlar vencimientos de los casos a cargo."
     )
 
     profesional = _profesional_actual_v15()
@@ -6057,7 +6059,6 @@ def panel_profesional_v15():
         )
         return
 
-    # Coordinación/Manager puede consultar cualquier profesional.
     if rol in ["COORDINACION", "MANAGER"]:
         profs = pd.read_sql(
             text("""
@@ -6078,8 +6079,8 @@ def panel_profesional_v15():
             if pid in opciones:
                 default_idx = opciones.index(pid)
 
-        prof_id = st.selectbox(
-            "Profesional a consultar",
+        prof_id_sel = st.selectbox(
+            "Profesional a consultar / gestionar",
             opciones,
             index=default_idx,
             format_func=lambda x: (
@@ -6095,10 +6096,10 @@ def panel_profesional_v15():
                     ].iloc[0]
                 )
             ),
-            key="v15_prof_consulta"
+            key="v154_prof_consulta"
         )
         profesional = profs.loc[
-            profs["profesional_id"] == prof_id
+            profs["profesional_id"] == prof_id_sel
         ].iloc[0].to_dict()
 
     prof_id = int(profesional["profesional_id"])
@@ -6108,6 +6109,211 @@ def panel_profesional_v15():
         f"👨‍⚕️ **{prof_nombre}** · {profesional.get('rol', '')}"
     )
 
+    # --------------------------------------------------------
+    # Personas activas disponibles para PAI
+    # --------------------------------------------------------
+    personas_pai = pd.read_sql(
+        text("""
+            SELECT
+                TRIM(CAST(numero_identificacion AS TEXT)) AS documento,
+                nombres,
+                apellidos,
+                modalidad,
+                estado_caso,
+                edad
+            FROM habitante_de_calle
+            WHERE UPPER(TRIM(COALESCE(estado_caso,'')))='ACTIVO'
+            ORDER BY nombres, apellidos
+        """),
+        engine
+    )
+
+    if personas_pai.empty:
+        st.warning("No hay usuarios activos disponibles para gestionar PAI.")
+        return
+
+    personas_pai["nombre_completo"] = (
+        personas_pai["nombres"].fillna("").astype(str).str.strip()
+        + " "
+        + personas_pai["apellidos"].fillna("").astype(str).str.strip()
+    ).str.strip()
+
+    docs_activos = personas_pai["documento"].astype(str).tolist()
+
+    # Si viene desde Gestión Profesional, conservar el usuario.
+    doc_pendiente_v15 = str(
+        st.session_state.pop("v15_usuario_pendiente", "")
+    ).strip()
+
+    if doc_pendiente_v15 and doc_pendiente_v15 in docs_activos:
+        st.session_state["v154_usuario_crear"] = doc_pendiente_v15
+        st.session_state["v15_usuario"] = doc_pendiente_v15
+
+    # --------------------------------------------------------
+    # Catálogos PAI autocontenidos
+    # --------------------------------------------------------
+    tipos_pai = [
+        "Documentación y ciudadanía",
+        "Cedulación",
+        "Aseguramiento en salud",
+        "Salud mental",
+        "Tratamiento consumo SPA",
+        "Reducción de riesgos y daños",
+        "Vinculación familiar",
+        "Inclusión social",
+        "Empleabilidad",
+        "Generación de ingresos",
+        "Educación",
+        "Vivienda",
+        "Proyecto de vida",
+        "Participación comunitaria",
+        "Justicia y acceso a derechos",
+        "Otro"
+    ]
+
+    lineas_pai = {
+        "Documentación y ciudadanía": "Restablecimiento de derechos",
+        "Cedulación": "Restablecimiento de derechos",
+        "Aseguramiento en salud": "Atención integral en salud",
+        "Salud mental": "Atención integral en salud",
+        "Tratamiento consumo SPA": "Reducción de riesgos y daños",
+        "Reducción de riesgos y daños": "Reducción de riesgos y daños",
+        "Vinculación familiar": "Fortalecimiento familiar",
+        "Inclusión social": "Inclusión social",
+        "Empleabilidad": "Inclusión laboral y generación de ingresos",
+        "Generación de ingresos": "Inclusión laboral y generación de ingresos",
+        "Educación": "Educación",
+        "Vivienda": "Habitabilidad y vivienda",
+        "Proyecto de vida": "Inclusión social",
+        "Participación comunitaria": "Participación ciudadana",
+        "Justicia y acceso a derechos": "Restablecimiento de derechos",
+        "Otro": "Restablecimiento de derechos"
+    }
+
+    ods_pai = {
+        "Documentación y ciudadanía": ["ODS 16"],
+        "Cedulación": ["ODS 16"],
+        "Aseguramiento en salud": ["ODS 3", "ODS 10"],
+        "Salud mental": ["ODS 3"],
+        "Tratamiento consumo SPA": ["ODS 3"],
+        "Reducción de riesgos y daños": ["ODS 3"],
+        "Vinculación familiar": ["ODS 10", "ODS 16"],
+        "Inclusión social": ["ODS 10", "ODS 16"],
+        "Empleabilidad": ["ODS 8", "ODS 10"],
+        "Generación de ingresos": ["ODS 8", "ODS 10"],
+        "Educación": ["ODS 4"],
+        "Vivienda": ["ODS 11"],
+        "Proyecto de vida": ["ODS 3", "ODS 10"],
+        "Participación comunitaria": ["ODS 16"],
+        "Justicia y acceso a derechos": ["ODS 16"],
+        "Otro": ["ODS 10"]
+    }
+
+    hitos_pai = {
+        "Documentación y ciudadanía": [
+            "Identificación de documentos",
+            "Inicio de trámite",
+            "Gestión institucional",
+            "Documento entregado"
+        ],
+        "Cedulación": [
+            "Verificación documental",
+            "Gestión de trámite",
+            "Seguimiento al trámite",
+            "Documento obtenido"
+        ],
+        "Aseguramiento en salud": [
+            "Verificación de afiliación",
+            "Gestión de afiliación / traslado",
+            "Activación de servicios",
+            "Seguimiento"
+        ],
+        "Salud mental": [
+            "Valoración inicial",
+            "Intervención psicológica",
+            "Seguimiento clínico",
+            "Estabilización"
+        ],
+        "Tratamiento consumo SPA": [
+            "Motivación al cambio",
+            "Ingreso a tratamiento",
+            "Adherencia",
+            "Prevención de recaídas"
+        ],
+        "Reducción de riesgos y daños": [
+            "Valoración de riesgos",
+            "Plan de reducción de daño",
+            "Seguimiento",
+            "Evaluación de resultados"
+        ],
+        "Vinculación familiar": [
+            "Identificación de red familiar",
+            "Primer contacto",
+            "Fortalecimiento de vínculos",
+            "Seguimiento"
+        ],
+        "Inclusión social": [
+            "Identificación de barreras",
+            "Gestión de oferta institucional",
+            "Vinculación",
+            "Seguimiento"
+        ],
+        "Empleabilidad": [
+            "Perfilamiento laboral",
+            "Capacitación",
+            "Búsqueda de empleo",
+            "Vinculación laboral"
+        ],
+        "Generación de ingresos": [
+            "Identificación de habilidades",
+            "Definición de alternativa productiva",
+            "Gestión / formación",
+            "Seguimiento de ingresos"
+        ],
+        "Educación": [
+            "Diagnóstico educativo",
+            "Gestión de matrícula",
+            "Inicio de formación",
+            "Seguimiento académico",
+            "Permanencia"
+        ],
+        "Vivienda": [
+            "Diagnóstico habitacional",
+            "Gestión de alternativa",
+            "Asignación / acceso",
+            "Seguimiento",
+            "Estabilización"
+        ],
+        "Proyecto de vida": [
+            "Identificación de intereses",
+            "Definición de metas",
+            "Construcción del plan",
+            "Seguimiento",
+            "Consolidación"
+        ],
+        "Participación comunitaria": [
+            "Identificación de espacios",
+            "Vinculación",
+            "Participación",
+            "Seguimiento"
+        ],
+        "Justicia y acceso a derechos": [
+            "Identificación de necesidad jurídica",
+            "Orientación",
+            "Gestión institucional",
+            "Seguimiento / resolución"
+        ],
+        "Otro": [
+            "Valoración inicial",
+            "Definición de acción",
+            "Gestión",
+            "Seguimiento"
+        ]
+    }
+
+    # --------------------------------------------------------
+    # Cargar objetivos del profesional
+    # --------------------------------------------------------
     objetivos = pd.read_sql(
         text("""
             SELECT
@@ -6138,8 +6344,160 @@ def panel_profesional_v15():
         params={"prof_id": prof_id}
     )
 
+    # --------------------------------------------------------
+    # NUEVO OBJETIVO PAI
+    # --------------------------------------------------------
+    st.markdown("### ➕ Crear objetivo PAI")
+
+    with st.expander(
+        "Crear nuevo objetivo para un usuario",
+        expanded=bool(doc_pendiente_v15)
+    ):
+        doc_crear = st.selectbox(
+            "Usuario",
+            docs_activos,
+            format_func=lambda d: (
+                personas_pai.loc[
+                    personas_pai["documento"].astype(str) == str(d),
+                    "nombre_completo"
+                ].iloc[0]
+                + f" · CC {d}"
+            ),
+            key="v154_usuario_crear"
+        )
+
+        tipo_crear = st.selectbox(
+            "Tipo de objetivo",
+            tipos_pai,
+            key="v154_tipo_obj"
+        )
+
+        linea_crear = lineas_pai.get(
+            tipo_crear,
+            "Restablecimiento de derechos"
+        )
+        ods_crear = ods_pai.get(tipo_crear, [])
+        actividades_crear = hitos_pai.get(
+            tipo_crear,
+            ["Valoración inicial", "Gestión", "Seguimiento"]
+        )
+
+        st.caption(
+            f"🏛️ Línea: {linea_crear} · "
+            f"🌎 {', '.join(ods_crear) if ods_crear else 'Sin ODS'}"
+        )
+
+        st.write("**Actividades / hitos sugeridos:**")
+        st.write(" · ".join(actividades_crear))
+
+        with st.form("v154_crear_objetivo_form"):
+            descripcion_crear = st.text_area(
+                "Descripción del objetivo *",
+                placeholder=(
+                    "Defina de manera concreta qué se espera lograr "
+                    "con el usuario."
+                )
+            )
+            fecha_meta_crear = st.date_input(
+                "Fecha estimada de cumplimiento *",
+                value=date.today() + timedelta(days=90)
+            )
+            confirmar_crear = st.checkbox(
+                "Confirmo la creación de este objetivo PAI."
+            )
+            crear_obj = st.form_submit_button(
+                "🎯 Crear objetivo",
+                use_container_width=True,
+                type="primary"
+            )
+
+        if crear_obj:
+            if not descripcion_crear.strip():
+                st.error("Debe escribir la descripción del objetivo.")
+            elif not confirmar_crear:
+                st.error("Confirme la creación del objetivo.")
+            else:
+                with engine.begin() as conn:
+                    conn.execute(
+                        text("""
+                            INSERT INTO pai_objetivos(
+                                documento_usuario,
+                                objetivo_tipo,
+                                objetivo_descripcion,
+                                actividades,
+                                avance_hitos,
+                                porcentaje_avance,
+                                estado,
+                                linea_politica,
+                                ods_principal,
+                                profesional_referente,
+                                fecha_apertura,
+                                fecha_meta
+                            )
+                            VALUES(
+                                :documento,
+                                :tipo,
+                                :descripcion,
+                                :actividades,
+                                :avance_hitos,
+                                0,
+                                'Activo',
+                                :linea,
+                                :ods,
+                                :profesional,
+                                NOW(),
+                                :fecha_meta
+                            )
+                        """),
+                        {
+                            "documento": doc_crear,
+                            "tipo": tipo_crear,
+                            "descripcion": descripcion_crear.strip(),
+                            "actividades": json.dumps(
+                                actividades_crear,
+                                ensure_ascii=False
+                            ),
+                            "avance_hitos": json.dumps(
+                                [],
+                                ensure_ascii=False
+                            ),
+                            "linea": linea_crear,
+                            "ods": ", ".join(ods_crear),
+                            "profesional": prof_id,
+                            "fecha_meta": fecha_meta_crear
+                        }
+                    )
+
+                registrar_auditoria(
+                    "CREAR_OBJETIVO_PAI",
+                    documento=doc_crear,
+                    modulo="Mi Panel Profesional",
+                    valor_nuevo=tipo_crear,
+                    observacion=(
+                        f"{descripcion_crear.strip()[:350]} · "
+                        f"Fecha meta {fecha_meta_crear} · "
+                        f"Profesional {prof_nombre}"
+                    )
+                )
+                invalidar_cache_datos()
+                st.success("✅ Objetivo PAI creado correctamente.")
+                st.rerun()
+
+    # --------------------------------------------------------
+    # KPIs y semáforo
+    # --------------------------------------------------------
     if objetivos.empty:
-        st.info("Este profesional aún no tiene objetivos PAI asignados.")
+        k1, k2, k3, k4, k5 = st.columns(5)
+        k1.metric("👥 Mis usuarios", 0)
+        k2.metric("🔴 Vencidos", 0)
+        k3.metric("🟠 Próximos 7 días", 0)
+        k4.metric("⚠️ Sin seguimiento", 0)
+        k5.metric("✅ Cumplidos", 0)
+
+        st.info(
+            "Todavía no tiene objetivos PAI asignados. "
+            "Puede crear el primero en la sección anterior."
+        )
         return
 
     hoy = pd.Timestamp(date.today())
@@ -6178,7 +6536,7 @@ def panel_profesional_v15():
         dias_seg = r.get("dias_sin_seguimiento")
 
         if avance >= 100 or estado == "CUMPLIDO":
-            return "🟢 AL DÍA / CUMPLIDO"
+            return "🟢 CUMPLIDO"
 
         if pd.notna(dias_meta) and dias_meta < 0:
             return "🔴 PAI VENCIDO"
@@ -6209,9 +6567,7 @@ def panel_profesional_v15():
             "⚠️ SEGUIMIENTO ATRASADO"
         ]).sum()
     )
-    cumplidos = int(
-        objetivos["control"].eq("🟢 AL DÍA / CUMPLIDO").sum()
-    )
+    cumplidos = int((objetivos["control"] == "🟢 CUMPLIDO").sum())
 
     k1, k2, k3, k4, k5 = st.columns(5)
     k1.metric("👥 Mis usuarios", personas_asignadas)
@@ -6237,6 +6593,7 @@ def panel_profesional_v15():
         "⚠️ SEGUIMIENTO ATRASADO": 3,
         "🟠 PRÓXIMO A VENCER": 4
     }
+
     if not prioridad.empty:
         prioridad["orden"] = prioridad["control"].map(orden).fillna(9)
         prioridad = prioridad.sort_values(
@@ -6263,30 +6620,22 @@ def panel_profesional_v15():
             "Fecha meta",
             "Último seguimiento"
         ]
-        st.dataframe(
-            vista,
-            use_container_width=True,
-            hide_index=True
-        )
+        st.dataframe(vista, use_container_width=True, hide_index=True)
     else:
         st.success("✅ No hay objetivos críticos en este momento.")
 
+    # --------------------------------------------------------
+    # Trabajar objetivo existente
+    # --------------------------------------------------------
     st.divider()
     st.markdown("### 👤 Trabajar un caso")
 
     docs = (
-        objetivos[
-            ["documento", "nombre_completo"]
-        ]
+        objetivos[["documento", "nombre_completo"]]
         .drop_duplicates()
         .sort_values("nombre_completo")
     )
-
     opciones_docs_v15 = docs["documento"].astype(str).tolist()
-
-    doc_pendiente_v15 = str(
-        st.session_state.pop("v15_usuario_pendiente", "")
-    ).strip()
 
     if (
         doc_pendiente_v15
@@ -6308,7 +6657,7 @@ def panel_profesional_v15():
     )
 
     objetivos_u = objetivos[
-        objetivos["documento"] == doc_sel
+        objetivos["documento"].astype(str) == str(doc_sel)
     ].copy()
 
     st.dataframe(
@@ -6349,10 +6698,92 @@ def panel_profesional_v15():
     ].iloc[0]
 
     try:
-        import json
         actividades = json.loads(obj.get("actividades") or "[]")
+        if not isinstance(actividades, list):
+            actividades = []
     except Exception:
         actividades = []
+
+    try:
+        hitos_actuales = json.loads(obj.get("avance_hitos") or "[]")
+        if not isinstance(hitos_actuales, list):
+            hitos_actuales = []
+    except Exception:
+        hitos_actuales = []
+
+    st.markdown("#### 📈 Actualizar avance del objetivo")
+
+    if actividades:
+        hitos_nuevos = st.multiselect(
+            "Marque los hitos ya cumplidos",
+            actividades,
+            default=[h for h in hitos_actuales if h in actividades],
+            key=f"v154_hitos_{obj_id}"
+        )
+        avance_nuevo = round(
+            len(hitos_nuevos) / len(actividades) * 100,
+            1
+        )
+        st.progress(min(max(avance_nuevo / 100, 0), 1))
+        st.caption(f"Avance calculado: {avance_nuevo}%")
+
+        if st.button(
+            "💾 Guardar avance del objetivo",
+            use_container_width=True,
+            key=f"v154_guardar_avance_{obj_id}"
+        ):
+            with engine.begin() as conn:
+                conn.execute(
+                    text("""
+                        UPDATE pai_objetivos
+                        SET avance_hitos=:hitos,
+                            porcentaje_avance=:avance,
+                            estado=CASE
+                                WHEN :avance >= 100 THEN 'CUMPLIDO'
+                                ELSE 'Activo'
+                            END,
+                            fecha_cumplimiento_real=CASE
+                                WHEN :avance >= 100
+                                    THEN COALESCE(
+                                        fecha_cumplimiento_real,
+                                        NOW()
+                                    )
+                                ELSE NULL
+                            END
+                        WHERE id=:id
+                          AND profesional_referente=:profesional
+                    """),
+                    {
+                        "hitos": json.dumps(
+                            hitos_nuevos,
+                            ensure_ascii=False
+                        ),
+                        "avance": avance_nuevo,
+                        "id": int(obj_id),
+                        "profesional": prof_id
+                    }
+                )
+
+            registrar_auditoria(
+                "ACTUALIZAR_AVANCE_PAI",
+                documento=doc_sel,
+                modulo="Mi Panel Profesional",
+                valor_nuevo=f"{avance_nuevo}%",
+                observacion=f"Objetivo PAI ID {obj_id}"
+            )
+            invalidar_cache_datos()
+            st.success("✅ Avance actualizado.")
+            st.rerun()
+    else:
+        st.info(
+            "Este objetivo no tiene hitos configurados. "
+            "Puede registrar seguimientos normalmente."
+        )
+
+    # --------------------------------------------------------
+    # Seguimiento profesional
+    # --------------------------------------------------------
+    st.markdown("#### 📝 Registrar seguimiento")
 
     tipo_opciones = actividades if actividades else [
         "Seguimiento profesional",
@@ -6362,7 +6793,7 @@ def panel_profesional_v15():
         "Otro"
     ]
 
-    with st.form(f"v15_seguimiento_{obj_id}"):
+    with st.form(f"v154_seguimiento_{obj_id}"):
         tipo_nov = st.selectbox(
             "Actividad realizada",
             tipo_opciones
@@ -6387,6 +6818,9 @@ def panel_profesional_v15():
         if not descripcion.strip():
             st.error("Debe describir el seguimiento realizado.")
         else:
+            avance_actual = float(
+                obj.get("porcentaje_avance", 0) or 0
+            )
             with engine.begin() as conn:
                 conn.execute(
                     text("""
@@ -6414,9 +6848,7 @@ def panel_profesional_v15():
                         "profesional": prof_nombre,
                         "tipo_novedad": tipo_nov,
                         "descripcion": descripcion.strip(),
-                        "avance_generado": float(
-                            obj.get("porcentaje_avance", 0) or 0
-                        ),
+                        "avance_generado": avance_actual,
                         "evidencia": evidencia.strip()
                     }
                 )
@@ -6425,8 +6857,12 @@ def panel_profesional_v15():
                         UPDATE pai_objetivos
                         SET fecha_ultimo_seguimiento = NOW()
                         WHERE id = :id
+                          AND profesional_referente=:profesional
                     """),
-                    {"id": int(obj_id)}
+                    {
+                        "id": int(obj_id),
+                        "profesional": prof_id
+                    }
                 )
 
             registrar_auditoria(
