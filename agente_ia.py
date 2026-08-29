@@ -5930,8 +5930,33 @@ def _profesional_actual_v15():
 
 def panel_profesional_v15():
     rol = str(st.session_state.get("rol_actual", "")).upper()
-    if rol not in ["PROFESIONAL", "COORDINACION", "MANAGER"]:
-        st.error("Este módulo es para profesionales, Coordinación y Manager.")
+    cedula_login = str(
+        st.session_state.get("documento_funcionario", "")
+    ).strip()
+
+    acceso_pai = rol in ["COORDINACION", "MANAGER"]
+    if rol == "PROFESIONAL" and cedula_login:
+        try:
+            permiso_df = pd.read_sql(
+                text("""
+                    SELECT COALESCE(acceso_pai, FALSE) AS acceso_pai
+                    FROM funcionarios_sistema
+                    WHERE cedula = :cedula
+                      AND activo = TRUE
+                    LIMIT 1
+                """),
+                engine,
+                params={"cedula": cedula_login}
+            )
+            acceso_pai = (
+                not permiso_df.empty
+                and bool(permiso_df.iloc[0]["acceso_pai"])
+            )
+        except Exception:
+            acceso_pai = False
+
+    if not acceso_pai:
+        st.error("No tiene habilitado el acceso al módulo PAI.")
         return
 
     st.title("🩺 Mi Panel Profesional")
@@ -6370,6 +6395,7 @@ def supervision_pai_v15():
                 FROM funcionarios_sistema
                 WHERE rol='PROFESIONAL'
                   AND activo=TRUE
+                  AND COALESCE(acceso_pai, FALSE)=TRUE
                 ORDER BY nombre
             """),
             engine
@@ -7255,13 +7281,37 @@ with st.sidebar:
 
     elif rol_menu == "PROFESIONAL":
 
-        if st.button(
-            "🩺 Mi Panel Profesional",
-            use_container_width=True,
-            type="primary"
-        ):
-            st.session_state.page = "panel_profesional_v15"
-            st.rerun()
+        acceso_pai_menu = False
+        try:
+            _cedula_menu = str(
+                st.session_state.get("documento_funcionario", "")
+            ).strip()
+            _permiso_menu = pd.read_sql(
+                text("""
+                    SELECT COALESCE(acceso_pai, FALSE) AS acceso_pai
+                    FROM funcionarios_sistema
+                    WHERE cedula=:cedula
+                      AND activo=TRUE
+                    LIMIT 1
+                """),
+                engine,
+                params={"cedula": _cedula_menu}
+            )
+            acceso_pai_menu = (
+                not _permiso_menu.empty
+                and bool(_permiso_menu.iloc[0]["acceso_pai"])
+            )
+        except Exception:
+            acceso_pai_menu = False
+
+        if acceso_pai_menu:
+            if st.button(
+                "🩺 Mi Panel Profesional",
+                use_container_width=True,
+                type="primary"
+            ):
+                st.session_state.page = "panel_profesional_v15"
+                st.rerun()
 
         if st.button(
             "👤 Gestión Profesional",
@@ -7722,13 +7772,34 @@ if (
     st.session_state.page = "gestion_movil"
     st.rerun()
 
-# V15: el profesional entra directamente a su tablero de control.
+# V15.1: solo profesionales habilitados para PAI entran a su tablero.
 if (
     rol_router == "PROFESIONAL"
     and st.session_state.page == "home"
 ):
-    st.session_state.page = "panel_profesional_v15"
-    st.rerun()
+    try:
+        _cedula_router = str(
+            st.session_state.get("documento_funcionario", "")
+        ).strip()
+        _pai_router = pd.read_sql(
+            text("""
+                SELECT COALESCE(acceso_pai, FALSE) AS acceso_pai
+                FROM funcionarios_sistema
+                WHERE cedula=:cedula
+                  AND activo=TRUE
+                LIMIT 1
+            """),
+            engine,
+            params={"cedula": _cedula_router}
+        )
+        if (
+            not _pai_router.empty
+            and bool(_pai_router.iloc[0]["acceso_pai"])
+        ):
+            st.session_state.page = "panel_profesional_v15"
+            st.rerun()
+    except Exception:
+        pass
 
 if st.session_state.page == "gestion_movil":
 
