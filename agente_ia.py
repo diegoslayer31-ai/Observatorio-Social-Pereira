@@ -6011,6 +6011,183 @@ def _profesional_actual_v15():
 
 
 
+
+def _semaforo_integral_usuario_v16(documento):
+    """Semáforo integral del caso, tolerante a tablas/campos opcionales."""
+    hoy = pd.Timestamp(date.today())
+    puntaje = 0
+    razones = []
+
+    try:
+        objs = pd.read_sql(
+            text("""
+                SELECT porcentaje_avance, estado, fecha_meta,
+                       fecha_ultimo_seguimiento
+                FROM pai_objetivos
+                WHERE TRIM(CAST(documento_usuario AS TEXT))=:doc
+            """),
+            engine,
+            params={"doc": str(documento)}
+        )
+    except Exception:
+        objs = pd.DataFrame()
+
+    if objs.empty:
+        puntaje += 2
+        razones.append("Sin objetivos PAI")
+    else:
+        objs["porcentaje_avance"] = pd.to_numeric(
+            objs["porcentaje_avance"], errors="coerce"
+        ).fillna(0)
+        objs["fecha_meta"] = pd.to_datetime(objs["fecha_meta"], errors="coerce")
+        objs["fecha_ultimo_seguimiento"] = pd.to_datetime(
+            objs["fecha_ultimo_seguimiento"], errors="coerce"
+        )
+
+        cumplido = (
+            objs["porcentaje_avance"].ge(100)
+            | objs["estado"].fillna("").astype(str).str.upper().eq("CUMPLIDO")
+        )
+        dias_meta = (objs["fecha_meta"].dt.normalize() - hoy).dt.days
+        vencidos = int((~cumplido & dias_meta.lt(0)).sum())
+
+        if vencidos >= 2:
+            puntaje += 3
+            razones.append(f"{vencidos} objetivos vencidos")
+        elif vencidos == 1:
+            puntaje += 2
+            razones.append("1 objetivo vencido")
+
+        dias_seg = (
+            hoy - objs["fecha_ultimo_seguimiento"].dt.normalize()
+        ).dt.days
+        atrasados = int(
+            (
+                ~cumplido
+                & (
+                    objs["fecha_ultimo_seguimiento"].isna()
+                    | dias_seg.gt(15)
+                )
+            ).sum()
+        )
+        if atrasados >= 2:
+            puntaje += 2
+            razones.append(f"{atrasados} objetivos sin seguimiento reciente")
+        elif atrasados == 1:
+            puntaje += 1
+            razones.append("Seguimiento pendiente")
+
+    # Las tablas de sanciones/permisos pueden variar entre versiones.
+    # Si no están disponibles, el PAI sigue funcionando.
+    try:
+        sanc = pd.read_sql(
+            text("""
+                SELECT COUNT(*) AS total
+                FROM sanciones_usuarios
+                WHERE TRIM(CAST(numero_identificacion AS TEXT))=:doc
+                  AND UPPER(TRIM(COALESCE(estado,'')))='ACTIVA'
+            """),
+            engine,
+            params={"doc": str(documento)}
+        )
+        if not sanc.empty and int(sanc.iloc[0]["total"] or 0) > 0:
+            puntaje += 2
+            razones.append("Sanción activa")
+    except Exception:
+        pass
+
+    if puntaje >= 5:
+        return "🔴 CRÍTICO", razones
+    if puntaje >= 3:
+        return "🟠 REQUIERE ATENCIÓN", razones
+    if puntaje >= 1:
+        return "🟡 EN SEGUIMIENTO", razones
+    return "🟢 AL DÍA", razones
+
+
+
+def cierre_pai_usuario_v16(documento, profesional_id=None, profesional_nombre=None):
+    st.markdown("#### Cierre formal")
+
+    try:
+        cierres = pd.read_sql(
+            text("""
+                SELECT *
+                FROM pai_cierres
+                WHERE TRIM(CAST(documento_usuario AS TEXT))=:doc
+                ORDER BY creado_en DESC
+                LIMIT 1
+            """),
+            engine,
+            params={"doc": str(documento)}
+        )
+    except Exception:
+        cierres = pd.DataFrame()
+
+    if not cierres.empty:
+        c = cierres.iloc[0]
+        st.success(
+            f"PAI cerrado el {c.get('fecha_cierre')} · "
+            f"Resultado: {c.get('resultado_final')}"
+        )
+        if c.get("resumen_cierre"):
+            st.write(c.get("resumen_cierre"))
+        return
+
+    with st.form(f"v16_3_cierre_{documento}"):
+        resultado = st.selectbox(
+            "Resultado final",
+            [
+                "METAS CUMPLIDAS",
+                "CUMPLIMIENTO PARCIAL",
+                "NO CUMPLIDO",
+                "EGRESO",
+                "RETIRO VOLUNTARIO",
+                "TRASLADO",
+                "OTRO"
+            ]
+        )
+        resumen = st.text_area("Resumen de cierre *")
+        recomendaciones = st.text_area("Recomendaciones posteriores")
+        confirmar = st.checkbox("Confirmo el cierre formal del PAI.")
+        guardar = st.form_submit_button(
+            "✅ Cerrar PAI", use_container_width=True, type="primary"
+        )
+
+    if guardar:
+        if not resumen.strip():
+            st.error("Debe registrar un resumen de cierre.")
+        elif not confirmar:
+            st.error("Debe confirmar el cierre.")
+        else:
+            with engine.begin() as conn:
+                conn.execute(
+                    text("""
+                        INSERT INTO pai_cierres(
+                            documento_usuario, fecha_cierre, resultado_final,
+                            resumen_cierre, recomendaciones,
+                            profesional_referente, cerrado_por
+                        )
+                        VALUES(
+                            :doc, CURRENT_DATE, :resultado, :resumen,
+                            :recomendaciones, :profesional_id, :usuario
+                        )
+                    """),
+                    {
+                        "doc": str(documento),
+                        "resultado": resultado,
+                        "resumen": resumen.strip(),
+                        "recomendaciones": recomendaciones.strip(),
+                        "profesional_id": profesional_id,
+                        "usuario": st.session_state.get(
+                            "usuario_actual", profesional_nombre or "profesional"
+                        )
+                    }
+                )
+            st.success("✅ PAI cerrado formalmente.")
+            st.rerun()
+
+
 def panel_profesional_v15():
     st.title("🩺 Mi Panel Profesional")
     st.caption(
