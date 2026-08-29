@@ -6545,39 +6545,79 @@ def supervision_pai_v15():
                 use_container_width=True,
                 key="v15_guardar_map"
             ):
-                with engine.begin() as conn:
-                    conn.execute(
-                        text("""
-                            INSERT INTO pai_profesional_funcionario(
-                                cedula_funcionario,
-                                profesional_id,
-                                activo,
-                                actualizado_por
-                            )
-                            VALUES(
-                                :cedula,
-                                :profesional_id,
-                                TRUE,
-                                :usuario
-                            )
-                            ON CONFLICT (cedula_funcionario)
-                            DO UPDATE SET
-                                profesional_id=EXCLUDED.profesional_id,
-                                activo=TRUE,
-                                actualizado_por=EXCLUDED.actualizado_por,
-                                actualizado_en=NOW()
-                        """),
-                        {
-                            "cedula": str(cedula),
-                            "profesional_id": int(profesional_id),
-                            "usuario": st.session_state.get(
-                                "usuario_actual",
-                                "coordinacion"
-                            )
-                        }
+                cedula_sel = str(cedula)
+                profesional_sel_id = int(profesional_id)
+
+                # Validar si ese registro profesional ya está vinculado
+                existente_prof = pd.read_sql(
+                    text("""
+                        SELECT
+                            m.cedula_funcionario,
+                            f.nombre AS funcionario
+                        FROM pai_profesional_funcionario m
+                        LEFT JOIN funcionarios_sistema f
+                            ON f.cedula=m.cedula_funcionario
+                        WHERE m.profesional_id=:profesional_id
+                          AND m.activo=TRUE
+                          AND m.cedula_funcionario<>:cedula
+                        LIMIT 1
+                    """),
+                    engine,
+                    params={
+                        "profesional_id": profesional_sel_id,
+                        "cedula": cedula_sel
+                    }
+                )
+
+                if not existente_prof.empty:
+                    vinculado_a = existente_prof.iloc[0]
+                    st.error(
+                        "Ese registro profesional ya está vinculado a "
+                        f"{vinculado_a.get('funcionario') or vinculado_a.get('cedula_funcionario')} "
+                        f"(CC {vinculado_a.get('cedula_funcionario')}). "
+                        "Revise la selección antes de continuar."
                     )
-                st.success("✅ Profesional vinculado con su acceso.")
-                st.rerun()
+                else:
+                    try:
+                        with engine.begin() as conn:
+                            conn.execute(
+                                text("""
+                                    INSERT INTO pai_profesional_funcionario(
+                                        cedula_funcionario,
+                                        profesional_id,
+                                        activo,
+                                        actualizado_por
+                                    )
+                                    VALUES(
+                                        :cedula,
+                                        :profesional_id,
+                                        TRUE,
+                                        :usuario
+                                    )
+                                    ON CONFLICT (cedula_funcionario)
+                                    DO UPDATE SET
+                                        profesional_id=EXCLUDED.profesional_id,
+                                        activo=TRUE,
+                                        actualizado_por=EXCLUDED.actualizado_por,
+                                        actualizado_en=NOW()
+                                """),
+                                {
+                                    "cedula": cedula_sel,
+                                    "profesional_id": profesional_sel_id,
+                                    "usuario": st.session_state.get(
+                                        "usuario_actual",
+                                        "coordinacion"
+                                    )
+                                }
+                            )
+                        st.success("✅ Profesional vinculado con su acceso.")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(
+                            "No fue posible guardar la vinculación. "
+                            "Revise si el registro profesional ya está asignado "
+                            "a otra persona."
+                        )
 
         try:
             vinculaciones = pd.read_sql(
