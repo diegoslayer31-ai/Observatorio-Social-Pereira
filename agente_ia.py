@@ -5869,6 +5869,725 @@ def control_turno_v13():
 # ============================================================
 # DASHBOARD EJECUTIVO
 # ============================================================
+
+# ============================================================
+# V15 - MI PANEL PROFESIONAL + SUPERVISIÓN PAI
+# ============================================================
+def _profesional_actual_v15():
+    cedula = str(
+        st.session_state.get("documento_funcionario", "")
+    ).strip()
+
+    if not cedula:
+        return None
+
+    try:
+        df_map = pd.read_sql(
+            text("""
+                SELECT
+                    m.profesional_id,
+                    p.nombre,
+                    p.rol
+                FROM pai_profesional_funcionario m
+                INNER JOIN profesionales p
+                    ON p.id = m.profesional_id
+                WHERE m.cedula_funcionario = :cedula
+                  AND m.activo = TRUE
+                LIMIT 1
+            """),
+            engine,
+            params={"cedula": cedula}
+        )
+        if not df_map.empty:
+            return df_map.iloc[0].to_dict()
+    except Exception:
+        pass
+
+    # Fallback por nombre exacto para no bloquear la operación
+    nombre_login = str(
+        st.session_state.get("nombre_funcionario", "")
+    ).strip()
+
+    if nombre_login:
+        try:
+            df_prof = pd.read_sql(
+                text("""
+                    SELECT id AS profesional_id, nombre, rol
+                    FROM profesionales
+                    WHERE LOWER(TRIM(nombre)) = LOWER(TRIM(:nombre))
+                    LIMIT 1
+                """),
+                engine,
+                params={"nombre": nombre_login}
+            )
+            if not df_prof.empty:
+                return df_prof.iloc[0].to_dict()
+        except Exception:
+            pass
+
+    return None
+
+
+def panel_profesional_v15():
+    rol = str(st.session_state.get("rol_actual", "")).upper()
+    if rol not in ["PROFESIONAL", "COORDINACION", "MANAGER"]:
+        st.error("Este módulo es para profesionales, Coordinación y Manager.")
+        return
+
+    st.title("🩺 Mi Panel Profesional")
+    st.caption(
+        "Control personal de casos, objetivos PAI, vencimientos "
+        "y seguimientos pendientes."
+    )
+
+    profesional = _profesional_actual_v15()
+
+    if rol == "PROFESIONAL" and not profesional:
+        st.warning(
+            "Su acceso aún no está vinculado con un registro de la tabla "
+            "de profesionales. Coordinación o Manager debe realizar la "
+            "asignación una sola vez."
+        )
+        return
+
+    # Coordinación/Manager puede consultar cualquier profesional.
+    if rol in ["COORDINACION", "MANAGER"]:
+        profs = pd.read_sql(
+            text("""
+                SELECT id AS profesional_id, nombre, rol
+                FROM profesionales
+                ORDER BY nombre
+            """),
+            engine
+        )
+        if profs.empty:
+            st.warning("No hay profesionales registrados.")
+            return
+
+        opciones = profs["profesional_id"].tolist()
+        default_idx = 0
+        if profesional:
+            pid = profesional.get("profesional_id")
+            if pid in opciones:
+                default_idx = opciones.index(pid)
+
+        prof_id = st.selectbox(
+            "Profesional a consultar",
+            opciones,
+            index=default_idx,
+            format_func=lambda x: (
+                profs.loc[
+                    profs["profesional_id"] == x,
+                    "nombre"
+                ].iloc[0]
+                + " · "
+                + str(
+                    profs.loc[
+                        profs["profesional_id"] == x,
+                        "rol"
+                    ].iloc[0]
+                )
+            ),
+            key="v15_prof_consulta"
+        )
+        profesional = profs.loc[
+            profs["profesional_id"] == prof_id
+        ].iloc[0].to_dict()
+
+    prof_id = int(profesional["profesional_id"])
+    prof_nombre = str(profesional["nombre"])
+
+    st.info(
+        f"👨‍⚕️ **{prof_nombre}** · {profesional.get('rol', '')}"
+    )
+
+    objetivos = pd.read_sql(
+        text("""
+            SELECT
+                p.id,
+                TRIM(CAST(p.documento_usuario AS TEXT)) AS documento,
+                p.objetivo_tipo,
+                p.objetivo_descripcion,
+                p.actividades,
+                p.avance_hitos,
+                p.porcentaje_avance,
+                p.estado,
+                p.fecha_apertura,
+                p.fecha_meta,
+                p.fecha_cumplimiento_real,
+                p.fecha_ultimo_seguimiento,
+                h.nombres,
+                h.apellidos,
+                h.modalidad,
+                h.estado_caso
+            FROM pai_objetivos p
+            LEFT JOIN habitante_de_calle h
+                ON TRIM(CAST(h.numero_identificacion AS TEXT))
+                 = TRIM(CAST(p.documento_usuario AS TEXT))
+            WHERE p.profesional_referente = :prof_id
+            ORDER BY p.fecha_meta NULLS LAST, p.fecha_apertura DESC
+        """),
+        engine,
+        params={"prof_id": prof_id}
+    )
+
+    if objetivos.empty:
+        st.info("Este profesional aún no tiene objetivos PAI asignados.")
+        return
+
+    hoy = pd.Timestamp(date.today())
+    objetivos["fecha_meta"] = pd.to_datetime(
+        objetivos["fecha_meta"], errors="coerce"
+    )
+    objetivos["fecha_ultimo_seguimiento"] = pd.to_datetime(
+        objetivos["fecha_ultimo_seguimiento"], errors="coerce"
+    )
+    objetivos["fecha_cumplimiento_real"] = pd.to_datetime(
+        objetivos["fecha_cumplimiento_real"], errors="coerce"
+    )
+    objetivos["porcentaje_avance"] = pd.to_numeric(
+        objetivos["porcentaje_avance"], errors="coerce"
+    ).fillna(0)
+
+    objetivos["nombre_completo"] = (
+        objetivos["nombres"].fillna("").astype(str).str.strip()
+        + " "
+        + objetivos["apellidos"].fillna("").astype(str).str.strip()
+    ).str.strip()
+
+    objetivos["dias_meta"] = (
+        objetivos["fecha_meta"].dt.normalize() - hoy
+    ).dt.days
+
+    objetivos["dias_sin_seguimiento"] = (
+        hoy
+        - objetivos["fecha_ultimo_seguimiento"].dt.normalize()
+    ).dt.days
+
+    def estado_v15(r):
+        avance = float(r.get("porcentaje_avance", 0) or 0)
+        estado = str(r.get("estado", "")).strip().upper()
+        dias_meta = r.get("dias_meta")
+        dias_seg = r.get("dias_sin_seguimiento")
+
+        if avance >= 100 or estado == "CUMPLIDO":
+            return "🟢 AL DÍA / CUMPLIDO"
+
+        if pd.notna(dias_meta) and dias_meta < 0:
+            return "🔴 PAI VENCIDO"
+
+        if pd.notna(dias_meta) and 0 <= dias_meta <= 7:
+            return "🟠 PRÓXIMO A VENCER"
+
+        if pd.isna(r.get("fecha_ultimo_seguimiento")):
+            return "⚠️ SIN SEGUIMIENTO"
+
+        if pd.notna(dias_seg) and dias_seg > 15:
+            return "⚠️ SEGUIMIENTO ATRASADO"
+
+        return "🟢 AL DÍA"
+
+    objetivos["control"] = objetivos.apply(estado_v15, axis=1)
+
+    personas_asignadas = int(
+        objetivos["documento"].dropna().astype(str).nunique()
+    )
+    vencidos = int((objetivos["control"] == "🔴 PAI VENCIDO").sum())
+    proximos = int(
+        (objetivos["control"] == "🟠 PRÓXIMO A VENCER").sum()
+    )
+    sin_seg = int(
+        objetivos["control"].isin([
+            "⚠️ SIN SEGUIMIENTO",
+            "⚠️ SEGUIMIENTO ATRASADO"
+        ]).sum()
+    )
+    cumplidos = int(
+        objetivos["control"].eq("🟢 AL DÍA / CUMPLIDO").sum()
+    )
+
+    k1, k2, k3, k4, k5 = st.columns(5)
+    k1.metric("👥 Mis usuarios", personas_asignadas)
+    k2.metric("🔴 Vencidos", vencidos)
+    k3.metric("🟠 Próximos 7 días", proximos)
+    k4.metric("⚠️ Sin seguimiento", sin_seg)
+    k5.metric("✅ Cumplidos", cumplidos)
+
+    st.markdown("### 🚨 Requieren atención")
+
+    prioridad = objetivos[
+        objetivos["control"].isin([
+            "🔴 PAI VENCIDO",
+            "🟠 PRÓXIMO A VENCER",
+            "⚠️ SIN SEGUIMIENTO",
+            "⚠️ SEGUIMIENTO ATRASADO"
+        ])
+    ].copy()
+
+    orden = {
+        "🔴 PAI VENCIDO": 1,
+        "⚠️ SIN SEGUIMIENTO": 2,
+        "⚠️ SEGUIMIENTO ATRASADO": 3,
+        "🟠 PRÓXIMO A VENCER": 4
+    }
+    if not prioridad.empty:
+        prioridad["orden"] = prioridad["control"].map(orden).fillna(9)
+        prioridad = prioridad.sort_values(
+            ["orden", "dias_meta"],
+            na_position="last"
+        )
+        vista = prioridad[
+            [
+                "control",
+                "nombre_completo",
+                "documento",
+                "objetivo_tipo",
+                "porcentaje_avance",
+                "fecha_meta",
+                "fecha_ultimo_seguimiento"
+            ]
+        ].copy()
+        vista.columns = [
+            "Prioridad",
+            "Usuario",
+            "Documento",
+            "Objetivo",
+            "Avance %",
+            "Fecha meta",
+            "Último seguimiento"
+        ]
+        st.dataframe(
+            vista,
+            use_container_width=True,
+            hide_index=True
+        )
+    else:
+        st.success("✅ No hay objetivos críticos en este momento.")
+
+    st.divider()
+    st.markdown("### 👤 Trabajar un caso")
+
+    docs = (
+        objetivos[
+            ["documento", "nombre_completo"]
+        ]
+        .drop_duplicates()
+        .sort_values("nombre_completo")
+    )
+
+    doc_sel = st.selectbox(
+        "Seleccione usuario",
+        docs["documento"].tolist(),
+        format_func=lambda d: (
+            docs.loc[
+                docs["documento"] == d,
+                "nombre_completo"
+            ].iloc[0]
+            + f" · CC {d}"
+        ),
+        key="v15_usuario"
+    )
+
+    objetivos_u = objetivos[
+        objetivos["documento"] == doc_sel
+    ].copy()
+
+    st.dataframe(
+        objetivos_u[
+            [
+                "control",
+                "objetivo_tipo",
+                "porcentaje_avance",
+                "estado",
+                "fecha_meta",
+                "fecha_ultimo_seguimiento"
+            ]
+        ],
+        use_container_width=True,
+        hide_index=True
+    )
+
+    obj_ids = objetivos_u["id"].tolist()
+    obj_id = st.selectbox(
+        "Objetivo PAI",
+        obj_ids,
+        format_func=lambda x: (
+            objetivos_u.loc[
+                objetivos_u["id"] == x,
+                "objetivo_tipo"
+            ].iloc[0]
+            + " · "
+            + objetivos_u.loc[
+                objetivos_u["id"] == x,
+                "control"
+            ].iloc[0]
+        ),
+        key="v15_objetivo"
+    )
+
+    obj = objetivos_u.loc[
+        objetivos_u["id"] == obj_id
+    ].iloc[0]
+
+    try:
+        import json
+        actividades = json.loads(obj.get("actividades") or "[]")
+    except Exception:
+        actividades = []
+
+    tipo_opciones = actividades if actividades else [
+        "Seguimiento profesional",
+        "Gestión institucional",
+        "Orientación",
+        "Valoración",
+        "Otro"
+    ]
+
+    with st.form(f"v15_seguimiento_{obj_id}"):
+        tipo_nov = st.selectbox(
+            "Actividad realizada",
+            tipo_opciones
+        )
+        descripcion = st.text_area(
+            "Descripción del seguimiento *",
+            placeholder=(
+                "Registre la intervención realizada, resultado "
+                "y compromisos."
+            )
+        )
+        evidencia = st.text_input(
+            "Evidencia / referencia (opcional)"
+        )
+        guardar = st.form_submit_button(
+            "💾 Registrar seguimiento",
+            use_container_width=True,
+            type="primary"
+        )
+
+    if guardar:
+        if not descripcion.strip():
+            st.error("Debe describir el seguimiento realizado.")
+        else:
+            with engine.begin() as conn:
+                conn.execute(
+                    text("""
+                        INSERT INTO pai_novedades(
+                            id_objetivo,
+                            fecha,
+                            profesional,
+                            tipo_novedad,
+                            descripcion,
+                            avance_generado,
+                            evidencia
+                        )
+                        VALUES(
+                            :id_objetivo,
+                            NOW(),
+                            :profesional,
+                            :tipo_novedad,
+                            :descripcion,
+                            :avance_generado,
+                            :evidencia
+                        )
+                    """),
+                    {
+                        "id_objetivo": int(obj_id),
+                        "profesional": prof_nombre,
+                        "tipo_novedad": tipo_nov,
+                        "descripcion": descripcion.strip(),
+                        "avance_generado": float(
+                            obj.get("porcentaje_avance", 0) or 0
+                        ),
+                        "evidencia": evidencia.strip()
+                    }
+                )
+                conn.execute(
+                    text("""
+                        UPDATE pai_objetivos
+                        SET fecha_ultimo_seguimiento = NOW()
+                        WHERE id = :id
+                    """),
+                    {"id": int(obj_id)}
+                )
+
+            registrar_auditoria(
+                "REGISTRAR_NOVEDAD_PROFESIONAL",
+                documento=doc_sel,
+                modulo="Mi Panel Profesional",
+                valor_nuevo=tipo_nov,
+                observacion=descripcion.strip()[:500]
+            )
+            invalidar_cache_datos()
+            st.success("✅ Seguimiento registrado.")
+            st.rerun()
+
+    with st.expander("📚 Ver últimos seguimientos"):
+        hist = pd.read_sql(
+            text("""
+                SELECT
+                    fecha,
+                    profesional,
+                    tipo_novedad,
+                    descripcion,
+                    avance_generado,
+                    evidencia
+                FROM pai_novedades
+                WHERE id_objetivo = :id
+                ORDER BY fecha DESC
+                LIMIT 20
+            """),
+            engine,
+            params={"id": int(obj_id)}
+        )
+        if hist.empty:
+            st.info("Sin seguimientos registrados.")
+        else:
+            st.dataframe(
+                hist,
+                use_container_width=True,
+                hide_index=True
+            )
+
+
+def supervision_pai_v15():
+    rol = str(st.session_state.get("rol_actual", "")).upper()
+    if rol not in ["COORDINACION", "MANAGER"]:
+        st.error("Acceso exclusivo para Coordinación y Manager.")
+        return
+
+    st.title("🎛️ Supervisión PAI por Profesional")
+    st.caption(
+        "Asignación de accesos y control comparativo de cumplimiento."
+    )
+
+    # --------------------------------------------------------
+    # Vincular login de funcionario con registro profesional
+    # --------------------------------------------------------
+    with st.expander("🔗 Vincular profesional con su acceso al sistema"):
+        funcionarios = pd.read_sql(
+            text("""
+                SELECT cedula, nombre
+                FROM funcionarios_sistema
+                WHERE rol='PROFESIONAL'
+                  AND activo=TRUE
+                ORDER BY nombre
+            """),
+            engine
+        )
+        profesionales = pd.read_sql(
+            text("""
+                SELECT id, nombre, rol
+                FROM profesionales
+                ORDER BY nombre
+            """),
+            engine
+        )
+
+        if funcionarios.empty or profesionales.empty:
+            st.info(
+                "Se requieren funcionarios con rol PROFESIONAL "
+                "y registros en la tabla profesionales."
+            )
+        else:
+            cedula = st.selectbox(
+                "Acceso del profesional",
+                funcionarios["cedula"].tolist(),
+                format_func=lambda x: (
+                    funcionarios.loc[
+                        funcionarios["cedula"] == x,
+                        "nombre"
+                    ].iloc[0]
+                    + f" · CC {x}"
+                ),
+                key="v15_func_map"
+            )
+            profesional_id = st.selectbox(
+                "Registro profesional correspondiente",
+                profesionales["id"].tolist(),
+                format_func=lambda x: (
+                    profesionales.loc[
+                        profesionales["id"] == x,
+                        "nombre"
+                    ].iloc[0]
+                    + " · "
+                    + str(
+                        profesionales.loc[
+                            profesionales["id"] == x,
+                            "rol"
+                        ].iloc[0]
+                    )
+                ),
+                key="v15_prof_map"
+            )
+
+            if st.button(
+                "🔗 Guardar vinculación",
+                use_container_width=True,
+                key="v15_guardar_map"
+            ):
+                with engine.begin() as conn:
+                    conn.execute(
+                        text("""
+                            INSERT INTO pai_profesional_funcionario(
+                                cedula_funcionario,
+                                profesional_id,
+                                activo,
+                                actualizado_por
+                            )
+                            VALUES(
+                                :cedula,
+                                :profesional_id,
+                                TRUE,
+                                :usuario
+                            )
+                            ON CONFLICT (cedula_funcionario)
+                            DO UPDATE SET
+                                profesional_id=EXCLUDED.profesional_id,
+                                activo=TRUE,
+                                actualizado_por=EXCLUDED.actualizado_por,
+                                actualizado_en=NOW()
+                        """),
+                        {
+                            "cedula": str(cedula),
+                            "profesional_id": int(profesional_id),
+                            "usuario": st.session_state.get(
+                                "usuario_actual",
+                                "coordinacion"
+                            )
+                        }
+                    )
+                st.success("✅ Profesional vinculado con su acceso.")
+                st.rerun()
+
+        try:
+            vinculaciones = pd.read_sql(
+                text("""
+                    SELECT
+                        m.cedula_funcionario,
+                        f.nombre AS funcionario,
+                        p.nombre AS profesional,
+                        p.rol,
+                        m.activo
+                    FROM pai_profesional_funcionario m
+                    LEFT JOIN funcionarios_sistema f
+                        ON f.cedula=m.cedula_funcionario
+                    LEFT JOIN profesionales p
+                        ON p.id=m.profesional_id
+                    ORDER BY f.nombre
+                """),
+                engine
+            )
+            if not vinculaciones.empty:
+                st.dataframe(
+                    vinculaciones,
+                    use_container_width=True,
+                    hide_index=True
+                )
+        except Exception:
+            pass
+
+    control = pd.read_sql(
+        text("""
+            SELECT
+                p.id,
+                p.documento_usuario,
+                p.porcentaje_avance,
+                p.estado,
+                p.fecha_meta,
+                p.fecha_ultimo_seguimiento,
+                p.profesional_referente,
+                pr.nombre AS profesional,
+                pr.rol
+            FROM pai_objetivos p
+            LEFT JOIN profesionales pr
+                ON pr.id=p.profesional_referente
+        """),
+        engine
+    )
+
+    if control.empty:
+        st.info("No existen objetivos PAI para supervisar.")
+        return
+
+    hoy = pd.Timestamp(date.today())
+    control["fecha_meta"] = pd.to_datetime(
+        control["fecha_meta"], errors="coerce"
+    )
+    control["fecha_ultimo_seguimiento"] = pd.to_datetime(
+        control["fecha_ultimo_seguimiento"], errors="coerce"
+    )
+    control["porcentaje_avance"] = pd.to_numeric(
+        control["porcentaje_avance"], errors="coerce"
+    ).fillna(0)
+    control["dias_meta"] = (
+        control["fecha_meta"].dt.normalize() - hoy
+    ).dt.days
+    control["dias_sin_seg"] = (
+        hoy - control["fecha_ultimo_seguimiento"].dt.normalize()
+    ).dt.days
+
+    control["cumplido"] = (
+        control["porcentaje_avance"].ge(100)
+        | control["estado"].fillna("").astype(str).str.upper().eq("CUMPLIDO")
+    )
+    control["vencido"] = (
+        ~control["cumplido"] & control["dias_meta"].lt(0)
+    )
+    control["proximo"] = (
+        ~control["cumplido"]
+        & control["dias_meta"].between(0, 7, inclusive="both")
+    )
+    control["sin_seguimiento"] = (
+        ~control["cumplido"]
+        & (
+            control["fecha_ultimo_seguimiento"].isna()
+            | control["dias_sin_seg"].gt(15)
+        )
+    )
+    control["profesional"] = control["profesional"].fillna("Sin asignar")
+
+    resumen = (
+        control.groupby("profesional", dropna=False)
+        .agg(
+            usuarios=("documento_usuario", "nunique"),
+            objetivos=("id", "count"),
+            cumplidos=("cumplido", "sum"),
+            vencidos=("vencido", "sum"),
+            proximos=("proximo", "sum"),
+            sin_seguimiento=("sin_seguimiento", "sum"),
+            avance_promedio=("porcentaje_avance", "mean")
+        )
+        .reset_index()
+    )
+    resumen["cumplimiento_%"] = (
+        resumen["cumplidos"] / resumen["objetivos"] * 100
+    ).round(1)
+    resumen["avance_promedio"] = resumen["avance_promedio"].round(1)
+
+    st.markdown("### 📊 Comparativo por profesional")
+    st.dataframe(
+        resumen.sort_values(
+            ["vencidos", "sin_seguimiento"],
+            ascending=False
+        ),
+        use_container_width=True,
+        hide_index=True
+    )
+
+    csv = resumen.to_csv(index=False).encode("utf-8-sig")
+    st.download_button(
+        "⬇️ Descargar resumen PAI",
+        data=csv,
+        file_name=(
+            "supervision_pai_"
+            + datetime.now().strftime("%Y%m%d_%H%M")
+            + ".csv"
+        ),
+        mime="text/csv",
+        use_container_width=True
+    )
+
+
 def dashboard_ejecutivo():
 
     st.title("🎛️ Dashboard de Coordinación")
@@ -6537,7 +7256,15 @@ with st.sidebar:
     elif rol_menu == "PROFESIONAL":
 
         if st.button(
-            "🩺 Gestión Profesional",
+            "🩺 Mi Panel Profesional",
+            use_container_width=True,
+            type="primary"
+        ):
+            st.session_state.page = "panel_profesional_v15"
+            st.rerun()
+
+        if st.button(
+            "👤 Gestión Profesional",
             use_container_width=True
         ):
             st.session_state.page = "gestion_movil"
@@ -6549,11 +7276,6 @@ with st.sidebar:
         ):
             st.session_state.page = "historia_integral_v12"
             st.rerun()
-
-        st.caption(
-            "PAI y seguimiento profesional continúan "
-            "en el módulo institucional existente."
-        )
 
     elif rol_menu in ["COORDINACION", "MANAGER"]:
 
@@ -6569,6 +7291,13 @@ with st.sidebar:
             use_container_width=True
         ):
             st.session_state.page = "dashboard_ejecutivo"
+            st.rerun()
+
+        if st.button(
+            "🎯 Supervisión PAI",
+            use_container_width=True
+        ):
+            st.session_state.page = "supervision_pai_v15"
             st.rerun()
 
         if st.button(
@@ -6993,6 +7722,14 @@ if (
     st.session_state.page = "gestion_movil"
     st.rerun()
 
+# V15: el profesional entra directamente a su tablero de control.
+if (
+    rol_router == "PROFESIONAL"
+    and st.session_state.page == "home"
+):
+    st.session_state.page = "panel_profesional_v15"
+    st.rerun()
+
 if st.session_state.page == "gestion_movil":
 
     if rol_router not in [
@@ -7036,6 +7773,28 @@ elif st.session_state.page == "funcionarios_sistema_v12":
         )
     else:
         gestion_personal_v12_1()
+
+    st.stop()
+
+elif st.session_state.page == "panel_profesional_v15":
+
+    if rol_router not in [
+        "PROFESIONAL",
+        "COORDINACION",
+        "MANAGER"
+    ]:
+        st.error("No tiene permisos para Mi Panel Profesional.")
+    else:
+        panel_profesional_v15()
+
+    st.stop()
+
+elif st.session_state.page == "supervision_pai_v15":
+
+    if rol_router not in ["COORDINACION", "MANAGER"]:
+        st.error("Acceso exclusivo para Coordinación o Manager.")
+    else:
+        supervision_pai_v15()
 
     st.stop()
 
