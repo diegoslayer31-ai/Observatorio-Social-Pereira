@@ -6010,117 +6010,105 @@ def _profesional_actual_v15():
     return None
 
 
+
 def panel_profesional_v15():
-    import json
-
-    rol = str(st.session_state.get("rol_actual", "")).upper()
-    cedula_login = str(
-        st.session_state.get("documento_funcionario", "")
-    ).strip()
-
-    acceso_pai = rol in ["COORDINACION", "MANAGER"]
-    if rol == "PROFESIONAL" and cedula_login:
-        try:
-            permiso_df = pd.read_sql(
-                text("""
-                    SELECT COALESCE(acceso_pai, FALSE) AS acceso_pai
-                    FROM funcionarios_sistema
-                    WHERE cedula = :cedula
-                      AND activo = TRUE
-                    LIMIT 1
-                """),
-                engine,
-                params={"cedula": cedula_login}
-            )
-            acceso_pai = (
-                not permiso_df.empty
-                and bool(permiso_df.iloc[0]["acceso_pai"])
-            )
-        except Exception:
-            acceso_pai = False
-
-    if not acceso_pai:
-        st.error("No tiene habilitado el acceso al módulo PAI.")
-        return
-
     st.title("🩺 Mi Panel Profesional")
     st.caption(
-        "Crear objetivos PAI, registrar avances, hacer seguimiento "
-        "y controlar vencimientos de los casos a cargo."
+        "Seleccione una sola persona y trabaje todo su expediente PAI sin cambiar de contexto."
     )
 
-    profesional = _profesional_actual_v15()
+    rol_actual = str(st.session_state.get("rol_actual", "")).upper()
+    cedula_actual = str(st.session_state.get("documento_funcionario", "")).strip()
+    nombre_actual = str(st.session_state.get("nombre_funcionario", "")).strip()
 
-    if rol == "PROFESIONAL" and not profesional:
-        st.warning(
-            "Su acceso aún no está vinculado con un registro de la tabla "
-            "de profesionales. Coordinación o Manager debe realizar la "
-            "asignación una sola vez."
-        )
-        return
+    # ------------------------------------------------------------
+    # Resolver profesional PAI
+    # ------------------------------------------------------------
+    prof_id = None
+    prof_nombre = None
 
-    if rol in ["COORDINACION", "MANAGER"]:
-        profs = pd.read_sql(
+    if rol_actual == "PROFESIONAL":
+        acceso = pd.read_sql(
             text("""
-                SELECT id AS profesional_id, nombre, rol
+                SELECT acceso_pai
+                FROM funcionarios_sistema
+                WHERE TRIM(CAST(cedula AS TEXT))=:cedula
+                LIMIT 1
+            """),
+            engine,
+            params={"cedula": cedula_actual}
+        )
+        if acceso.empty or not bool(acceso.iloc[0].get("acceso_pai", False)):
+            st.error("No tiene habilitado el acceso al módulo PAI.")
+            return
+
+        vinculo = pd.read_sql(
+            text("""
+                SELECT
+                    ppf.profesional_id,
+                    p.nombre
+                FROM pai_profesional_funcionario ppf
+                LEFT JOIN profesionales p
+                  ON p.id = ppf.profesional_id
+                WHERE TRIM(CAST(ppf.cedula_funcionario AS TEXT))=:cedula
+                  AND ppf.activo=TRUE
+                LIMIT 1
+            """),
+            engine,
+            params={"cedula": cedula_actual}
+        )
+        if vinculo.empty:
+            st.error("Su cuenta no está vinculada a un registro profesional PAI.")
+            return
+
+        prof_id = int(vinculo.iloc[0]["profesional_id"])
+        prof_nombre = (
+            str(vinculo.iloc[0].get("nombre") or nombre_actual).strip()
+        )
+    else:
+        profesionales = pd.read_sql(
+            text("""
+                SELECT id, nombre, rol
                 FROM profesionales
                 ORDER BY nombre
             """),
             engine
         )
-        if profs.empty:
-            st.warning("No hay profesionales registrados.")
+
+        if profesionales.empty:
+            st.warning("No hay profesionales PAI disponibles.")
             return
 
-        opciones = profs["profesional_id"].tolist()
-        default_idx = 0
-        if profesional:
-            pid = profesional.get("profesional_id")
-            if pid in opciones:
-                default_idx = opciones.index(pid)
-
-        prof_id_sel = st.selectbox(
-            "Profesional a consultar / gestionar",
-            opciones,
-            index=default_idx,
-            format_func=lambda x: (
-                profs.loc[
-                    profs["profesional_id"] == x,
-                    "nombre"
-                ].iloc[0]
-                + " · "
-                + str(
-                    profs.loc[
-                        profs["profesional_id"] == x,
-                        "rol"
-                    ].iloc[0]
+        opciones_prof = profesionales["id"].tolist()
+        prof_id = st.selectbox(
+            "Profesional PAI a consultar",
+            opciones_prof,
+            format_func=lambda pid: (
+                f"{profesionales.loc[profesionales['id']==pid, 'nombre'].iloc[0]}"
+                + (
+                    f" · {profesionales.loc[profesionales['id']==pid, 'rol'].iloc[0]}"
+                    if pd.notna(profesionales.loc[
+                        profesionales["id"]==pid, "rol"
+                    ].iloc[0]) else ""
                 )
             ),
-            key="v154_prof_consulta"
+            key="v16_2_profesional"
         )
-        profesional = profs.loc[
-            profs["profesional_id"] == prof_id_sel
-        ].iloc[0].to_dict()
+        prof_id = int(prof_id)
+        prof_row = profesionales.loc[profesionales["id"] == prof_id].iloc[0]
+        prof_nombre = str(prof_row.get("nombre") or "").strip()
 
-    prof_id = int(profesional["profesional_id"])
-    prof_nombre = str(profesional["nombre"])
-
-    st.info(
-        f"👨‍⚕️ **{prof_nombre}** · {profesional.get('rol', '')}"
-    )
-
-    # --------------------------------------------------------
-    # Personas activas disponibles para PAI
-    # --------------------------------------------------------
-    personas_pai = pd.read_sql(
+    # ------------------------------------------------------------
+    # Cargar personas asignadas o activas
+    # ------------------------------------------------------------
+    personas = pd.read_sql(
         text("""
             SELECT
                 TRIM(CAST(numero_identificacion AS TEXT)) AS documento,
                 nombres,
                 apellidos,
                 modalidad,
-                estado_caso,
-                edad
+                estado_caso
             FROM habitante_de_calle
             WHERE UPPER(TRIM(COALESCE(estado_caso,'')))='ACTIVO'
             ORDER BY nombres, apellidos
@@ -6128,197 +6116,59 @@ def panel_profesional_v15():
         engine
     )
 
-    if personas_pai.empty:
-        st.warning("No hay usuarios activos disponibles para gestionar PAI.")
+    if personas.empty:
+        st.info("No hay personas activas disponibles.")
         return
 
-    personas_pai["nombre_completo"] = (
-        personas_pai["nombres"].fillna("").astype(str).str.strip()
+    personas["nombre_completo"] = (
+        personas["nombres"].fillna("").astype(str).str.strip()
         + " "
-        + personas_pai["apellidos"].fillna("").astype(str).str.strip()
+        + personas["apellidos"].fillna("").astype(str).str.strip()
     ).str.strip()
 
-    docs_activos = personas_pai["documento"].astype(str).tolist()
+    # Si venimos desde Gestión Profesional, conservar usuario pendiente
+    pendiente = st.session_state.pop("v15_usuario_pendiente", None)
 
-    # Si viene desde Gestión Profesional, conservar el usuario.
-    doc_pendiente_v15 = str(
-        st.session_state.pop("v15_usuario_pendiente", "")
-    ).strip()
+    docs = personas["documento"].astype(str).tolist()
+    default_index = 0
+    if pendiente is not None and str(pendiente) in docs:
+        default_index = docs.index(str(pendiente))
 
-    if doc_pendiente_v15 and doc_pendiente_v15 in docs_activos:
-        st.session_state["v154_usuario_crear"] = doc_pendiente_v15
-        st.session_state["v15_usuario"] = doc_pendiente_v15
+    st.markdown("## 👤 Expediente PAI")
+    doc_sel = st.selectbox(
+        "Seleccione la persona",
+        docs,
+        index=default_index,
+        format_func=lambda d: (
+            f"{personas.loc[personas['documento'].astype(str)==str(d), 'nombre_completo'].iloc[0]}"
+            f" · CC {d}"
+        ),
+        key="v16_2_usuario_unico"
+    )
 
-    # --------------------------------------------------------
-    # Catálogos PAI autocontenidos
-    # --------------------------------------------------------
-    tipos_pai = [
-        "Documentación y ciudadanía",
-        "Cedulación",
-        "Aseguramiento en salud",
-        "Salud mental",
-        "Tratamiento consumo SPA",
-        "Reducción de riesgos y daños",
-        "Vinculación familiar",
-        "Inclusión social",
-        "Empleabilidad",
-        "Generación de ingresos",
-        "Educación",
-        "Vivienda",
-        "Proyecto de vida",
-        "Participación comunitaria",
-        "Justicia y acceso a derechos",
-        "Otro"
-    ]
+    persona_sel = personas.loc[
+        personas["documento"].astype(str) == str(doc_sel)
+    ].iloc[0]
+    nombre_usuario = str(persona_sel["nombre_completo"]).strip()
+    modalidad_usuario = str(persona_sel.get("modalidad") or "").strip()
 
-    lineas_pai = {
-        "Documentación y ciudadanía": "Restablecimiento de derechos",
-        "Cedulación": "Restablecimiento de derechos",
-        "Aseguramiento en salud": "Atención integral en salud",
-        "Salud mental": "Atención integral en salud",
-        "Tratamiento consumo SPA": "Reducción de riesgos y daños",
-        "Reducción de riesgos y daños": "Reducción de riesgos y daños",
-        "Vinculación familiar": "Fortalecimiento familiar",
-        "Inclusión social": "Inclusión social",
-        "Empleabilidad": "Inclusión laboral y generación de ingresos",
-        "Generación de ingresos": "Inclusión laboral y generación de ingresos",
-        "Educación": "Educación",
-        "Vivienda": "Habitabilidad y vivienda",
-        "Proyecto de vida": "Inclusión social",
-        "Participación comunitaria": "Participación ciudadana",
-        "Justicia y acceso a derechos": "Restablecimiento de derechos",
-        "Otro": "Restablecimiento de derechos"
-    }
+    # Cabecera persistente de contexto
+    st.success(
+        f"📌 Está trabajando el PAI de: **{nombre_usuario}** · "
+        f"CC **{doc_sel}**"
+        + (f" · Modalidad **{modalidad_usuario}**" if modalidad_usuario else "")
+    )
 
-    ods_pai = {
-        "Documentación y ciudadanía": ["ODS 16"],
-        "Cedulación": ["ODS 16"],
-        "Aseguramiento en salud": ["ODS 3", "ODS 10"],
-        "Salud mental": ["ODS 3"],
-        "Tratamiento consumo SPA": ["ODS 3"],
-        "Reducción de riesgos y daños": ["ODS 3"],
-        "Vinculación familiar": ["ODS 10", "ODS 16"],
-        "Inclusión social": ["ODS 10", "ODS 16"],
-        "Empleabilidad": ["ODS 8", "ODS 10"],
-        "Generación de ingresos": ["ODS 8", "ODS 10"],
-        "Educación": ["ODS 4"],
-        "Vivienda": ["ODS 11"],
-        "Proyecto de vida": ["ODS 3", "ODS 10"],
-        "Participación comunitaria": ["ODS 16"],
-        "Justicia y acceso a derechos": ["ODS 16"],
-        "Otro": ["ODS 10"]
-    }
+    semaforo_integral, razones_integrales = _semaforo_integral_usuario_v16(doc_sel)
 
-    hitos_pai = {
-        "Documentación y ciudadanía": [
-            "Identificación de documentos",
-            "Inicio de trámite",
-            "Gestión institucional",
-            "Documento entregado"
-        ],
-        "Cedulación": [
-            "Verificación documental",
-            "Gestión de trámite",
-            "Seguimiento al trámite",
-            "Documento obtenido"
-        ],
-        "Aseguramiento en salud": [
-            "Verificación de afiliación",
-            "Gestión de afiliación / traslado",
-            "Activación de servicios",
-            "Seguimiento"
-        ],
-        "Salud mental": [
-            "Valoración inicial",
-            "Intervención psicológica",
-            "Seguimiento clínico",
-            "Estabilización"
-        ],
-        "Tratamiento consumo SPA": [
-            "Motivación al cambio",
-            "Ingreso a tratamiento",
-            "Adherencia",
-            "Prevención de recaídas"
-        ],
-        "Reducción de riesgos y daños": [
-            "Valoración de riesgos",
-            "Plan de reducción de daño",
-            "Seguimiento",
-            "Evaluación de resultados"
-        ],
-        "Vinculación familiar": [
-            "Identificación de red familiar",
-            "Primer contacto",
-            "Fortalecimiento de vínculos",
-            "Seguimiento"
-        ],
-        "Inclusión social": [
-            "Identificación de barreras",
-            "Gestión de oferta institucional",
-            "Vinculación",
-            "Seguimiento"
-        ],
-        "Empleabilidad": [
-            "Perfilamiento laboral",
-            "Capacitación",
-            "Búsqueda de empleo",
-            "Vinculación laboral"
-        ],
-        "Generación de ingresos": [
-            "Identificación de habilidades",
-            "Definición de alternativa productiva",
-            "Gestión / formación",
-            "Seguimiento de ingresos"
-        ],
-        "Educación": [
-            "Diagnóstico educativo",
-            "Gestión de matrícula",
-            "Inicio de formación",
-            "Seguimiento académico",
-            "Permanencia"
-        ],
-        "Vivienda": [
-            "Diagnóstico habitacional",
-            "Gestión de alternativa",
-            "Asignación / acceso",
-            "Seguimiento",
-            "Estabilización"
-        ],
-        "Proyecto de vida": [
-            "Identificación de intereses",
-            "Definición de metas",
-            "Construcción del plan",
-            "Seguimiento",
-            "Consolidación"
-        ],
-        "Participación comunitaria": [
-            "Identificación de espacios",
-            "Vinculación",
-            "Participación",
-            "Seguimiento"
-        ],
-        "Justicia y acceso a derechos": [
-            "Identificación de necesidad jurídica",
-            "Orientación",
-            "Gestión institucional",
-            "Seguimiento / resolución"
-        ],
-        "Otro": [
-            "Valoración inicial",
-            "Definición de acción",
-            "Gestión",
-            "Seguimiento"
-        ]
-    }
-
-    # --------------------------------------------------------
-    # Cargar objetivos del profesional
-    # --------------------------------------------------------
+    # ------------------------------------------------------------
+    # Cargar objetivos SOLO de la persona seleccionada
+    # ------------------------------------------------------------
     objetivos = pd.read_sql(
         text("""
             SELECT
                 p.id,
-                TRIM(CAST(p.documento_usuario AS TEXT)) AS documento,
+                p.documento_usuario,
                 p.objetivo_tipo,
                 p.objetivo_descripcion,
                 p.actividades,
@@ -6330,94 +6180,326 @@ def panel_profesional_v15():
                 p.fecha_cumplimiento_real,
                 p.fecha_ultimo_seguimiento,
                 p.linea_politica,
-                p.ods_principal,
-                h.nombres,
-                h.apellidos,
-                h.modalidad,
-                h.estado_caso
+                p.ods_principal
             FROM pai_objetivos p
-            LEFT JOIN habitante_de_calle h
-                ON TRIM(CAST(h.numero_identificacion AS TEXT))
-                 = TRIM(CAST(p.documento_usuario AS TEXT))
-            WHERE p.profesional_referente = :prof_id
-            ORDER BY p.fecha_meta NULLS LAST, p.fecha_apertura DESC
+            WHERE TRIM(CAST(p.documento_usuario AS TEXT))=:doc
+              AND p.profesional_referente=:prof
+            ORDER BY
+                CASE WHEN UPPER(COALESCE(p.estado,''))='CUMPLIDO' THEN 1 ELSE 0 END,
+                p.fecha_meta NULLS LAST,
+                p.id DESC
         """),
         engine,
-        params={"prof_id": prof_id}
+        params={"doc": str(doc_sel), "prof": prof_id}
     )
 
-    # --------------------------------------------------------
-    # NUEVO OBJETIVO PAI
-    # --------------------------------------------------------
-    st.markdown("### ➕ Crear objetivo PAI")
-
-    with st.expander(
-        "Crear nuevo objetivo para un usuario",
-        expanded=bool(doc_pendiente_v15)
-    ):
-        doc_crear = st.selectbox(
-            "Usuario",
-            docs_activos,
-            format_func=lambda d: (
-                personas_pai.loc[
-                    personas_pai["documento"].astype(str) == str(d),
-                    "nombre_completo"
-                ].iloc[0]
-                + f" · CC {d}"
-            ),
-            key="v154_usuario_crear"
+    # ------------------------------------------------------------
+    # KPIs del expediente
+    # ------------------------------------------------------------
+    if objetivos.empty:
+        total_obj = vencidos = proximos = sin_seg = cumplidos = 0
+    else:
+        tmp = objetivos.copy()
+        tmp["porcentaje_avance"] = pd.to_numeric(
+            tmp["porcentaje_avance"], errors="coerce"
+        ).fillna(0)
+        tmp["fecha_meta"] = pd.to_datetime(tmp["fecha_meta"], errors="coerce")
+        tmp["fecha_ultimo_seguimiento"] = pd.to_datetime(
+            tmp["fecha_ultimo_seguimiento"], errors="coerce"
         )
-
-        tipo_crear = st.selectbox(
-            "Tipo de objetivo",
-            tipos_pai,
-            key="v154_tipo_obj"
+        hoy = pd.Timestamp(date.today())
+        cumplido_mask = (
+            tmp["porcentaje_avance"].ge(100)
+            | tmp["estado"].fillna("").astype(str).str.upper().eq("CUMPLIDO")
         )
-
-        linea_crear = lineas_pai.get(
-            tipo_crear,
-            "Restablecimiento de derechos"
+        dias_meta = (tmp["fecha_meta"].dt.normalize() - hoy).dt.days
+        total_obj = len(tmp)
+        vencidos = int((~cumplido_mask & dias_meta.lt(0)).sum())
+        proximos = int(
+            (~cumplido_mask & dias_meta.between(0, 7, inclusive="both")).sum()
         )
-        ods_crear = ods_pai.get(tipo_crear, [])
-        actividades_crear = hitos_pai.get(
-            tipo_crear,
-            ["Valoración inicial", "Gestión", "Seguimiento"]
+        sin_seg = int(
+            (
+                ~cumplido_mask
+                & (
+                    tmp["fecha_ultimo_seguimiento"].isna()
+                    | (
+                        hoy - tmp["fecha_ultimo_seguimiento"].dt.normalize()
+                    ).dt.days.gt(15)
+                )
+            ).sum()
         )
+        cumplidos = int(cumplido_mask.sum())
 
-        st.caption(
-            f"🏛️ Línea: {linea_crear} · "
-            f"🌎 {', '.join(ods_crear) if ods_crear else 'Sin ODS'}"
-        )
+    c1, c2, c3, c4, c5 = st.columns(5)
+    c1.metric("Objetivos", total_obj)
+    c2.metric("Vencidos", vencidos)
+    c3.metric("Próximos 7 días", proximos)
+    c4.metric("Sin seguimiento", sin_seg)
+    c5.metric("Cumplidos", cumplidos)
 
-        st.write("**Actividades / hitos sugeridos:**")
-        st.write(" · ".join(actividades_crear))
+    st.markdown(f"### {semaforo_integral}")
+    if razones_integrales:
+        st.caption(" · ".join(razones_integrales))
+    else:
+        st.caption("Sin alertas relevantes en este momento.")
 
-        with st.form("v154_crear_objetivo_form"):
-            descripcion_crear = st.text_area(
-                "Descripción del objetivo *",
-                placeholder=(
-                    "Defina de manera concreta qué se espera lograr "
-                    "con el usuario."
+    # ------------------------------------------------------------
+    # Tabs del expediente único
+    # ------------------------------------------------------------
+    tab_resumen, tab_obj, tab_seg, tab_cierre = st.tabs(
+        ["📋 Resumen PAI", "🎯 Objetivos", "📝 Seguimientos", "✅ Cierre"]
+    )
+
+    # ============================================================
+    # RESUMEN
+    # ============================================================
+    with tab_resumen:
+        st.markdown(f"### Resumen de {nombre_usuario}")
+
+        if objetivos.empty:
+            st.info("Esta persona todavía no tiene objetivos PAI asignados.")
+        else:
+            resumen_cols = [
+                "objetivo_tipo",
+                "linea_politica",
+                "ods_principal",
+                "porcentaje_avance",
+                "estado",
+                "fecha_meta",
+                "fecha_ultimo_seguimiento"
+            ]
+            st.dataframe(
+                objetivos[resumen_cols],
+                use_container_width=True,
+                hide_index=True
+            )
+
+            ult_seg = pd.to_datetime(
+                objetivos["fecha_ultimo_seguimiento"],
+                errors="coerce"
+            ).max()
+            prox_meta = pd.to_datetime(
+                objetivos.loc[
+                    ~objetivos["estado"].fillna("").astype(str).str.upper().eq(
+                        "CUMPLIDO"
+                    ),
+                    "fecha_meta"
+                ],
+                errors="coerce"
+            ).min()
+
+            cc1, cc2 = st.columns(2)
+            cc1.info(
+                "Último seguimiento: "
+                + (
+                    ult_seg.strftime("%d/%m/%Y")
+                    if pd.notna(ult_seg)
+                    else "Sin seguimiento registrado"
                 )
             )
-            fecha_meta_crear = st.date_input(
-                "Fecha estimada de cumplimiento *",
-                value=date.today() + timedelta(days=90)
+            cc2.info(
+                "Próxima fecha meta: "
+                + (
+                    prox_meta.strftime("%d/%m/%Y")
+                    if pd.notna(prox_meta)
+                    else "Sin fecha próxima"
+                )
             )
-            confirmar_crear = st.checkbox(
-                "Confirmo la creación de este objetivo PAI."
+
+    # ============================================================
+    # OBJETIVOS
+    # ============================================================
+    with tab_obj:
+        st.markdown(f"### 🎯 Objetivos PAI de {nombre_usuario}")
+        st.warning(
+            f"Todo lo que guarde en esta pestaña se registrará para "
+            f"**{nombre_usuario} · CC {doc_sel}**."
+        )
+
+        tipos_objetivo = [
+            "Documentación y ciudadanía",
+            "Cedulación",
+            "Aseguramiento en salud",
+            "Salud mental",
+            "Tratamiento consumo SPA",
+            "Reducción de riesgos y daños",
+            "Vinculación familiar",
+            "Inclusión social",
+            "Empleabilidad",
+            "Generación de ingresos",
+            "Educación",
+            "Vivienda",
+            "Proyecto de vida",
+            "Participación comunitaria",
+            "Justicia y acceso a derechos",
+            "Otro"
+        ]
+
+        linea_por_tipo = {
+            "Documentación y ciudadanía": "Derechos e inclusión social",
+            "Cedulación": "Derechos e inclusión social",
+            "Aseguramiento en salud": "Salud",
+            "Salud mental": "Salud",
+            "Tratamiento consumo SPA": "Salud",
+            "Reducción de riesgos y daños": "Salud",
+            "Vinculación familiar": "Inclusión social y familiar",
+            "Inclusión social": "Inclusión social y familiar",
+            "Empleabilidad": "Inclusión económica",
+            "Generación de ingresos": "Inclusión económica",
+            "Educación": "Educación",
+            "Vivienda": "Hábitat y vivienda",
+            "Proyecto de vida": "Desarrollo humano",
+            "Participación comunitaria": "Participación",
+            "Justicia y acceso a derechos": "Derechos e inclusión social",
+            "Otro": "Intervención integral"
+        }
+
+        ods_por_tipo = {
+            "Documentación y ciudadanía": "ODS 16",
+            "Cedulación": "ODS 16",
+            "Aseguramiento en salud": "ODS 3",
+            "Salud mental": "ODS 3",
+            "Tratamiento consumo SPA": "ODS 3",
+            "Reducción de riesgos y daños": "ODS 3",
+            "Vinculación familiar": "ODS 10",
+            "Inclusión social": "ODS 10",
+            "Empleabilidad": "ODS 8",
+            "Generación de ingresos": "ODS 8",
+            "Educación": "ODS 4",
+            "Vivienda": "ODS 11",
+            "Proyecto de vida": "ODS 3",
+            "Participación comunitaria": "ODS 16",
+            "Justicia y acceso a derechos": "ODS 16",
+            "Otro": "ODS 10"
+        }
+
+        hitos_sugeridos = {
+            "Documentación y ciudadanía": [
+                "Verificar estado documental",
+                "Gestionar documento requerido",
+                "Confirmar entrega o trámite"
+            ],
+            "Cedulación": [
+                "Verificar necesidad de cédula",
+                "Gestionar cita o trámite",
+                "Confirmar obtención del documento"
+            ],
+            "Aseguramiento en salud": [
+                "Verificar afiliación",
+                "Gestionar afiliación o traslado",
+                "Confirmar aseguramiento activo"
+            ],
+            "Salud mental": [
+                "Valoración inicial",
+                "Remisión o vinculación",
+                "Seguimiento a adherencia"
+            ],
+            "Tratamiento consumo SPA": [
+                "Valoración",
+                "Vinculación a tratamiento",
+                "Seguimiento a adherencia"
+            ],
+            "Reducción de riesgos y daños": [
+                "Identificar riesgos",
+                "Definir acciones de reducción",
+                "Verificar cambios"
+            ],
+            "Vinculación familiar": [
+                "Identificar red",
+                "Realizar contacto",
+                "Verificar resultado del acercamiento"
+            ],
+            "Inclusión social": [
+                "Identificar barreras",
+                "Gestionar oferta institucional",
+                "Verificar vinculación"
+            ],
+            "Empleabilidad": [
+                "Perfil ocupacional",
+                "Remisión o postulación",
+                "Seguimiento a vinculación"
+            ],
+            "Generación de ingresos": [
+                "Identificar alternativa",
+                "Gestionar apoyo",
+                "Seguimiento a resultado"
+            ],
+            "Educación": [
+                "Identificar necesidad educativa",
+                "Gestionar vinculación",
+                "Seguimiento a permanencia"
+            ],
+            "Vivienda": [
+                "Caracterizar necesidad",
+                "Gestionar alternativa",
+                "Verificar solución"
+            ],
+            "Proyecto de vida": [
+                "Definir meta personal",
+                "Establecer acciones",
+                "Evaluar avances"
+            ],
+            "Participación comunitaria": [
+                "Identificar espacio",
+                "Vincular",
+                "Verificar participación"
+            ],
+            "Justicia y acceso a derechos": [
+                "Identificar necesidad jurídica",
+                "Gestionar remisión",
+                "Verificar respuesta"
+            ],
+            "Otro": [
+                "Definir actividad 1",
+                "Definir actividad 2",
+                "Definir actividad 3"
+            ]
+        }
+
+        with st.form(f"v16_2_objetivo_{doc_sel}"):
+            tipo_obj = st.selectbox("Tipo de objetivo", tipos_objetivo)
+            linea = linea_por_tipo.get(tipo_obj, "Intervención integral")
+            ods = ods_por_tipo.get(tipo_obj, "ODS 10")
+
+            cpol1, cpol2 = st.columns(2)
+            cpol1.info(f"Línea de política: {linea}")
+            cpol2.info(f"ODS: {ods}")
+
+            descripcion = st.text_area(
+                "Descripción del objetivo *",
+                placeholder="Redacte el resultado que se espera lograr."
             )
-            crear_obj = st.form_submit_button(
-                "🎯 Crear objetivo",
+
+            sugeridos = hitos_sugeridos.get(tipo_obj, [])
+            actividades = st.multiselect(
+                "Actividades / hitos",
+                sugeridos,
+                default=sugeridos
+            )
+
+            actividad_extra = st.text_input(
+                "Actividad adicional (opcional)"
+            )
+            if actividad_extra.strip():
+                actividades = actividades + [actividad_extra.strip()]
+
+            fecha_meta = st.date_input(
+                "Fecha meta",
+                value=date.today() + timedelta(days=30)
+            )
+
+            guardar_obj = st.form_submit_button(
+                f"➕ Crear objetivo para {nombre_usuario}",
                 use_container_width=True,
                 type="primary"
             )
 
-        if crear_obj:
-            if not descripcion_crear.strip():
+        if guardar_obj:
+            if not descripcion.strip():
                 st.error("Debe escribir la descripción del objetivo.")
-            elif not confirmar_crear:
-                st.error("Confirme la creación del objetivo.")
+            elif not actividades:
+                st.error("Debe registrar al menos una actividad o hito.")
             else:
                 with engine.begin() as conn:
                     conn.execute(
@@ -6437,922 +6519,318 @@ def panel_profesional_v15():
                                 fecha_meta
                             )
                             VALUES(
-                                :documento,
+                                :doc,
                                 :tipo,
                                 :descripcion,
-                                :actividades,
-                                :avance_hitos,
+                                CAST(:actividades AS JSON),
+                                CAST(:avance AS JSON),
                                 0,
                                 'Activo',
                                 :linea,
                                 :ods,
-                                :profesional,
+                                :prof,
                                 NOW(),
                                 :fecha_meta
                             )
                         """),
                         {
-                            "documento": doc_crear,
-                            "tipo": tipo_crear,
-                            "descripcion": descripcion_crear.strip(),
+                            "doc": str(doc_sel),
+                            "tipo": tipo_obj,
+                            "descripcion": descripcion.strip(),
                             "actividades": json.dumps(
-                                actividades_crear,
-                                ensure_ascii=False
+                                actividades, ensure_ascii=False
                             ),
-                            "avance_hitos": json.dumps(
-                                [],
-                                ensure_ascii=False
+                            "avance": json.dumps(
+                                [], ensure_ascii=False
                             ),
-                            "linea": linea_crear,
-                            "ods": ", ".join(ods_crear),
-                            "profesional": prof_id,
-                            "fecha_meta": fecha_meta_crear
+                            "linea": linea,
+                            "ods": ods,
+                            "prof": prof_id,
+                            "fecha_meta": fecha_meta
                         }
                     )
-
-                registrar_auditoria(
-                    "CREAR_OBJETIVO_PAI",
-                    documento=doc_crear,
-                    modulo="Mi Panel Profesional",
-                    valor_nuevo=tipo_crear,
-                    observacion=(
-                        f"{descripcion_crear.strip()[:350]} · "
-                        f"Fecha meta {fecha_meta_crear} · "
-                        f"Profesional {prof_nombre}"
+                try:
+                    registrar_auditoria(
+                        "CREAR_OBJETIVO_PAI",
+                        str(doc_sel),
+                        f"{tipo_obj} - {descripcion.strip()[:120]}"
                     )
+                except Exception:
+                    pass
+
+                st.success(
+                    f"✅ Objetivo creado para {nombre_usuario} · CC {doc_sel}."
                 )
-                invalidar_cache_datos()
-                st.success("✅ Objetivo PAI creado correctamente.")
                 st.rerun()
 
-    # --------------------------------------------------------
-    # KPIs y semáforo
-    # --------------------------------------------------------
-    if objetivos.empty:
-        k1, k2, k3, k4, k5 = st.columns(5)
-        k1.metric("👥 Mis usuarios", 0)
-        k2.metric("🔴 Vencidos", 0)
-        k3.metric("🟠 Próximos 7 días", 0)
-        k4.metric("⚠️ Sin seguimiento", 0)
-        k5.metric("✅ Cumplidos", 0)
-
-        st.info(
-            "Todavía no tiene objetivos PAI asignados. "
-            "Puede crear el primero en la sección anterior."
-        )
-        return
-
-    hoy = pd.Timestamp(date.today())
-    objetivos["fecha_meta"] = pd.to_datetime(
-        objetivos["fecha_meta"], errors="coerce"
-    )
-    objetivos["fecha_ultimo_seguimiento"] = pd.to_datetime(
-        objetivos["fecha_ultimo_seguimiento"], errors="coerce"
-    )
-    objetivos["fecha_cumplimiento_real"] = pd.to_datetime(
-        objetivos["fecha_cumplimiento_real"], errors="coerce"
-    )
-    objetivos["porcentaje_avance"] = pd.to_numeric(
-        objetivos["porcentaje_avance"], errors="coerce"
-    ).fillna(0)
-
-    objetivos["nombre_completo"] = (
-        objetivos["nombres"].fillna("").astype(str).str.strip()
-        + " "
-        + objetivos["apellidos"].fillna("").astype(str).str.strip()
-    ).str.strip()
-
-    objetivos["dias_meta"] = (
-        objetivos["fecha_meta"].dt.normalize() - hoy
-    ).dt.days
-
-    objetivos["dias_sin_seguimiento"] = (
-        hoy
-        - objetivos["fecha_ultimo_seguimiento"].dt.normalize()
-    ).dt.days
-
-    def estado_v15(r):
-        avance = float(r.get("porcentaje_avance", 0) or 0)
-        estado = str(r.get("estado", "")).strip().upper()
-        dias_meta = r.get("dias_meta")
-        dias_seg = r.get("dias_sin_seguimiento")
-
-        if avance >= 100 or estado == "CUMPLIDO":
-            return "🟢 CUMPLIDO"
-
-        if pd.notna(dias_meta) and dias_meta < 0:
-            return "🔴 PAI VENCIDO"
-
-        if pd.notna(dias_meta) and 0 <= dias_meta <= 7:
-            return "🟠 PRÓXIMO A VENCER"
-
-        if pd.isna(r.get("fecha_ultimo_seguimiento")):
-            return "⚠️ SIN SEGUIMIENTO"
-
-        if pd.notna(dias_seg) and dias_seg > 15:
-            return "⚠️ SEGUIMIENTO ATRASADO"
-
-        return "🟢 AL DÍA"
-
-    objetivos["control"] = objetivos.apply(estado_v15, axis=1)
-
-    personas_asignadas = int(
-        objetivos["documento"].dropna().astype(str).nunique()
-    )
-    vencidos = int((objetivos["control"] == "🔴 PAI VENCIDO").sum())
-    proximos = int(
-        (objetivos["control"] == "🟠 PRÓXIMO A VENCER").sum()
-    )
-    sin_seg = int(
-        objetivos["control"].isin([
-            "⚠️ SIN SEGUIMIENTO",
-            "⚠️ SEGUIMIENTO ATRASADO"
-        ]).sum()
-    )
-    cumplidos = int((objetivos["control"] == "🟢 CUMPLIDO").sum())
-
-    k1, k2, k3, k4, k5 = st.columns(5)
-    k1.metric("👥 Mis usuarios", personas_asignadas)
-    k2.metric("🔴 Vencidos", vencidos)
-    k3.metric("🟠 Próximos 7 días", proximos)
-    k4.metric("⚠️ Sin seguimiento", sin_seg)
-    k5.metric("✅ Cumplidos", cumplidos)
-
-    st.markdown("### 🚨 Requieren atención")
-
-    prioridad = objetivos[
-        objetivos["control"].isin([
-            "🔴 PAI VENCIDO",
-            "🟠 PRÓXIMO A VENCER",
-            "⚠️ SIN SEGUIMIENTO",
-            "⚠️ SEGUIMIENTO ATRASADO"
-        ])
-    ].copy()
-
-    orden = {
-        "🔴 PAI VENCIDO": 1,
-        "⚠️ SIN SEGUIMIENTO": 2,
-        "⚠️ SEGUIMIENTO ATRASADO": 3,
-        "🟠 PRÓXIMO A VENCER": 4
-    }
-
-    if not prioridad.empty:
-        prioridad["orden"] = prioridad["control"].map(orden).fillna(9)
-        prioridad = prioridad.sort_values(
-            ["orden", "dias_meta"],
-            na_position="last"
-        )
-        vista = prioridad[
-            [
-                "control",
-                "nombre_completo",
-                "documento",
-                "objetivo_tipo",
-                "porcentaje_avance",
-                "fecha_meta",
-                "fecha_ultimo_seguimiento"
-            ]
-        ].copy()
-        vista.columns = [
-            "Prioridad",
-            "Usuario",
-            "Documento",
-            "Objetivo",
-            "Avance %",
-            "Fecha meta",
-            "Último seguimiento"
-        ]
-        st.dataframe(vista, use_container_width=True, hide_index=True)
-    else:
-        st.success("✅ No hay objetivos críticos en este momento.")
-
-    # --------------------------------------------------------
-    # Trabajar objetivo existente
-    # --------------------------------------------------------
-    st.divider()
-    st.markdown("### 👤 Trabajar un caso")
-
-    docs = (
-        objetivos[["documento", "nombre_completo"]]
-        .drop_duplicates()
-        .sort_values("nombre_completo")
-    )
-    opciones_docs_v15 = docs["documento"].astype(str).tolist()
-
-    if (
-        doc_pendiente_v15
-        and doc_pendiente_v15 in opciones_docs_v15
-    ):
-        st.session_state["v15_usuario"] = doc_pendiente_v15
-
-    doc_sel = st.selectbox(
-        "Seleccione usuario",
-        opciones_docs_v15,
-        format_func=lambda d: (
-            docs.loc[
-                docs["documento"].astype(str) == str(d),
-                "nombre_completo"
-            ].iloc[0]
-            + f" · CC {d}"
-        ),
-        key="v15_usuario"
-    )
-
-    objetivos_u = objetivos[
-        objetivos["documento"].astype(str) == str(doc_sel)
-    ].copy()
-
-    st.dataframe(
-        objetivos_u[
-            [
-                "control",
-                "objetivo_tipo",
-                "linea_politica",
-                "ods_principal",
-                "porcentaje_avance",
-                "estado",
-                "fecha_meta",
-                "fecha_ultimo_seguimiento"
-            ]
-        ],
-        use_container_width=True,
-        hide_index=True
-    )
-
-    obj_ids = objetivos_u["id"].tolist()
-    obj_id = st.selectbox(
-        "Objetivo PAI",
-        obj_ids,
-        format_func=lambda x: (
-            objetivos_u.loc[
-                objetivos_u["id"] == x,
-                "objetivo_tipo"
-            ].iloc[0]
-            + " · "
-            + objetivos_u.loc[
-                objetivos_u["id"] == x,
-                "control"
-            ].iloc[0]
-        ),
-        key="v15_objetivo"
-    )
-
-    obj = objetivos_u.loc[
-        objetivos_u["id"] == obj_id
-    ].iloc[0]
-
-    try:
-        actividades = json.loads(obj.get("actividades") or "[]")
-        if not isinstance(actividades, list):
-            actividades = []
-    except Exception:
-        actividades = []
-
-    try:
-        hitos_actuales = json.loads(obj.get("avance_hitos") or "[]")
-        if not isinstance(hitos_actuales, list):
-            hitos_actuales = []
-    except Exception:
-        hitos_actuales = []
-
-    st.markdown("#### 📈 Actualizar avance del objetivo")
-
-    if actividades:
-        hitos_nuevos = st.multiselect(
-            "Marque los hitos ya cumplidos",
-            actividades,
-            default=[h for h in hitos_actuales if h in actividades],
-            key=f"v154_hitos_{obj_id}"
-        )
-        avance_nuevo = round(
-            len(hitos_nuevos) / len(actividades) * 100,
-            1
-        )
-        st.progress(min(max(avance_nuevo / 100, 0), 1))
-        st.caption(f"Avance calculado: {avance_nuevo}%")
-
-        if st.button(
-            "💾 Guardar avance del objetivo",
-            use_container_width=True,
-            key=f"v154_guardar_avance_{obj_id}"
-        ):
-            with engine.begin() as conn:
-                conn.execute(
-                    text("""
-                        UPDATE pai_objetivos
-                        SET avance_hitos=:hitos,
-                            porcentaje_avance=:avance,
-                            estado=CASE
-                                WHEN :avance >= 100 THEN 'CUMPLIDO'
-                                ELSE 'Activo'
-                            END,
-                            fecha_cumplimiento_real=CASE
-                                WHEN :avance >= 100
-                                    THEN COALESCE(
-                                        fecha_cumplimiento_real,
-                                        NOW()
-                                    )
-                                ELSE NULL
-                            END
-                        WHERE id=:id
-                          AND profesional_referente=:profesional
-                    """),
-                    {
-                        "hitos": json.dumps(
-                            hitos_nuevos,
-                            ensure_ascii=False
-                        ),
-                        "avance": avance_nuevo,
-                        "id": int(obj_id),
-                        "profesional": prof_id
-                    }
-                )
-
-            registrar_auditoria(
-                "ACTUALIZAR_AVANCE_PAI",
-                documento=doc_sel,
-                modulo="Mi Panel Profesional",
-                valor_nuevo=f"{avance_nuevo}%",
-                observacion=f"Objetivo PAI ID {obj_id}"
-            )
-            invalidar_cache_datos()
-            st.success("✅ Avance actualizado.")
-            st.rerun()
-    else:
-        st.info(
-            "Este objetivo no tiene hitos configurados. "
-            "Puede registrar seguimientos normalmente."
-        )
-
-    # --------------------------------------------------------
-    # Seguimiento profesional
-    # --------------------------------------------------------
-    st.markdown("#### 📝 Registrar seguimiento")
-
-    tipo_opciones = actividades if actividades else [
-        "Seguimiento profesional",
-        "Gestión institucional",
-        "Orientación",
-        "Valoración",
-        "Otro"
-    ]
-
-    with st.form(f"v154_seguimiento_{obj_id}"):
-        tipo_nov = st.selectbox(
-            "Actividad realizada",
-            tipo_opciones
-        )
-        descripcion = st.text_area(
-            "Descripción del seguimiento *",
-            placeholder=(
-                "Registre la intervención realizada, resultado "
-                "y compromisos."
-            )
-        )
-        evidencia = st.text_input(
-            "Evidencia / referencia (opcional)"
-        )
-        guardar = st.form_submit_button(
-            "💾 Registrar seguimiento",
-            use_container_width=True,
-            type="primary"
-        )
-
-    if guardar:
-        if not descripcion.strip():
-            st.error("Debe describir el seguimiento realizado.")
-        else:
-            avance_actual = float(
-                obj.get("porcentaje_avance", 0) or 0
-            )
-            with engine.begin() as conn:
-                conn.execute(
-                    text("""
-                        INSERT INTO pai_novedades(
-                            id_objetivo,
-                            fecha,
-                            profesional,
-                            tipo_novedad,
-                            descripcion,
-                            avance_generado,
-                            evidencia
-                        )
-                        VALUES(
-                            :id_objetivo,
-                            NOW(),
-                            :profesional,
-                            :tipo_novedad,
-                            :descripcion,
-                            :avance_generado,
-                            :evidencia
-                        )
-                    """),
-                    {
-                        "id_objetivo": int(obj_id),
-                        "profesional": prof_nombre,
-                        "tipo_novedad": tipo_nov,
-                        "descripcion": descripcion.strip(),
-                        "avance_generado": avance_actual,
-                        "evidencia": evidencia.strip()
-                    }
-                )
-                conn.execute(
-                    text("""
-                        UPDATE pai_objetivos
-                        SET fecha_ultimo_seguimiento = NOW()
-                        WHERE id = :id
-                          AND profesional_referente=:profesional
-                    """),
-                    {
-                        "id": int(obj_id),
-                        "profesional": prof_id
-                    }
-                )
-
-            registrar_auditoria(
-                "REGISTRAR_NOVEDAD_PROFESIONAL",
-                documento=doc_sel,
-                modulo="Mi Panel Profesional",
-                valor_nuevo=tipo_nov,
-                observacion=descripcion.strip()[:500]
-            )
-            invalidar_cache_datos()
-            st.success("✅ Seguimiento registrado.")
-            st.rerun()
-
-    with st.expander("📚 Ver últimos seguimientos"):
-        hist = pd.read_sql(
-            text("""
-                SELECT
-                    fecha,
-                    profesional,
-                    tipo_novedad,
-                    descripcion,
-                    avance_generado,
-                    evidencia
-                FROM pai_novedades
-                WHERE id_objetivo = :id
-                ORDER BY fecha DESC
-                LIMIT 20
-            """),
-            engine,
-            params={"id": int(obj_id)}
-        )
-        if hist.empty:
-            st.info("Sin seguimientos registrados.")
-        else:
+        if not objetivos.empty:
+            st.markdown("#### Objetivos registrados")
             st.dataframe(
-                hist,
+                objetivos[
+                    [
+                        "id",
+                        "objetivo_tipo",
+                        "objetivo_descripcion",
+                        "linea_politica",
+                        "ods_principal",
+                        "porcentaje_avance",
+                        "estado",
+                        "fecha_meta"
+                    ]
+                ],
                 use_container_width=True,
                 hide_index=True
             )
 
-
-    st.divider()
-
-    semaforo_integral_v16, razones_integrales_v16 = (
-        _semaforo_integral_usuario_v16(doc_sel)
-    )
-    st.markdown("### 🚦 Semáforo integral del caso")
-    st.markdown(f"#### {semaforo_integral_v16}")
-    if razones_integrales_v16:
-        st.caption(" · ".join(razones_integrales_v16))
-    else:
-        st.caption("Sin alertas relevantes en este momento.")
-
-    st.divider()
-    cierre_pai_usuario_v16(
-        doc_sel,
-        profesional_id=prof_id,
-        profesional_nombre=prof_nombre
-    )
-
-
-
-# ============================================================
-# V16.1 - PAI SIMPLIFICADO + SEMÁFORO + CIERRE + COMITÉ DE CASOS
-# ============================================================
-def _semaforo_integral_usuario_v16(documento):
-    """Calcula semáforo integral de un usuario a partir de PAI, sanciones y permisos."""
-    hoy = pd.Timestamp(date.today())
-    puntaje = 0
-    razones = []
-
-    try:
-        objs = pd.read_sql(
-            text("""
-                SELECT
-                    porcentaje_avance,
-                    estado,
-                    fecha_meta,
-                    fecha_ultimo_seguimiento
-                FROM pai_objetivos
-                WHERE TRIM(CAST(documento_usuario AS TEXT))=:doc
-            """),
-            engine,
-            params={"doc": str(documento)}
-        )
-    except Exception:
-        objs = pd.DataFrame()
-
-    if objs.empty:
-        puntaje += 2
-        razones.append("Sin objetivos PAI")
-    else:
-        objs["porcentaje_avance"] = pd.to_numeric(
-            objs["porcentaje_avance"], errors="coerce"
-        ).fillna(0)
-        objs["fecha_meta"] = pd.to_datetime(
-            objs["fecha_meta"], errors="coerce"
-        )
-        objs["fecha_ultimo_seguimiento"] = pd.to_datetime(
-            objs["fecha_ultimo_seguimiento"], errors="coerce"
-        )
-
-        cumplido = (
-            objs["porcentaje_avance"].ge(100)
-            | objs["estado"].fillna("").astype(str).str.upper().eq("CUMPLIDO")
-        )
-        dias_meta = (objs["fecha_meta"].dt.normalize() - hoy).dt.days
-        vencidos = int((~cumplido & dias_meta.lt(0)).sum())
-
-        if vencidos >= 2:
-            puntaje += 3
-            razones.append(f"{vencidos} objetivos vencidos")
-        elif vencidos == 1:
-            puntaje += 2
-            razones.append("1 objetivo vencido")
-
-        dias_seg = (
-            hoy - objs["fecha_ultimo_seguimiento"].dt.normalize()
-        ).dt.days
-        atrasados = int(
-            (
-                ~cumplido
-                & (
-                    objs["fecha_ultimo_seguimiento"].isna()
-                    | dias_seg.gt(15)
-                )
-            ).sum()
-        )
-        if atrasados >= 2:
-            puntaje += 2
-            razones.append(f"{atrasados} objetivos sin seguimiento reciente")
-        elif atrasados == 1:
-            puntaje += 1
-            razones.append("Seguimiento pendiente")
-
-    try:
-        sanc = pd.read_sql(
-            text("""
-                SELECT COUNT(*) AS total
-                FROM sanciones_usuarios
-                WHERE TRIM(CAST(numero_identificacion AS TEXT))=:doc
-                  AND UPPER(TRIM(COALESCE(estado,'')))='ACTIVA'
-            """),
-            engine,
-            params={"doc": str(documento)}
-        )
-        if not sanc.empty and int(sanc.iloc[0]["total"] or 0) > 0:
-            puntaje += 2
-            razones.append("Sanción activa")
-    except Exception:
-        pass
-
-    try:
-        perm = pd.read_sql(
-            text("""
-                SELECT
-                    fecha_regreso_estimada,
-                    hora_regreso_estimada
-                FROM permisos_usuarios
-                WHERE TRIM(CAST(numero_identificacion AS TEXT))=:doc
-                  AND UPPER(TRIM(COALESCE(estado_permiso,'')))='ABIERTO'
-                ORDER BY fecha_salida DESC, hora_salida DESC
-                LIMIT 1
-            """),
-            engine,
-            params={"doc": str(documento)}
-        )
-        if not perm.empty:
-            regreso_dt = pd.to_datetime(
-                str(perm.iloc[0].get("fecha_regreso_estimada", ""))
-                + " "
-                + str(perm.iloc[0].get("hora_regreso_estimada", "")),
-                errors="coerce"
+            opciones_obj = objetivos["id"].tolist()
+            obj_id = st.selectbox(
+                "Objetivo a actualizar",
+                opciones_obj,
+                format_func=lambda oid: (
+                    f"#{oid} · "
+                    + str(
+                        objetivos.loc[
+                            objetivos["id"] == oid,
+                            "objetivo_tipo"
+                        ].iloc[0]
+                    )
+                ),
+                key=f"v16_2_obj_update_{doc_sel}"
             )
-            if pd.notna(regreso_dt) and regreso_dt.to_pydatetime() < datetime.now():
-                puntaje += 2
-                razones.append("Permiso vencido")
-    except Exception:
-        pass
 
-    if puntaje >= 5:
-        return "🔴 CRÍTICO", razones
-    if puntaje >= 3:
-        return "🟠 REQUIERE ATENCIÓN", razones
-    if puntaje >= 1:
-        return "🟡 EN SEGUIMIENTO", razones
-    return "🟢 AL DÍA", razones
+            obj_row = objetivos.loc[objetivos["id"] == obj_id].iloc[0]
 
+            try:
+                acts = obj_row.get("actividades") or []
+                if isinstance(acts, str):
+                    acts = json.loads(acts)
+                if not isinstance(acts, list):
+                    acts = []
+            except Exception:
+                acts = []
 
-def cierre_pai_usuario_v16(documento, profesional_id=None, profesional_nombre=None):
-    st.markdown("### ✅ Cierre formal del PAI")
+            try:
+                avance = obj_row.get("avance_hitos") or []
+                if isinstance(avance, str):
+                    avance = json.loads(avance)
+                if not isinstance(avance, list):
+                    avance = []
+            except Exception:
+                avance = []
 
-    try:
-        cierres = pd.read_sql(
-            text("""
-                SELECT *
-                FROM pai_cierres
-                WHERE TRIM(CAST(documento_usuario AS TEXT))=:doc
-                ORDER BY creado_en DESC
-                LIMIT 1
-            """),
-            engine,
-            params={"doc": str(documento)}
-        )
-    except Exception:
-        cierres = pd.DataFrame()
+            completos = st.multiselect(
+                "Hitos completados",
+                acts,
+                default=[x for x in avance if x in acts],
+                key=f"v16_2_hitos_{doc_sel}_{obj_id}"
+            )
 
-    if not cierres.empty:
-        c = cierres.iloc[0]
-        st.success(
-            f"PAI cerrado el {c.get('fecha_cierre')} · "
-            f"Resultado: {c.get('resultado_final')}"
-        )
-        st.write(c.get("resumen_cierre", ""))
-        return
+            pct = round((len(completos) / len(acts)) * 100) if acts else 0
+            st.progress(pct / 100 if pct else 0)
+            st.caption(f"Avance calculado: {pct}%")
 
-    with st.expander("Cerrar PAI de este usuario"):
-        resultado = st.selectbox(
-            "Resultado final",
-            [
-                "METAS CUMPLIDAS",
-                "CUMPLIMIENTO PARCIAL",
-                "NO CUMPLIDO",
-                "EGRESO",
-                "RETIRO VOLUNTARIO",
-                "TRASLADO",
-                "OTRO"
-            ],
-            key=f"v16_resultado_cierre_{documento}"
-        )
-        resumen = st.text_area(
-            "Resumen de cierre *",
-            key=f"v16_resumen_cierre_{documento}"
-        )
-        recomendaciones = st.text_area(
-            "Recomendaciones posteriores",
-            key=f"v16_recom_cierre_{documento}"
-        )
-        confirmar = st.checkbox(
-            "Confirmo el cierre formal del PAI.",
-            key=f"v16_conf_cierre_{documento}"
-        )
-
-        if st.button(
-            "✅ Cerrar PAI",
-            use_container_width=True,
-            type="primary",
-            key=f"v16_btn_cierre_{documento}"
-        ):
-            if not resumen.strip():
-                st.error("Debe registrar un resumen de cierre.")
-            elif not confirmar:
-                st.error("Debe confirmar el cierre.")
-            else:
+            if st.button(
+                f"💾 Guardar avance de {nombre_usuario}",
+                use_container_width=True,
+                key=f"v16_2_guardar_avance_{doc_sel}_{obj_id}"
+            ):
                 with engine.begin() as conn:
                     conn.execute(
                         text("""
-                            INSERT INTO pai_cierres(
-                                documento_usuario,
-                                fecha_cierre,
-                                resultado_final,
-                                resumen_cierre,
-                                recomendaciones,
-                                profesional_referente,
-                                cerrado_por
-                            )
-                            VALUES(
-                                :doc,
-                                CURRENT_DATE,
-                                :resultado,
-                                :resumen,
-                                :recomendaciones,
-                                :profesional_id,
-                                :usuario
-                            )
+                            UPDATE pai_objetivos
+                            SET
+                                avance_hitos=CAST(:avance AS JSON),
+                                porcentaje_avance=:pct,
+                                estado=CASE
+                                    WHEN :pct >= 100 THEN 'CUMPLIDO'
+                                    ELSE 'Activo'
+                                END,
+                                fecha_cumplimiento_real=CASE
+                                    WHEN :pct >= 100 THEN NOW()
+                                    ELSE NULL
+                                END
+                            WHERE id=:id
+                              AND TRIM(CAST(documento_usuario AS TEXT))=:doc
+                              AND profesional_referente=:prof
                         """),
                         {
-                            "doc": str(documento),
-                            "resultado": resultado,
-                            "resumen": resumen.strip(),
-                            "recomendaciones": recomendaciones.strip(),
-                            "profesional_id": profesional_id,
-                            "usuario": st.session_state.get(
-                                "usuario_actual", profesional_nombre or "profesional"
-                            )
+                            "avance": json.dumps(
+                                completos, ensure_ascii=False
+                            ),
+                            "pct": pct,
+                            "id": int(obj_id),
+                            "doc": str(doc_sel),
+                            "prof": prof_id
                         }
                     )
-                st.success("✅ PAI cerrado formalmente.")
+                st.success(
+                    f"✅ Avance actualizado para {nombre_usuario}."
+                )
                 st.rerun()
 
+    # ============================================================
+    # SEGUIMIENTOS
+    # ============================================================
+    with tab_seg:
+        st.markdown(f"### 📝 Seguimientos de {nombre_usuario}")
+        st.warning(
+            f"El seguimiento que registre se guardará exclusivamente para "
+            f"**{nombre_usuario} · CC {doc_sel}**."
+        )
 
-def comite_casos_v16():
-    rol = str(st.session_state.get("rol_actual", "")).upper()
-    if rol not in ["COORDINACION", "MANAGER"]:
-        st.error("Acceso exclusivo para Coordinación y Manager.")
-        return
-
-    st.title("🧠 Comité de Casos")
-    st.caption(
-        "Registro de análisis interdisciplinario, decisiones, compromisos "
-        "y responsables."
-    )
-
-    personas = pd.read_sql(
-        text("""
-            SELECT
-                TRIM(CAST(numero_identificacion AS TEXT)) AS documento,
-                nombres,
-                apellidos,
-                modalidad,
-                estado_caso
-            FROM habitante_de_calle
-            ORDER BY nombres, apellidos
-        """),
-        engine
-    )
-    personas["nombre_completo"] = (
-        personas["nombres"].fillna("").astype(str).str.strip()
-        + " "
-        + personas["apellidos"].fillna("").astype(str).str.strip()
-    ).str.strip()
-
-    docs = personas["documento"].astype(str).tolist()
-
-    with st.form("v16_nuevo_comite"):
-        doc = st.selectbox(
-            "Usuario",
-            docs,
-            format_func=lambda d: (
-                personas.loc[
-                    personas["documento"].astype(str) == str(d),
-                    "nombre_completo"
-                ].iloc[0]
-                + f" · CC {d}"
+        if objetivos.empty:
+            st.info(
+                "Primero debe crear al menos un objetivo PAI para esta persona."
             )
-        )
-        fecha_comite = st.date_input("Fecha del comité", value=date.today())
-        situacion = st.text_area("Situación analizada *")
-        decision = st.text_area("Decisiones del comité *")
-        participantes = st.text_area(
-            "Participantes",
-            placeholder="Nombres o perfiles participantes"
-        )
-        crear = st.form_submit_button(
-            "💾 Registrar comité",
-            use_container_width=True,
-            type="primary"
-        )
-
-    if crear:
-        if not situacion.strip() or not decision.strip():
-            st.error("Situación y decisiones son obligatorias.")
         else:
-            with engine.begin() as conn:
-                res = conn.execute(
-                    text("""
-                        INSERT INTO comites_casos(
-                            documento_usuario,
-                            fecha_comite,
-                            situacion_analizada,
-                            decisiones,
-                            participantes,
-                            registrado_por
-                        )
-                        VALUES(
-                            :doc,
-                            :fecha,
-                            :situacion,
-                            :decision,
-                            :participantes,
-                            :usuario
-                        )
-                        RETURNING id
-                    """),
-                    {
-                        "doc": doc,
-                        "fecha": fecha_comite,
-                        "situacion": situacion.strip(),
-                        "decision": decision.strip(),
-                        "participantes": participantes.strip(),
-                        "usuario": st.session_state.get(
-                            "usuario_actual", "coordinacion"
-                        )
-                    }
-                )
-                comite_id = int(res.scalar())
-            st.session_state["v16_comite_id"] = comite_id
-            st.success("✅ Comité registrado.")
-
-    comites = pd.read_sql(
-        text("""
-            SELECT
-                c.id,
-                c.fecha_comite,
-                c.documento_usuario,
-                h.nombres,
-                h.apellidos,
-                c.situacion_analizada,
-                c.decisiones,
-                c.participantes,
-                c.registrado_por
-            FROM comites_casos c
-            LEFT JOIN habitante_de_calle h
-              ON TRIM(CAST(h.numero_identificacion AS TEXT))
-               = TRIM(CAST(c.documento_usuario AS TEXT))
-            ORDER BY c.fecha_comite DESC, c.id DESC
-            LIMIT 50
-        """),
-        engine
-    )
-
-    st.markdown("### 📋 Comités recientes")
-    if not comites.empty:
-        st.dataframe(comites, use_container_width=True, hide_index=True)
-
-        ids = comites["id"].tolist()
-        comite_sel = st.selectbox(
-            "Comité para agregar compromiso",
-            ids,
-            key="v16_comite_sel"
-        )
-
-        funcionarios = pd.read_sql(
-            text("""
-                SELECT cedula, nombre
-                FROM funcionarios_sistema
-                WHERE activo=TRUE
-                ORDER BY nombre
-            """),
-            engine
-        )
-
-        with st.form("v16_compromiso"):
-            responsable = st.selectbox(
-                "Responsable",
-                funcionarios["cedula"].astype(str).tolist(),
-                format_func=lambda c: (
-                    funcionarios.loc[
-                        funcionarios["cedula"].astype(str) == str(c),
-                        "nombre"
-                    ].iloc[0]
-                    + f" · CC {c}"
-                )
-            )
-            compromiso = st.text_area("Compromiso *")
-            fecha_limite = st.date_input(
-                "Fecha límite",
-                value=date.today() + timedelta(days=15)
-            )
-            guardar = st.form_submit_button(
-                "➕ Agregar compromiso",
-                use_container_width=True
-            )
-
-        if guardar:
-            if not compromiso.strip():
-                st.error("Debe registrar el compromiso.")
-            else:
-                with engine.begin() as conn:
-                    conn.execute(
-                        text("""
-                            INSERT INTO compromisos_comite(
-                                comite_id,
-                                compromiso,
-                                responsable_cedula,
-                                fecha_limite,
-                                estado
-                            )
-                            VALUES(
-                                :comite,
-                                :compromiso,
-                                :responsable,
-                                :fecha,
-                                'PENDIENTE'
-                            )
-                        """),
-                        {
-                            "comite": int(comite_sel),
-                            "compromiso": compromiso.strip(),
-                            "responsable": str(responsable),
-                            "fecha": fecha_limite
-                        }
+            objetivo_seg = st.selectbox(
+                "Objetivo relacionado",
+                objetivos["id"].tolist(),
+                format_func=lambda oid: (
+                    f"#{oid} · "
+                    + str(
+                        objetivos.loc[
+                            objetivos["id"] == oid,
+                            "objetivo_tipo"
+                        ].iloc[0]
                     )
-                st.success("✅ Compromiso agregado.")
-                st.rerun()
+                ),
+                key=f"v16_2_obj_seg_{doc_sel}"
+            )
 
+            with st.form(f"v16_2_seg_form_{doc_sel}_{objetivo_seg}"):
+                actividad = st.text_input(
+                    "Actividad realizada *",
+                    placeholder="Ej.: Acompañamiento, remisión, contacto familiar..."
+                )
+                descripcion_seg = st.text_area(
+                    "Descripción del seguimiento *",
+                    placeholder=(
+                        "Registre la intervención realizada, resultado y compromisos."
+                    )
+                )
+                evidencia = st.text_input(
+                    "Evidencia / referencia (opcional)"
+                )
+
+                guardar_seg = st.form_submit_button(
+                    f"📝 Registrar seguimiento para {nombre_usuario}",
+                    use_container_width=True,
+                    type="primary"
+                )
+
+            if guardar_seg:
+                if not actividad.strip() or not descripcion_seg.strip():
+                    st.error(
+                        "Actividad y descripción del seguimiento son obligatorias."
+                    )
+                else:
+                    with engine.begin() as conn:
+                        conn.execute(
+                            text("""
+                                INSERT INTO pai_novedades(
+                                    id_objetivo,
+                                    fecha,
+                                    profesional,
+                                    tipo_novedad,
+                                    descripcion,
+                                    avance_generado,
+                                    evidencia
+                                )
+                                VALUES(
+                                    :id_obj,
+                                    NOW(),
+                                    :profesional,
+                                    :tipo,
+                                    :descripcion,
+                                    :avance,
+                                    :evidencia
+                                )
+                            """),
+                            {
+                                "id_obj": int(objetivo_seg),
+                                "profesional": prof_nombre,
+                                "tipo": actividad.strip(),
+                                "descripcion": descripcion_seg.strip(),
+                                "avance": 0,
+                                "evidencia": evidencia.strip()
+                            }
+                        )
+                        conn.execute(
+                            text("""
+                                UPDATE pai_objetivos
+                                SET fecha_ultimo_seguimiento=NOW()
+                                WHERE id=:id_obj
+                                  AND TRIM(CAST(documento_usuario AS TEXT))=:doc
+                                  AND profesional_referente=:prof
+                            """),
+                            {
+                                "id_obj": int(objetivo_seg),
+                                "doc": str(doc_sel),
+                                "prof": prof_id
+                            }
+                        )
+
+                    try:
+                        registrar_auditoria(
+                            "REGISTRAR_NOVEDAD_PROFESIONAL",
+                            str(doc_sel),
+                            descripcion_seg.strip()[:150]
+                        )
+                    except Exception:
+                        pass
+
+                    st.success(
+                        f"✅ Seguimiento registrado para "
+                        f"{nombre_usuario} · CC {doc_sel}."
+                    )
+                    st.rerun()
+
+            hist = pd.read_sql(
+                text("""
+                    SELECT
+                        n.fecha,
+                        n.profesional,
+                        n.tipo_novedad,
+                        n.descripcion,
+                        n.evidencia,
+                        o.objetivo_tipo
+                    FROM pai_novedades n
+                    JOIN pai_objetivos o
+                      ON o.id=n.id_objetivo
+                    WHERE TRIM(CAST(o.documento_usuario AS TEXT))=:doc
+                      AND o.profesional_referente=:prof
+                    ORDER BY n.fecha DESC
+                    LIMIT 20
+                """),
+                engine,
+                params={"doc": str(doc_sel), "prof": prof_id}
+            )
+
+            st.markdown("#### Últimos seguimientos")
+            if hist.empty:
+                st.info("Aún no hay seguimientos registrados.")
+            else:
+                st.dataframe(
+                    hist,
+                    use_container_width=True,
+                    hide_index=True
+                )
+
+    # ============================================================
+    # CIERRE
+    # ============================================================
+    with tab_cierre:
+        st.markdown(f"### ✅ Cierre del PAI de {nombre_usuario}")
+        st.warning(
+            f"Está a punto de trabajar el cierre del PAI de "
+            f"**{nombre_usuario} · CC {doc_sel}**."
+        )
+        cierre_pai_usuario_v16(
+            doc_sel,
+            profesional_id=prof_id,
+            profesional_nombre=prof_nombre
+        )
 
 def supervision_pai_v15():
     rol = str(st.session_state.get("rol_actual", "")).upper()
