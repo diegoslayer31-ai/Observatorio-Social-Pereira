@@ -4399,9 +4399,91 @@ def gestion_usuarios_movil():
             st.warning(f"No fue posible consultar la historia: {e}")
 
     elif accion == "🎯 PAI / Seguimiento":
-        st.info(
-            "El PAI y seguimiento profesional permanecen en su módulo especializado."
-        )
+
+        # V15.2 - acceso directo al PAI desde Gestión Profesional
+        cedula_pai = str(
+            st.session_state.get("documento_funcionario", "")
+        ).strip()
+
+        rol_pai = str(
+            st.session_state.get("rol_actual", "")
+        ).upper()
+
+        acceso_pai_usuario = rol_pai in ["COORDINACION", "MANAGER"]
+
+        if rol_pai == "PROFESIONAL" and cedula_pai:
+            try:
+                permiso_pai = pd.read_sql(
+                    text("""
+                        SELECT COALESCE(acceso_pai, FALSE) AS acceso_pai
+                        FROM funcionarios_sistema
+                        WHERE cedula=:cedula
+                          AND activo=TRUE
+                        LIMIT 1
+                    """),
+                    engine,
+                    params={"cedula": cedula_pai}
+                )
+
+                acceso_pai_usuario = (
+                    not permiso_pai.empty
+                    and bool(permiso_pai.iloc[0]["acceso_pai"])
+                )
+            except Exception:
+                acceso_pai_usuario = False
+
+        if not acceso_pai_usuario:
+            st.warning(
+                "Este funcionario no tiene habilitado el acceso al PAI."
+            )
+        else:
+            st.markdown("#### 🎯 PAI y Seguimiento Profesional")
+            st.write(
+                f"**Usuario:** {u.get('nombres','')} {u.get('apellidos','')}"
+            )
+            st.write(f"**Documento:** {documento}")
+
+            try:
+                objetivos_usuario_pai = pd.read_sql(
+                    text("""
+                        SELECT
+                            id,
+                            objetivo_tipo,
+                            porcentaje_avance,
+                            estado,
+                            fecha_meta,
+                            fecha_ultimo_seguimiento
+                        FROM pai_objetivos
+                        WHERE TRIM(CAST(documento_usuario AS TEXT))=:doc
+                        ORDER BY fecha_meta NULLS LAST, fecha_apertura DESC
+                    """),
+                    engine,
+                    params={"doc": documento}
+                )
+            except Exception:
+                objetivos_usuario_pai = pd.DataFrame()
+
+            if objetivos_usuario_pai.empty:
+                st.info(
+                    "Este usuario todavía no tiene objetivos PAI registrados."
+                )
+            else:
+                st.dataframe(
+                    objetivos_usuario_pai,
+                    use_container_width=True,
+                    hide_index=True
+                )
+
+            if st.button(
+                "🎯 Abrir PAI / Registrar seguimiento",
+                use_container_width=True,
+                type="primary",
+                key=f"abrir_pai_desde_gestion_{documento}"
+            ):
+                # El panel profesional tomará este usuario como selección inicial
+                st.session_state["v15_usuario_pendiente"] = str(documento)
+                st.session_state.page = "panel_profesional_v15"
+                st.rerun()
 
 
 
@@ -6200,12 +6282,24 @@ def panel_profesional_v15():
         .sort_values("nombre_completo")
     )
 
+    opciones_docs_v15 = docs["documento"].astype(str).tolist()
+
+    doc_pendiente_v15 = str(
+        st.session_state.pop("v15_usuario_pendiente", "")
+    ).strip()
+
+    if (
+        doc_pendiente_v15
+        and doc_pendiente_v15 in opciones_docs_v15
+    ):
+        st.session_state["v15_usuario"] = doc_pendiente_v15
+
     doc_sel = st.selectbox(
         "Seleccione usuario",
-        docs["documento"].tolist(),
+        opciones_docs_v15,
         format_func=lambda d: (
             docs.loc[
-                docs["documento"] == d,
+                docs["documento"].astype(str) == str(d),
                 "nombre_completo"
             ].iloc[0]
             + f" · CC {d}"
