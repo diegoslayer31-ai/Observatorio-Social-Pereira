@@ -6188,6 +6188,201 @@ def cierre_pai_usuario_v16(documento, profesional_id=None, profesional_nombre=No
             st.rerun()
 
 
+def comite_casos_v16():
+    rol = str(st.session_state.get("rol_actual", "")).upper()
+    if rol not in ["COORDINACION", "MANAGER"]:
+        st.error("Acceso exclusivo para Coordinación y Manager.")
+        return
+
+    st.title("🧠 Comité de Casos")
+    st.caption(
+        "Registro de análisis interdisciplinario, decisiones, compromisos "
+        "y responsables."
+    )
+
+    personas = pd.read_sql(
+        text("""
+            SELECT
+                TRIM(CAST(numero_identificacion AS TEXT)) AS documento,
+                nombres,
+                apellidos,
+                modalidad,
+                estado_caso
+            FROM habitante_de_calle
+            ORDER BY nombres, apellidos
+        """),
+        engine
+    )
+    personas["nombre_completo"] = (
+        personas["nombres"].fillna("").astype(str).str.strip()
+        + " "
+        + personas["apellidos"].fillna("").astype(str).str.strip()
+    ).str.strip()
+
+    docs = personas["documento"].astype(str).tolist()
+
+    with st.form("v16_nuevo_comite"):
+        doc = st.selectbox(
+            "Usuario",
+            docs,
+            format_func=lambda d: (
+                personas.loc[
+                    personas["documento"].astype(str) == str(d),
+                    "nombre_completo"
+                ].iloc[0]
+                + f" · CC {d}"
+            )
+        )
+        fecha_comite = st.date_input("Fecha del comité", value=date.today())
+        situacion = st.text_area("Situación analizada *")
+        decision = st.text_area("Decisiones del comité *")
+        participantes = st.text_area(
+            "Participantes",
+            placeholder="Nombres o perfiles participantes"
+        )
+        crear = st.form_submit_button(
+            "💾 Registrar comité",
+            use_container_width=True,
+            type="primary"
+        )
+
+    if crear:
+        if not situacion.strip() or not decision.strip():
+            st.error("Situación y decisiones son obligatorias.")
+        else:
+            with engine.begin() as conn:
+                res = conn.execute(
+                    text("""
+                        INSERT INTO comites_casos(
+                            documento_usuario,
+                            fecha_comite,
+                            situacion_analizada,
+                            decisiones,
+                            participantes,
+                            registrado_por
+                        )
+                        VALUES(
+                            :doc,
+                            :fecha,
+                            :situacion,
+                            :decision,
+                            :participantes,
+                            :usuario
+                        )
+                        RETURNING id
+                    """),
+                    {
+                        "doc": doc,
+                        "fecha": fecha_comite,
+                        "situacion": situacion.strip(),
+                        "decision": decision.strip(),
+                        "participantes": participantes.strip(),
+                        "usuario": st.session_state.get(
+                            "usuario_actual", "coordinacion"
+                        )
+                    }
+                )
+                comite_id = int(res.scalar())
+            st.session_state["v16_comite_id"] = comite_id
+            st.success("✅ Comité registrado.")
+
+    comites = pd.read_sql(
+        text("""
+            SELECT
+                c.id,
+                c.fecha_comite,
+                c.documento_usuario,
+                h.nombres,
+                h.apellidos,
+                c.situacion_analizada,
+                c.decisiones,
+                c.participantes,
+                c.registrado_por
+            FROM comites_casos c
+            LEFT JOIN habitante_de_calle h
+              ON TRIM(CAST(h.numero_identificacion AS TEXT))
+               = TRIM(CAST(c.documento_usuario AS TEXT))
+            ORDER BY c.fecha_comite DESC, c.id DESC
+            LIMIT 50
+        """),
+        engine
+    )
+
+    st.markdown("### 📋 Comités recientes")
+    if not comites.empty:
+        st.dataframe(comites, use_container_width=True, hide_index=True)
+
+        ids = comites["id"].tolist()
+        comite_sel = st.selectbox(
+            "Comité para agregar compromiso",
+            ids,
+            key="v16_comite_sel"
+        )
+
+        funcionarios = pd.read_sql(
+            text("""
+                SELECT cedula, nombre
+                FROM funcionarios_sistema
+                WHERE activo=TRUE
+                ORDER BY nombre
+            """),
+            engine
+        )
+
+        with st.form("v16_compromiso"):
+            responsable = st.selectbox(
+                "Responsable",
+                funcionarios["cedula"].astype(str).tolist(),
+                format_func=lambda c: (
+                    funcionarios.loc[
+                        funcionarios["cedula"].astype(str) == str(c),
+                        "nombre"
+                    ].iloc[0]
+                    + f" · CC {c}"
+                )
+            )
+            compromiso = st.text_area("Compromiso *")
+            fecha_limite = st.date_input(
+                "Fecha límite",
+                value=date.today() + timedelta(days=15)
+            )
+            guardar = st.form_submit_button(
+                "➕ Agregar compromiso",
+                use_container_width=True
+            )
+
+        if guardar:
+            if not compromiso.strip():
+                st.error("Debe registrar el compromiso.")
+            else:
+                with engine.begin() as conn:
+                    conn.execute(
+                        text("""
+                            INSERT INTO compromisos_comite(
+                                comite_id,
+                                compromiso,
+                                responsable_cedula,
+                                fecha_limite,
+                                estado
+                            )
+                            VALUES(
+                                :comite,
+                                :compromiso,
+                                :responsable,
+                                :fecha,
+                                'PENDIENTE'
+                            )
+                        """),
+                        {
+                            "comite": int(comite_sel),
+                            "compromiso": compromiso.strip(),
+                            "responsable": str(responsable),
+                            "fecha": fecha_limite
+                        }
+                    )
+                st.success("✅ Compromiso agregado.")
+                st.rerun()
+
 def panel_profesional_v15():
     st.title("🩺 Mi Panel Profesional")
     st.caption(
