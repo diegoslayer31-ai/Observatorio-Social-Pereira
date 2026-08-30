@@ -8106,79 +8106,211 @@ def dashboard_ejecutivo():
     st.divider()
 
     # ========================================================
-    # PERFIL DE POBLACIÓN
+    # RADIOGRAFÍA POBLACIONAL - HABITABILIDAD EN CALLE
     # ========================================================
-    st.markdown("### 📊 Lectura rápida de población")
+    st.markdown("### 🧭 Radiografía rápida de la población atendida")
+    st.caption(
+        "Lectura institucional para caracterización y comparación territorial "
+        "del programa de habitabilidad en calle."
+    )
+
+    # ---------- funciones auxiliares ----------
+    def _texto_limpio_rapido(serie):
+        return (
+            serie.fillna("")
+            .astype(str)
+            .str.strip()
+            .str.replace(r"\s+", " ", regex=True)
+        )
+
+    def _normalizar_sexo_rapido(valor):
+        if pd.isna(valor):
+            return "Sin información"
+        v = " ".join(str(valor).strip().upper().split())
+
+        if v in {
+            "M", "MASCULINO", "HOMBRE", "H",
+            "MALE", "MASC", "MASCULINO."
+        }:
+            return "Masculino"
+
+        if v in {
+            "F", "FEMENINO", "MUJER",
+            "FEMALE", "FEM", "FEMENINO."
+        }:
+            return "Femenino"
+
+        if v in {
+            "", "NAN", "NONE", "NULL", "N/A", "NA",
+            "SIN DATO", "SIN INFORMACION",
+            "SIN INFORMACIÓN", "NO REGISTRA"
+        }:
+            return "Sin información"
+
+        return "Otro / revisar"
+
+    def _top_categorias_rapido(
+        serie,
+        top_n=8,
+        limpiar_prefijo_numerico=False,
+        normalizador=None
+    ):
+        s = serie.copy()
+
+        if normalizador is not None:
+            s = s.apply(normalizador)
+        else:
+            s = _texto_limpio_rapido(s)
+            s = s.replace({
+                "": "Sin información",
+                "NAN": "Sin información",
+                "None": "Sin información",
+                "NONE": "Sin información"
+            })
+
+        if limpiar_prefijo_numerico:
+            s = (
+                s.astype(str)
+                .str.replace(r"^\s*\d+\s*[-–]\s*", "", regex=True)
+                .str.strip()
+            )
+
+        conteo = (
+            s.value_counts(dropna=False)
+            .rename_axis("categoria")
+            .reset_index(name="cantidad")
+        )
+
+        if len(conteo) > top_n:
+            principales = conteo.head(top_n).copy()
+            resto = int(conteo.iloc[top_n:]["cantidad"].sum())
+            if resto > 0:
+                principales = pd.concat(
+                    [
+                        principales,
+                        pd.DataFrame(
+                            [{"categoria": "Otros", "cantidad": resto}]
+                        )
+                    ],
+                    ignore_index=True
+                )
+            conteo = principales
+
+        total = int(conteo["cantidad"].sum()) if not conteo.empty else 0
+        if total:
+            conteo["porcentaje"] = (
+                conteo["cantidad"] / total * 100
+            ).round(1)
+        else:
+            conteo["porcentaje"] = 0.0
+
+        return conteo
+
+    # ---------- indicadores rápidos ----------
+    total_poblacion_rapida = len(df_coord)
+
+    edades_rapidas = (
+        pd.to_numeric(df_coord["edad"], errors="coerce")
+        if "edad" in df_coord.columns
+        else pd.Series(dtype=float)
+    )
+
+    edad_promedio_rapida = (
+        round(float(edades_rapidas.mean()), 1)
+        if edades_rapidas.notna().any()
+        else None
+    )
+
+    jovenes_18_28 = (
+        int(edades_rapidas.between(18, 28, inclusive="both").sum())
+        if edades_rapidas.notna().any()
+        else 0
+    )
+
+    mayores_60 = (
+        int((edades_rapidas >= 60).sum())
+        if edades_rapidas.notna().any()
+        else 0
+    )
+
+    discapacidad_si = 0
+    if "personas_con_discapacidad" in df_coord.columns:
+        discapacidad_norm = (
+            _texto_limpio_rapido(
+                df_coord["personas_con_discapacidad"]
+            )
+            .str.upper()
+        )
+        discapacidad_si = int(
+            discapacidad_norm.isin(
+                ["SI", "SÍ", "YES", "1", "TRUE"]
+            ).sum()
+        )
+
+    sexo_masculino = 0
+    sexo_femenino = 0
+    if "sexo_al_nacer" in df_coord.columns:
+        sexo_normalizado_rapido = (
+            df_coord["sexo_al_nacer"]
+            .apply(_normalizar_sexo_rapido)
+        )
+        sexo_masculino = int(
+            sexo_normalizado_rapido.eq("Masculino").sum()
+        )
+        sexo_femenino = int(
+            sexo_normalizado_rapido.eq("Femenino").sum()
+        )
+
+    m1, m2, m3, m4, m5, m6 = st.columns(6)
+    m1.metric("Personas caracterizadas", total_poblacion_rapida)
+    m2.metric(
+        "Edad promedio",
+        f"{edad_promedio_rapida} años"
+        if edad_promedio_rapida is not None else "Sin dato"
+    )
+    m3.metric("18 a 28 años", jovenes_18_28)
+    m4.metric("60 años o más", mayores_60)
+    m5.metric("Con discapacidad", discapacidad_si)
+    m6.metric(
+        "Mujeres / Hombres",
+        f"{sexo_femenino} / {sexo_masculino}"
+    )
+
+    st.markdown("#### 👥 Perfil demográfico")
 
     g1, g2 = st.columns(2)
 
     with g1:
-        if "edad" in df_coord.columns:
-            edades_coord = pd.to_numeric(
-                df_coord["edad"], errors="coerce"
+        if edades_rapidas.notna().any():
+            fig_edad_coord = px.histogram(
+                pd.DataFrame(
+                    {"edad": edades_rapidas.dropna()}
+                ),
+                x="edad",
+                nbins=18,
+                title="Distribución por edad"
             )
-            if edades_coord.notna().any():
-                fig_edad_coord = px.histogram(
-                    pd.DataFrame(
-                        {"edad": edades_coord.dropna()}
-                    ),
-                    x="edad",
-                    nbins=18,
-                    title="Distribución por edad"
-                )
-                st.plotly_chart(
-                    fig_edad_coord,
-                    use_container_width=True
-                )
+            fig_edad_coord.update_layout(
+                xaxis_title="Edad",
+                yaxis_title="Número de personas"
+            )
+            st.plotly_chart(
+                fig_edad_coord,
+                use_container_width=True
+            )
 
     with g2:
         if "sexo_al_nacer" in df_coord.columns:
-
-            def normalizar_sexo_dashboard_v1644(valor):
-                if pd.isna(valor):
-                    return "Sin información"
-
-                v = str(valor).strip().upper()
-                v = " ".join(v.split())
-
-                if v in {
-                    "M", "MASCULINO", "HOMBRE", "H",
-                    "MALE", "MASC", "MASCULINO."
-                }:
-                    return "Masculino"
-
-                if v in {
-                    "F", "FEMENINO", "MUJER",
-                    "FEMALE", "FEM", "FEMENINO."
-                }:
-                    return "Femenino"
-
-                if v in {
-                    "", "NAN", "NONE", "NULL", "N/A", "NA",
-                    "SIN DATO", "SIN INFORMACION",
-                    "SIN INFORMACIÓN", "NO REGISTRA"
-                }:
-                    return "Sin información"
-
-                return "Otro / revisar"
-
-            sexo_coord = (
-                df_coord["sexo_al_nacer"]
-                .apply(normalizar_sexo_dashboard_v1644)
-                .value_counts()
-                .rename_axis("sexo")
-                .reset_index(name="cantidad")
+            sexo_coord = _top_categorias_rapido(
+                df_coord["sexo_al_nacer"],
+                top_n=5,
+                normalizador=_normalizar_sexo_rapido
             )
-
-            total_sexo_coord = int(sexo_coord["cantidad"].sum())
-            sexo_coord["porcentaje"] = (
-                sexo_coord["cantidad"] / total_sexo_coord * 100
-            ).round(1)
 
             if not sexo_coord.empty:
                 fig_sexo_coord = px.bar(
                     sexo_coord,
-                    x="sexo",
+                    x="categoria",
                     y="cantidad",
                     text="cantidad",
                     title="Sexo al nacer"
@@ -8203,17 +8335,230 @@ def dashboard_ejecutivo():
                     use_container_width=True
                 )
 
-                if (sexo_coord["sexo"] == "Otro / revisar").any():
-                    cantidad_revisar = int(
-                        sexo_coord.loc[
-                            sexo_coord["sexo"] == "Otro / revisar",
-                            "cantidad"
-                        ].sum()
-                    )
-                    st.caption(
-                        f"⚠️ {cantidad_revisar} registro(s) tienen un valor "
-                        "de sexo que conviene revisar en la base."
-                    )
+    st.markdown("#### 🗺️ Procedencia y trayectoria territorial")
+
+    t1, t2 = st.columns(2)
+
+    with t1:
+        if "departamento_procedencia" in df_coord.columns:
+            depto_coord = _top_categorias_rapido(
+                df_coord["departamento_procedencia"],
+                top_n=8
+            )
+
+            if not depto_coord.empty:
+                fig_depto = px.bar(
+                    depto_coord.sort_values("cantidad"),
+                    x="cantidad",
+                    y="categoria",
+                    orientation="h",
+                    text="cantidad",
+                    title="Principales departamentos de procedencia"
+                )
+                fig_depto.update_layout(
+                    xaxis_title="Número de personas",
+                    yaxis_title=""
+                )
+                st.plotly_chart(
+                    fig_depto,
+                    use_container_width=True
+                )
+
+    with t2:
+        if "experiencia_migratoria" in df_coord.columns:
+            migracion_coord = _top_categorias_rapido(
+                df_coord["experiencia_migratoria"],
+                top_n=5
+            )
+            if not migracion_coord.empty:
+                fig_mig = px.bar(
+                    migracion_coord,
+                    x="categoria",
+                    y="cantidad",
+                    text="cantidad",
+                    title="Experiencia migratoria"
+                )
+                fig_mig.update_layout(
+                    xaxis_title="",
+                    yaxis_title="Número de personas",
+                    showlegend=False
+                )
+                st.plotly_chart(
+                    fig_mig,
+                    use_container_width=True
+                )
+
+    st.markdown("#### 🧩 Condiciones sociales y factores asociados")
+
+    s1, s2 = st.columns(2)
+
+    with s1:
+        if "razones_habitabilidad_calle" in df_coord.columns:
+            razones_coord = _top_categorias_rapido(
+                df_coord["razones_habitabilidad_calle"],
+                top_n=6
+            )
+            if not razones_coord.empty:
+                fig_razones = px.bar(
+                    razones_coord.sort_values("cantidad"),
+                    x="cantidad",
+                    y="categoria",
+                    orientation="h",
+                    text="cantidad",
+                    title="Principales razones asociadas a habitabilidad en calle"
+                )
+                fig_razones.update_layout(
+                    xaxis_title="Número de personas",
+                    yaxis_title=""
+                )
+                st.plotly_chart(
+                    fig_razones,
+                    use_container_width=True
+                )
+
+    with s2:
+        if "tipo_consumo" in df_coord.columns:
+            consumo_coord = _top_categorias_rapido(
+                df_coord["tipo_consumo"],
+                top_n=7
+            )
+            if not consumo_coord.empty:
+                fig_consumo = px.bar(
+                    consumo_coord.sort_values("cantidad"),
+                    x="cantidad",
+                    y="categoria",
+                    orientation="h",
+                    text="cantidad",
+                    title="Patrón de consumo reportado"
+                )
+                fig_consumo.update_layout(
+                    xaxis_title="Número de personas",
+                    yaxis_title=""
+                )
+                st.plotly_chart(
+                    fig_consumo,
+                    use_container_width=True
+                )
+
+    st.markdown("#### 🎓 Inclusión social y económica")
+
+    i1, i2 = st.columns(2)
+
+    with i1:
+        if "nivel_educativo" in df_coord.columns:
+            educacion_coord = _top_categorias_rapido(
+                df_coord["nivel_educativo"],
+                top_n=7,
+                limpiar_prefijo_numerico=True
+            )
+            if not educacion_coord.empty:
+                fig_educacion = px.bar(
+                    educacion_coord.sort_values("cantidad"),
+                    x="cantidad",
+                    y="categoria",
+                    orientation="h",
+                    text="cantidad",
+                    title="Nivel educativo"
+                )
+                fig_educacion.update_layout(
+                    xaxis_title="Número de personas",
+                    yaxis_title=""
+                )
+                st.plotly_chart(
+                    fig_educacion,
+                    use_container_width=True
+                )
+
+    with i2:
+        if "condicion_ocupacional" in df_coord.columns:
+            ocupacion_coord = _top_categorias_rapido(
+                df_coord["condicion_ocupacional"],
+                top_n=7
+            )
+            if not ocupacion_coord.empty:
+                fig_ocupacion = px.bar(
+                    ocupacion_coord.sort_values("cantidad"),
+                    x="cantidad",
+                    y="categoria",
+                    orientation="h",
+                    text="cantidad",
+                    title="Condición ocupacional"
+                )
+                fig_ocupacion.update_layout(
+                    xaxis_title="Número de personas",
+                    yaxis_title=""
+                )
+                st.plotly_chart(
+                    fig_ocupacion,
+                    use_container_width=True
+                )
+
+    with st.expander("🔎 Ver variables adicionales de caracterización"):
+        extra_cols = []
+
+        if "grupos_etnicos" in df_coord.columns:
+            etnia_coord = _top_categorias_rapido(
+                df_coord["grupos_etnicos"],
+                top_n=7,
+                limpiar_prefijo_numerico=True
+            )
+            if not etnia_coord.empty:
+                st.markdown("**Pertenencia / reconocimiento étnico**")
+                st.dataframe(
+                    etnia_coord.rename(
+                        columns={
+                            "categoria": "Categoría",
+                            "cantidad": "Personas",
+                            "porcentaje": "%"
+                        }
+                    ),
+                    use_container_width=True,
+                    hide_index=True
+                )
+
+        if "tipo_seguridad_salud" in df_coord.columns:
+            salud_coord = _top_categorias_rapido(
+                df_coord["tipo_seguridad_salud"],
+                top_n=7
+            )
+            if not salud_coord.empty:
+                st.markdown("**Seguridad social en salud**")
+                st.dataframe(
+                    salud_coord.rename(
+                        columns={
+                            "categoria": "Régimen / condición",
+                            "cantidad": "Personas",
+                            "porcentaje": "%"
+                        }
+                    ),
+                    use_container_width=True,
+                    hide_index=True
+                )
+
+        if "personas_con_discapacidad" in df_coord.columns:
+            disc_coord = _top_categorias_rapido(
+                df_coord["personas_con_discapacidad"],
+                top_n=5
+            )
+            if not disc_coord.empty:
+                st.markdown("**Discapacidad**")
+                st.dataframe(
+                    disc_coord.rename(
+                        columns={
+                            "categoria": "Respuesta",
+                            "cantidad": "Personas",
+                            "porcentaje": "%"
+                        }
+                    ),
+                    use_container_width=True,
+                    hide_index=True
+                )
+
+    st.caption(
+        "ℹ️ Esta radiografía se construye con las variables disponibles en "
+        "habitante_de_calle y conserva un enfoque comparable para análisis "
+        "territorial e institucional."
+    )
 
     # ========================================================
     # DESCARGA PARA COORDINACIÓN
