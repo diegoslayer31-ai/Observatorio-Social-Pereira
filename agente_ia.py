@@ -6381,6 +6381,323 @@ def comite_casos_v16():
                 st.success("✅ Compromiso agregado.")
                 st.rerun()
 
+
+def tablero_contribucion_ods_v16():
+    """Tablero institucional de contribución del programa a los ODS."""
+    rol = str(st.session_state.get("rol_actual", "")).upper()
+    if rol not in ["COORDINACION", "MANAGER"]:
+        st.error("Acceso exclusivo para Coordinación y Manager.")
+        return
+
+    st.title("🌎 Contribución a los ODS")
+    st.caption(
+        "Lectura institucional de la contribución del programa a los Objetivos "
+        "de Desarrollo Sostenible a partir de los objetivos y seguimientos PAI."
+    )
+
+    ods_catalogo = {
+        "ODS 3": {
+            "nombre": "Salud y bienestar",
+            "meta": "Acceso a salud, salud mental, tratamiento y reducción de riesgos."
+        },
+        "ODS 4": {
+            "nombre": "Educación de calidad",
+            "meta": "Acceso, vinculación y permanencia en procesos educativos y formativos."
+        },
+        "ODS 8": {
+            "nombre": "Trabajo decente y crecimiento económico",
+            "meta": "Empleabilidad, generación de ingresos e inclusión económica."
+        },
+        "ODS 10": {
+            "nombre": "Reducción de las desigualdades",
+            "meta": "Inclusión social, fortalecimiento de redes y acceso a oportunidades."
+        },
+        "ODS 11": {
+            "nombre": "Ciudades y comunidades sostenibles",
+            "meta": "Alternativas habitacionales y procesos asociados a superación de vida en calle."
+        },
+        "ODS 16": {
+            "nombre": "Paz, justicia e instituciones sólidas",
+            "meta": "Identificación, documentación, ciudadanía y acceso efectivo a derechos."
+        }
+    }
+
+    try:
+        ods_df = pd.read_sql(
+            text("""
+                SELECT
+                    p.id,
+                    TRIM(CAST(p.documento_usuario AS TEXT)) AS documento,
+                    p.objetivo_tipo,
+                    p.objetivo_descripcion,
+                    p.linea_politica,
+                    p.ods_principal,
+                    p.porcentaje_avance,
+                    p.estado,
+                    p.fecha_apertura,
+                    p.fecha_meta,
+                    p.fecha_cumplimiento_real,
+                    p.profesional_referente,
+                    h.nombres,
+                    h.apellidos,
+                    h.modalidad,
+                    h.departamento_procedencia
+                FROM pai_objetivos p
+                LEFT JOIN habitante_de_calle h
+                  ON TRIM(CAST(h.numero_identificacion AS TEXT))
+                   = TRIM(CAST(p.documento_usuario AS TEXT))
+                WHERE NULLIF(TRIM(COALESCE(p.ods_principal,'')), '') IS NOT NULL
+            """),
+            engine
+        )
+    except Exception as e:
+        st.error(f"No fue posible consultar los objetivos ODS: {e}")
+        return
+
+    if ods_df.empty:
+        st.info(
+            "Todavía no hay objetivos PAI vinculados a ODS. "
+            "El tablero se alimentará automáticamente cuando se creen."
+        )
+        return
+
+    ods_df["ods_principal"] = (
+        ods_df["ods_principal"]
+        .fillna("")
+        .astype(str)
+        .str.strip()
+        .str.upper()
+    )
+    ods_df["porcentaje_avance"] = pd.to_numeric(
+        ods_df["porcentaje_avance"], errors="coerce"
+    ).fillna(0)
+    ods_df["fecha_apertura"] = pd.to_datetime(
+        ods_df["fecha_apertura"], errors="coerce"
+    )
+    ods_df["fecha_meta"] = pd.to_datetime(
+        ods_df["fecha_meta"], errors="coerce"
+    )
+
+    # Filtros institucionales
+    st.markdown("### 🔎 Filtros")
+    f1, f2, f3 = st.columns(3)
+
+    modalidades = sorted(
+        [
+            x for x in ods_df["modalidad"].dropna().astype(str).str.strip().unique()
+            if x
+        ]
+    )
+    modalidad_sel = f1.multiselect(
+        "Modalidad",
+        modalidades,
+        default=modalidades,
+        key="ods_modalidad_v16"
+    )
+
+    anos = sorted(
+        ods_df["fecha_apertura"].dropna().dt.year.astype(int).unique().tolist(),
+        reverse=True
+    )
+    ano_sel = f2.multiselect(
+        "Año de apertura",
+        anos,
+        default=anos,
+        key="ods_ano_v16"
+    )
+
+    ods_disponibles = sorted(
+        ods_df["ods_principal"].dropna().unique().tolist()
+    )
+    ods_sel = f3.multiselect(
+        "ODS",
+        ods_disponibles,
+        default=ods_disponibles,
+        key="ods_filtro_v16"
+    )
+
+    filtrado = ods_df.copy()
+    if modalidad_sel:
+        filtrado = filtrado[
+            filtrado["modalidad"].astype(str).str.strip().isin(modalidad_sel)
+        ]
+    if ano_sel:
+        filtrado = filtrado[
+            filtrado["fecha_apertura"].dt.year.isin(ano_sel)
+        ]
+    if ods_sel:
+        filtrado = filtrado[
+            filtrado["ods_principal"].isin(ods_sel)
+        ]
+
+    if filtrado.empty:
+        st.warning("No hay registros para los filtros seleccionados.")
+        return
+
+    cumplido = (
+        filtrado["porcentaje_avance"].ge(100)
+        | filtrado["estado"].fillna("").astype(str).str.upper().eq("CUMPLIDO")
+    )
+
+    personas = int(filtrado["documento"].nunique())
+    objetivos = len(filtrado)
+    cumplidos = int(cumplido.sum())
+    activos = int((~cumplido).sum())
+    avance = round(float(filtrado["porcentaje_avance"].mean()), 1)
+
+    k1, k2, k3, k4, k5 = st.columns(5)
+    k1.metric("Personas vinculadas", personas)
+    k2.metric("Objetivos ODS", objetivos)
+    k3.metric("Objetivos cumplidos", cumplidos)
+    k4.metric("Objetivos activos", activos)
+    k5.metric("Avance promedio", f"{avance}%")
+
+    st.info(
+        "Los indicadores representan **contribución del programa a los ODS**. "
+        "No deben interpretarse como cumplimiento total de un ODS."
+    )
+
+    # Resumen por ODS
+    resumen = (
+        filtrado.assign(cumplido=cumplido.astype(int))
+        .groupby("ods_principal", as_index=False)
+        .agg(
+            personas=("documento", "nunique"),
+            objetivos=("id", "count"),
+            cumplidos=("cumplido", "sum"),
+            avance_promedio=("porcentaje_avance", "mean")
+        )
+    )
+    resumen["avance_promedio"] = resumen["avance_promedio"].round(1)
+    resumen["cumplimiento_objetivos"] = (
+        resumen["cumplidos"] / resumen["objetivos"] * 100
+    ).round(1)
+    resumen["ODS"] = resumen["ods_principal"].apply(
+        lambda x: (
+            f"{x} · {ods_catalogo.get(x, {}).get('nombre', 'Contribución programática')}"
+        )
+    )
+
+    st.markdown("### 📊 Contribución por ODS")
+    fig_ods = px.bar(
+        resumen.sort_values("personas"),
+        x="personas",
+        y="ODS",
+        orientation="h",
+        text="personas",
+        title="Personas con intervenciones PAI vinculadas a cada ODS"
+    )
+    fig_ods.update_layout(
+        xaxis_title="Personas",
+        yaxis_title=""
+    )
+    st.plotly_chart(fig_ods, use_container_width=True)
+
+    tabla = resumen[
+        [
+            "ODS",
+            "personas",
+            "objetivos",
+            "cumplidos",
+            "cumplimiento_objetivos",
+            "avance_promedio"
+        ]
+    ].rename(
+        columns={
+            "personas": "Personas",
+            "objetivos": "Objetivos",
+            "cumplidos": "Cumplidos",
+            "cumplimiento_objetivos": "% objetivos cumplidos",
+            "avance_promedio": "Avance promedio %"
+        }
+    )
+    st.dataframe(tabla, use_container_width=True, hide_index=True)
+
+    st.markdown("### 🎯 Lectura programática")
+    for ods in resumen["ods_principal"].tolist():
+        info = ods_catalogo.get(
+            ods,
+            {
+                "nombre": "Contribución programática",
+                "meta": "Intervenciones asociadas al PAI."
+            }
+        )
+        fila = resumen.loc[resumen["ods_principal"] == ods].iloc[0]
+        with st.expander(f"{ods} · {info['nombre']}"):
+            st.write(info["meta"])
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Personas", int(fila["personas"]))
+            c2.metric("Objetivos", int(fila["objetivos"]))
+            c3.metric(
+                "Cumplimiento de objetivos",
+                f"{float(fila['cumplimiento_objetivos']):.1f}%"
+            )
+
+            tipos = (
+                filtrado.loc[
+                    filtrado["ods_principal"] == ods,
+                    "objetivo_tipo"
+                ]
+                .fillna("Sin clasificación")
+                .value_counts()
+                .rename_axis("Intervención")
+                .reset_index(name="Objetivos")
+            )
+            st.dataframe(tipos, use_container_width=True, hide_index=True)
+
+    # Lectura por modalidad/territorio disponible
+    st.markdown("### 🏘️ Contribución por modalidad")
+    modalidad_ods = (
+        filtrado.assign(
+            modalidad_limpia=filtrado["modalidad"]
+            .fillna("Sin información")
+            .astype(str)
+            .str.strip()
+            .replace({"": "Sin información"})
+        )
+        .groupby(["modalidad_limpia", "ods_principal"], as_index=False)
+        .agg(personas=("documento", "nunique"))
+    )
+
+    if not modalidad_ods.empty:
+        fig_modalidad = px.bar(
+            modalidad_ods,
+            x="modalidad_limpia",
+            y="personas",
+            color="ods_principal",
+            barmode="group",
+            title="Personas vinculadas a ODS por modalidad"
+        )
+        fig_modalidad.update_layout(
+            xaxis_title="Modalidad",
+            yaxis_title="Personas",
+            legend_title="ODS"
+        )
+        st.plotly_chart(fig_modalidad, use_container_width=True)
+
+    # Calidad de la clasificación ODS
+    st.markdown("### 🧪 Calidad del registro ODS")
+    conocidos = set(ods_catalogo.keys())
+    desconocidos = sorted(
+        set(filtrado["ods_principal"].unique()) - conocidos
+    )
+
+    if desconocidos:
+        st.warning(
+            "Se encontraron clasificaciones ODS fuera del catálogo esperado: "
+            + ", ".join(desconocidos)
+        )
+    else:
+        st.success(
+            "Las clasificaciones ODS utilizadas están dentro del catálogo institucional."
+        )
+
+    st.caption(
+        "El tablero se alimenta automáticamente de los objetivos PAI; "
+        "el profesional no debe diligenciar un formulario ODS adicional."
+    )
+
+
 def panel_profesional_v15():
     st.title("🩺 Mi Panel Profesional")
     st.caption(
@@ -8838,6 +9155,13 @@ with st.sidebar:
             st.rerun()
 
         if st.button(
+            "🌎 Contribución a los ODS",
+            use_container_width=True
+        ):
+            st.session_state.page = "tablero_ods_v16"
+            st.rerun()
+
+        if st.button(
             "🧠 Comité de Casos",
             use_container_width=True
         ):
@@ -9351,6 +9675,15 @@ elif st.session_state.page == "panel_profesional_v15":
         st.error("No tiene permisos para Mi Panel Profesional.")
     else:
         panel_profesional_v15()
+
+    st.stop()
+
+elif st.session_state.page == "tablero_ods_v16":
+
+    if rol_router not in ["COORDINACION", "MANAGER"]:
+        st.error("Acceso exclusivo para Coordinación o Manager.")
+    else:
+        tablero_contribucion_ods_v16()
 
     st.stop()
 
