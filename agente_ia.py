@@ -9154,6 +9154,13 @@ with st.sidebar:
             st.rerun()
 
         if st.button(
+            "🧭 Caracterización Habitabilidad",
+            use_container_width=True
+        ):
+            st.session_state.page = "caracterizacion_habitabilidad_v1611"
+            st.rerun()
+
+        if st.button(
             "📚 Historia Integral",
             use_container_width=True
         ):
@@ -9185,6 +9192,13 @@ with st.sidebar:
             use_container_width=True
         ):
             st.session_state.page = "supervision_pai_v15"
+            st.rerun()
+
+        if st.button(
+            "🧭 Caracterización Habitabilidad",
+            use_container_width=True
+        ):
+            st.session_state.page = "caracterizacion_habitabilidad_v1611"
             st.rerun()
 
         if st.button(
@@ -12133,6 +12147,786 @@ def modulo_carga_activos_v169():
             )
 
 
+
+# ============================================================
+# V16.11 - CARACTERIZACIÓN ESPECIALIZADA DE HABITABILIDAD EN CALLE
+# Captura progresiva + indicadores analíticos.
+# ============================================================
+def caracterizacion_habitabilidad_v1611():
+    rol = str(st.session_state.get("rol_actual", "")).upper()
+    if rol not in ["PROFESIONAL", "COORDINACION", "MANAGER"]:
+        st.error("Acceso exclusivo para profesionales, Coordinación y Manager.")
+        return
+
+    st.title("🧭 Caracterización especializada de habitabilidad en calle")
+    st.caption(
+        "Registro progresivo de trayectoria en calle, consumo de SPA, redes de apoyo "
+        "y factores asociados a la superación. No reemplaza la caracterización general."
+    )
+
+    try:
+        personas = pd.read_sql(
+            text("""
+                SELECT
+                    TRIM(CAST(numero_identificacion AS TEXT)) AS documento,
+                    COALESCE(nombres,'') AS nombres,
+                    COALESCE(apellidos,'') AS apellidos,
+                    COALESCE(modalidad,'') AS modalidad,
+                    COALESCE(estado_caso,'') AS estado_caso
+                FROM habitante_de_calle
+                ORDER BY nombres, apellidos
+            """),
+            engine
+        )
+    except Exception as e:
+        st.error(f"No fue posible cargar la población: {e}")
+        return
+
+    if personas.empty:
+        st.info("No hay personas registradas en la base general.")
+        return
+
+    personas["nombre_completo"] = (
+        personas["nombres"].astype(str).str.strip()
+        + " "
+        + personas["apellidos"].astype(str).str.strip()
+    ).str.strip()
+
+    personas["etiqueta"] = (
+        personas["nombre_completo"]
+        + " · CC "
+        + personas["documento"].astype(str)
+        + personas["modalidad"].apply(
+            lambda x: f" · {x}" if str(x).strip() else ""
+        )
+    )
+
+    seleccion = st.selectbox(
+        "Persona",
+        personas["etiqueta"].tolist(),
+        key="habcalle_persona_v1611"
+    )
+    fila = personas.loc[personas["etiqueta"] == seleccion].iloc[0]
+    documento = str(fila["documento"]).strip()
+    nombre = fila["nombre_completo"]
+
+    st.info(
+        f"**Persona activa:** {nombre} · CC {documento}"
+        + (f" · {fila['modalidad']}" if str(fila["modalidad"]).strip() else "")
+    )
+
+    # Cargar registro existente
+    try:
+        actual = pd.read_sql(
+            text("""
+                SELECT *
+                FROM caracterizacion_habitabilidad_calle
+                WHERE numero_identificacion = :doc
+                LIMIT 1
+            """),
+            engine,
+            params={"doc": documento}
+        )
+    except Exception as e:
+        st.warning(
+            "La tabla de caracterización especializada aún no está disponible. "
+            "Ejecuta primero la migración SQL V16.11."
+        )
+        st.code(str(e))
+        return
+
+    reg = actual.iloc[0].to_dict() if not actual.empty else {}
+
+    def _v(campo, default=""):
+        valor = reg.get(campo, default)
+        if pd.isna(valor):
+            return default
+        return valor
+
+    def _idx(opciones, valor, default=0):
+        valor = "" if valor is None else str(valor)
+        return opciones.index(valor) if valor in opciones else default
+
+    tabs = st.tabs([
+        "🛣️ Trayectoria en calle",
+        "🧪 Consumo de SPA",
+        "🤝 Redes y apoyos",
+        "📈 Superación y análisis"
+    ])
+
+    # ---------------- Trayectoria ----------------
+    with tabs[0]:
+        st.markdown("### Trayectoria de habitabilidad en calle")
+
+        c1, c2, c3 = st.columns(3)
+        edad_inicio_calle = c1.number_input(
+            "Edad aproximada al iniciar vida en calle",
+            min_value=0, max_value=100,
+            value=int(_v("edad_inicio_calle", 0) or 0),
+            step=1
+        )
+        tiempo_anos_calle = c2.number_input(
+            "Años acumulados de habitabilidad en calle",
+            min_value=0.0, max_value=90.0,
+            value=float(_v("tiempo_anos_calle", 0) or 0),
+            step=0.5
+        )
+        numero_episodios_calle = c3.number_input(
+            "Número estimado de episodios de calle",
+            min_value=1, max_value=100,
+            value=int(_v("numero_episodios_calle", 1) or 1),
+            step=1
+        )
+
+        causa_inicio_opts = [
+            "",
+            "Conflictos de convivencia o violencia familiar",
+            "Consumo de SPA",
+            "Pérdida de fuente de ingresos",
+            "Pérdida de redes de apoyo",
+            "Decisión propia",
+            "Víctima o desplazado del conflicto armado",
+            "Problema de salud física o mental",
+            "Discriminación",
+            "Egreso de institución de protección o penitenciaria",
+            "Amenaza o riesgo para su vida o integridad",
+            "Abuso sexual",
+            "Otra"
+        ]
+        causa_permanencia_opts = [
+            "",
+            "Consumo de SPA",
+            "Decisión propia",
+            "Falta de trabajo",
+            "Ausencia de redes de apoyo adecuadas",
+            "Conflictos o dificultades familiares",
+            "Siempre ha sido persona habitante de calle",
+            "Víctima o desplazado del conflicto armado",
+            "Discriminación",
+            "Amenaza o riesgo para su vida o integridad",
+            "Influencia de otras personas",
+            "Abuso sexual",
+            "Otra"
+        ]
+
+        causa_inicio = st.selectbox(
+            "Razón principal por la que empezó a habitar la calle",
+            causa_inicio_opts,
+            index=_idx(causa_inicio_opts, _v("causa_inicio_calle", ""))
+        )
+        causa_permanencia = st.selectbox(
+            "Razón principal por la que continúa / continuaba habitando la calle",
+            causa_permanencia_opts,
+            index=_idx(causa_permanencia_opts, _v("causa_permanencia_calle", ""))
+        )
+
+        otro_inicio = st.text_input(
+            "Otra causa de inicio (si aplica)",
+            value=str(_v("otra_causa_inicio", ""))
+        )
+        otra_permanencia = st.text_input(
+            "Otra causa de permanencia (si aplica)",
+            value=str(_v("otra_causa_permanencia", ""))
+        )
+
+        opciones_relacion = ["", "Antes de llegar a calle", "Después de llegar a calle", "No aplica / no consume", "No se puede establecer"]
+        relacion_consumo_calle = st.selectbox(
+            "Relación temporal entre consumo de SPA y vida en calle",
+            opciones_relacion,
+            index=_idx(opciones_relacion, _v("relacion_consumo_calle", ""))
+        )
+
+    # ---------------- SPA ----------------
+    with tabs[1]:
+        st.markdown("### Consumo de sustancias psicoactivas")
+
+        si_no = ["", "Sí", "No", "No sabe / no responde"]
+        consume_actualmente = st.selectbox(
+            "¿Consume SPA actualmente?",
+            si_no,
+            index=_idx(si_no, _v("consume_spa_actualmente", ""))
+        )
+
+        sustancia_opts = [
+            "", "Bazuco", "Marihuana", "Cigarrillo / nicotina",
+            "Alcohol", "Cocaína", "Heroína", "Inhalantes",
+            "Pepas / medicamentos", "Tusi / mezclas", "Otra", "No aplica"
+        ]
+        sustancia_principal = st.selectbox(
+            "Sustancia principal",
+            sustancia_opts,
+            index=_idx(sustancia_opts, _v("sustancia_principal", ""))
+        )
+        sustancias_secundarias = st.text_input(
+            "Otras sustancias consumidas",
+            value=str(_v("sustancias_secundarias", "")),
+            help="Separar por comas si son varias."
+        )
+
+        s1, s2, s3 = st.columns(3)
+        edad_inicio_consumo = s1.number_input(
+            "Edad aproximada de inicio de consumo",
+            min_value=0, max_value=100,
+            value=int(_v("edad_inicio_consumo", 0) or 0),
+            step=1
+        )
+        tiempo_anos_consumo = s2.number_input(
+            "Años aproximados de consumo",
+            min_value=0.0, max_value=90.0,
+            value=float(_v("tiempo_anos_consumo", 0) or 0),
+            step=0.5
+        )
+        frecuencia_opts = [
+            "", "Ocasional", "1-2 días por semana", "3-4 días por semana",
+            "5-6 días por semana", "Diario", "Varias veces al día",
+            "No aplica / no consume"
+        ]
+        frecuencia_consumo = s3.selectbox(
+            "Frecuencia actual / habitual",
+            frecuencia_opts,
+            index=_idx(frecuencia_opts, _v("frecuencia_consumo", ""))
+        )
+
+        t1, t2, t3 = st.columns(3)
+        tratamiento_spa = t1.selectbox(
+            "¿Ha recibido tratamiento o rehabilitación por SPA?",
+            si_no,
+            index=_idx(si_no, _v("tratamiento_spa", ""))
+        )
+        tratamiento_actual = t2.selectbox(
+            "¿Está actualmente en tratamiento?",
+            si_no,
+            index=_idx(si_no, _v("tratamiento_spa_actual", ""))
+        )
+        recaidas = t3.number_input(
+            "Recaídas reportadas / conocidas",
+            min_value=0, max_value=100,
+            value=int(_v("numero_recaidas", 0) or 0),
+            step=1
+        )
+
+        meses_sin_consumo = st.number_input(
+            "Meses continuos sin consumo (si aplica)",
+            min_value=0.0, max_value=600.0,
+            value=float(_v("meses_sin_consumo", 0) or 0),
+            step=1.0
+        )
+
+    # ---------------- Redes ----------------
+    with tabs[2]:
+        st.markdown("### Redes familiares, afectivas y comunitarias")
+
+        tiene_red_apoyo = st.selectbox(
+            "¿Cuenta con red de apoyo significativa?",
+            si_no,
+            index=_idx(si_no, _v("tiene_red_apoyo", ""))
+        )
+
+        red_tipo_opts = [
+            "", "Familia", "Pareja", "Amistades", "Comunidad",
+            "Institución / organización", "Mixta", "No aplica"
+        ]
+        tipo_red_apoyo = st.selectbox(
+            "Principal tipo de red de apoyo",
+            red_tipo_opts,
+            index=_idx(red_tipo_opts, _v("tipo_red_apoyo", ""))
+        )
+
+        contacto_opts = [
+            "", "0 a 6 meses", "Más de 6 meses a 1 año",
+            "Más de 1 a 5 años", "Más de 5 años",
+            "Nunca / sin contacto", "No sabe"
+        ]
+        tiempo_ultimo_contacto_familiar = st.selectbox(
+            "Tiempo desde el último contacto con red familiar",
+            contacto_opts,
+            index=_idx(
+                contacto_opts,
+                _v("tiempo_ultimo_contacto_familiar", "")
+            )
+        )
+
+        posibilidad_retorno_familiar = st.selectbox(
+            "¿Existe posibilidad real de retorno / vinculación familiar?",
+            si_no,
+            index=_idx(si_no, _v("posibilidad_retorno_familiar", ""))
+        )
+
+        r1, r2 = st.columns(2)
+        apoyo_emocional = r1.selectbox(
+            "¿Recibe apoyo emocional o afectivo?",
+            si_no,
+            index=_idx(si_no, _v("apoyo_emocional", ""))
+        )
+        apoyo_psicosocial = r2.selectbox(
+            "¿Recibe apoyo psicológico / psicosocial?",
+            si_no,
+            index=_idx(si_no, _v("apoyo_psicosocial", ""))
+        )
+
+        antecedente_salud_mental = st.selectbox(
+            "Antecedente o necesidad identificada en salud mental",
+            si_no,
+            index=_idx(si_no, _v("antecedente_salud_mental", ""))
+        )
+
+    # ---------------- Superación / análisis ----------------
+    with tabs[3]:
+        st.markdown("### Condiciones para la superación")
+
+        a1, a2 = st.columns(2)
+        fuente_ingreso_opts = [
+            "", "Empleo formal", "Trabajo informal / rebusque",
+            "Reciclaje", "Ventas", "Donaciones / ayudas",
+            "Subsidio / transferencia", "Familia", "Sin ingresos", "Otra"
+        ]
+        fuente_ingreso = a1.selectbox(
+            "Principal fuente de ingreso",
+            fuente_ingreso_opts,
+            index=_idx(fuente_ingreso_opts, _v("fuente_ingreso", ""))
+        )
+        ingreso_regular = a2.selectbox(
+            "¿Cuenta con ingreso regular?",
+            si_no,
+            index=_idx(si_no, _v("ingreso_regular", ""))
+        )
+
+        alojamiento_opts = [
+            "", "Espacio público / calle", "Cambuche",
+            "Pagadiario / inquilinato", "Alojamiento temporal",
+            "Institución", "Familia / red de apoyo",
+            "Arriendo", "Vivienda propia", "Otra"
+        ]
+        alojamiento_actual = st.selectbox(
+            "Alternativa / situación actual de alojamiento",
+            alojamiento_opts,
+            index=_idx(alojamiento_opts, _v("alojamiento_actual", ""))
+        )
+
+        etapa_opts = [
+            "", "Contacto / vinculación inicial", "Atención inmediata",
+            "Atención integral", "Preparación para egreso",
+            "Egreso con seguimiento", "Superación sostenida", "Retorno / reingreso"
+        ]
+        etapa_proceso = st.selectbox(
+            "Etapa actual del proceso",
+            etapa_opts,
+            index=_idx(etapa_opts, _v("etapa_proceso", ""))
+        )
+
+        barrera_principal = st.text_area(
+            "Principal barrera identificada para la superación",
+            value=str(_v("barrera_principal_superacion", "")),
+            height=80
+        )
+        factor_protector = st.text_area(
+            "Principal factor protector / facilitador",
+            value=str(_v("factor_protector_superacion", "")),
+            height=80
+        )
+        observaciones = st.text_area(
+            "Observaciones profesionales",
+            value=str(_v("observaciones", "")),
+            height=100
+        )
+
+        # Indicador analítico no diagnóstico
+        anos = float(tiempo_anos_calle or 0)
+        if anos < 1:
+            clasificacion_trayectoria = "Ingreso reciente / hasta 1 año"
+        elif anos < 5:
+            clasificacion_trayectoria = "Trayectoria de 1 a 5 años"
+        elif anos < 10:
+            clasificacion_trayectoria = "Trayectoria prolongada de 5 a 10 años"
+        else:
+            clasificacion_trayectoria = "Alta cronificación estadística: 10 años o más"
+
+        st.info(
+            f"**Clasificación estadística de trayectoria:** {clasificacion_trayectoria}. "
+            "Este indicador se usa para análisis poblacional y priorización; no constituye diagnóstico."
+        )
+
+    st.markdown("---")
+    confirmar = st.checkbox(
+        f"Confirmo que la información corresponde a {nombre} · CC {documento}",
+        key="habcalle_confirma_v1611"
+    )
+
+    if st.button(
+        "💾 Guardar caracterización especializada",
+        use_container_width=True,
+        type="primary",
+        disabled=not confirmar
+    ):
+        usuario = st.session_state.get(
+            "usuario_actual",
+            st.session_state.get("nombre_funcionario", "Sistema")
+        )
+
+        payload = {
+            "doc": documento,
+            "edad_inicio_calle": int(edad_inicio_calle) if edad_inicio_calle else None,
+            "tiempo_anos_calle": float(tiempo_anos_calle),
+            "numero_episodios_calle": int(numero_episodios_calle),
+            "causa_inicio_calle": causa_inicio or None,
+            "otra_causa_inicio": otro_inicio.strip() or None,
+            "causa_permanencia_calle": causa_permanencia or None,
+            "otra_causa_permanencia": otra_permanencia.strip() or None,
+            "relacion_consumo_calle": relacion_consumo_calle or None,
+            "consume_spa_actualmente": consume_actualmente or None,
+            "sustancia_principal": sustancia_principal or None,
+            "sustancias_secundarias": sustancias_secundarias.strip() or None,
+            "edad_inicio_consumo": int(edad_inicio_consumo) if edad_inicio_consumo else None,
+            "tiempo_anos_consumo": float(tiempo_anos_consumo),
+            "frecuencia_consumo": frecuencia_consumo or None,
+            "tratamiento_spa": tratamiento_spa or None,
+            "tratamiento_spa_actual": tratamiento_actual or None,
+            "numero_recaidas": int(recaidas),
+            "meses_sin_consumo": float(meses_sin_consumo),
+            "tiene_red_apoyo": tiene_red_apoyo or None,
+            "tipo_red_apoyo": tipo_red_apoyo or None,
+            "tiempo_ultimo_contacto_familiar": tiempo_ultimo_contacto_familiar or None,
+            "posibilidad_retorno_familiar": posibilidad_retorno_familiar or None,
+            "apoyo_emocional": apoyo_emocional or None,
+            "apoyo_psicosocial": apoyo_psicosocial or None,
+            "antecedente_salud_mental": antecedente_salud_mental or None,
+            "fuente_ingreso": fuente_ingreso or None,
+            "ingreso_regular": ingreso_regular or None,
+            "alojamiento_actual": alojamiento_actual or None,
+            "etapa_proceso": etapa_proceso or None,
+            "barrera_principal_superacion": barrera_principal.strip() or None,
+            "factor_protector_superacion": factor_protector.strip() or None,
+            "observaciones": observaciones.strip() or None,
+            "clasificacion_trayectoria": clasificacion_trayectoria,
+            "usuario": str(usuario)
+        }
+
+        try:
+            with engine.begin() as conn:
+                conn.execute(
+                    text("""
+                        INSERT INTO caracterizacion_habitabilidad_calle (
+                            numero_identificacion,
+                            edad_inicio_calle,
+                            tiempo_anos_calle,
+                            numero_episodios_calle,
+                            causa_inicio_calle,
+                            otra_causa_inicio,
+                            causa_permanencia_calle,
+                            otra_causa_permanencia,
+                            relacion_consumo_calle,
+                            consume_spa_actualmente,
+                            sustancia_principal,
+                            sustancias_secundarias,
+                            edad_inicio_consumo,
+                            tiempo_anos_consumo,
+                            frecuencia_consumo,
+                            tratamiento_spa,
+                            tratamiento_spa_actual,
+                            numero_recaidas,
+                            meses_sin_consumo,
+                            tiene_red_apoyo,
+                            tipo_red_apoyo,
+                            tiempo_ultimo_contacto_familiar,
+                            posibilidad_retorno_familiar,
+                            apoyo_emocional,
+                            apoyo_psicosocial,
+                            antecedente_salud_mental,
+                            fuente_ingreso,
+                            ingreso_regular,
+                            alojamiento_actual,
+                            etapa_proceso,
+                            barrera_principal_superacion,
+                            factor_protector_superacion,
+                            observaciones,
+                            clasificacion_trayectoria,
+                            actualizado_por,
+                            actualizado_en
+                        )
+                        VALUES (
+                            :doc,
+                            :edad_inicio_calle,
+                            :tiempo_anos_calle,
+                            :numero_episodios_calle,
+                            :causa_inicio_calle,
+                            :otra_causa_inicio,
+                            :causa_permanencia_calle,
+                            :otra_causa_permanencia,
+                            :relacion_consumo_calle,
+                            :consume_spa_actualmente,
+                            :sustancia_principal,
+                            :sustancias_secundarias,
+                            :edad_inicio_consumo,
+                            :tiempo_anos_consumo,
+                            :frecuencia_consumo,
+                            :tratamiento_spa,
+                            :tratamiento_spa_actual,
+                            :numero_recaidas,
+                            :meses_sin_consumo,
+                            :tiene_red_apoyo,
+                            :tipo_red_apoyo,
+                            :tiempo_ultimo_contacto_familiar,
+                            :posibilidad_retorno_familiar,
+                            :apoyo_emocional,
+                            :apoyo_psicosocial,
+                            :antecedente_salud_mental,
+                            :fuente_ingreso,
+                            :ingreso_regular,
+                            :alojamiento_actual,
+                            :etapa_proceso,
+                            :barrera_principal_superacion,
+                            :factor_protector_superacion,
+                            :observaciones,
+                            :clasificacion_trayectoria,
+                            :usuario,
+                            NOW()
+                        )
+                        ON CONFLICT (numero_identificacion)
+                        DO UPDATE SET
+                            edad_inicio_calle = EXCLUDED.edad_inicio_calle,
+                            tiempo_anos_calle = EXCLUDED.tiempo_anos_calle,
+                            numero_episodios_calle = EXCLUDED.numero_episodios_calle,
+                            causa_inicio_calle = EXCLUDED.causa_inicio_calle,
+                            otra_causa_inicio = EXCLUDED.otra_causa_inicio,
+                            causa_permanencia_calle = EXCLUDED.causa_permanencia_calle,
+                            otra_causa_permanencia = EXCLUDED.otra_causa_permanencia,
+                            relacion_consumo_calle = EXCLUDED.relacion_consumo_calle,
+                            consume_spa_actualmente = EXCLUDED.consume_spa_actualmente,
+                            sustancia_principal = EXCLUDED.sustancia_principal,
+                            sustancias_secundarias = EXCLUDED.sustancias_secundarias,
+                            edad_inicio_consumo = EXCLUDED.edad_inicio_consumo,
+                            tiempo_anos_consumo = EXCLUDED.tiempo_anos_consumo,
+                            frecuencia_consumo = EXCLUDED.frecuencia_consumo,
+                            tratamiento_spa = EXCLUDED.tratamiento_spa,
+                            tratamiento_spa_actual = EXCLUDED.tratamiento_spa_actual,
+                            numero_recaidas = EXCLUDED.numero_recaidas,
+                            meses_sin_consumo = EXCLUDED.meses_sin_consumo,
+                            tiene_red_apoyo = EXCLUDED.tiene_red_apoyo,
+                            tipo_red_apoyo = EXCLUDED.tipo_red_apoyo,
+                            tiempo_ultimo_contacto_familiar = EXCLUDED.tiempo_ultimo_contacto_familiar,
+                            posibilidad_retorno_familiar = EXCLUDED.posibilidad_retorno_familiar,
+                            apoyo_emocional = EXCLUDED.apoyo_emocional,
+                            apoyo_psicosocial = EXCLUDED.apoyo_psicosocial,
+                            antecedente_salud_mental = EXCLUDED.antecedente_salud_mental,
+                            fuente_ingreso = EXCLUDED.fuente_ingreso,
+                            ingreso_regular = EXCLUDED.ingreso_regular,
+                            alojamiento_actual = EXCLUDED.alojamiento_actual,
+                            etapa_proceso = EXCLUDED.etapa_proceso,
+                            barrera_principal_superacion = EXCLUDED.barrera_principal_superacion,
+                            factor_protector_superacion = EXCLUDED.factor_protector_superacion,
+                            observaciones = EXCLUDED.observaciones,
+                            clasificacion_trayectoria = EXCLUDED.clasificacion_trayectoria,
+                            actualizado_por = EXCLUDED.actualizado_por,
+                            actualizado_en = NOW()
+                    """),
+                    payload
+                )
+            st.success("Caracterización especializada guardada correctamente.")
+            st.rerun()
+        except Exception as e:
+            st.error(f"No fue posible guardar la caracterización: {e}")
+
+
+def tablero_habitabilidad_v1611():
+    rol = str(st.session_state.get("rol_actual", "")).upper()
+    if rol not in ["COORDINACION", "MANAGER"]:
+        st.error("Acceso exclusivo para Coordinación y Manager.")
+        return
+
+    st.title("📊 Indicadores de habitabilidad en calle")
+    st.caption(
+        "Trayectorias, causas de inicio y permanencia, consumo de SPA, redes de apoyo "
+        "y condiciones asociadas a la superación."
+    )
+
+    try:
+        dfh = pd.read_sql(
+            text("""
+                SELECT c.*, h.nombres, h.apellidos, h.modalidad, h.estado_caso
+                FROM caracterizacion_habitabilidad_calle c
+                LEFT JOIN habitante_de_calle h
+                  ON TRIM(CAST(h.numero_identificacion AS TEXT))
+                   = TRIM(CAST(c.numero_identificacion AS TEXT))
+            """),
+            engine
+        )
+    except Exception as e:
+        st.warning("Ejecuta primero la migración SQL V16.11.")
+        st.code(str(e))
+        return
+
+    if dfh.empty:
+        st.info("Aún no hay caracterizaciones especializadas registradas.")
+        return
+
+    total = len(dfh)
+    con_tiempo = pd.to_numeric(dfh["tiempo_anos_calle"], errors="coerce")
+    prom_calle = round(float(con_tiempo.mean()), 1) if con_tiempo.notna().any() else 0
+
+    spa_si = (
+        dfh["consume_spa_actualmente"]
+        .fillna("").astype(str).str.upper().isin(["SÍ", "SI"])
+    )
+    red_si = (
+        dfh["tiene_red_apoyo"]
+        .fillna("").astype(str).str.upper().isin(["SÍ", "SI"])
+    )
+    alta_cron = con_tiempo.ge(10)
+
+    k1, k2, k3, k4, k5 = st.columns(5)
+    k1.metric("Caracterizados", total)
+    k2.metric("Años promedio en calle", f"{prom_calle}")
+    k3.metric("Consumo SPA actual", f"{int(spa_si.sum())}")
+    k4.metric("Con red de apoyo", f"{int(red_si.sum())}")
+    k5.metric("10+ años en calle", f"{int(alta_cron.sum())}")
+
+    g1, g2 = st.columns(2)
+    with g1:
+        causa_i = (
+            dfh["causa_inicio_calle"].fillna("Sin información")
+            .replace({"": "Sin información"})
+            .value_counts().head(10).reset_index()
+        )
+        causa_i.columns = ["causa", "personas"]
+        fig = px.bar(
+            causa_i.sort_values("personas"),
+            x="personas", y="causa", orientation="h",
+            title="Razón principal de inicio de vida en calle"
+        )
+        st.plotly_chart(fig, use_container_width=True)
+
+    with g2:
+        causa_p = (
+            dfh["causa_permanencia_calle"].fillna("Sin información")
+            .replace({"": "Sin información"})
+            .value_counts().head(10).reset_index()
+        )
+        causa_p.columns = ["causa", "personas"]
+        fig = px.bar(
+            causa_p.sort_values("personas"),
+            x="personas", y="causa", orientation="h",
+            title="Razón principal de permanencia en calle"
+        )
+        st.plotly_chart(fig, use_container_width=True)
+
+    st.markdown("### ⏳ Tiempo de habitabilidad")
+    bins = [-0.01, 1, 5, 10, 20, float("inf")]
+    labels = [
+        "Hasta 1 año",
+        "Más de 1 a 5 años",
+        "Más de 5 a 10 años",
+        "Más de 10 a 20 años",
+        "Más de 20 años"
+    ]
+    tray = pd.cut(con_tiempo, bins=bins, labels=labels, include_lowest=True)
+    tray_df = tray.value_counts(sort=False).reset_index()
+    tray_df.columns = ["trayectoria", "personas"]
+    fig_tray = px.bar(
+        tray_df,
+        x="trayectoria", y="personas", text="personas",
+        title="Distribución por tiempo acumulado de habitabilidad en calle"
+    )
+    st.plotly_chart(fig_tray, use_container_width=True)
+
+    s1, s2 = st.columns(2)
+    with s1:
+        sust = (
+            dfh["sustancia_principal"].fillna("Sin información")
+            .replace({"": "Sin información"})
+            .value_counts().head(10).reset_index()
+        )
+        sust.columns = ["sustancia", "personas"]
+        fig = px.bar(
+            sust.sort_values("personas"),
+            x="personas", y="sustancia", orientation="h",
+            title="Sustancia principal reportada"
+        )
+        st.plotly_chart(fig, use_container_width=True)
+
+    with s2:
+        freq = (
+            dfh["frecuencia_consumo"].fillna("Sin información")
+            .replace({"": "Sin información"})
+            .value_counts().reset_index()
+        )
+        freq.columns = ["frecuencia", "personas"]
+        fig = px.bar(
+            freq,
+            x="frecuencia", y="personas", text="personas",
+            title="Frecuencia de consumo"
+        )
+        st.plotly_chart(fig, use_container_width=True)
+
+    st.markdown("### 🔄 Relación calle – consumo")
+    rel = (
+        dfh["relacion_consumo_calle"].fillna("Sin información")
+        .replace({"": "Sin información"})
+        .value_counts().reset_index()
+    )
+    rel.columns = ["relacion", "personas"]
+    st.dataframe(rel, use_container_width=True, hide_index=True)
+
+    st.markdown("### 🤝 Redes y contacto familiar")
+    r1, r2 = st.columns(2)
+    with r1:
+        contacto = (
+            dfh["tiempo_ultimo_contacto_familiar"].fillna("Sin información")
+            .replace({"": "Sin información"})
+            .value_counts().reset_index()
+        )
+        contacto.columns = ["tiempo_desde_contacto", "personas"]
+        fig = px.bar(
+            contacto,
+            x="tiempo_desde_contacto", y="personas", text="personas",
+            title="Tiempo desde el último contacto con red familiar"
+        )
+        st.plotly_chart(fig, use_container_width=True)
+
+    with r2:
+        retorno = (
+            dfh["posibilidad_retorno_familiar"].fillna("Sin información")
+            .replace({"": "Sin información"})
+            .value_counts().reset_index()
+        )
+        retorno.columns = ["posibilidad_retorno", "personas"]
+        fig = px.bar(
+            retorno,
+            x="posibilidad_retorno", y="personas", text="personas",
+            title="Posibilidad real de retorno / vinculación familiar"
+        )
+        st.plotly_chart(fig, use_container_width=True)
+
+    st.markdown("### 📌 Cruces estratégicos")
+    cruces = dfh[[
+        "numero_identificacion",
+        "nombres",
+        "apellidos",
+        "modalidad",
+        "tiempo_anos_calle",
+        "tiempo_anos_consumo",
+        "causa_inicio_calle",
+        "causa_permanencia_calle",
+        "sustancia_principal",
+        "frecuencia_consumo",
+        "tiene_red_apoyo",
+        "tiempo_ultimo_contacto_familiar",
+        "posibilidad_retorno_familiar",
+        "fuente_ingreso",
+        "alojamiento_actual",
+        "etapa_proceso"
+    ]].copy()
+    st.dataframe(cruces, use_container_width=True, hide_index=True)
+
+    csv = cruces.to_csv(index=False).encode("utf-8-sig")
+    st.download_button(
+        "⬇️ Descargar indicadores de habitabilidad (CSV)",
+        data=csv,
+        file_name="indicadores_habitabilidad_calle.csv",
+        mime="text/csv",
+        use_container_width=True
+    )
+
+
 rol_router = st.session_state.get(
     "rol_actual", ""
 )
@@ -12173,6 +12967,20 @@ if (
             st.rerun()
     except Exception:
         pass
+
+if st.session_state.page == "caracterizacion_habitabilidad_v1611":
+    if rol_router not in ["PROFESIONAL", "COORDINACION", "MANAGER"]:
+        st.error("Acceso exclusivo para profesionales, Coordinación o Manager.")
+    else:
+        caracterizacion_habitabilidad_v1611()
+    st.stop()
+
+if st.session_state.page == "tablero_habitabilidad_v1611":
+    if rol_router not in ["COORDINACION", "MANAGER"]:
+        st.error("Acceso exclusivo para Coordinación o Manager.")
+    else:
+        tablero_habitabilidad_v1611()
+    st.stop()
 
 if st.session_state.page == "egresos_impacto_v168":
     if rol_router not in ["COORDINACION", "MANAGER"]:
