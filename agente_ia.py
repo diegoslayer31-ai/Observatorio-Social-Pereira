@@ -37,6 +37,35 @@ if "page" not in st.session_state:
 # ============================================================
 # V12 - AUTENTICACIÓN POR CÉDULA Y ROLES
 # ============================================================
+
+def normalizar_sexo_institucional(valor):
+    """Normaliza sexo al nacer solo para visualización/reportes."""
+    if pd.isna(valor):
+        return "Sin información"
+
+    v = " ".join(str(valor).strip().upper().split())
+
+    if v in {
+        "M", "MASCULINO", "HOMBRE", "H",
+        "MALE", "MASC", "MASCULINO."
+    }:
+        return "Masculino"
+
+    if v in {
+        "F", "FEMENINO", "MUJER",
+        "FEMALE", "FEM", "FEMENINO."
+    }:
+        return "Femenino"
+
+    if v in {
+        "", "NAN", "NONE", "NULL", "N/A", "NA",
+        "SIN DATO", "SIN INFORMACION",
+        "SIN INFORMACIÓN", "NO REGISTRA"
+    }:
+        return "Sin información"
+
+    return "Otro / revisar"
+
 def _tabla_usuarios_disponible():
     try:
         with engine.connect() as conn:
@@ -12782,8 +12811,7 @@ with tab1:
         if "sexo_al_nacer" in df.columns:
 
             sexo_df = (
-                df["sexo_al_nacer"]
-                .value_counts()
+                df["sexo_al_nacer"].apply(normalizar_sexo_institucional).value_counts()
                 .reset_index()
             )
 
