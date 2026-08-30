@@ -5453,7 +5453,7 @@ def control_turno_v13():
                                     fecha_regreso_real=CURRENT_DATE,
                                     hora_regreso_real=CURRENT_TIME,
                                     observacion_regreso=:observacion,
-                                    usuario_registra_regreso=:usuario
+                                    cerrado_en=NOW()
                                 WHERE id=:id
                                   AND UPPER(TRIM(COALESCE(estado_permiso,'')))='ABIERTO'
                             """),
