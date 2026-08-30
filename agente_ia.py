@@ -8133,29 +8133,87 @@ def dashboard_ejecutivo():
 
     with g2:
         if "sexo_al_nacer" in df_coord.columns:
+
+            def normalizar_sexo_dashboard_v1644(valor):
+                if pd.isna(valor):
+                    return "Sin información"
+
+                v = str(valor).strip().upper()
+                v = " ".join(v.split())
+
+                if v in {
+                    "M", "MASCULINO", "HOMBRE", "H",
+                    "MALE", "MASC", "MASCULINO."
+                }:
+                    return "Masculino"
+
+                if v in {
+                    "F", "FEMENINO", "MUJER",
+                    "FEMALE", "FEM", "FEMENINO."
+                }:
+                    return "Femenino"
+
+                if v in {
+                    "", "NAN", "NONE", "NULL", "N/A", "NA",
+                    "SIN DATO", "SIN INFORMACION",
+                    "SIN INFORMACIÓN", "NO REGISTRA"
+                }:
+                    return "Sin información"
+
+                return "Otro / revisar"
+
             sexo_coord = (
                 df_coord["sexo_al_nacer"]
-                .fillna("Sin dato")
-                .astype(str)
-                .str.strip()
-                .replace({"": "Sin dato"})
+                .apply(normalizar_sexo_dashboard_v1644)
                 .value_counts()
                 .rename_axis("sexo")
                 .reset_index(name="cantidad")
             )
 
+            total_sexo_coord = int(sexo_coord["cantidad"].sum())
+            sexo_coord["porcentaje"] = (
+                sexo_coord["cantidad"] / total_sexo_coord * 100
+            ).round(1)
+
             if not sexo_coord.empty:
-                fig_sexo_coord = px.pie(
+                fig_sexo_coord = px.bar(
                     sexo_coord,
-                    names="sexo",
-                    values="cantidad",
-                    title="Sexo al nacer",
-                    hole=0.45
+                    x="sexo",
+                    y="cantidad",
+                    text="cantidad",
+                    title="Sexo al nacer"
+                )
+                fig_sexo_coord.update_traces(
+                    customdata=sexo_coord[["porcentaje"]],
+                    hovertemplate=(
+                        "<b>%{x}</b><br>"
+                        "Personas: %{y}<br>"
+                        "Porcentaje: %{customdata[0]:.1f}%"
+                        "<extra></extra>"
+                    ),
+                    textposition="outside"
+                )
+                fig_sexo_coord.update_layout(
+                    xaxis_title="",
+                    yaxis_title="Número de personas",
+                    showlegend=False
                 )
                 st.plotly_chart(
                     fig_sexo_coord,
                     use_container_width=True
                 )
+
+                if (sexo_coord["sexo"] == "Otro / revisar").any():
+                    cantidad_revisar = int(
+                        sexo_coord.loc[
+                            sexo_coord["sexo"] == "Otro / revisar",
+                            "cantidad"
+                        ].sum()
+                    )
+                    st.caption(
+                        f"⚠️ {cantidad_revisar} registro(s) tienen un valor "
+                        "de sexo que conviene revisar en la base."
+                    )
 
     # ========================================================
     # DESCARGA PARA COORDINACIÓN
