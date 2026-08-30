@@ -9999,6 +9999,23 @@ def modulo_reportes_institucionales_v169():
 
     df_reporte = df.copy()
 
+    # ------------------------------------------------------------
+    # V16.12 - SEXO NORMALIZADO EN TODO EL MÓDULO DE REPORTES
+    # M/MASCULINO/HOMBRE -> Masculino
+    # F/FEMENINO/MUJER -> Femenino
+    # La base de datos no se modifica.
+    # ------------------------------------------------------------
+    if col_sexo and col_sexo in df_reporte.columns:
+        col_sexo_original = col_sexo
+        col_sexo_normalizado = "_sexo_al_nacer_normalizado"
+        df_reporte[col_sexo_normalizado] = (
+            df_reporte[col_sexo_original]
+            .apply(normalizar_sexo_institucional)
+        )
+        # Desde aquí, filtros, gráfica, texto interpretativo y PDF
+        # trabajan exclusivamente con la categoría normalizada.
+        col_sexo = col_sexo_normalizado
+
     if col_edad:
         df_reporte[col_edad] = pd.to_numeric(
             df_reporte[col_edad],
@@ -12149,7 +12166,7 @@ def modulo_carga_activos_v169():
 
 
 # ============================================================
-# V16.11 - CARACTERIZACIÓN ESPECIALIZADA DE HABITABILIDAD EN CALLE
+# V16.12 - REPORTES INSTITUCIONALES CON SEXO NORMALIZADO
 # Captura progresiva + indicadores analíticos.
 # ============================================================
 def caracterizacion_habitabilidad_v1611():
