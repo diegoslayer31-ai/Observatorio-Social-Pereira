@@ -2954,12 +2954,11 @@ def panel_inspirador_simple_v14():
                             fecha_regreso_real=CURRENT_DATE,
                             hora_regreso_real=CURRENT_TIME,
                             observacion_regreso='REGRESA AL ALBERGUE',
-                            usuario_registra_regreso=:usuario
+                            cerrado_en=NOW()
                         WHERE id=:id
                           AND UPPER(TRIM(COALESCE(estado_permiso,'')))='ABIERTO'
                     """),
                     {
-                        "usuario": responsable,
                         "id": int(permiso_id)
                     }
                 )
@@ -5460,7 +5459,6 @@ def control_turno_v13():
                             """),
                             {
                                 "observacion": obs_regreso_rapido.strip(),
-                                "usuario": responsable,
                                 "id": int(permiso_id_regreso)
                             }
                         )
