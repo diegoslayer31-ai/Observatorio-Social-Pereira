@@ -9754,7 +9754,7 @@ def inicio_ejecutivo_v167():
 # V16.8 - MÓDULOS INSTITUCIONALES RESTAURADOS
 # ============================================================
 
-def modulo_egresos_impacto_v168():
+def modulo_egresos_impacto_v169():
 
     df = pd.read_sql("SELECT * FROM habitante_de_calle", engine)
     df = df.drop_duplicates()
@@ -9767,284 +9767,1857 @@ def modulo_egresos_impacto_v168():
         .str.replace(" ", "_")
     )
 
-    st.markdown("#### 📝 Novedades del turno")
+    st.title("🏆 Egresos e Impacto")
+
+    df_egresados = pd.read_sql("""
+        SELECT *
+        FROM personas_caracterizacion
+        WHERE estado_caso = 'EGRESADO'
+    """, engine)
+
+    # ==========================
+    # INDICADORES
+    # ==========================
+
+    st.subheader("📊 Indicadores de Egreso")
+
+    df_impacto = pd.read_sql_query("""
+        SELECT *
+        FROM personas_caracterizacion
+        WHERE estado_caso = 'EGRESADO'
+    """, engine)
+
+    total_egresados = len(df_impacto)
+    total_personas = len(df)
+
+    tasa_egreso = round((total_egresados / total_personas) * 100, 2) if total_personas > 0 else 0
+
+    col1, col2, col3 = st.columns(3)
+
+    col1.metric("🎓 Total Egresados", total_egresados)
+    col2.metric("📈 Tasa de Egreso", f"{tasa_egreso}%")
+    col3.metric("👤 Edad Promedio", round(df_impacto["edad"].mean(), 1) if len(df_impacto) > 0 else 0)
+
+    st.markdown("---")
+
+    # ==========================
+    # OBSERVACIONES DE EGRESO 
+    # ==========================
+
+    st.subheader("📌 Observaciones de Egreso")
+
+    obs_df = (
+        df_egresados["observaciones_egreso"]
+        .fillna("Sin observación")
+        .value_counts()
+        .reset_index()
+    )
+
+    obs_df.columns = ["observacion", "cantidad"]
+
+    fig_obs = px.bar(
+        obs_df,
+        x="observacion",
+        y="cantidad",
+        color="cantidad",
+        title="📌 Observaciones de egreso"
+    )
+
+    st.plotly_chart(fig_obs, use_container_width=True)
+
+    st.markdown("---")
+
+    # ==========================
+    # DEMOGRAFÍA EGRESADOS
+    # ==========================
+
+    if "sexo_nacer" in df_impacto.columns:
+        st.plotly_chart(px.pie(df_impacto, names="sexo_nacer", title="Sexo"))
+
+    if "orientacion_lgbti" in df_impacto.columns:
+        st.plotly_chart(px.histogram(df_impacto, x="orientacion_lgbti", title="Orientación sexual"))
+
+    if "grupos_etnicos_afro_indigena" in df_impacto.columns:
+        st.plotly_chart(px.histogram(df_impacto, x="grupos_etnicos_afro_indigena", title="Grupos étnicos"))
+
+    st.plotly_chart(px.histogram(df_impacto, x="edad", nbins=10, title="Edad"))
+
+    st.info(f"Total egresados: {total_egresados} | Tasa: {tasa_egreso}%")
+
+def modulo_reportes_institucionales_v169():
+
+    df = pd.read_sql("SELECT * FROM habitante_de_calle", engine)
+    df = df.drop_duplicates()
+    df.columns = (
+        df.columns
+        .str.strip()
+        .str.lower()
+        .str.replace("\n", " ")
+        .str.replace("  ", " ")
+        .str.replace(" ", "_")
+    )
+
+    # ============================================================
+    # REPORTES INSTITUCIONALES - OBSERVATORIO SOCIAL
+    # ============================================================
+    import tempfile
+    from datetime import datetime
+    from reportlab.lib.units import cm
+    from reportlab.lib.enums import TA_CENTER
+    from reportlab.lib.styles import ParagraphStyle
+
+    st.title("📄 Reportes Institucionales")
     st.caption(
-        "Aquí se registran novedades operativas que debe conocer el siguiente turno."
+        "Análisis institucional dinámico de la población registrada. "
+        "Los indicadores, gráficas y exportaciones responden a los filtros seleccionados."
     )
 
-    with st.form("v13_nueva_novedad"):
-        tipo_nov = st.selectbox(
-            "Tipo de novedad",
-            [
-                "GENERAL",
-                "USUARIO",
-                "CONVIVENCIA",
-                "SALUD",
-                "SEGURIDAD",
-                "INFRAESTRUCTURA",
-                "ALIMENTACIÓN",
-                "OTRA"
-            ]
+    # ------------------------------------------------------------
+    # FUNCIONES LOCALES DEL MÓDULO
+    # ------------------------------------------------------------
+    def _columna(*nombres):
+        """Devuelve el primer nombre de columna disponible."""
+        for nombre in nombres:
+            if nombre in df.columns:
+                return nombre
+        return None
+
+    def _serie_limpia(dataframe, columna):
+        if not columna or columna not in dataframe.columns:
+            return pd.Series(dtype="object")
+        serie = dataframe[columna].copy()
+        serie = serie.where(serie.notna(), "")
+        serie = serie.astype(str).str.strip()
+        return serie[
+            (serie != "") &
+            (~serie.str.upper().isin(["NAN", "NONE", "NULL"]))
+        ]
+
+    def _tabla_categoria(dataframe, columna, top_n=15):
+        serie = _serie_limpia(dataframe, columna)
+        if serie.empty:
+            return pd.DataFrame(columns=["categoria", "cantidad", "porcentaje"])
+
+        conteo = serie.value_counts().head(top_n)
+        salida = conteo.rename_axis("categoria").reset_index(name="cantidad")
+        salida["porcentaje"] = (
+            salida["cantidad"] / len(serie) * 100
+        ).round(1)
+        return salida
+
+    def _grafica_png(fig):
+        """Genera temporalmente una gráfica para el PDF."""
+        try:
+            tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".png")
+            tmp.close()
+            fig.write_image(tmp.name, width=1100, height=650, scale=1.3)
+            return tmp.name
+        except Exception:
+            return None
+
+    def _texto_pdf(valor):
+        texto = "" if valor is None else str(valor)
+        return (
+            texto.replace("&", "&amp;")
+                 .replace("<", "&lt;")
+                 .replace(">", "&gt;")
         )
 
-        doc_nov = st.text_input(
-            "Documento del usuario relacionado (opcional)"
-        )
-
-        novedad = st.text_area(
-            "Novedad *",
-            placeholder="Describa claramente la situación y lo que queda pendiente."
-        )
-
-        prioridad = st.selectbox(
-            "Prioridad",
-            ["NORMAL", "IMPORTANTE", "URGENTE"]
-        )
-
-        guardar_nov = st.form_submit_button(
-            "💾 Registrar novedad",
-            use_container_width=True,
-            type="primary"
-        )
-
-    if guardar_nov:
-        if not novedad.strip():
-            st.error("Debe escribir la novedad.")
-        else:
-            with engine.begin() as conn:
-                conn.execute(
-                    text("""
-                        INSERT INTO novedades_turno (
-                            tipo_novedad,
-                            numero_identificacion,
-                            novedad,
-                            prioridad,
-                            estado,
-                            usuario_registra
-                        )
-                        VALUES (
-                            :tipo,
-                            NULLIF(:doc,''),
-                            :novedad,
-                            :prioridad,
-                            'PENDIENTE',
-                            :usuario
-                        )
-                    """),
-                    {
-                        "tipo": tipo_nov,
-                        "doc": str(doc_nov).strip(),
-                        "novedad": novedad.strip(),
-                        "prioridad": prioridad,
-                        "usuario": responsable
-                    }
-                )
-            st.success("✅ Novedad registrada.")
-            st.rerun()
-
-    novedades = pd.read_sql(
-        text("""
-            SELECT
-                id,
-                creado_en,
-                prioridad,
-                tipo_novedad,
-                numero_identificacion,
-                novedad,
-                estado,
-                usuario_registra
-            FROM novedades_turno
-            WHERE estado = 'PENDIENTE'
-            ORDER BY
-                CASE prioridad
-                    WHEN 'URGENTE' THEN 1
-                    WHEN 'IMPORTANTE' THEN 2
-                    ELSE 3
-                END,
-                creado_en DESC
-        """),
-        engine
+    # ------------------------------------------------------------
+    # IDENTIFICAR COLUMNAS EXISTENTES
+    # ------------------------------------------------------------
+    col_doc = _columna("numero_identificacion", "numero_de_identificacion")
+    col_sexo = _columna("sexo_al_nacer")
+    col_edad = _columna("edad")
+    col_estado = _columna("estado_caso")
+    col_modalidad = _columna("modalidad")
+    col_salud = _columna("tipo_seguridad_salud", "tipo_de_seguridad_social_en_salud")
+    col_educacion = _columna(
+        "nivel_educativo",
+        "nivel_educativo_que_tiene_o_cursa"
     )
+    col_ocupacion = _columna(
+        "condicion_ocupacional",
+        "perfil_ocupacional_su_principal_fuente_de_ingreso_es"
+    )
+    col_procedencia = _columna("departamento_procedencia", "departamento_de_procedencia")
+    col_poblacion = _columna("poblacion")
+    col_orientacion = _columna(
+        "orientacion_sexual_lgtbi",
+        "orientacion_lgbti",
+        "orientacion_sexual"
+    )
+    col_etnia = _columna(
+        "grupos_etnicos_afro_indigena",
+        "grupos_etnicos"
+    )
+    col_consumo = _columna("tipo_consumo", "tipo_de_consumo")
+    col_enfermedad = _columna("enfermedad_mental")
 
-    if novedades.empty:
-        st.success("No hay novedades pendientes.")
+    df_reporte = df.copy()
+
+    if col_edad:
+        df_reporte[col_edad] = pd.to_numeric(
+            df_reporte[col_edad],
+            errors="coerce"
+        )
+
+    # ------------------------------------------------------------
+    # FILTROS
+    # ------------------------------------------------------------
+    st.markdown("---")
+    st.subheader("🔎 Filtros del reporte")
+
+    f1, f2, f3, f4 = st.columns(4)
+
+    def _opciones(columna):
+        if not columna:
+            return []
+        return sorted(_serie_limpia(df_reporte, columna).unique().tolist())
+
+    with f1:
+        sexo_sel = st.multiselect(
+            "Sexo al nacer",
+            _opciones(col_sexo),
+            key="rep_sexo"
+        )
+
+    with f2:
+        estado_sel = st.multiselect(
+            "Estado del caso",
+            _opciones(col_estado),
+            key="rep_estado"
+        )
+
+    with f3:
+        modalidad_sel = st.multiselect(
+            "Modalidad",
+            _opciones(col_modalidad),
+            key="rep_modalidad"
+        )
+
+    with f4:
+        salud_sel = st.multiselect(
+            "Seguridad en salud",
+            _opciones(col_salud),
+            key="rep_salud"
+        )
+
+    f5, f6, f7 = st.columns([1.2, 1, 2])
+
+    if col_edad and df_reporte[col_edad].notna().any():
+        edad_min = int(df_reporte[col_edad].min())
+        edad_max = int(df_reporte[col_edad].max())
+        if edad_min == edad_max:
+            edad_max = edad_min + 1
     else:
-        st.dataframe(
-            novedades,
-            use_container_width=True,
-            hide_index=True
+        edad_min, edad_max = 0, 120
+
+    with f5:
+        rango_edad = st.slider(
+            "Rango de edad",
+            min_value=edad_min,
+            max_value=edad_max,
+            value=(edad_min, edad_max),
+            key="rep_rango_edad"
         )
 
-        if rol in ["COORDINACION", "MANAGER"]:
-            ids_nov = novedades["id"].tolist()
-            nov_cerrar = st.selectbox(
-                "Marcar novedad como resuelta",
-                ids_nov,
-                format_func=lambda x: (
-                    f"#{x} · "
-                    + str(
-                        novedades.loc[
-                            novedades["id"] == x,
-                            "novedad"
-                        ].iloc[0]
-                    )[:80]
-                ),
-                key="v13_cerrar_novedad"
+    with f6:
+        incluir_sin_edad = st.checkbox(
+            "Incluir sin edad",
+            value=True,
+            key="rep_incluir_sin_edad"
+        )
+
+    with f7:
+        busqueda = st.text_input(
+            "Buscar persona",
+            placeholder="Nombre, apellido o identificación",
+            key="rep_busqueda"
+        ).strip()
+
+    # ------------------------------------------------------------
+    # APLICAR FILTROS
+    # ------------------------------------------------------------
+    df_f = df_reporte.copy()
+    filtros_texto = []
+
+    def _aplicar_lista(dataframe, columna, seleccion):
+        if columna and seleccion:
+            valores = dataframe[columna].astype(str).str.strip()
+            return dataframe[valores.isin(seleccion)]
+        return dataframe
+
+    if sexo_sel:
+        df_f = _aplicar_lista(df_f, col_sexo, sexo_sel)
+        filtros_texto.append("Sexo: " + ", ".join(sexo_sel))
+
+    if estado_sel:
+        df_f = _aplicar_lista(df_f, col_estado, estado_sel)
+        filtros_texto.append("Estado: " + ", ".join(estado_sel))
+
+    if modalidad_sel:
+        df_f = _aplicar_lista(df_f, col_modalidad, modalidad_sel)
+        filtros_texto.append("Modalidad: " + ", ".join(modalidad_sel))
+
+    if salud_sel:
+        df_f = _aplicar_lista(df_f, col_salud, salud_sel)
+        filtros_texto.append("Salud: " + ", ".join(salud_sel))
+
+    if col_edad:
+        mascara_edad = df_f[col_edad].between(
+            rango_edad[0], rango_edad[1], inclusive="both"
+        )
+        if incluir_sin_edad:
+            mascara_edad = mascara_edad | df_f[col_edad].isna()
+        df_f = df_f[mascara_edad]
+
+    if busqueda:
+        columnas_busqueda = [
+            c for c in ["nombres", "apellidos", col_doc]
+            if c and c in df_f.columns
+        ]
+        if columnas_busqueda:
+            mascara = pd.Series(False, index=df_f.index)
+            for c in columnas_busqueda:
+                mascara = mascara | df_f[c].astype(str).str.contains(
+                    busqueda,
+                    case=False,
+                    na=False,
+                    regex=False
+                )
+            df_f = df_f[mascara]
+            filtros_texto.append("Búsqueda: " + busqueda)
+
+    if df_f.empty:
+        st.warning("Los filtros seleccionados no arrojan registros.")
+    else:
+
+        # --------------------------------------------------------
+        # INDICADORES
+        # --------------------------------------------------------
+        total = len(df_f)
+
+        if col_edad and df_f[col_edad].notna().any():
+            edad_promedio = round(float(df_f[col_edad].mean()), 1)
+            edad_mediana = round(float(df_f[col_edad].median()), 1)
+        else:
+            edad_promedio = 0.0
+            edad_mediana = 0.0
+
+        # --------------------------------------------------------
+        # ACTIVOS: se calculan desde la base general habitante_de_calle
+        # EGRESOS: se calculan desde la base personas_caracterizacion
+        # --------------------------------------------------------
+        if col_estado:
+            estado_norm = (
+                df_f[col_estado]
+                .astype(str)
+                .str.strip()
+                .str.upper()
+            )
+            total_activos = int((estado_norm == "ACTIVO").sum())
+        else:
+            total_activos = 0
+
+        try:
+            df_egresados = pd.read_sql(
+                """
+                SELECT *
+                FROM personas_caracterizacion
+                WHERE UPPER(TRIM(estado_caso)) = 'EGRESADO'
+                """,
+                engine
+            )
+            total_egresados = len(df_egresados)
+        except Exception:
+            df_egresados = pd.DataFrame()
+            total_egresados = 0
+
+        # Tasa institucional de referencia:
+        # egresos registrados / población total de la base general.
+        total_base_general = len(df_reporte)
+
+        tasa_egreso = round(
+            total_egresados / total_base_general * 100, 1
+        ) if total_base_general else 0.0
+
+        urbano_activos = 0
+        granja_activos = 0
+
+        if col_estado and col_modalidad:
+            est = df_f[col_estado].astype(str).str.strip().str.upper()
+            mod = df_f[col_modalidad].astype(str).str.strip().str.upper()
+
+            urbano_activos = int(
+                ((est == "ACTIVO") & (mod == "URBANO")).sum()
+            )
+            granja_activos = int(
+                ((est == "ACTIVO") & (mod == "GRANJA")).sum()
             )
 
-            if st.button(
-                "✅ Marcar como resuelta",
-                use_container_width=True,
-                key="v13_btn_cerrar_novedad"
-            ):
-                with engine.begin() as conn:
-                    conn.execute(
-                        text("""
-                            UPDATE novedades_turno
-                            SET estado='RESUELTA',
-                                resuelto_en=NOW(),
-                                resuelto_por=:usuario
-                            WHERE id=:id
-                        """),
-                        {
-                            "usuario": responsable,
-                            "id": int(nov_cerrar)
-                        }
+        cobertura_salud = (
+            round(len(_serie_limpia(df_f, col_salud)) / total * 100, 1)
+            if col_salud and total else 0.0
+        )
+
+        cobertura_educacion = (
+            round(len(_serie_limpia(df_f, col_educacion)) / total * 100, 1)
+            if col_educacion and total else 0.0
+        )
+
+        st.markdown("---")
+        st.subheader("📊 Indicadores estratégicos")
+
+        k1, k2, k3, k4, k5 = st.columns(5)
+
+        k1.metric(
+            "👥 Población caracterizada",
+            f"{total_base_general:,}".replace(",", ".")
+        )
+        k2.metric(
+            "🔎 Personas según filtros",
+            f"{total:,}".replace(",", ".")
+        )
+        k3.metric("🟢 Activos", total_activos)
+        k4.metric("🏆 Egresos registrados", total_egresados)
+        k5.metric("📈 Tasa de egreso", f"{tasa_egreso:.1f}%")
+
+        k6, k7, k8 = st.columns(3)
+        k6.metric(
+            "🎂 Edad promedio",
+            f"{edad_promedio:.1f}" if edad_promedio else "S/D"
+        )
+        k7.metric("🏙️ Urbano activos", urbano_activos)
+        k8.metric("🌱 Granja activos", granja_activos)
+
+        # --------------------------------------------------------
+        # PERFIL SOCIODEMOGRÁFICO
+        # --------------------------------------------------------
+        st.markdown("---")
+        st.subheader("👤 Perfil sociodemográfico")
+
+        p1, p2 = st.columns(2)
+
+        with p1:
+            sexo_tabla = _tabla_categoria(df_f, col_sexo, 10)
+            if not sexo_tabla.empty:
+                fig_sexo = px.pie(
+                    sexo_tabla,
+                    names="categoria",
+                    values="cantidad",
+                    hole=0.42,
+                    title="Sexo al nacer"
+                )
+                fig_sexo.update_traces(
+                    textposition="inside",
+                    textinfo="percent+label"
+                )
+                st.plotly_chart(fig_sexo, use_container_width=True)
+            else:
+                st.info("Sin información suficiente de sexo al nacer.")
+
+        with p2:
+            if col_edad and df_f[col_edad].notna().any():
+                fig_edad = px.histogram(
+                    df_f.dropna(subset=[col_edad]),
+                    x=col_edad,
+                    nbins=18,
+                    title="Distribución por edad",
+                    labels={col_edad: "Edad"}
+                )
+                st.plotly_chart(fig_edad, use_container_width=True)
+                st.caption(
+                    f"Edad promedio: {edad_promedio:.1f} años · "
+                    f"Mediana: {edad_mediana:.1f} años"
+                )
+            else:
+                st.info("Sin información suficiente de edad.")
+
+        # --------------------------------------------------------
+        # CARACTERIZACIÓN TEMÁTICA
+        # --------------------------------------------------------
+        st.markdown("---")
+        st.subheader("🧭 Caracterización social")
+
+        analisis_tabs = st.tabs([
+            "🎓 Educación",
+            "🏥 Salud",
+            "💼 Ocupación",
+            "🌎 Procedencia",
+            "💊 Consumo",
+            "🏳️ Diversidad"
+        ])
+
+        configuracion = [
+            (col_educacion, "Nivel educativo"),
+            (col_salud, "Seguridad social en salud"),
+            (col_ocupacion, "Condición ocupacional"),
+            (col_procedencia, "Departamento de procedencia"),
+            (col_consumo, "Tipo de consumo"),
+            (col_orientacion, "Orientación sexual / variable registrada")
+        ]
+
+        for pesta, (columna, titulo) in zip(analisis_tabs, configuracion):
+            with pesta:
+                tabla_cat = _tabla_categoria(df_f, columna, 15)
+
+                if tabla_cat.empty:
+                    st.info(f"No hay información disponible para {titulo.lower()}.")
+                else:
+                    fig_cat = px.bar(
+                        tabla_cat.sort_values("cantidad"),
+                        x="cantidad",
+                        y="categoria",
+                        orientation="h",
+                        text="cantidad",
+                        title=titulo
                     )
-                st.success("Novedad cerrada.")
-                st.rerun()
+                    fig_cat.update_layout(
+                        xaxis_title="Personas",
+                        yaxis_title=""
+                    )
+                    st.plotly_chart(
+                        fig_cat,
+                        use_container_width=True
+                    )
 
+                    tabla_mostrar = tabla_cat.rename(columns={
+                        "categoria": titulo,
+                        "cantidad": "Cantidad",
+                        "porcentaje": "Porcentaje %"
+                    })
+                    st.dataframe(
+                        tabla_mostrar,
+                        use_container_width=True,
+                        hide_index=True
+                    )
 
-def modulo_reportes_institucionales_v168():
+        # --------------------------------------------------------
+        # OTROS ENFOQUES
+        # --------------------------------------------------------
+        st.markdown("---")
+        st.subheader("🎯 Enfoques diferenciales y condiciones")
 
-    df = pd.read_sql("SELECT * FROM habitante_de_calle", engine)
-    df = df.drop_duplicates()
-    df.columns = (
-        df.columns
-        .str.strip()
-        .str.lower()
-        .str.replace("\n", " ")
-        .str.replace("  ", " ")
-        .str.replace(" ", "_")
-    )
+        e1, e2 = st.columns(2)
 
-    st.markdown("#### 🤝 Entrega / recibo de turno")
+        with e1:
+            etnia_tabla = _tabla_categoria(df_f, col_etnia, 12)
+            if not etnia_tabla.empty:
+                fig_etnia = px.bar(
+                    etnia_tabla,
+                    x="categoria",
+                    y="cantidad",
+                    text="cantidad",
+                    title="Grupos étnicos"
+                )
+                st.plotly_chart(fig_etnia, use_container_width=True)
 
-    pendientes_count = 0
-    try:
-        pendientes_count = int(
-            pd.read_sql(
-                text("""
-                    SELECT COUNT(*) AS total
-                    FROM novedades_turno
-                    WHERE estado='PENDIENTE'
-                """),
-                engine
-            ).iloc[0]["total"]
-        )
-    except Exception:
-        pass
+        with e2:
+            enfermedad_tabla = _tabla_categoria(
+                df_f, col_enfermedad, 10
+            )
+            if not enfermedad_tabla.empty:
+                fig_enf = px.pie(
+                    enfermedad_tabla,
+                    names="categoria",
+                    values="cantidad",
+                    hole=0.35,
+                    title="Enfermedad mental - variable registrada"
+                )
+                st.plotly_chart(fig_enf, use_container_width=True)
 
-    with st.form("v13_entrega_turno"):
-        turno = st.selectbox(
-            "Turno",
-            ["MAÑANA", "TARDE", "NOCHE"]
-        )
+        # --------------------------------------------------------
+        # CALIDAD DEL DATO - VISTA COMPACTA
+        # --------------------------------------------------------
+        st.markdown("---")
 
-        recibe = st.text_input(
-            "Nombre de quien recibe el turno *",
-            placeholder="Nombre del inspirador que recibe"
-        )
+        campos_calidad = [
+            (col_doc, "Identificación"),
+            (col_edad, "Edad"),
+            (col_sexo, "Sexo al nacer"),
+            (col_salud, "Seguridad en salud"),
+            (col_educacion, "Nivel educativo"),
+            (col_ocupacion, "Condición ocupacional"),
+            (col_procedencia, "Procedencia"),
+            (col_estado, "Estado del caso"),
+            (col_modalidad, "Modalidad")
+        ]
 
-        resumen_turno = st.text_area(
-            "Resumen / recomendaciones",
-            placeholder="Pendientes, situaciones especiales, recomendaciones..."
-        )
+        calidad = []
 
-        confirmar_turno = st.checkbox(
-            "Confirmo la entrega del turno"
-        )
+        for columna, etiqueta in campos_calidad:
+            if columna and columna in df_f.columns:
+                if columna == col_edad:
+                    completos = int(
+                        pd.to_numeric(
+                            df_f[columna], errors="coerce"
+                        ).notna().sum()
+                    )
+                else:
+                    completos = len(_serie_limpia(df_f, columna))
 
-        guardar_turno = st.form_submit_button(
-            "🤝 Registrar entrega de turno",
-            use_container_width=True,
-            type="primary"
-        )
+                calidad.append({
+                    "Campo": etiqueta,
+                    "Completos": completos,
+                    "Faltantes": total - completos,
+                    "Completitud %": round(
+                        completos / total * 100, 1
+                    ) if total else 0
+                })
 
-    if guardar_turno:
-        if not recibe.strip():
-            st.error("Debe indicar quién recibe el turno.")
-        elif not confirmar_turno:
-            st.error("Debe confirmar la entrega.")
+        df_calidad = pd.DataFrame(calidad)
+
+        with st.expander("🔍 Ver calidad y completitud de la base"):
+            st.caption(
+                "Control técnico de diligenciamiento. "
+                "No corresponde a un indicador de impacto social."
+            )
+
+            if not df_calidad.empty:
+                st.dataframe(
+                    df_calidad,
+                    use_container_width=True,
+                    hide_index=True
+                )
+            else:
+                st.info("No hay variables disponibles para evaluar completitud.")
+
+        # --------------------------------------------------------
+        # HALLAZGOS AUTOMÁTICOS
+        # --------------------------------------------------------
+        st.markdown("---")
+        st.subheader("📋 Hallazgos automáticos")
+
+        hallazgos = []
+
+        if edad_promedio >= 50:
+            hallazgos.append(
+                f"La edad promedio es de {edad_promedio:.1f} años, "
+                "lo que evidencia una presencia importante de población de mayor edad."
+            )
+
+        if total_egresados > 0 and tasa_egreso < 10:
+            hallazgos.append(
+                f"La tasa de egreso es de {tasa_egreso:.1f}%."
+            )
+
+        if col_salud and cobertura_salud < 80:
+            hallazgos.append(
+                f"La variable de seguridad social en salud tiene "
+                f"{cobertura_salud:.1f}% de completitud."
+            )
+
+        if col_educacion and cobertura_educacion < 80:
+            hallazgos.append(
+                f"La variable de nivel educativo tiene "
+                f"{cobertura_educacion:.1f}% de completitud."
+            )
+
+        if not hallazgos:
+            st.success(
+                "No se identifican alertas automáticas con los criterios configurados."
+            )
         else:
-            with engine.begin() as conn:
-                conn.execute(
-                    text("""
-                        INSERT INTO entregas_turno (
-                            turno,
-                            entrega_por,
-                            recibe_por,
-                            presentes,
-                            permisos_abiertos,
-                            permisos_vencidos,
-                            novedades_pendientes,
-                            resumen
-                        )
-                        VALUES (
-                            :turno,
-                            :entrega,
-                            :recibe,
-                            :presentes,
-                            :permisos,
-                            :vencidos,
-                            :novedades,
-                            :resumen
-                        )
-                    """),
-                    {
-                        "turno": turno,
-                        "entrega": responsable,
-                        "recibe": recibe.strip(),
-                        "presentes": len(presentes),
-                        "permisos": len(permisos_det),
-                        "vencidos": len(vencidos),
-                        "novedades": pendientes_count,
-                        "resumen": resumen_turno.strip()
-                    }
+            for hallazgo in hallazgos:
+                st.warning(hallazgo)
+
+        # --------------------------------------------------------
+        # CONCLUSIONES
+        # --------------------------------------------------------
+        st.subheader("📝 Síntesis institucional")
+
+        conclusiones = [
+            f"La base general contiene {total_base_general} personas caracterizadas y el análisis filtrado incluye {total} registros.",
+            (
+                f"La edad promedio es {edad_promedio:.1f} años."
+                if edad_promedio
+                else "No existe información suficiente para calcular la edad promedio."
+            ),
+            (
+                f"Se identifican {total_egresados} egresos registrados en personas_caracterizacion, "
+                f"equivalentes al {tasa_egreso:.1f}% de la población total registrada en habitante_de_calle."
+            )
+        ]
+
+        for columna, nombre_variable in [
+            (col_educacion, "nivel educativo"),
+            (col_salud, "seguridad social en salud"),
+            (col_ocupacion, "condición ocupacional"),
+            (col_consumo, "tipo de consumo")
+        ]:
+            serie = _serie_limpia(df_f, columna)
+            if not serie.empty:
+                conteo = serie.value_counts()
+                principal = conteo.index[0]
+                porcentaje = round(
+                    conteo.iloc[0] / len(serie) * 100, 1
+                )
+                conclusiones.append(
+                    f"En {nombre_variable}, la categoría predominante es "
+                    f"“{principal}”, con {porcentaje}% de los registros con información."
                 )
 
-            st.success("✅ Entrega de turno registrada.")
-            st.rerun()
+        st.info("\n\n".join([f"• {c}" for c in conclusiones]))
 
-    ultimas_entregas = pd.read_sql(
-        text("""
-            SELECT
-                creado_en,
-                turno,
-                entrega_por,
-                recibe_por,
-                presentes,
-                permisos_abiertos,
-                permisos_vencidos,
-                novedades_pendientes,
-                resumen
-            FROM entregas_turno
-            ORDER BY creado_en DESC
-            LIMIT 10
-        """),
-        engine
-    )
+        # --------------------------------------------------------
+        # EXPORTACIONES
+        # --------------------------------------------------------
+        st.markdown("---")
+        st.subheader("📥 Exportar resultados")
 
-    if not ultimas_entregas.empty:
-        st.markdown("##### Últimas entregas")
-        st.dataframe(
-            ultimas_entregas,
-            use_container_width=True,
-            hide_index=True
-        )
+        ex1, ex2 = st.columns(2)
 
+        with ex1:
+            csv_bytes = df_f.to_csv(
+                index=False
+            ).encode("utf-8-sig")
 
-def modulo_carga_activos_v168():
+            st.download_button(
+                "⬇️ Descargar base filtrada (CSV)",
+                data=csv_bytes,
+                file_name=(
+                    "reporte_observatorio_"
+                    + datetime.now().strftime("%Y%m%d")
+                    + ".csv"
+                ),
+                mime="text/csv",
+                use_container_width=True
+            )
+
+        with ex2:
+            if st.button(
+                "📄 Generar informe institucional completo",
+                use_container_width=True,
+                key="generar_pdf_reportes"
+            ):
+                try:
+                    import textwrap
+                    from reportlab.lib.enums import TA_LEFT, TA_CENTER
+                    from reportlab.platypus import KeepTogether
+
+                    buffer_pdf = BytesIO()
+
+                    doc_pdf = SimpleDocTemplate(
+                        buffer_pdf,
+                        pagesize=letter,
+                        rightMargin=1.35 * cm,
+                        leftMargin=1.35 * cm,
+                        topMargin=1.25 * cm,
+                        bottomMargin=1.25 * cm,
+                        title="Informe Institucional - Observatorio Social",
+                        author="Asociación Ciudad Futuro"
+                    )
+
+                    estilos = getSampleStyleSheet()
+
+                    estilo_portada = ParagraphStyle(
+                        "Portada",
+                        parent=estilos["Title"],
+                        alignment=TA_CENTER,
+                        fontName="Helvetica-Bold",
+                        fontSize=22,
+                        leading=27,
+                        textColor=colors.HexColor("#17365D"),
+                        spaceAfter=12
+                    )
+
+                    estilo_subportada = ParagraphStyle(
+                        "SubPortada",
+                        parent=estilos["Heading2"],
+                        alignment=TA_CENTER,
+                        fontName="Helvetica-Bold",
+                        fontSize=13,
+                        leading=17,
+                        textColor=colors.HexColor("#44546A"),
+                        spaceAfter=8
+                    )
+
+                    estilo_h1 = ParagraphStyle(
+                        "H1Reporte",
+                        parent=estilos["Heading1"],
+                        fontName="Helvetica-Bold",
+                        fontSize=15,
+                        leading=18,
+                        textColor=colors.HexColor("#17365D"),
+                        spaceBefore=8,
+                        spaceAfter=8
+                    )
+
+                    estilo_h2 = ParagraphStyle(
+                        "H2Reporte",
+                        parent=estilos["Heading2"],
+                        fontName="Helvetica-Bold",
+                        fontSize=11.5,
+                        leading=14,
+                        textColor=colors.HexColor("#1F4E78"),
+                        spaceBefore=8,
+                        spaceAfter=6
+                    )
+
+                    estilo_cuerpo = ParagraphStyle(
+                        "CuerpoReporte",
+                        parent=estilos["BodyText"],
+                        fontName="Helvetica",
+                        fontSize=9,
+                        leading=12.5,
+                        textColor=colors.HexColor("#333333"),
+                        spaceAfter=6
+                    )
+
+                    estilo_nota = ParagraphStyle(
+                        "NotaReporte",
+                        parent=estilos["BodyText"],
+                        fontName="Helvetica-Oblique",
+                        fontSize=8,
+                        leading=10.5,
+                        textColor=colors.HexColor("#666666"),
+                        spaceAfter=5
+                    )
+
+                    estilo_destacado = ParagraphStyle(
+                        "DestacadoReporte",
+                        parent=estilos["BodyText"],
+                        fontName="Helvetica-Bold",
+                        fontSize=9.5,
+                        leading=12.5,
+                        textColor=colors.HexColor("#17365D"),
+                        spaceAfter=6
+                    )
+
+                    contenido = []
+                    temporales = []
+
+                    # ------------------------------------------------
+                    # FUNCIONES PARA EL PDF
+                    # ------------------------------------------------
+                    def _fmt_num(valor):
+                        try:
+                            return f"{int(valor):,}".replace(",", ".")
+                        except Exception:
+                            return str(valor)
+
+                    def _guardar_fig_mpl(fig):
+                        tmp = tempfile.NamedTemporaryFile(
+                            delete=False,
+                            suffix=".png"
+                        )
+                        tmp.close()
+                        fig.savefig(
+                            tmp.name,
+                            dpi=170,
+                            bbox_inches="tight"
+                        )
+                        plt.close(fig)
+                        temporales.append(tmp.name)
+                        return tmp.name
+
+                    def _tabla_pdf(datos, anchos=None, fontsize=8.5):
+                        tabla = Table(
+                            datos,
+                            colWidths=anchos,
+                            repeatRows=1
+                        )
+                        tabla.setStyle(TableStyle([
+                            (
+                                "BACKGROUND", (0, 0), (-1, 0),
+                                colors.HexColor("#17365D")
+                            ),
+                            (
+                                "TEXTCOLOR", (0, 0), (-1, 0),
+                                colors.white
+                            ),
+                            (
+                                "FONTNAME", (0, 0), (-1, 0),
+                                "Helvetica-Bold"
+                            ),
+                            (
+                                "GRID", (0, 0), (-1, -1),
+                                0.35, colors.HexColor("#B7C9DD")
+                            ),
+                            (
+                                "ROWBACKGROUNDS", (0, 1), (-1, -1),
+                                [
+                                    colors.white,
+                                    colors.HexColor("#F5F7FA")
+                                ]
+                            ),
+                            (
+                                "VALIGN", (0, 0), (-1, -1),
+                                "MIDDLE"
+                            ),
+                            (
+                                "FONTSIZE", (0, 0), (-1, -1),
+                                fontsize
+                            ),
+                            (
+                                "TOPPADDING", (0, 0), (-1, -1),
+                                5
+                            ),
+                            (
+                                "BOTTOMPADDING", (0, 0), (-1, -1),
+                                5
+                            )
+                        ]))
+                        return tabla
+
+                    def _interpretacion_categoria(
+                        dataframe,
+                        columna,
+                        nombre_variable
+                    ):
+                        serie = _serie_limpia(dataframe, columna)
+                        if serie.empty:
+                            return (
+                                f"No se dispone de información suficiente "
+                                f"para analizar {nombre_variable.lower()}."
+                            )
+
+                        conteo = serie.value_counts()
+                        categoria = str(conteo.index[0])
+                        cantidad = int(conteo.iloc[0])
+                        porcentaje = round(
+                            cantidad / len(serie) * 100,
+                            1
+                        )
+
+                        return (
+                            f"La categoría con mayor frecuencia en "
+                            f"{nombre_variable.lower()} es "
+                            f"<b>{_texto_pdf(categoria)}</b>, con "
+                            f"<b>{cantidad}</b> registros "
+                            f"({porcentaje}% de los registros con dato)."
+                        )
+
+                    def _agregar_barras_categoria(
+                        titulo_seccion,
+                        dataframe,
+                        columna,
+                        numero_seccion,
+                        top_n=10
+                    ):
+                        tabla_cat = _tabla_categoria(
+                            dataframe,
+                            columna,
+                            top_n
+                        )
+
+                        if tabla_cat.empty:
+                            return False
+
+                        contenido.append(PageBreak())
+                        contenido.append(
+                            Paragraph(
+                                f"{numero_seccion}. {_texto_pdf(titulo_seccion)}",
+                                estilo_h1
+                            )
+                        )
+
+                        graf = tabla_cat.sort_values("cantidad").copy()
+                        graf["categoria_corta"] = graf["categoria"].astype(
+                            str
+                        ).apply(
+                            lambda x: "\n".join(
+                                textwrap.wrap(x, width=30)
+                            )
+                        )
+
+                        fig, ax = plt.subplots(figsize=(8.2, 4.8))
+                        ax.barh(
+                            graf["categoria_corta"],
+                            graf["cantidad"]
+                        )
+                        ax.set_title(titulo_seccion)
+                        ax.set_xlabel("Número de personas")
+                        ax.set_ylabel("")
+                        ax.grid(
+                            axis="x",
+                            alpha=0.18
+                        )
+
+                        for i, valor in enumerate(graf["cantidad"]):
+                            ax.text(
+                                valor,
+                                i,
+                                f" {int(valor)}",
+                                va="center",
+                                fontsize=8
+                            )
+
+                        ruta = _guardar_fig_mpl(fig)
+                        contenido.append(
+                            Image(
+                                ruta,
+                                width=17 * cm,
+                                height=9.5 * cm
+                            )
+                        )
+                        contenido.append(Spacer(1, 5))
+
+                        contenido.append(
+                            Paragraph(
+                                _interpretacion_categoria(
+                                    dataframe,
+                                    columna,
+                                    titulo_seccion
+                                ),
+                                estilo_cuerpo
+                            )
+                        )
+
+                        datos = [[
+                            "Categoría",
+                            "Cantidad",
+                            "%"
+                        ]]
+
+                        for _, fila in tabla_cat.head(8).iterrows():
+                            datos.append([
+                                Paragraph(
+                                    _texto_pdf(fila["categoria"]),
+                                    estilo_cuerpo
+                                ),
+                                str(int(fila["cantidad"])),
+                                f'{float(fila["porcentaje"]):.1f}%'
+                            ])
+
+                        contenido.append(
+                            _tabla_pdf(
+                                datos,
+                                anchos=[
+                                    11.3 * cm,
+                                    2.7 * cm,
+                                    2.5 * cm
+                                ],
+                                fontsize=8
+                            )
+                        )
+                        return True
+
+                    # ------------------------------------------------
+                    # PORTADA
+                    # ------------------------------------------------
+                    contenido.append(Spacer(1, 1.6 * cm))
+                    contenido.append(
+                        Paragraph(
+                            "OBSERVATORIO SOCIAL",
+                            estilo_portada
+                        )
+                    )
+                    contenido.append(
+                        Paragraph(
+                            "Habitante de Calle - Pereira 2026",
+                            estilo_subportada
+                        )
+                    )
+                    contenido.append(Spacer(1, 0.45 * cm))
+                    contenido.append(
+                        Paragraph(
+                            "INFORME INSTITUCIONAL DE CARACTERIZACIÓN, "
+                            "SEGUIMIENTO E IMPACTO",
+                            estilo_portada
+                        )
+                    )
+                    contenido.append(Spacer(1, 0.8 * cm))
+
+                    portada_datos = [
+                        ["Entidad / Operador", "Asociación Ciudad Futuro"],
+                        [
+                            "Fecha de generación",
+                            datetime.now().strftime("%d/%m/%Y %H:%M")
+                        ],
+                        [
+                            "Base general",
+                            "habitante_de_calle"
+                        ],
+                        [
+                            "Base de egresos",
+                            "personas_caracterizacion"
+                        ],
+                        [
+                            "Población caracterizada",
+                            _fmt_num(total_base_general)
+                        ],
+                        [
+                            "Registros incluidos en el análisis",
+                            _fmt_num(total)
+                        ]
+                    ]
+
+                    contenido.append(
+                        _tabla_pdf(
+                            portada_datos,
+                            anchos=[6.3 * cm, 10.2 * cm],
+                            fontsize=9
+                        )
+                    )
+
+                    if filtros_texto:
+                        contenido.append(Spacer(1, 0.5 * cm))
+                        contenido.append(
+                            Paragraph(
+                                "<b>Filtros aplicados:</b> "
+                                + _texto_pdf(
+                                    " | ".join(filtros_texto)
+                                ),
+                                estilo_cuerpo
+                            )
+                        )
+                    else:
+                        contenido.append(Spacer(1, 0.5 * cm))
+                        contenido.append(
+                            Paragraph(
+                                "<b>Alcance:</b> informe generado sin "
+                                "filtros adicionales sobre la base general.",
+                                estilo_cuerpo
+                            )
+                        )
+
+                    contenido.append(Spacer(1, 0.8 * cm))
+                    contenido.append(
+                        Paragraph(
+                            "Documento generado automáticamente a partir "
+                            "de la información disponible en el sistema. "
+                            "Los resultados deben interpretarse conforme "
+                            "a la calidad y actualización de los registros.",
+                            estilo_nota
+                        )
+                    )
+
+                    # ------------------------------------------------
+                    # 1. RESUMEN EJECUTIVO
+                    # ------------------------------------------------
+                    contenido.append(PageBreak())
+                    contenido.append(
+                        Paragraph(
+                            "1. Resumen ejecutivo",
+                            estilo_h1
+                        )
+                    )
+
+                    contenido.append(
+                        Paragraph(
+                            (
+                                f"El Observatorio Social registra "
+                                f"<b>{_fmt_num(total_base_general)}</b> "
+                                f"personas en la base general "
+                                f"<b>habitante_de_calle</b>. "
+                                f"El presente análisis incluye "
+                                f"<b>{_fmt_num(total)}</b> registros "
+                                f"de acuerdo con los filtros seleccionados."
+                            ),
+                            estilo_cuerpo
+                        )
+                    )
+
+                    contenido.append(
+                        Paragraph(
+                            (
+                                f"De manera complementaria, la base "
+                                f"<b>personas_caracterizacion</b> registra "
+                                f"<b>{_fmt_num(total_egresados)}</b> egresos. "
+                                f"Como indicador institucional de referencia, "
+                                f"estos egresos equivalen al "
+                                f"<b>{tasa_egreso:.1f}%</b> de la población "
+                                f"registrada en la base general."
+                            ),
+                            estilo_cuerpo
+                        )
+                    )
+
+                    if edad_promedio:
+                        contenido.append(
+                            Paragraph(
+                                (
+                                    f"La edad promedio del universo analizado "
+                                    f"es de <b>{edad_promedio:.1f} años</b> "
+                                    f"y la mediana es de "
+                                    f"<b>{edad_mediana:.1f} años</b>."
+                                ),
+                                estilo_cuerpo
+                            )
+                        )
+
+                    resumen_kpis = [
+                        ["Indicador", "Resultado"],
+                        [
+                            "Población caracterizada",
+                            _fmt_num(total_base_general)
+                        ],
+                        [
+                            "Registros según filtros",
+                            _fmt_num(total)
+                        ],
+                        [
+                            "Activos en universo filtrado",
+                            _fmt_num(total_activos)
+                        ],
+                        [
+                            "Egresos registrados",
+                            _fmt_num(total_egresados)
+                        ],
+                        [
+                            "Tasa institucional de egreso",
+                            f"{tasa_egreso:.1f}%"
+                        ],
+                        [
+                            "Edad promedio",
+                            (
+                                f"{edad_promedio:.1f} años"
+                                if edad_promedio else "Sin dato"
+                            )
+                        ],
+                        [
+                            "Urbano activos",
+                            _fmt_num(urbano_activos)
+                        ],
+                        [
+                            "Granja activos",
+                            _fmt_num(granja_activos)
+                        ]
+                    ]
+
+                    contenido.append(Spacer(1, 8))
+                    contenido.append(
+                        _tabla_pdf(
+                            resumen_kpis,
+                            anchos=[10.5 * cm, 6 * cm],
+                            fontsize=9
+                        )
+                    )
+
+                    # ------------------------------------------------
+                    # 2. PERFIL POR EDAD Y SEXO
+                    # ------------------------------------------------
+                    contenido.append(PageBreak())
+                    contenido.append(
+                        Paragraph(
+                            "2. Perfil sociodemográfico",
+                            estilo_h1
+                        )
+                    )
+
+                    # EDAD
+                    if col_edad and df_f[col_edad].notna().any():
+                        edades = df_f[col_edad].dropna()
+
+                        fig, ax = plt.subplots(figsize=(8.2, 4.4))
+                        ax.hist(
+                            edades,
+                            bins=18
+                        )
+                        ax.axvline(
+                            edad_promedio,
+                            linestyle="--",
+                            linewidth=1.5,
+                            label=f"Promedio: {edad_promedio:.1f}"
+                        )
+                        ax.set_title("Distribución de edad")
+                        ax.set_xlabel("Edad")
+                        ax.set_ylabel("Personas")
+                        ax.legend()
+                        ax.grid(
+                            axis="y",
+                            alpha=0.18
+                        )
+
+                        ruta = _guardar_fig_mpl(fig)
+
+                        contenido.append(
+                            Paragraph(
+                                "2.1 Distribución por edad",
+                                estilo_h2
+                            )
+                        )
+                        contenido.append(
+                            Image(
+                                ruta,
+                                width=17 * cm,
+                                height=9.2 * cm
+                            )
+                        )
+
+                        menores_29 = int((edades <= 28).sum())
+                        adultos = int(
+                            ((edades >= 29) & (edades <= 59)).sum()
+                        )
+                        mayores = int((edades >= 60).sum())
+
+                        contenido.append(
+                            Paragraph(
+                                (
+                                    f"En el universo analizado se identifican "
+                                    f"<b>{menores_29}</b> personas de 28 años "
+                                    f"o menos, <b>{adultos}</b> entre 29 y 59 "
+                                    f"años y <b>{mayores}</b> de 60 años o más. "
+                                    f"La edad promedio es "
+                                    f"<b>{edad_promedio:.1f} años</b>."
+                                ),
+                                estilo_cuerpo
+                            )
+                        )
+
+                    # SEXO
+                    if not sexo_tabla.empty:
+                        contenido.append(
+                            Paragraph(
+                                "2.2 Sexo al nacer",
+                                estilo_h2
+                            )
+                        )
+
+                        fig, ax = plt.subplots(figsize=(7.2, 4.4))
+                        ax.pie(
+                            sexo_tabla["cantidad"],
+                            labels=sexo_tabla["categoria"],
+                            autopct="%1.1f%%",
+                            startangle=90
+                        )
+                        ax.set_title("Distribución por sexo al nacer")
+                        ax.axis("equal")
+
+                        ruta = _guardar_fig_mpl(fig)
+                        contenido.append(
+                            Image(
+                                ruta,
+                                width=14.5 * cm,
+                                height=8.8 * cm
+                            )
+                        )
+                        contenido.append(
+                            Paragraph(
+                                _interpretacion_categoria(
+                                    df_f,
+                                    col_sexo,
+                                    "Sexo al nacer"
+                                ),
+                                estilo_cuerpo
+                            )
+                        )
+
+                    # ------------------------------------------------
+                    # 3-8. CARACTERIZACIÓN SOCIAL
+                    # ------------------------------------------------
+                    seccion = 3
+
+                    bloques = [
+                        (
+                            "Nivel educativo",
+                            col_educacion,
+                            12
+                        ),
+                        (
+                            "Seguridad social en salud",
+                            col_salud,
+                            12
+                        ),
+                        (
+                            "Condición ocupacional",
+                            col_ocupacion,
+                            12
+                        ),
+                        (
+                            "Departamento de procedencia",
+                            col_procedencia,
+                            10
+                        ),
+                        (
+                            "Tipo de consumo",
+                            col_consumo,
+                            12
+                        ),
+                        (
+                            "Orientación sexual / diversidad",
+                            col_orientacion,
+                            10
+                        ),
+                        (
+                            "Grupos étnicos",
+                            col_etnia,
+                            10
+                        ),
+                        (
+                            "Enfermedad mental - variable registrada",
+                            col_enfermedad,
+                            8
+                        )
+                    ]
+
+                    for titulo_bloque, columna_bloque, top_bloque in bloques:
+                        if columna_bloque:
+                            agregado = _agregar_barras_categoria(
+                                titulo_bloque,
+                                df_f,
+                                columna_bloque,
+                                seccion,
+                                top_bloque
+                            )
+                            if agregado:
+                                seccion += 1
+
+                    # ------------------------------------------------
+                    # ESTADO Y MODALIDAD
+                    # ------------------------------------------------
+                    if col_estado or col_modalidad:
+                        contenido.append(PageBreak())
+                        contenido.append(
+                            Paragraph(
+                                f"{seccion}. Seguimiento institucional",
+                                estilo_h1
+                            )
+                        )
+
+                        if col_estado:
+                            tabla_estado = _tabla_categoria(
+                                df_f,
+                                col_estado,
+                                10
+                            )
+                            if not tabla_estado.empty:
+                                contenido.append(
+                                    Paragraph(
+                                        "Estado del caso",
+                                        estilo_h2
+                                    )
+                                )
+                                fig, ax = plt.subplots(
+                                    figsize=(7.8, 4.1)
+                                )
+                                ax.bar(
+                                    tabla_estado["categoria"],
+                                    tabla_estado["cantidad"]
+                                )
+                                ax.set_title("Estado del caso")
+                                ax.set_ylabel("Personas")
+                                ax.tick_params(
+                                    axis="x",
+                                    rotation=25
+                                )
+                                ax.grid(
+                                    axis="y",
+                                    alpha=0.18
+                                )
+                                ruta = _guardar_fig_mpl(fig)
+                                contenido.append(
+                                    Image(
+                                        ruta,
+                                        width=16.5 * cm,
+                                        height=8.5 * cm
+                                    )
+                                )
+
+                        if col_modalidad:
+                            tabla_modalidad = _tabla_categoria(
+                                df_f,
+                                col_modalidad,
+                                10
+                            )
+                            if not tabla_modalidad.empty:
+                                contenido.append(
+                                    Paragraph(
+                                        "Modalidad de atención",
+                                        estilo_h2
+                                    )
+                                )
+                                fig, ax = plt.subplots(
+                                    figsize=(7.8, 4.1)
+                                )
+                                ax.bar(
+                                    tabla_modalidad["categoria"],
+                                    tabla_modalidad["cantidad"]
+                                )
+                                ax.set_title("Modalidad de atención")
+                                ax.set_ylabel("Personas")
+                                ax.grid(
+                                    axis="y",
+                                    alpha=0.18
+                                )
+                                ruta = _guardar_fig_mpl(fig)
+                                contenido.append(
+                                    Image(
+                                        ruta,
+                                        width=16.5 * cm,
+                                        height=8.5 * cm
+                                    )
+                                )
+
+                        contenido.append(
+                            Paragraph(
+                                (
+                                    f"En el universo filtrado se encuentran "
+                                    f"<b>{total_activos}</b> registros con "
+                                    f"estado ACTIVO. Dentro de las modalidades "
+                                    f"registradas se contabilizan "
+                                    f"<b>{urbano_activos}</b> activos en Urbano "
+                                    f"y <b>{granja_activos}</b> activos en Granja."
+                                ),
+                                estilo_cuerpo
+                            )
+                        )
+
+                        seccion += 1
+
+                    # ------------------------------------------------
+                    # CALIDAD DE LA INFORMACIÓN
+                    # ------------------------------------------------
+                    if not df_calidad.empty:
+                        contenido.append(PageBreak())
+                        contenido.append(
+                            Paragraph(
+                                f"{seccion}. Calidad y completitud de la información",
+                                estilo_h1
+                            )
+                        )
+
+                        calidad_plot = df_calidad.sort_values(
+                            "Completitud %"
+                        ).copy()
+
+                        fig, ax = plt.subplots(figsize=(8.2, 4.8))
+                        ax.barh(
+                            calidad_plot["Campo"],
+                            calidad_plot["Completitud %"]
+                        )
+                        ax.set_xlim(0, 100)
+                        ax.set_xlabel("Completitud (%)")
+                        ax.set_title(
+                            "Completitud de variables clave"
+                        )
+                        ax.grid(
+                            axis="x",
+                            alpha=0.18
+                        )
+
+                        for i, valor in enumerate(
+                            calidad_plot["Completitud %"]
+                        ):
+                            ax.text(
+                                valor,
+                                i,
+                                f" {valor:.1f}%",
+                                va="center",
+                                fontsize=8
+                            )
+
+                        ruta = _guardar_fig_mpl(fig)
+                        contenido.append(
+                            Image(
+                                ruta,
+                                width=17 * cm,
+                                height=9.5 * cm
+                            )
+                        )
+
+                        datos_calidad_pdf = [[
+                            "Variable",
+                            "Completos",
+                            "Faltantes",
+                            "%"
+                        ]]
+
+                        for _, r in df_calidad.iterrows():
+                            datos_calidad_pdf.append([
+                                r["Campo"],
+                                str(int(r["Completos"])),
+                                str(int(r["Faltantes"])),
+                                f'{float(r["Completitud %"]):.1f}%'
+                            ])
+
+                        contenido.append(
+                            _tabla_pdf(
+                                datos_calidad_pdf,
+                                anchos=[
+                                    8 * cm,
+                                    3 * cm,
+                                    3 * cm,
+                                    2.5 * cm
+                                ],
+                                fontsize=7.8
+                            )
+                        )
+
+                        incompletas = df_calidad[
+                            df_calidad["Completitud %"] < 80
+                        ]
+
+                        if not incompletas.empty:
+                            lista_incompletas = ", ".join(
+                                [
+                                    f"{r['Campo']} "
+                                    f"({float(r['Completitud %']):.1f}%)"
+                                    for _, r in incompletas.iterrows()
+                                ]
+                            )
+                            contenido.append(
+                                Paragraph(
+                                    (
+                                        "Las variables con completitud inferior "
+                                        "al 80% son: "
+                                        f"<b>{_texto_pdf(lista_incompletas)}</b>. "
+                                        "Se recomienda priorizar su actualización "
+                                        "para fortalecer la lectura de resultados."
+                                    ),
+                                    estilo_cuerpo
+                                )
+                            )
+
+                        seccion += 1
+
+                    # ------------------------------------------------
+                    # HALLAZGOS Y CONCLUSIONES
+                    # ------------------------------------------------
+                    contenido.append(PageBreak())
+                    contenido.append(
+                        Paragraph(
+                            f"{seccion}. Hallazgos principales",
+                            estilo_h1
+                        )
+                    )
+
+                    hallazgos_pdf = []
+
+                    if edad_promedio:
+                        hallazgos_pdf.append(
+                            f"La población analizada presenta una edad "
+                            f"promedio de {edad_promedio:.1f} años."
+                        )
+
+                    for columna, nombre_variable in [
+                        (col_sexo, "sexo al nacer"),
+                        (col_educacion, "nivel educativo"),
+                        (col_salud, "seguridad social en salud"),
+                        (col_ocupacion, "condición ocupacional"),
+                        (col_procedencia, "procedencia"),
+                        (col_consumo, "tipo de consumo"),
+                        (col_etnia, "grupo étnico")
+                    ]:
+                        serie = _serie_limpia(df_f, columna)
+                        if not serie.empty:
+                            conteo = serie.value_counts()
+                            cat = str(conteo.index[0])
+                            cant = int(conteo.iloc[0])
+                            pct = round(
+                                cant / len(serie) * 100,
+                                1
+                            )
+                            hallazgos_pdf.append(
+                                f"En {nombre_variable}, la categoría "
+                                f"predominante es {cat}, con {cant} registros "
+                                f"({pct}% de los registros con información)."
+                            )
+
+                    hallazgos_pdf.append(
+                        f"La base de egresos registra {total_egresados} "
+                        f"egresos, equivalentes al {tasa_egreso:.1f}% "
+                        f"de la población total registrada en la base general."
+                    )
+
+                    if not df_calidad.empty:
+                        promedio_calidad = round(
+                            float(
+                                df_calidad["Completitud %"].mean()
+                            ),
+                            1
+                        )
+                        hallazgos_pdf.append(
+                            f"La completitud promedio de las variables "
+                            f"clave evaluadas es de {promedio_calidad}%."
+                        )
+
+                    for h in hallazgos_pdf:
+                        contenido.append(
+                            Paragraph(
+                                "• " + _texto_pdf(h),
+                                estilo_cuerpo
+                            )
+                        )
+
+                    contenido.append(
+                        Paragraph(
+                            f"{seccion + 1}. Conclusiones institucionales",
+                            estilo_h1
+                        )
+                    )
+
+                    conclusiones_pdf = [
+                        (
+                            f"El sistema consolida una base general de "
+                            f"{_fmt_num(total_base_general)} personas, "
+                            "permitiendo analizar características "
+                            "sociodemográficas, sociales y de seguimiento."
+                        ),
+                        (
+                            f"El análisis actual comprende "
+                            f"{_fmt_num(total)} registros según los filtros "
+                            "seleccionados, por lo que los resultados de "
+                            "caracterización deben leerse sobre ese universo."
+                        ),
+                        (
+                            f"La información de egresos se administra en una "
+                            f"base diferenciada, personas_caracterizacion, "
+                            f"en la cual se identifican "
+                            f"{_fmt_num(total_egresados)} egresos."
+                        ),
+                        (
+                            "Las distribuciones presentadas permiten orientar "
+                            "la planeación de acciones de salud, inclusión "
+                            "social, educación, reducción de riesgos, "
+                            "acompañamiento psicosocial y seguimiento a "
+                            "trayectorias de superación de vida en calle."
+                        ),
+                        (
+                            "La calidad del dato debe mantenerse como un "
+                            "componente transversal del Observatorio, dado "
+                            "que las variables incompletas limitan la "
+                            "interpretación de los indicadores."
+                        )
+                    ]
+
+                    for c in conclusiones_pdf:
+                        contenido.append(
+                            Paragraph(
+                                "• " + _texto_pdf(c),
+                                estilo_cuerpo
+                            )
+                        )
+
+                    # ------------------------------------------------
+                    # METODOLOGÍA Y FUENTES
+                    # ------------------------------------------------
+                    contenido.append(PageBreak())
+                    contenido.append(
+                        Paragraph(
+                            f"{seccion + 2}. Nota metodológica y fuentes",
+                            estilo_h1
+                        )
+                    )
+
+                    metodologia = [
+                        (
+                            "<b>Fuente principal:</b> tabla "
+                            "<i>habitante_de_calle</i>, utilizada para "
+                            "caracterización general, filtros, estado, "
+                            "modalidad y variables sociodemográficas."
+                        ),
+                        (
+                            "<b>Fuente de egresos:</b> tabla "
+                            "<i>personas_caracterizacion</i>, utilizada "
+                            "para contabilizar los egresos registrados."
+                        ),
+                        (
+                            "<b>Universo:</b> la población caracterizada "
+                            "corresponde al total de registros disponibles "
+                            "en la base general al momento de generar el "
+                            "informe."
+                        ),
+                        (
+                            "<b>Filtros:</b> cuando el usuario selecciona "
+                            "sexo, estado, modalidad, salud, rango de edad "
+                            "o búsqueda individual, las gráficas de "
+                            "caracterización se recalculan sobre el "
+                            "subconjunto resultante."
+                        ),
+                        (
+                            "<b>Tasa institucional de egreso:</b> se presenta "
+                            "como relación de referencia entre los egresos "
+                            "registrados en personas_caracterizacion y la "
+                            "población total de habitante_de_calle."
+                        ),
+                        (
+                            "<b>Limitación:</b> este indicador no debe "
+                            "interpretarse como una tasa longitudinal de "
+                            "cohorte mientras las dos bases no estén "
+                            "relacionadas mediante una metodología única de "
+                            "seguimiento temporal y personas únicas."
+                        )
+                    ]
+
+                    for m in metodologia:
+                        contenido.append(
+                            Paragraph(
+                                m,
+                                estilo_cuerpo
+                            )
+                        )
+
+                    contenido.append(Spacer(1, 0.6 * cm))
+                    contenido.append(
+                        Paragraph(
+                            "Fin del informe.",
+                            estilo_destacado
+                        )
+                    )
+
+                    # ------------------------------------------------
+                    # CREAR DOCUMENTO
+                    # ------------------------------------------------
+                    doc_pdf.build(contenido)
+                    buffer_pdf.seek(0)
+
+                    st.session_state[
+                        "pdf_reporte_institucional"
+                    ] = buffer_pdf.getvalue()
+
+                    for archivo_tmp in temporales:
+                        try:
+                            os.remove(archivo_tmp)
+                        except Exception:
+                            pass
+
+                    st.success(
+                        "✅ Informe institucional completo generado."
+                    )
+
+                except Exception as e:
+                    st.error(
+                        f"Error generando el informe: {e}"
+                    )
+
+            if st.session_state.get(
+                "pdf_reporte_institucional"
+            ):
+                st.download_button(
+                    "⬇️ Descargar informe institucional PDF",
+                    data=st.session_state[
+                        "pdf_reporte_institucional"
+                    ],
+                    file_name=(
+                        "Informe_Institucional_Observatorio_Social_"
+                        + datetime.now().strftime("%Y%m%d_%H%M")
+                        + ".pdf"
+                    ),
+                    mime="application/pdf",
+                    use_container_width=True,
+                    key="descargar_pdf_reportes"
+                )
+
+        # --------------------------------------------------------
+        # VISTA DE REGISTROS
+        # --------------------------------------------------------
+        with st.expander("👁️ Ver registros incluidos en el reporte"):
+            columnas_vista = [
+                c for c in [
+                    col_doc,
+                    "nombres",
+                    "apellidos",
+                    col_edad,
+                    col_sexo,
+                    col_estado,
+                    col_modalidad,
+                    col_salud,
+                    col_educacion,
+                    col_ocupacion
+                ]
+                if c and c in df_f.columns
+            ]
+
+            st.dataframe(
+                df_f[columnas_vista] if columnas_vista else df_f,
+                use_container_width=True,
+                hide_index=True
+            )
+
+def modulo_carga_activos_v169():
 
     df = pd.read_sql("SELECT * FROM habitante_de_calle", engine)
     df = df.drop_duplicates()
@@ -10576,21 +12149,21 @@ if st.session_state.page == "egresos_impacto_v168":
     if rol_router not in ["COORDINACION", "MANAGER"]:
         st.error("Acceso exclusivo para Coordinación o Manager.")
     else:
-        modulo_egresos_impacto_v168()
+        modulo_egresos_impacto_v169()
     st.stop()
 
 if st.session_state.page == "reportes_institucionales_v168":
     if rol_router not in ["COORDINACION", "MANAGER"]:
         st.error("Acceso exclusivo para Coordinación o Manager.")
     else:
-        modulo_reportes_institucionales_v168()
+        modulo_reportes_institucionales_v169()
     st.stop()
 
 if st.session_state.page == "carga_activos_v168":
     if rol_router not in ["COORDINACION", "MANAGER"]:
         st.error("Acceso exclusivo para Coordinación o Manager.")
     else:
-        modulo_carga_activos_v168()
+        modulo_carga_activos_v169()
     st.stop()
 
 if st.session_state.page == "home" and rol_router in ["COORDINACION", "MANAGER"]:
