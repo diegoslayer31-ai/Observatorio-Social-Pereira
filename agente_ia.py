@@ -9140,12 +9140,16 @@ with st.sidebar:
             st.session_state.page = "home"
             st.rerun()
 
+        st.markdown("##### 📊 Análisis y resultados")
+
         if st.button(
             "🎛️ Dashboard Coordinación",
             use_container_width=True
         ):
             st.session_state.page = "dashboard_ejecutivo"
             st.rerun()
+
+        st.markdown("##### 🎯 Intervención profesional")
 
         if st.button(
             "🎯 Supervisión PAI",
@@ -9167,6 +9171,8 @@ with st.sidebar:
         ):
             st.session_state.page = "comite_casos_v16"
             st.rerun()
+
+        st.markdown("##### 👥 Atención y gestión")
 
         if st.button(
             "📱 Gestión Móvil",
@@ -9195,6 +9201,8 @@ with st.sidebar:
         ):
             st.session_state.page = "historia_integral_v12"
             st.rerun()
+
+        st.markdown("##### ⚙️ Administración")
 
         if st.button(
             "👥 Personal autorizado",
@@ -9578,6 +9586,149 @@ if st.session_state.page == "genero_diversidad":
 # ROUTER V12
 # =====================================
 
+
+# ============================================================
+# V16.7 - INICIO EJECUTIVO
+# Menú lateral = navegación. Inicio = estado del programa.
+# ============================================================
+def inicio_ejecutivo_v167():
+
+    st.title("🏠 Sistema Integral de Atención y Seguimiento")
+    st.caption("📍 Territorio: Pereira · Vigencia: 2026")
+    st.markdown(
+        "### Observatorio Social de Habitabilidad en Calle"
+    )
+    st.caption(
+        "Resumen operativo para toma de decisiones. "
+        "Use el menú lateral para ingresar a los módulos de trabajo."
+    )
+
+    try:
+        pob = pd.read_sql(
+            text("""
+                SELECT numero_identificacion, estado_caso, modalidad
+                FROM habitante_de_calle
+            """),
+            engine
+        )
+    except Exception:
+        pob = pd.DataFrame()
+
+    try:
+        eg = pd.read_sql(
+            text("""
+                SELECT COUNT(*) AS total
+                FROM personas_caracterizacion
+                WHERE estado_caso='EGRESADO'
+            """),
+            engine
+        )
+        egresos = int(eg.iloc[0]["total"])
+    except Exception:
+        egresos = 0
+
+    try:
+        permisos = pd.read_sql(
+            text("""
+                SELECT COUNT(*) AS total
+                FROM permisos_usuarios
+                WHERE estado_permiso='ABIERTO'
+            """),
+            engine
+        )
+        permisos_abiertos = int(permisos.iloc[0]["total"])
+    except Exception:
+        permisos_abiertos = 0
+
+    try:
+        pai = pd.read_sql(
+            text("""
+                SELECT estado, porcentaje_avance,
+                       fecha_meta, fecha_ultimo_seguimiento
+                FROM pai_objetivos
+            """),
+            engine
+        )
+    except Exception:
+        pai = pd.DataFrame()
+
+    total = activos = urbano = granja = 0
+    if not pob.empty:
+        estado = (
+            pob["estado_caso"].fillna("").astype(str)
+            .str.strip().str.upper()
+        )
+        modalidad = (
+            pob["modalidad"].fillna("").astype(str)
+            .str.strip().str.upper()
+        )
+        total = int(len(pob))
+        activos = int(estado.eq("ACTIVO").sum())
+        urbano = int(
+            (estado.eq("ACTIVO") & modalidad.eq("URBANO")).sum()
+        )
+        granja = int(
+            (estado.eq("ACTIVO") & modalidad.eq("GRANJA")).sum()
+        )
+
+    pai_activos = pai_vencidos = sin_seguimiento = 0
+    if not pai.empty:
+        estado_pai = (
+            pai["estado"].fillna("").astype(str)
+            .str.strip().str.upper()
+        )
+        avance = pd.to_numeric(
+            pai["porcentaje_avance"], errors="coerce"
+        ).fillna(0)
+        fecha_meta = pd.to_datetime(
+            pai["fecha_meta"], errors="coerce"
+        )
+        ultimo = pd.to_datetime(
+            pai["fecha_ultimo_seguimiento"], errors="coerce"
+        )
+        hoy = pd.Timestamp.today().normalize()
+        cerrado = (
+            estado_pai.isin(["CUMPLIDO", "CERRADO", "FINALIZADO"])
+            | avance.ge(100)
+        )
+        pai_activos = int((~cerrado).sum())
+        pai_vencidos = int(
+            ((~cerrado) & fecha_meta.notna() & (fecha_meta < hoy)).sum()
+        )
+        dias_sin = (hoy - ultimo).dt.days
+        sin_seguimiento = int(
+            ((~cerrado) & (ultimo.isna() | dias_sin.gt(15))).sum()
+        )
+
+    st.markdown("### 📌 Estado general")
+    c1, c2, c3, c4, c5, c6 = st.columns(6)
+    c1.metric("Población registrada", total)
+    c2.metric("Activos", activos)
+    c3.metric("Urbano", urbano)
+    c4.metric("Granja", granja)
+    c5.metric("Egresos", egresos)
+    c6.metric("PAI activos", pai_activos)
+
+    st.markdown("### 🚨 Alertas para gestión")
+    a1, a2, a3 = st.columns(3)
+    a1.metric("Permisos abiertos", permisos_abiertos)
+    a2.metric("PAI vencidos", pai_vencidos)
+    a3.metric("Sin seguimiento +15 días", sin_seguimiento)
+
+    st.markdown("### 🧭 Navegación")
+    st.info(
+        "**Atención y gestión:** operación diaria y trazabilidad.  \n"
+        "**Intervención profesional:** PAI y Comité de Casos.  \n"
+        "**Análisis y resultados:** dashboard y contribución a ODS.  \n"
+        "**Administración:** personal autorizado y configuración."
+    )
+
+    st.caption(
+        "El Inicio resume qué está pasando; los módulos del menú lateral "
+        "son el lugar para trabajar."
+    )
+
+
 rol_router = st.session_state.get(
     "rol_actual", ""
 )
@@ -9618,6 +9769,10 @@ if (
             st.rerun()
     except Exception:
         pass
+
+if st.session_state.page == "home" and rol_router in ["COORDINACION", "MANAGER"]:
+    inicio_ejecutivo_v167()
+    st.stop()
 
 if st.session_state.page == "gestion_movil":
 
@@ -10016,7 +10171,8 @@ Adherencia al tratamiento • Indicadores de impacto social
 # =========================
 # TÍTULO
 # =========================
-st.title("🧠 Observatorio Social Habitante de Calle Pereira 2026")
+st.title("🧠 Observatorio Social de Habitabilidad en Calle")
+st.caption("📍 Territorio: Pereira · Vigencia: 2026")
 
 # =========================
 # CARGAR DATOS
@@ -10186,6 +10342,7 @@ with st.sidebar:
 
     st.divider()
 
+# V16.7: navegación central histórica conservada como código legado.
 tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9= st.tabs([
 
     "📊 General",
