@@ -1,3 +1,4 @@
+import datetime
 import streamlit as st
 import pandas as pd
 import plotly.express as px
@@ -9282,6 +9283,12 @@ with st.sidebar:
             st.session_state.page = "genero_diversidad"
             st.rerun()
 
+    if _puede_control_asistencia_v1613():
+        st.markdown("#### 🏠 Albergue")
+        if st.button("📋 Control Diario de Asistencia", use_container_width=True):
+            st.session_state.page = "control_asistencia_albergue_v1613"
+            st.rerun()
+
     st.markdown("---")
 
     if st.button(
@@ -12166,7 +12173,7 @@ def modulo_carga_activos_v169():
 
 
 # ============================================================
-# V16.12 - REPORTES INSTITUCIONALES CON SEXO NORMALIZADO
+# V16.13 - CONTROL DIARIO DE ASISTENCIA DE ALBERGADOS
 # Captura progresiva + indicadores analíticos.
 # ============================================================
 def caracterizacion_habitabilidad_v1611():
@@ -12944,6 +12951,100 @@ def tablero_habitabilidad_v1611():
     )
 
 
+
+ASISTENCIA_ALBERGUE_DOCUMENTOS_AUTORIZADOS_V1613 = {"16225865","1090420245","1087996578","1088346899"}
+
+def _puede_control_asistencia_v1613():
+    rol=str(st.session_state.get("rol_actual","")).upper().strip()
+    documento=str(st.session_state.get("documento_funcionario","")).strip()
+    return rol in ["COORDINACION","MANAGER"] or documento in ASISTENCIA_ALBERGUE_DOCUMENTOS_AUTORIZADOS_V1613
+
+def control_asistencia_albergue_v1613():
+    if not _puede_control_asistencia_v1613():
+        st.error("No tienes permisos para acceder al Control Diario de Asistencia.")
+        return
+    st.title("📋 Control Diario de Asistencia")
+    st.caption("Registro diario de presencia de las personas albergadas. Solo asistencia; no discrimina suministros.")
+    tab1,tab2=st.tabs(["✅ Registro diario","📊 Consolidado por fechas"])
+    with tab1:
+        fecha=st.date_input("Fecha de asistencia",value=datetime.date.today(),key="fecha_asistencia_v1613")
+        try:
+            personas=pd.read_sql(text("""
+                SELECT TRIM(CAST(numero_identificacion AS TEXT)) AS numero_identificacion,
+                       COALESCE(nombres,'') AS nombres, COALESCE(apellidos,'') AS apellidos,
+                       COALESCE(modalidad,'') AS modalidad
+                FROM habitante_de_calle
+                WHERE UPPER(COALESCE(estado_caso,''))='ACTIVO'
+                ORDER BY nombres, apellidos
+            """),engine)
+        except Exception as e:
+            st.error(f"No fue posible cargar las personas activas: {e}")
+            return
+        if personas.empty:
+            st.info("No hay personas activas para registrar.")
+            return
+        personas["nombre_completo"]=(personas["nombres"].astype(str).str.strip()+" "+personas["apellidos"].astype(str).str.strip()).str.replace(r"\s+"," ",regex=True).str.strip()
+        modalidades=sorted([x for x in personas["modalidad"].astype(str).str.strip().unique() if x])
+        modalidad=st.selectbox("Modalidad",["Todas"]+modalidades,key="modalidad_asistencia_v1613")
+        if modalidad!="Todas":
+            personas=personas[personas["modalidad"].astype(str).str.strip()==modalidad].copy()
+        try:
+            prev=pd.read_sql(text("""
+                SELECT TRIM(CAST(numero_identificacion AS TEXT)) AS numero_identificacion,presente,observacion
+                FROM asistencia_albergue_diaria WHERE fecha=:fecha
+            """),engine,params={"fecha":fecha})
+        except Exception as e:
+            st.warning("Ejecuta primero la migración SQL V16.13.")
+            st.code(str(e)); return
+        if not prev.empty: personas=personas.merge(prev,on="numero_identificacion",how="left")
+        else:
+            personas["presente"]=False; personas["observacion"]=""
+        personas["presente"]=personas["presente"].fillna(False).astype(bool)
+        personas["observacion"]=personas["observacion"].fillna("").astype(str)
+        base=personas[["numero_identificacion","nombre_completo","modalidad","presente","observacion"]].copy()
+        c1,c2=st.columns(2)
+        if c1.button("☑️ Marcar todos presentes",use_container_width=True): base["presente"]=True
+        if c2.button("⬜ Desmarcar todos",use_container_width=True): base["presente"]=False
+        editado=st.data_editor(base,use_container_width=True,hide_index=True,num_rows="fixed",key=f"editor_asistencia_{fecha}_{modalidad}_v1613",disabled=["numero_identificacion","nombre_completo","modalidad"],column_config={
+            "numero_identificacion":st.column_config.TextColumn("Documento"),
+            "nombre_completo":st.column_config.TextColumn("Persona",width="large"),
+            "modalidad":st.column_config.TextColumn("Modalidad"),
+            "presente":st.column_config.CheckboxColumn("Presente",default=False),
+            "observacion":st.column_config.TextColumn("Observación",width="medium")})
+        presentes=int(editado["presente"].fillna(False).astype(bool).sum()); ausentes=len(editado)-presentes
+        k1,k2,k3=st.columns(3); k1.metric("Personas en lista",len(editado)); k2.metric("Presentes",presentes); k3.metric("Ausentes",ausentes)
+        confirmar=st.checkbox(f"Confirmo la asistencia del {fecha.strftime('%d/%m/%Y')}")
+        if st.button("💾 Guardar asistencia del día",type="primary",use_container_width=True,disabled=not confirmar):
+            fdoc=str(st.session_state.get("documento_funcionario","")).strip(); fnombre=str(st.session_state.get("nombre_funcionario","")).strip()
+            try:
+                with engine.begin() as conn:
+                    for _,row in editado.iterrows():
+                        conn.execute(text("""
+                            INSERT INTO asistencia_albergue_diaria (fecha,numero_identificacion,nombre_persona,modalidad,presente,observacion,registrado_por_documento,registrado_por_nombre,actualizado_en)
+                            VALUES (:fecha,:doc,:nombre,:modalidad,:presente,:observacion,:fdoc,:fnombre,NOW())
+                            ON CONFLICT (fecha,numero_identificacion) DO UPDATE SET nombre_persona=EXCLUDED.nombre_persona,modalidad=EXCLUDED.modalidad,presente=EXCLUDED.presente,observacion=EXCLUDED.observacion,registrado_por_documento=EXCLUDED.registrado_por_documento,registrado_por_nombre=EXCLUDED.registrado_por_nombre,actualizado_en=NOW()
+                        """),{"fecha":fecha,"doc":str(row["numero_identificacion"]).strip(),"nombre":str(row["nombre_completo"]).strip(),"modalidad":str(row["modalidad"]).strip() or None,"presente":bool(row["presente"]),"observacion":str(row["observacion"]).strip() or None,"fdoc":fdoc or None,"fnombre":fnombre or None})
+                st.success(f"Asistencia guardada: {presentes} presentes y {ausentes} ausentes."); st.rerun()
+            except Exception as e: st.error(f"No fue posible guardar la asistencia: {e}")
+    with tab2:
+        hoy=datetime.date.today(); inicio=hoy.replace(day=1)
+        c1,c2=st.columns(2); desde=c1.date_input("Desde",value=inicio,key="asistencia_desde_v1613"); hasta=c2.date_input("Hasta",value=hoy,key="asistencia_hasta_v1613")
+        if desde>hasta: st.error("La fecha inicial no puede ser posterior a la fecha final."); return
+        try:
+            det=pd.read_sql(text("""
+                SELECT fecha,numero_identificacion,nombre_persona,modalidad,presente,observacion,registrado_por_nombre,actualizado_en
+                FROM asistencia_albergue_diaria WHERE fecha BETWEEN :desde AND :hasta ORDER BY fecha DESC,nombre_persona
+            """),engine,params={"desde":desde,"hasta":hasta})
+        except Exception as e: st.error(f"No fue posible cargar el consolidado: {e}"); return
+        if det.empty: st.info("No hay registros en el periodo seleccionado."); return
+        det["presente"]=det["presente"].fillna(False).astype(bool)
+        resumen=det.groupby("fecha",as_index=False).agg(personas_registradas=("numero_identificacion","nunique"),presentes=("presente","sum")); resumen["ausentes"]=resumen["personas_registradas"]-resumen["presentes"]
+        st.dataframe(resumen.sort_values("fecha",ascending=False),use_container_width=True,hide_index=True)
+        m1,m2=st.columns(2); m1.metric("Días con registro",int(det["fecha"].nunique())); m2.metric("Asistencias acumuladas",int(det["presente"].sum()))
+        with st.expander("🔎 Ver detalle"): st.dataframe(det,use_container_width=True,hide_index=True)
+        st.download_button("⬇️ Descargar consolidado CSV",data=resumen.to_csv(index=False).encode("utf-8-sig"),file_name=f"consolidado_asistencia_{desde}_{hasta}.csv",mime="text/csv",use_container_width=True)
+
+
 rol_router = st.session_state.get(
     "rol_actual", ""
 )
@@ -12984,6 +13085,13 @@ if (
             st.rerun()
     except Exception:
         pass
+
+if st.session_state.page == "control_asistencia_albergue_v1613":
+    if not _puede_control_asistencia_v1613():
+        st.error("No tienes permisos para acceder al Control Diario de Asistencia.")
+    else:
+        control_asistencia_albergue_v1613()
+    st.stop()
 
 if st.session_state.page == "caracterizacion_habitabilidad_v1611":
     if rol_router not in ["PROFESIONAL", "COORDINACION", "MANAGER"]:
