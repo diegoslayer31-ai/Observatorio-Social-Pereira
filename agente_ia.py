@@ -9071,6 +9071,16 @@ exigir_login_v12()
 # SIDEBAR
 # =====================================
 
+# V16.13 - Permisos Control Diario de Asistencia
+ASISTENCIA_ALBERGUE_DOCUMENTOS_AUTORIZADOS_V1613 = {
+    "16225865", "1090420245", "1087996578", "1088346899"
+}
+
+def _puede_control_asistencia_v1613():
+    rol = str(st.session_state.get("rol_actual", "")).upper().strip()
+    documento = str(st.session_state.get("documento_funcionario", "")).strip()
+    return rol in ["COORDINACION", "MANAGER"] or documento in ASISTENCIA_ALBERGUE_DOCUMENTOS_AUTORIZADOS_V1613
+
 with st.sidebar:
 
     st.image("logo_acf.png", width=220)
@@ -12951,13 +12961,6 @@ def tablero_habitabilidad_v1611():
     )
 
 
-
-ASISTENCIA_ALBERGUE_DOCUMENTOS_AUTORIZADOS_V1613 = {"16225865","1090420245","1087996578","1088346899"}
-
-def _puede_control_asistencia_v1613():
-    rol=str(st.session_state.get("rol_actual","")).upper().strip()
-    documento=str(st.session_state.get("documento_funcionario","")).strip()
-    return rol in ["COORDINACION","MANAGER"] or documento in ASISTENCIA_ALBERGUE_DOCUMENTOS_AUTORIZADOS_V1613
 
 def control_asistencia_albergue_v1613():
     if not _puede_control_asistencia_v1613():
