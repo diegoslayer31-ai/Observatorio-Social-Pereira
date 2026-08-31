@@ -12969,30 +12969,30 @@ def control_asistencia_albergue_v1613():
 
     st.title("📋 Control Diario de Asistencia")
     st.caption(
-        "Registro por fecha y jornada, siguiendo el formato operativo del albergue: Día / Noche. "
-        "Solo asistencia; no discrimina suministros."
+        "Registro por fecha y jornada, conservando la lógica del formato institucional: Día / Noche. "
+        "Solo se registra asistencia; no discrimina suministros."
     )
 
-    tab1, tab2 = st.tabs(["✅ Registro diario", "📊 Consolidado por fechas"])
+    tab1, tab2, tab3 = st.tabs([
+        "✅ Diligenciar asistencia",
+        "📅 Planilla mensual",
+        "📊 Consolidado"
+    ])
 
     # ========================================================
-    # REGISTRO DIARIO POR JORNADA
+    # V16.15 - REGISTRO ROBUSTO CON ESTADO PERSISTENTE
     # ========================================================
     with tab1:
         c_fecha, c_jornada = st.columns([2, 1])
         fecha = c_fecha.date_input(
             "Fecha de asistencia",
             value=date.today(),
-            key="fecha_asistencia_v1614"
+            key="fecha_asistencia_v1615"
         )
         jornada = c_jornada.selectbox(
             "Jornada",
             ["DÍA", "NOCHE"],
-            key="jornada_asistencia_v1614"
-        )
-
-        st.info(
-            f"📅 Registro: **{fecha.strftime('%d/%m/%Y')}** · Jornada: **{jornada}**"
+            key="jornada_asistencia_v1615"
         )
 
         try:
@@ -13014,6 +13014,7 @@ def control_asistencia_albergue_v1613():
             st.info("No hay personas activas para registrar.")
             return
 
+        personas["numero_identificacion"] = personas["numero_identificacion"].astype(str).str.strip()
         personas["nombre_completo"] = (
             personas["nombres"].astype(str).str.strip() + " " +
             personas["apellidos"].astype(str).str.strip()
@@ -13025,125 +13026,139 @@ def control_asistencia_albergue_v1613():
         modalidad = st.selectbox(
             "Modalidad",
             ["Todas"] + modalidades,
-            key="modalidad_asistencia_v1614"
+            key="modalidad_asistencia_v1615"
         )
         if modalidad != "Todas":
             personas = personas[
                 personas["modalidad"].astype(str).str.strip() == modalidad
             ].copy()
 
-        try:
-            prev = pd.read_sql(text("""
-                SELECT
-                    TRIM(CAST(numero_identificacion AS TEXT)) AS numero_identificacion,
-                    presente,
-                    observacion
-                FROM asistencia_albergue_diaria
-                WHERE fecha=:fecha AND jornada=:jornada
-            """), engine, params={"fecha": fecha, "jornada": jornada})
-        except Exception as e:
-            st.warning("Ejecuta primero la migración SQL V16.14 (Día / Noche).")
-            st.code(str(e))
-            return
+        # Clave única del trabajo en curso. La selección se conserva aunque
+        # Streamlit vuelva a ejecutar la página por botones o confirmaciones.
+        scope = f"{fecha.isoformat()}|{jornada}|{modalidad}"
+        state_key = f"asistencia_trabajo_v1615|{scope}"
+        loaded_key = f"asistencia_cargada_v1615|{scope}"
 
-        if not prev.empty:
-            personas = personas.merge(prev, on="numero_identificacion", how="left")
-        else:
-            personas["presente"] = False
-            personas["observacion"] = ""
+        if not st.session_state.get(loaded_key, False):
+            try:
+                prev = pd.read_sql(text("""
+                    SELECT TRIM(CAST(numero_identificacion AS TEXT)) AS numero_identificacion,
+                           presente, COALESCE(observacion,'') AS observacion
+                    FROM asistencia_albergue_diaria
+                    WHERE fecha=:fecha AND jornada=:jornada
+                """), engine, params={"fecha": fecha, "jornada": jornada})
+            except Exception as e:
+                st.warning("Ejecuta primero la migración SQL V16.14 (Día / Noche).")
+                st.code(str(e))
+                return
 
-        personas["presente"] = personas["presente"].fillna(False).astype(bool)
-        personas["observacion"] = personas["observacion"].fillna("").astype(str)
+            mapa_prev = {}
+            for _, r in prev.iterrows():
+                mapa_prev[str(r["numero_identificacion"]).strip()] = {
+                    "presente": bool(r["presente"]),
+                    "observacion": str(r["observacion"] or "")
+                }
 
-        base = personas[[
-            "numero_identificacion", "nombre_completo", "modalidad",
-            "presente", "observacion"
-        ]].copy()
+            st.session_state[state_key] = {
+                doc: mapa_prev.get(doc, {"presente": False, "observacion": ""})
+                for doc in personas["numero_identificacion"].tolist()
+            }
+            st.session_state[loaded_key] = True
 
-        # Cada fecha+jornada+modalidad mantiene su propio editor.
-        scope_asistencia = f"{fecha}_{jornada}_{modalidad}"
-        rev_key = f"rev_editor_asistencia_{scope_asistencia}_v1614"
-        bulk_key = f"bulk_editor_asistencia_{scope_asistencia}_v1614"
-        if rev_key not in st.session_state:
-            st.session_state[rev_key] = 0
+        trabajo = st.session_state[state_key]
+        # Agregar personas activas nuevas que aparezcan después de abrir la fecha.
+        for doc in personas["numero_identificacion"].tolist():
+            trabajo.setdefault(doc, {"presente": False, "observacion": ""})
+
+        st.info(f"📅 **{fecha.strftime('%d/%m/%Y')}** · Jornada **{jornada}** · {len(personas)} personas en lista")
 
         c1, c2 = st.columns(2)
-        if c1.button(
-            "☑️ Marcar todos presentes",
-            use_container_width=True,
-            key=f"todos_presentes_{scope_asistencia}_v1614"
-        ):
-            st.session_state[bulk_key] = "todos"
-            st.session_state[rev_key] += 1
+        if c1.button("☑️ Marcar todos PRESENTES", use_container_width=True, key=f"todos_v1615_{scope}"):
+            for doc in personas["numero_identificacion"].tolist():
+                trabajo[doc]["presente"] = True
+            st.session_state[state_key] = trabajo
             st.rerun()
 
-        if c2.button(
-            "⬜ Desmarcar todos",
-            use_container_width=True,
-            key=f"todos_ausentes_{scope_asistencia}_v1614"
-        ):
-            st.session_state[bulk_key] = "ninguno"
-            st.session_state[rev_key] += 1
+        if c2.button("⬜ Marcar todos AUSENTES", use_container_width=True, key=f"ninguno_v1615_{scope}"):
+            for doc in personas["numero_identificacion"].tolist():
+                trabajo[doc]["presente"] = False
+            st.session_state[state_key] = trabajo
             st.rerun()
 
-        accion_masiva = st.session_state.pop(bulk_key, None)
-        if accion_masiva == "todos":
-            base["presente"] = True
-        elif accion_masiva == "ninguno":
-            base["presente"] = False
+        filas = []
+        for _, p in personas.iterrows():
+            doc = str(p["numero_identificacion"]).strip()
+            filas.append({
+                "numero_identificacion": doc,
+                "nombre_completo": p["nombre_completo"],
+                "modalidad": p["modalidad"],
+                "asistencia": "PRESENTE" if trabajo[doc]["presente"] else "AUSENTE",
+                "observacion": trabajo[doc]["observacion"]
+            })
+        base = pd.DataFrame(filas)
 
-        editor_key = (
-            f"editor_asistencia_{scope_asistencia}_v1614_"
-            f"{st.session_state[rev_key]}"
-        )
         editado = st.data_editor(
             base,
             use_container_width=True,
             hide_index=True,
             num_rows="fixed",
-            key=editor_key,
+            key=f"editor_asistencia_v1615_{scope}",
             disabled=["numero_identificacion", "nombre_completo", "modalidad"],
             column_config={
                 "numero_identificacion": st.column_config.TextColumn("Documento"),
                 "nombre_completo": st.column_config.TextColumn("Persona", width="large"),
                 "modalidad": st.column_config.TextColumn("Modalidad"),
-                "presente": st.column_config.CheckboxColumn("Presente", default=False),
+                "asistencia": st.column_config.SelectboxColumn(
+                    "Asistencia",
+                    options=["PRESENTE", "AUSENTE"],
+                    required=True,
+                    width="medium"
+                ),
                 "observacion": st.column_config.TextColumn("Observación", width="medium"),
             }
         )
 
-        presentes = int(editado["presente"].fillna(False).astype(bool).sum())
-        ausentes = len(editado) - presentes
+        # Sincronizar SIEMPRE el editor con el estado persistente antes de cualquier botón.
+        for _, r in editado.iterrows():
+            doc = str(r["numero_identificacion"]).strip()
+            trabajo[doc] = {
+                "presente": str(r["asistencia"]).upper().strip() == "PRESENTE",
+                "observacion": str(r["observacion"] or "").strip()
+            }
+        st.session_state[state_key] = trabajo
+
+        presentes = sum(1 for doc in personas["numero_identificacion"].tolist() if trabajo[doc]["presente"])
+        ausentes = len(personas) - presentes
         k1, k2, k3 = st.columns(3)
-        k1.metric("Personas en lista", len(editado))
+        k1.metric("Personas en lista", len(personas))
         k2.metric(f"Presentes · {jornada}", presentes)
         k3.metric("Ausentes", ausentes)
 
-        confirmar = st.checkbox(
-            f"Confirmo la asistencia del {fecha.strftime('%d/%m/%Y')} · {jornada}",
-            key=f"confirmar_asistencia_{scope_asistencia}_v1614"
-        )
+        # Validación visual explícita antes de guardar.
+        if presentes == 0:
+            st.warning("⚠️ En este momento la planilla tiene 0 PRESENTES. Revisa antes de guardar.")
+        else:
+            st.success(f"✅ La planilla tiene {presentes} personas marcadas como PRESENTE.")
 
         if st.button(
-            f"💾 Guardar asistencia · {jornada}",
+            f"💾 GUARDAR ASISTENCIA · {jornada}",
             type="primary",
             use_container_width=True,
-            disabled=not confirmar,
-            key=f"guardar_asistencia_{scope_asistencia}_v1614"
+            key=f"guardar_v1615_{scope}"
         ):
             fdoc = str(st.session_state.get("documento_funcionario", "")).strip()
             fnombre = str(st.session_state.get("nombre_funcionario", "")).strip()
             try:
                 with engine.begin() as conn:
-                    for _, row in editado.iterrows():
+                    for _, p in personas.iterrows():
+                        doc = str(p["numero_identificacion"]).strip()
+                        reg = trabajo[doc]
                         conn.execute(text("""
                             INSERT INTO asistencia_albergue_diaria (
                                 fecha, jornada, numero_identificacion, nombre_persona,
                                 modalidad, presente, observacion,
-                                registrado_por_documento, registrado_por_nombre,
-                                actualizado_en
-                            )
-                            VALUES (
+                                registrado_por_documento, registrado_por_nombre, actualizado_en
+                            ) VALUES (
                                 :fecha, :jornada, :doc, :nombre,
                                 :modalidad, :presente, :observacion,
                                 :fdoc, :fnombre, NOW()
@@ -13160,31 +13175,156 @@ def control_asistencia_albergue_v1613():
                         """), {
                             "fecha": fecha,
                             "jornada": jornada,
-                            "doc": str(row["numero_identificacion"]).strip(),
-                            "nombre": str(row["nombre_completo"]).strip(),
-                            "modalidad": str(row["modalidad"]).strip() or None,
-                            "presente": bool(row["presente"]),
-                            "observacion": str(row["observacion"]).strip() or None,
+                            "doc": doc,
+                            "nombre": str(p["nombre_completo"]).strip(),
+                            "modalidad": str(p["modalidad"]).strip() or None,
+                            "presente": bool(reg["presente"]),
+                            "observacion": reg["observacion"] or None,
                             "fdoc": fdoc or None,
                             "fnombre": fnombre or None,
                         })
+
+                # Verificación inmediata contra BD: no dependemos de lo que muestre el editor.
+                verif = pd.read_sql(text("""
+                    SELECT COUNT(*) AS registrados,
+                           COUNT(*) FILTER (WHERE presente IS TRUE) AS presentes
+                    FROM asistencia_albergue_diaria
+                    WHERE fecha=:fecha AND jornada=:jornada
+                """), engine, params={"fecha": fecha, "jornada": jornada})
+                reg_bd = int(verif.iloc[0]["registrados"] or 0)
+                pres_bd = int(verif.iloc[0]["presentes"] or 0)
                 st.success(
-                    f"Asistencia guardada para {jornada}: "
-                    f"{presentes} presentes y {ausentes} ausentes."
+                    f"✅ Guardado verificado en base de datos: {pres_bd} PRESENTES de {reg_bd} registros · {jornada}."
                 )
-                st.rerun()
+                # Forzar recarga desde BD la próxima ejecución de este alcance.
+                st.session_state[loaded_key] = False
             except Exception as e:
                 st.error(f"No fue posible guardar la asistencia: {e}")
 
     # ========================================================
-    # CONSOLIDADO - LÓGICA DEL FORMATO EXCEL DÍA / NOCHE
+    # PLANILLA MENSUAL - PRESENTACIÓN SIMILAR AL FORMATO OFICIAL
     # ========================================================
     with tab2:
+        st.markdown("### 📅 Planilla mensual de asistencia")
+        st.caption(
+            "Vista de control similar al formato presentado a la Alcaldía: cada fecha tiene dos columnas, Día y Noche; "
+            "1 = presente y 0 = ausente."
+        )
+
+        hoy = date.today()
+        c_mes, c_mod = st.columns([1, 1])
+        mes_ref = c_mes.date_input(
+            "Mes a consultar",
+            value=hoy.replace(day=1),
+            key="mes_planilla_v1615"
+        )
+        modalidad_planilla = c_mod.selectbox(
+            "Modalidad de la planilla",
+            ["Todas", "URBANO", "GRANJA"],
+            key="modalidad_planilla_v1615"
+        )
+
+        import calendar
+        ultimo_dia = calendar.monthrange(mes_ref.year, mes_ref.month)[1]
+        desde_mes = date(mes_ref.year, mes_ref.month, 1)
+        hasta_mes = date(mes_ref.year, mes_ref.month, ultimo_dia)
+
+        # Base institucional tomada de habitante_de_calle; se usan solo columnas disponibles.
+        try:
+            base_personas = pd.read_sql(text("""
+                SELECT * FROM habitante_de_calle
+                WHERE UPPER(COALESCE(estado_caso,''))='ACTIVO'
+            """), engine)
+            det_mes = pd.read_sql(text("""
+                SELECT fecha, jornada,
+                       TRIM(CAST(numero_identificacion AS TEXT)) AS numero_identificacion,
+                       presente
+                FROM asistencia_albergue_diaria
+                WHERE fecha BETWEEN :desde AND :hasta
+            """), engine, params={"desde": desde_mes, "hasta": hasta_mes})
+        except Exception as e:
+            st.error(f"No fue posible construir la planilla mensual: {e}")
+            return
+
+        if modalidad_planilla != "Todas" and "modalidad" in base_personas.columns:
+            base_personas = base_personas[
+                base_personas["modalidad"].astype(str).str.upper().str.strip() == modalidad_planilla
+            ].copy()
+
+        def _serie_col(df_, candidatos, default=""):
+            for c in candidatos:
+                if c in df_.columns:
+                    return df_[c].fillna(default)
+            return pd.Series([default] * len(df_), index=df_.index)
+
+        plan = pd.DataFrame()
+        plan["N."] = range(1, len(base_personas) + 1)
+        plan["FECHA DE INGRESO"] = _serie_col(base_personas, ["fecha_ingreso_albergue", "fecha_atencion"])
+        plan["NOMBRES"] = _serie_col(base_personas, ["nombres"])
+        plan["APELLIDOS"] = _serie_col(base_personas, ["apellidos"])
+        plan["SEXO AL NACER"] = _serie_col(base_personas, ["sexo_al_nacer"])
+        plan["FECHA DE NACIMIENTO"] = _serie_col(base_personas, ["fecha_nacimiento"])
+        plan["EDAD"] = _serie_col(base_personas, ["edad"])
+        plan["TIPO DE IDENTIFICACIÓN"] = _serie_col(base_personas, ["tipo_identificacion"])
+        plan["NÚMERO DE IDENTIDAD"] = _serie_col(base_personas, ["numero_identificacion"]).astype(str).str.strip()
+        plan["PERSONAS CON DISCAPACIDAD"] = _serie_col(base_personas, ["personas_con_discapacidad"])
+        plan["N° TELEFÓNICO"] = _serie_col(base_personas, ["telefono"])
+        plan["EPS"] = _serie_col(base_personas, ["eps", "tipo_seguridad_salud"])
+        plan["CIUDAD DE PROCEDENCIA"] = _serie_col(base_personas, ["ciudad_procedencia", "barrio_vereda"])
+        plan["DEPARTAMENTO DE PROCEDENCIA"] = _serie_col(base_personas, ["departamento_procedencia"])
+        plan["OBSERVACIONES"] = ""
+
+        if not det_mes.empty:
+            det_mes["fecha"] = pd.to_datetime(det_mes["fecha"]).dt.date
+            det_mes["jornada"] = det_mes["jornada"].astype(str).str.upper().str.strip()
+            det_mes["numero_identificacion"] = det_mes["numero_identificacion"].astype(str).str.strip()
+            det_mes["valor"] = det_mes["presente"].fillna(False).astype(bool).astype(int)
+            lookup = {
+                (r["numero_identificacion"], r["fecha"], r["jornada"]): int(r["valor"])
+                for _, r in det_mes.iterrows()
+            }
+        else:
+            lookup = {}
+
+        docs_plan = plan["NÚMERO DE IDENTIDAD"].astype(str).str.strip().tolist()
+        for dia in range(1, ultimo_dia + 1):
+            f = date(mes_ref.year, mes_ref.month, dia)
+            plan[f"{dia} Día"] = [lookup.get((doc, f, "DÍA"), 0) for doc in docs_plan]
+            plan[f"{dia} Noche"] = [lookup.get((doc, f, "NOCHE"), 0) for doc in docs_plan]
+
+        # Totales al final, útiles para consolidación institucional.
+        cols_dia = [c for c in plan.columns if c.endswith(" Día")]
+        cols_noche = [c for c in plan.columns if c.endswith(" Noche")]
+        plan["TOTAL DÍA"] = plan[cols_dia].sum(axis=1)
+        plan["TOTAL NOCHE"] = plan[cols_noche].sum(axis=1)
+        plan["TOTAL ASISTENCIAS"] = plan["TOTAL DÍA"] + plan["TOTAL NOCHE"]
+
+        st.dataframe(plan, use_container_width=True, hide_index=True, height=560)
+
+        total_presentes_mes = int(plan["TOTAL ASISTENCIAS"].sum())
+        p1, p2, p3 = st.columns(3)
+        p1.metric("Personas en planilla", len(plan))
+        p2.metric("Asistencias del mes", total_presentes_mes)
+        p3.metric("Días del mes", ultimo_dia)
+
+        st.download_button(
+            "⬇️ Descargar planilla mensual (CSV)",
+            data=plan.to_csv(index=False).encode("utf-8-sig"),
+            file_name=f"planilla_asistencia_{modalidad_planilla}_{mes_ref.year}_{mes_ref.month:02d}.csv",
+            mime="text/csv",
+            use_container_width=True
+        )
+
+    # ========================================================
+    # CONSOLIDADO
+    # ========================================================
+    with tab3:
+        st.markdown("### 📊 Consolidado de asistencia")
         hoy = date.today()
         inicio = hoy.replace(day=1)
         c1, c2 = st.columns(2)
-        desde = c1.date_input("Desde", value=inicio, key="asistencia_desde_v1614")
-        hasta = c2.date_input("Hasta", value=hoy, key="asistencia_hasta_v1614")
+        desde = c1.date_input("Desde", value=inicio, key="asistencia_desde_v1615")
+        hasta = c2.date_input("Hasta", value=hoy, key="asistencia_hasta_v1615")
 
         if desde > hasta:
             st.error("La fecha inicial no puede ser posterior a la fecha final.")
@@ -13192,16 +13332,9 @@ def control_asistencia_albergue_v1613():
 
         try:
             det = pd.read_sql(text("""
-                SELECT
-                    fecha,
-                    jornada,
-                    numero_identificacion,
-                    nombre_persona,
-                    modalidad,
-                    presente,
-                    observacion,
-                    registrado_por_nombre,
-                    actualizado_en
+                SELECT fecha, jornada, numero_identificacion, nombre_persona,
+                       modalidad, presente, observacion,
+                       registrado_por_nombre, actualizado_en
                 FROM asistencia_albergue_diaria
                 WHERE fecha BETWEEN :desde AND :hasta
                 ORDER BY fecha DESC, jornada, nombre_persona
@@ -13216,116 +13349,52 @@ def control_asistencia_albergue_v1613():
 
         det["presente"] = det["presente"].fillna(False).astype(bool)
         det["jornada"] = det["jornada"].fillna("DÍA").astype(str).str.upper()
+        # Mostrar texto explícito para evitar cualquier ambigüedad de checkbox.
+        det["ASISTENCIA"] = det["presente"].map({True: "PRESENTE", False: "AUSENTE"})
 
-        st.markdown("### Resumen por fecha y jornada")
-        resumen = (
-            det.groupby(["fecha", "jornada"], as_index=False)
-            .agg(
-                personas_registradas=("numero_identificacion", "nunique"),
-                presentes=("presente", "sum")
-            )
+        resumen = det.groupby(["fecha", "jornada"], as_index=False).agg(
+            personas_registradas=("numero_identificacion", "nunique"),
+            presentes=("presente", "sum")
         )
-        resumen["ausentes"] = (
-            resumen["personas_registradas"] - resumen["presentes"]
-        )
-        st.dataframe(
-            resumen.sort_values(["fecha", "jornada"], ascending=[False, True]),
-            use_container_width=True,
-            hide_index=True,
-            column_config={
-                "fecha": st.column_config.DateColumn("Fecha", format="DD/MM/YYYY"),
-                "jornada": "Jornada",
-                "personas_registradas": "Personas registradas",
-                "presentes": "Presentes",
-                "ausentes": "Ausentes",
-            }
-        )
+        resumen["ausentes"] = resumen["personas_registradas"] - resumen["presentes"]
+
+        st.markdown("#### Resumen por fecha y jornada")
+        st.dataframe(resumen.sort_values(["fecha", "jornada"], ascending=[False, True]),
+                     use_container_width=True, hide_index=True)
 
         total_dia = int(det.loc[(det["jornada"] == "DÍA") & det["presente"], "presente"].sum())
         total_noche = int(det.loc[(det["jornada"] == "NOCHE") & det["presente"], "presente"].sum())
-        total_asistencias = total_dia + total_noche
-        m1, m2, m3, m4 = st.columns(4)
-        m1.metric("Días con registro", int(det["fecha"].nunique()))
-        m2.metric("Asistencias Día", total_dia)
-        m3.metric("Asistencias Noche", total_noche)
-        m4.metric("Total asistencias", total_asistencias)
+        m1, m2, m3 = st.columns(3)
+        m1.metric("Asistencias Día", total_dia)
+        m2.metric("Asistencias Noche", total_noche)
+        m3.metric("Total asistencias", total_dia + total_noche)
 
-        st.markdown("### Consolidado por persona")
         presentes_det = det[det["presente"]].copy()
-        if presentes_det.empty:
-            st.info("No hay asistencias marcadas como presentes en este periodo.")
-            consolidado_persona = pd.DataFrame()
-        else:
-            por_persona = (
-                presentes_det.groupby(
-                    ["numero_identificacion", "nombre_persona", "modalidad", "jornada"],
-                    dropna=False
-                )
-                .size()
-                .unstack(fill_value=0)
-                .reset_index()
-            )
-            if "DÍA" not in por_persona.columns:
-                por_persona["DÍA"] = 0
-            if "NOCHE" not in por_persona.columns:
-                por_persona["NOCHE"] = 0
+        if not presentes_det.empty:
+            por_persona = presentes_det.groupby(
+                ["numero_identificacion", "nombre_persona", "modalidad", "jornada"], dropna=False
+            ).size().unstack(fill_value=0).reset_index()
+            if "DÍA" not in por_persona.columns: por_persona["DÍA"] = 0
+            if "NOCHE" not in por_persona.columns: por_persona["NOCHE"] = 0
             por_persona["TOTAL"] = por_persona["DÍA"] + por_persona["NOCHE"]
-            consolidado_persona = por_persona[[
-                "numero_identificacion", "nombre_persona", "modalidad",
-                "DÍA", "NOCHE", "TOTAL"
-            ]].sort_values(["nombre_persona"])
-
+            st.markdown("#### Consolidado por persona")
             st.dataframe(
-                consolidado_persona,
-                use_container_width=True,
-                hide_index=True,
-                column_config={
-                    "numero_identificacion": "Documento",
-                    "nombre_persona": "Persona",
-                    "modalidad": "Modalidad",
-                    "DÍA": "Total Día",
-                    "NOCHE": "Total Noche",
-                    "TOTAL": "Total asistencias",
-                }
+                por_persona[["numero_identificacion", "nombre_persona", "modalidad", "DÍA", "NOCHE", "TOTAL"]],
+                use_container_width=True, hide_index=True
             )
 
         with st.expander("🔎 Ver detalle por fecha, jornada y persona"):
-            st.dataframe(
-                det,
-                use_container_width=True,
-                hide_index=True,
-                column_config={
-                    "fecha": st.column_config.DateColumn("Fecha", format="DD/MM/YYYY"),
-                    "jornada": "Jornada",
-                    "numero_identificacion": "Documento",
-                    "nombre_persona": "Persona",
-                    "modalidad": "Modalidad",
-                    "presente": st.column_config.CheckboxColumn("Presente", disabled=True),
-                    "observacion": "Observación",
-                    "registrado_por_nombre": "Registrado por",
-                    "actualizado_en": "Última actualización",
-                }
-            )
+            vista = det[[
+                "fecha", "jornada", "numero_identificacion", "nombre_persona",
+                "modalidad", "ASISTENCIA", "observacion", "registrado_por_nombre", "actualizado_en"
+            ]].copy()
+            st.dataframe(vista, use_container_width=True, hide_index=True)
 
-        d1, d2, d3 = st.columns(3)
-        d1.download_button(
-            "⬇️ Resumen por fecha",
-            data=resumen.to_csv(index=False).encode("utf-8-sig"),
-            file_name=f"asistencia_resumen_{desde}_{hasta}.csv",
-            mime="text/csv",
-            use_container_width=True
-        )
-        if not consolidado_persona.empty:
-            d2.download_button(
-                "⬇️ Consolidado por persona",
-                data=consolidado_persona.to_csv(index=False).encode("utf-8-sig"),
-                file_name=f"asistencia_personas_{desde}_{hasta}.csv",
-                mime="text/csv",
-                use_container_width=True
-            )
-        d3.download_button(
-            "⬇️ Detalle completo",
-            data=det.to_csv(index=False).encode("utf-8-sig"),
+        export_det = det.copy()
+        export_det["presente"] = export_det["presente"].map({True: "PRESENTE", False: "AUSENTE"})
+        st.download_button(
+            "⬇️ Descargar detalle completo (CSV)",
+            data=export_det.drop(columns=["ASISTENCIA"]).to_csv(index=False).encode("utf-8-sig"),
             file_name=f"asistencia_detalle_{desde}_{hasta}.csv",
             mime="text/csv",
             use_container_width=True
