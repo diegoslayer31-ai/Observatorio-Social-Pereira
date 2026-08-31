@@ -9077,6 +9077,8 @@ ASISTENCIA_ALBERGUE_DOCUMENTOS_AUTORIZADOS_V1613 = {
 }
 
 def _puede_control_asistencia_v1613():
+    if not bool(st.session_state.get("autenticado", False)):
+        return False
     rol = str(st.session_state.get("rol_actual", "")).upper().strip()
     documento = str(st.session_state.get("documento_funcionario", "")).strip()
     return rol in ["COORDINACION", "MANAGER"] or documento in ASISTENCIA_ALBERGUE_DOCUMENTOS_AUTORIZADOS_V1613
@@ -16859,7 +16861,11 @@ with tab5:
             key="clave_registro"
         )
 
-        clave_formulario = st.secrets.get("FORM_PASSWORD", "Pereira2026")
+        clave_formulario = st.secrets.get("FORM_PASSWORD")
+
+        if not clave_formulario:
+            st.error("Configuración de seguridad incompleta. Contacte al administrador.")
+            st.stop()
 
         if clave == clave_formulario:
 
