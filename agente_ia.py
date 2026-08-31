@@ -12968,10 +12968,6 @@ def control_asistencia_albergue_v1613():
         return
 
     st.title("📋 Control Diario de Asistencia")
-    st.info(
-        "Puedes corregir una fecha y jornada ya guardada: vuelve a abrirla, cambia la asistencia y guarda nuevamente. "
-        "El sistema actualiza el registro existente y no lo duplica."
-    )
 
     tab1, tab2, tab3 = st.tabs([
         "✅ Diligenciar asistencia",
