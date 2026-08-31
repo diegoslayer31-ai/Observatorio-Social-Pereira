@@ -12968,9 +12968,9 @@ def control_asistencia_albergue_v1613():
         return
 
     st.title("📋 Control Diario de Asistencia")
-    st.caption(
-        "Registro por fecha y jornada, conservando la lógica del formato institucional: Día / Noche. "
-        "Solo se registra asistencia; no discrimina suministros."
+    st.info(
+        "Puedes corregir una fecha y jornada ya guardada: vuelve a abrirla, cambia la asistencia y guarda nuevamente. "
+        "El sistema actualiza el registro existente y no lo duplica."
     )
 
     tab1, tab2, tab3 = st.tabs([
@@ -12980,19 +12980,19 @@ def control_asistencia_albergue_v1613():
     ])
 
     # ========================================================
-    # V16.15 - REGISTRO ROBUSTO CON ESTADO PERSISTENTE
+    # V16.16 - REGISTRO ROBUSTO + CORRECCIÓN Y PERSONAS ADICIONALES
     # ========================================================
     with tab1:
         c_fecha, c_jornada = st.columns([2, 1])
         fecha = c_fecha.date_input(
             "Fecha de asistencia",
             value=date.today(),
-            key="fecha_asistencia_v1615"
+            key="fecha_asistencia_v1616"
         )
         jornada = c_jornada.selectbox(
             "Jornada",
             ["DÍA", "NOCHE"],
-            key="jornada_asistencia_v1615"
+            key="jornada_asistencia_v1616"
         )
 
         try:
@@ -13026,7 +13026,7 @@ def control_asistencia_albergue_v1613():
         modalidad = st.selectbox(
             "Modalidad",
             ["Todas"] + modalidades,
-            key="modalidad_asistencia_v1615"
+            key="modalidad_asistencia_v1616"
         )
         if modalidad != "Todas":
             personas = personas[
@@ -13036,8 +13036,125 @@ def control_asistencia_albergue_v1613():
         # Clave única del trabajo en curso. La selección se conserva aunque
         # Streamlit vuelva a ejecutar la página por botones o confirmaciones.
         scope = f"{fecha.isoformat()}|{jornada}|{modalidad}"
-        state_key = f"asistencia_trabajo_v1615|{scope}"
-        loaded_key = f"asistencia_cargada_v1615|{scope}"
+
+        # ----------------------------------------------------
+        # V16.16 - Agregar persona excepcionalmente a la planilla
+        # ----------------------------------------------------
+        extras_key = f"asistencia_extras_v1616|{scope}"
+        if extras_key not in st.session_state:
+            st.session_state[extras_key] = []
+
+        # Cargar nuevamente cualquier persona agregada manualmente a esta fecha/jornada.
+        if st.session_state[extras_key]:
+            try:
+                universo_extras = pd.read_sql(text("""
+                    SELECT
+                        TRIM(CAST(numero_identificacion AS TEXT)) AS numero_identificacion,
+                        COALESCE(nombres,'') AS nombres,
+                        COALESCE(apellidos,'') AS apellidos,
+                        COALESCE(modalidad,'') AS modalidad,
+                        COALESCE(estado_caso,'') AS estado_caso
+                    FROM habitante_de_calle
+                """), engine)
+
+                universo_extras["numero_identificacion"] = (
+                    universo_extras["numero_identificacion"].astype(str).str.strip()
+                )
+                extras = universo_extras[
+                    universo_extras["numero_identificacion"].isin(st.session_state[extras_key])
+                ].copy()
+
+                if not extras.empty:
+                    extras["nombre_completo"] = (
+                        extras["nombres"].astype(str).str.strip() + " " +
+                        extras["apellidos"].astype(str).str.strip()
+                    ).str.replace(r"\s+", " ", regex=True).str.strip()
+
+                    extras = extras[
+                        ~extras["numero_identificacion"].isin(
+                            personas["numero_identificacion"].astype(str).str.strip()
+                        )
+                    ].copy()
+
+                    if not extras.empty:
+                        personas = pd.concat([
+                            personas,
+                            extras[[
+                                "numero_identificacion",
+                                "nombres",
+                                "apellidos",
+                                "modalidad",
+                                "nombre_completo"
+                            ]]
+                        ], ignore_index=True, sort=False)
+            except Exception:
+                pass
+
+        with st.expander("➕ Agregar persona a esta fecha y jornada"):
+            st.caption(
+                "Úsalo cuando una persona deba quedar en esta planilla y no aparezca en la lista automática."
+            )
+
+            try:
+                universo = pd.read_sql(text("""
+                    SELECT
+                        TRIM(CAST(numero_identificacion AS TEXT)) AS numero_identificacion,
+                        COALESCE(nombres,'') AS nombres,
+                        COALESCE(apellidos,'') AS apellidos,
+                        COALESCE(modalidad,'') AS modalidad,
+                        COALESCE(estado_caso,'') AS estado_caso
+                    FROM habitante_de_calle
+                    ORDER BY nombres, apellidos
+                """), engine)
+
+                universo["numero_identificacion"] = (
+                    universo["numero_identificacion"].astype(str).str.strip()
+                )
+                universo["nombre_completo"] = (
+                    universo["nombres"].astype(str).str.strip() + " " +
+                    universo["apellidos"].astype(str).str.strip()
+                ).str.replace(r"\s+", " ", regex=True).str.strip()
+
+                docs_actuales = set(
+                    personas["numero_identificacion"].astype(str).str.strip().tolist()
+                )
+                disponibles = universo[
+                    ~universo["numero_identificacion"].isin(docs_actuales)
+                ].copy()
+
+                disponibles["opcion"] = (
+                    disponibles["nombre_completo"]
+                    + " · CC "
+                    + disponibles["numero_identificacion"]
+                    + " · "
+                    + disponibles["estado_caso"].astype(str)
+                )
+
+                opcion = st.selectbox(
+                    "Persona",
+                    [""] + disponibles["opcion"].tolist(),
+                    key=f"persona_extra_select_v1616_{scope}"
+                )
+
+                if st.button(
+                    "➕ Agregar a la planilla",
+                    use_container_width=True,
+                    key=f"persona_extra_btn_v1616_{scope}",
+                    disabled=not bool(opcion)
+                ):
+                    fila_extra = disponibles[disponibles["opcion"] == opcion].head(1)
+                    if not fila_extra.empty:
+                        doc_extra = str(fila_extra.iloc[0]["numero_identificacion"]).strip()
+                        if doc_extra not in st.session_state[extras_key]:
+                            st.session_state[extras_key].append(doc_extra)
+                        st.success("Persona agregada a esta fecha y jornada.")
+                        st.rerun()
+
+            except Exception as e:
+                st.warning(f"No fue posible cargar el buscador de personas: {e}")
+
+        state_key = f"asistencia_trabajo_v1616|{scope}"
+        loaded_key = f"asistencia_cargada_v1616|{scope}"
 
         if not st.session_state.get(loaded_key, False):
             try:
@@ -13073,13 +13190,13 @@ def control_asistencia_albergue_v1613():
         st.info(f"📅 **{fecha.strftime('%d/%m/%Y')}** · Jornada **{jornada}** · {len(personas)} personas en lista")
 
         c1, c2 = st.columns(2)
-        if c1.button("☑️ Marcar todos PRESENTES", use_container_width=True, key=f"todos_v1615_{scope}"):
+        if c1.button("☑️ Marcar todos PRESENTES", use_container_width=True, key=f"todos_v1616_{scope}"):
             for doc in personas["numero_identificacion"].tolist():
                 trabajo[doc]["presente"] = True
             st.session_state[state_key] = trabajo
             st.rerun()
 
-        if c2.button("⬜ Marcar todos AUSENTES", use_container_width=True, key=f"ninguno_v1615_{scope}"):
+        if c2.button("⬜ Marcar todos AUSENTES", use_container_width=True, key=f"ninguno_v1616_{scope}"):
             for doc in personas["numero_identificacion"].tolist():
                 trabajo[doc]["presente"] = False
             st.session_state[state_key] = trabajo
@@ -13102,7 +13219,7 @@ def control_asistencia_albergue_v1613():
             use_container_width=True,
             hide_index=True,
             num_rows="fixed",
-            key=f"editor_asistencia_v1615_{scope}",
+            key=f"editor_asistencia_v1616_{scope}",
             disabled=["numero_identificacion", "nombre_completo", "modalidad"],
             column_config={
                 "numero_identificacion": st.column_config.TextColumn("Documento"),
@@ -13144,7 +13261,7 @@ def control_asistencia_albergue_v1613():
             f"💾 GUARDAR ASISTENCIA · {jornada}",
             type="primary",
             use_container_width=True,
-            key=f"guardar_v1615_{scope}"
+            key=f"guardar_v1616_{scope}"
         ):
             fdoc = str(st.session_state.get("documento_funcionario", "")).strip()
             fnombre = str(st.session_state.get("nombre_funcionario", "")).strip()
@@ -13216,12 +13333,12 @@ def control_asistencia_albergue_v1613():
         mes_ref = c_mes.date_input(
             "Mes a consultar",
             value=hoy.replace(day=1),
-            key="mes_planilla_v1615"
+            key="mes_planilla_v1616"
         )
         modalidad_planilla = c_mod.selectbox(
             "Modalidad de la planilla",
             ["Todas", "URBANO", "GRANJA"],
-            key="modalidad_planilla_v1615"
+            key="modalidad_planilla_v1616"
         )
 
         import calendar
@@ -13323,8 +13440,8 @@ def control_asistencia_albergue_v1613():
         hoy = date.today()
         inicio = hoy.replace(day=1)
         c1, c2 = st.columns(2)
-        desde = c1.date_input("Desde", value=inicio, key="asistencia_desde_v1615")
-        hasta = c2.date_input("Hasta", value=hoy, key="asistencia_hasta_v1615")
+        desde = c1.date_input("Desde", value=inicio, key="asistencia_desde_v1616")
+        hasta = c2.date_input("Hasta", value=hoy, key="asistencia_hasta_v1616")
 
         if desde > hasta:
             st.error("La fecha inicial no puede ser posterior a la fecha final.")
