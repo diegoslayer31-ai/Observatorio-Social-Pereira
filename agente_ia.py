@@ -12966,86 +12966,370 @@ def control_asistencia_albergue_v1613():
     if not _puede_control_asistencia_v1613():
         st.error("No tienes permisos para acceder al Control Diario de Asistencia.")
         return
+
     st.title("📋 Control Diario de Asistencia")
-    st.caption("Registro diario de presencia de las personas albergadas. Solo asistencia; no discrimina suministros.")
-    tab1,tab2=st.tabs(["✅ Registro diario","📊 Consolidado por fechas"])
+    st.caption(
+        "Registro por fecha y jornada, siguiendo el formato operativo del albergue: Día / Noche. "
+        "Solo asistencia; no discrimina suministros."
+    )
+
+    tab1, tab2 = st.tabs(["✅ Registro diario", "📊 Consolidado por fechas"])
+
+    # ========================================================
+    # REGISTRO DIARIO POR JORNADA
+    # ========================================================
     with tab1:
-        fecha=st.date_input("Fecha de asistencia",value=date.today(),key="fecha_asistencia_v1613")
+        c_fecha, c_jornada = st.columns([2, 1])
+        fecha = c_fecha.date_input(
+            "Fecha de asistencia",
+            value=date.today(),
+            key="fecha_asistencia_v1614"
+        )
+        jornada = c_jornada.selectbox(
+            "Jornada",
+            ["DÍA", "NOCHE"],
+            key="jornada_asistencia_v1614"
+        )
+
+        st.info(
+            f"📅 Registro: **{fecha.strftime('%d/%m/%Y')}** · Jornada: **{jornada}**"
+        )
+
         try:
-            personas=pd.read_sql(text("""
-                SELECT TRIM(CAST(numero_identificacion AS TEXT)) AS numero_identificacion,
-                       COALESCE(nombres,'') AS nombres, COALESCE(apellidos,'') AS apellidos,
-                       COALESCE(modalidad,'') AS modalidad
+            personas = pd.read_sql(text("""
+                SELECT
+                    TRIM(CAST(numero_identificacion AS TEXT)) AS numero_identificacion,
+                    COALESCE(nombres,'') AS nombres,
+                    COALESCE(apellidos,'') AS apellidos,
+                    COALESCE(modalidad,'') AS modalidad
                 FROM habitante_de_calle
                 WHERE UPPER(COALESCE(estado_caso,''))='ACTIVO'
                 ORDER BY nombres, apellidos
-            """),engine)
+            """), engine)
         except Exception as e:
             st.error(f"No fue posible cargar las personas activas: {e}")
             return
+
         if personas.empty:
             st.info("No hay personas activas para registrar.")
             return
-        personas["nombre_completo"]=(personas["nombres"].astype(str).str.strip()+" "+personas["apellidos"].astype(str).str.strip()).str.replace(r"\s+"," ",regex=True).str.strip()
-        modalidades=sorted([x for x in personas["modalidad"].astype(str).str.strip().unique() if x])
-        modalidad=st.selectbox("Modalidad",["Todas"]+modalidades,key="modalidad_asistencia_v1613")
-        if modalidad!="Todas":
-            personas=personas[personas["modalidad"].astype(str).str.strip()==modalidad].copy()
+
+        personas["nombre_completo"] = (
+            personas["nombres"].astype(str).str.strip() + " " +
+            personas["apellidos"].astype(str).str.strip()
+        ).str.replace(r"\s+", " ", regex=True).str.strip()
+
+        modalidades = sorted([
+            x for x in personas["modalidad"].astype(str).str.strip().unique() if x
+        ])
+        modalidad = st.selectbox(
+            "Modalidad",
+            ["Todas"] + modalidades,
+            key="modalidad_asistencia_v1614"
+        )
+        if modalidad != "Todas":
+            personas = personas[
+                personas["modalidad"].astype(str).str.strip() == modalidad
+            ].copy()
+
         try:
-            prev=pd.read_sql(text("""
-                SELECT TRIM(CAST(numero_identificacion AS TEXT)) AS numero_identificacion,presente,observacion
-                FROM asistencia_albergue_diaria WHERE fecha=:fecha
-            """),engine,params={"fecha":fecha})
+            prev = pd.read_sql(text("""
+                SELECT
+                    TRIM(CAST(numero_identificacion AS TEXT)) AS numero_identificacion,
+                    presente,
+                    observacion
+                FROM asistencia_albergue_diaria
+                WHERE fecha=:fecha AND jornada=:jornada
+            """), engine, params={"fecha": fecha, "jornada": jornada})
         except Exception as e:
-            st.warning("Ejecuta primero la migración SQL V16.13.")
-            st.code(str(e)); return
-        if not prev.empty: personas=personas.merge(prev,on="numero_identificacion",how="left")
+            st.warning("Ejecuta primero la migración SQL V16.14 (Día / Noche).")
+            st.code(str(e))
+            return
+
+        if not prev.empty:
+            personas = personas.merge(prev, on="numero_identificacion", how="left")
         else:
-            personas["presente"]=False; personas["observacion"]=""
-        personas["presente"]=personas["presente"].fillna(False).astype(bool)
-        personas["observacion"]=personas["observacion"].fillna("").astype(str)
-        base=personas[["numero_identificacion","nombre_completo","modalidad","presente","observacion"]].copy()
-        c1,c2=st.columns(2)
-        if c1.button("☑️ Marcar todos presentes",use_container_width=True): base["presente"]=True
-        if c2.button("⬜ Desmarcar todos",use_container_width=True): base["presente"]=False
-        editado=st.data_editor(base,use_container_width=True,hide_index=True,num_rows="fixed",key=f"editor_asistencia_{fecha}_{modalidad}_v1613",disabled=["numero_identificacion","nombre_completo","modalidad"],column_config={
-            "numero_identificacion":st.column_config.TextColumn("Documento"),
-            "nombre_completo":st.column_config.TextColumn("Persona",width="large"),
-            "modalidad":st.column_config.TextColumn("Modalidad"),
-            "presente":st.column_config.CheckboxColumn("Presente",default=False),
-            "observacion":st.column_config.TextColumn("Observación",width="medium")})
-        presentes=int(editado["presente"].fillna(False).astype(bool).sum()); ausentes=len(editado)-presentes
-        k1,k2,k3=st.columns(3); k1.metric("Personas en lista",len(editado)); k2.metric("Presentes",presentes); k3.metric("Ausentes",ausentes)
-        confirmar=st.checkbox(f"Confirmo la asistencia del {fecha.strftime('%d/%m/%Y')}")
-        if st.button("💾 Guardar asistencia del día",type="primary",use_container_width=True,disabled=not confirmar):
-            fdoc=str(st.session_state.get("documento_funcionario","")).strip(); fnombre=str(st.session_state.get("nombre_funcionario","")).strip()
+            personas["presente"] = False
+            personas["observacion"] = ""
+
+        personas["presente"] = personas["presente"].fillna(False).astype(bool)
+        personas["observacion"] = personas["observacion"].fillna("").astype(str)
+
+        base = personas[[
+            "numero_identificacion", "nombre_completo", "modalidad",
+            "presente", "observacion"
+        ]].copy()
+
+        # Cada fecha+jornada+modalidad mantiene su propio editor.
+        scope_asistencia = f"{fecha}_{jornada}_{modalidad}"
+        rev_key = f"rev_editor_asistencia_{scope_asistencia}_v1614"
+        bulk_key = f"bulk_editor_asistencia_{scope_asistencia}_v1614"
+        if rev_key not in st.session_state:
+            st.session_state[rev_key] = 0
+
+        c1, c2 = st.columns(2)
+        if c1.button(
+            "☑️ Marcar todos presentes",
+            use_container_width=True,
+            key=f"todos_presentes_{scope_asistencia}_v1614"
+        ):
+            st.session_state[bulk_key] = "todos"
+            st.session_state[rev_key] += 1
+            st.rerun()
+
+        if c2.button(
+            "⬜ Desmarcar todos",
+            use_container_width=True,
+            key=f"todos_ausentes_{scope_asistencia}_v1614"
+        ):
+            st.session_state[bulk_key] = "ninguno"
+            st.session_state[rev_key] += 1
+            st.rerun()
+
+        accion_masiva = st.session_state.pop(bulk_key, None)
+        if accion_masiva == "todos":
+            base["presente"] = True
+        elif accion_masiva == "ninguno":
+            base["presente"] = False
+
+        editor_key = (
+            f"editor_asistencia_{scope_asistencia}_v1614_"
+            f"{st.session_state[rev_key]}"
+        )
+        editado = st.data_editor(
+            base,
+            use_container_width=True,
+            hide_index=True,
+            num_rows="fixed",
+            key=editor_key,
+            disabled=["numero_identificacion", "nombre_completo", "modalidad"],
+            column_config={
+                "numero_identificacion": st.column_config.TextColumn("Documento"),
+                "nombre_completo": st.column_config.TextColumn("Persona", width="large"),
+                "modalidad": st.column_config.TextColumn("Modalidad"),
+                "presente": st.column_config.CheckboxColumn("Presente", default=False),
+                "observacion": st.column_config.TextColumn("Observación", width="medium"),
+            }
+        )
+
+        presentes = int(editado["presente"].fillna(False).astype(bool).sum())
+        ausentes = len(editado) - presentes
+        k1, k2, k3 = st.columns(3)
+        k1.metric("Personas en lista", len(editado))
+        k2.metric(f"Presentes · {jornada}", presentes)
+        k3.metric("Ausentes", ausentes)
+
+        confirmar = st.checkbox(
+            f"Confirmo la asistencia del {fecha.strftime('%d/%m/%Y')} · {jornada}",
+            key=f"confirmar_asistencia_{scope_asistencia}_v1614"
+        )
+
+        if st.button(
+            f"💾 Guardar asistencia · {jornada}",
+            type="primary",
+            use_container_width=True,
+            disabled=not confirmar,
+            key=f"guardar_asistencia_{scope_asistencia}_v1614"
+        ):
+            fdoc = str(st.session_state.get("documento_funcionario", "")).strip()
+            fnombre = str(st.session_state.get("nombre_funcionario", "")).strip()
             try:
                 with engine.begin() as conn:
-                    for _,row in editado.iterrows():
+                    for _, row in editado.iterrows():
                         conn.execute(text("""
-                            INSERT INTO asistencia_albergue_diaria (fecha,numero_identificacion,nombre_persona,modalidad,presente,observacion,registrado_por_documento,registrado_por_nombre,actualizado_en)
-                            VALUES (:fecha,:doc,:nombre,:modalidad,:presente,:observacion,:fdoc,:fnombre,NOW())
-                            ON CONFLICT (fecha,numero_identificacion) DO UPDATE SET nombre_persona=EXCLUDED.nombre_persona,modalidad=EXCLUDED.modalidad,presente=EXCLUDED.presente,observacion=EXCLUDED.observacion,registrado_por_documento=EXCLUDED.registrado_por_documento,registrado_por_nombre=EXCLUDED.registrado_por_nombre,actualizado_en=NOW()
-                        """),{"fecha":fecha,"doc":str(row["numero_identificacion"]).strip(),"nombre":str(row["nombre_completo"]).strip(),"modalidad":str(row["modalidad"]).strip() or None,"presente":bool(row["presente"]),"observacion":str(row["observacion"]).strip() or None,"fdoc":fdoc or None,"fnombre":fnombre or None})
-                st.success(f"Asistencia guardada: {presentes} presentes y {ausentes} ausentes."); st.rerun()
-            except Exception as e: st.error(f"No fue posible guardar la asistencia: {e}")
+                            INSERT INTO asistencia_albergue_diaria (
+                                fecha, jornada, numero_identificacion, nombre_persona,
+                                modalidad, presente, observacion,
+                                registrado_por_documento, registrado_por_nombre,
+                                actualizado_en
+                            )
+                            VALUES (
+                                :fecha, :jornada, :doc, :nombre,
+                                :modalidad, :presente, :observacion,
+                                :fdoc, :fnombre, NOW()
+                            )
+                            ON CONFLICT (fecha, numero_identificacion, jornada)
+                            DO UPDATE SET
+                                nombre_persona=EXCLUDED.nombre_persona,
+                                modalidad=EXCLUDED.modalidad,
+                                presente=EXCLUDED.presente,
+                                observacion=EXCLUDED.observacion,
+                                registrado_por_documento=EXCLUDED.registrado_por_documento,
+                                registrado_por_nombre=EXCLUDED.registrado_por_nombre,
+                                actualizado_en=NOW()
+                        """), {
+                            "fecha": fecha,
+                            "jornada": jornada,
+                            "doc": str(row["numero_identificacion"]).strip(),
+                            "nombre": str(row["nombre_completo"]).strip(),
+                            "modalidad": str(row["modalidad"]).strip() or None,
+                            "presente": bool(row["presente"]),
+                            "observacion": str(row["observacion"]).strip() or None,
+                            "fdoc": fdoc or None,
+                            "fnombre": fnombre or None,
+                        })
+                st.success(
+                    f"Asistencia guardada para {jornada}: "
+                    f"{presentes} presentes y {ausentes} ausentes."
+                )
+                st.rerun()
+            except Exception as e:
+                st.error(f"No fue posible guardar la asistencia: {e}")
+
+    # ========================================================
+    # CONSOLIDADO - LÓGICA DEL FORMATO EXCEL DÍA / NOCHE
+    # ========================================================
     with tab2:
-        hoy=date.today(); inicio=hoy.replace(day=1)
-        c1,c2=st.columns(2); desde=c1.date_input("Desde",value=inicio,key="asistencia_desde_v1613"); hasta=c2.date_input("Hasta",value=hoy,key="asistencia_hasta_v1613")
-        if desde>hasta: st.error("La fecha inicial no puede ser posterior a la fecha final."); return
+        hoy = date.today()
+        inicio = hoy.replace(day=1)
+        c1, c2 = st.columns(2)
+        desde = c1.date_input("Desde", value=inicio, key="asistencia_desde_v1614")
+        hasta = c2.date_input("Hasta", value=hoy, key="asistencia_hasta_v1614")
+
+        if desde > hasta:
+            st.error("La fecha inicial no puede ser posterior a la fecha final.")
+            return
+
         try:
-            det=pd.read_sql(text("""
-                SELECT fecha,numero_identificacion,nombre_persona,modalidad,presente,observacion,registrado_por_nombre,actualizado_en
-                FROM asistencia_albergue_diaria WHERE fecha BETWEEN :desde AND :hasta ORDER BY fecha DESC,nombre_persona
-            """),engine,params={"desde":desde,"hasta":hasta})
-        except Exception as e: st.error(f"No fue posible cargar el consolidado: {e}"); return
-        if det.empty: st.info("No hay registros en el periodo seleccionado."); return
-        det["presente"]=det["presente"].fillna(False).astype(bool)
-        resumen=det.groupby("fecha",as_index=False).agg(personas_registradas=("numero_identificacion","nunique"),presentes=("presente","sum")); resumen["ausentes"]=resumen["personas_registradas"]-resumen["presentes"]
-        st.dataframe(resumen.sort_values("fecha",ascending=False),use_container_width=True,hide_index=True)
-        m1,m2=st.columns(2); m1.metric("Días con registro",int(det["fecha"].nunique())); m2.metric("Asistencias acumuladas",int(det["presente"].sum()))
-        with st.expander("🔎 Ver detalle"): st.dataframe(det,use_container_width=True,hide_index=True)
-        st.download_button("⬇️ Descargar consolidado CSV",data=resumen.to_csv(index=False).encode("utf-8-sig"),file_name=f"consolidado_asistencia_{desde}_{hasta}.csv",mime="text/csv",use_container_width=True)
+            det = pd.read_sql(text("""
+                SELECT
+                    fecha,
+                    jornada,
+                    numero_identificacion,
+                    nombre_persona,
+                    modalidad,
+                    presente,
+                    observacion,
+                    registrado_por_nombre,
+                    actualizado_en
+                FROM asistencia_albergue_diaria
+                WHERE fecha BETWEEN :desde AND :hasta
+                ORDER BY fecha DESC, jornada, nombre_persona
+            """), engine, params={"desde": desde, "hasta": hasta})
+        except Exception as e:
+            st.error(f"No fue posible cargar el consolidado: {e}")
+            return
+
+        if det.empty:
+            st.info("No hay registros en el periodo seleccionado.")
+            return
+
+        det["presente"] = det["presente"].fillna(False).astype(bool)
+        det["jornada"] = det["jornada"].fillna("DÍA").astype(str).str.upper()
+
+        st.markdown("### Resumen por fecha y jornada")
+        resumen = (
+            det.groupby(["fecha", "jornada"], as_index=False)
+            .agg(
+                personas_registradas=("numero_identificacion", "nunique"),
+                presentes=("presente", "sum")
+            )
+        )
+        resumen["ausentes"] = (
+            resumen["personas_registradas"] - resumen["presentes"]
+        )
+        st.dataframe(
+            resumen.sort_values(["fecha", "jornada"], ascending=[False, True]),
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "fecha": st.column_config.DateColumn("Fecha", format="DD/MM/YYYY"),
+                "jornada": "Jornada",
+                "personas_registradas": "Personas registradas",
+                "presentes": "Presentes",
+                "ausentes": "Ausentes",
+            }
+        )
+
+        total_dia = int(det.loc[(det["jornada"] == "DÍA") & det["presente"], "presente"].sum())
+        total_noche = int(det.loc[(det["jornada"] == "NOCHE") & det["presente"], "presente"].sum())
+        total_asistencias = total_dia + total_noche
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric("Días con registro", int(det["fecha"].nunique()))
+        m2.metric("Asistencias Día", total_dia)
+        m3.metric("Asistencias Noche", total_noche)
+        m4.metric("Total asistencias", total_asistencias)
+
+        st.markdown("### Consolidado por persona")
+        presentes_det = det[det["presente"]].copy()
+        if presentes_det.empty:
+            st.info("No hay asistencias marcadas como presentes en este periodo.")
+            consolidado_persona = pd.DataFrame()
+        else:
+            por_persona = (
+                presentes_det.groupby(
+                    ["numero_identificacion", "nombre_persona", "modalidad", "jornada"],
+                    dropna=False
+                )
+                .size()
+                .unstack(fill_value=0)
+                .reset_index()
+            )
+            if "DÍA" not in por_persona.columns:
+                por_persona["DÍA"] = 0
+            if "NOCHE" not in por_persona.columns:
+                por_persona["NOCHE"] = 0
+            por_persona["TOTAL"] = por_persona["DÍA"] + por_persona["NOCHE"]
+            consolidado_persona = por_persona[[
+                "numero_identificacion", "nombre_persona", "modalidad",
+                "DÍA", "NOCHE", "TOTAL"
+            ]].sort_values(["nombre_persona"])
+
+            st.dataframe(
+                consolidado_persona,
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "numero_identificacion": "Documento",
+                    "nombre_persona": "Persona",
+                    "modalidad": "Modalidad",
+                    "DÍA": "Total Día",
+                    "NOCHE": "Total Noche",
+                    "TOTAL": "Total asistencias",
+                }
+            )
+
+        with st.expander("🔎 Ver detalle por fecha, jornada y persona"):
+            st.dataframe(
+                det,
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "fecha": st.column_config.DateColumn("Fecha", format="DD/MM/YYYY"),
+                    "jornada": "Jornada",
+                    "numero_identificacion": "Documento",
+                    "nombre_persona": "Persona",
+                    "modalidad": "Modalidad",
+                    "presente": st.column_config.CheckboxColumn("Presente", disabled=True),
+                    "observacion": "Observación",
+                    "registrado_por_nombre": "Registrado por",
+                    "actualizado_en": "Última actualización",
+                }
+            )
+
+        d1, d2, d3 = st.columns(3)
+        d1.download_button(
+            "⬇️ Resumen por fecha",
+            data=resumen.to_csv(index=False).encode("utf-8-sig"),
+            file_name=f"asistencia_resumen_{desde}_{hasta}.csv",
+            mime="text/csv",
+            use_container_width=True
+        )
+        if not consolidado_persona.empty:
+            d2.download_button(
+                "⬇️ Consolidado por persona",
+                data=consolidado_persona.to_csv(index=False).encode("utf-8-sig"),
+                file_name=f"asistencia_personas_{desde}_{hasta}.csv",
+                mime="text/csv",
+                use_container_width=True
+            )
+        d3.download_button(
+            "⬇️ Detalle completo",
+            data=det.to_csv(index=False).encode("utf-8-sig"),
+            file_name=f"asistencia_detalle_{desde}_{hasta}.csv",
+            mime="text/csv",
+            use_container_width=True
+        )
 
 
 rol_router = st.session_state.get(
