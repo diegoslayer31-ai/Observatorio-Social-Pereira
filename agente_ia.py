@@ -12970,7 +12970,7 @@ def control_asistencia_albergue_v1613():
     st.caption("Registro diario de presencia de las personas albergadas. Solo asistencia; no discrimina suministros.")
     tab1,tab2=st.tabs(["✅ Registro diario","📊 Consolidado por fechas"])
     with tab1:
-        fecha=st.date_input("Fecha de asistencia",value=datetime.date.today(),key="fecha_asistencia_v1613")
+        fecha=st.date_input("Fecha de asistencia",value=date.today(),key="fecha_asistencia_v1613")
         try:
             personas=pd.read_sql(text("""
                 SELECT TRIM(CAST(numero_identificacion AS TEXT)) AS numero_identificacion,
@@ -13030,7 +13030,7 @@ def control_asistencia_albergue_v1613():
                 st.success(f"Asistencia guardada: {presentes} presentes y {ausentes} ausentes."); st.rerun()
             except Exception as e: st.error(f"No fue posible guardar la asistencia: {e}")
     with tab2:
-        hoy=datetime.date.today(); inicio=hoy.replace(day=1)
+        hoy=date.today(); inicio=hoy.replace(day=1)
         c1,c2=st.columns(2); desde=c1.date_input("Desde",value=inicio,key="asistencia_desde_v1613"); hasta=c2.date_input("Hasta",value=hoy,key="asistencia_hasta_v1613")
         if desde>hasta: st.error("La fecha inicial no puede ser posterior a la fecha final."); return
         try:
