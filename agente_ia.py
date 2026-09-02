@@ -1866,38 +1866,44 @@ def gestion_usuarios():
             "La caracterización social completa puede terminarse posteriormente."
         )
 
-        with st.form("nuevo_usuario_v9"):
+        situacion_documental_n = st.radio(
+            "Situación documental",
+            ["Con documento", "Sin documento / indocumentado"],
+            horizontal=True,
+            key="situacion_documental_gestion_v1619"
+        )
 
-            situacion_documental_n = st.radio(
-                "Situación documental",
-                ["Con documento", "Sin documento / indocumentado"],
-                horizontal=True,
-                key="situacion_documental_gestion_v1619"
-            )
+        with st.form("nuevo_usuario_v9"):
 
             n1, n2, n3 = st.columns(3)
             nombres_n = n1.text_input("Nombres *")
             apellidos_n = n2.text_input("Apellidos *")
-            numero_n = n3.text_input(
-                "Número de identificación",
-                placeholder=(
-                    "No aplica: se genera código interno"
-                    if situacion_documental_n == "Sin documento / indocumentado"
-                    else "Ingrese el número"
-                ),
-                disabled=(situacion_documental_n == "Sin documento / indocumentado")
-            )
+            if situacion_documental_n == "Sin documento / indocumentado":
+                numero_n = n3.text_input(
+                    "Número de identificación",
+                    value="",
+                    placeholder="Se genera automáticamente",
+                    disabled=True
+                )
+            else:
+                numero_n = n3.text_input(
+                    "Número de identificación *",
+                    placeholder="Ingrese el número"
+                )
 
             n4, n5, n6 = st.columns(3)
 
-            tipo_n = n4.selectbox(
-                "Tipo identificación",
-                (
-                    ["SIN DOCUMENTO"]
-                    if situacion_documental_n == "Sin documento / indocumentado"
-                    else ["CC", "TI", "CE", "PEP", "PPT", "Otro"]
+            if situacion_documental_n == "Sin documento / indocumentado":
+                tipo_n = n4.selectbox(
+                    "Tipo identificación",
+                    ["SIN DOCUMENTO"],
+                    disabled=True
                 )
-            )
+            else:
+                tipo_n = n4.selectbox(
+                    "Tipo identificación",
+                    ["CC", "TI", "CE", "PEP", "PPT", "Otro"]
+                )
 
             sexo_n = n5.selectbox(
                 "Sexo al nacer",
@@ -3277,37 +3283,43 @@ def gestion_usuarios_movil():
             "numero_atenciones": col_h("numero_atenciones")
         }
 
-        with st.form("nuevo_usuario_movil_v111"):
+        situacion_documental = st.radio(
+            "Situación documental",
+            ["Con documento", "Sin documento / indocumentado"],
+            horizontal=True,
+            key="situacion_documental_movil_v1619"
+        )
 
-            situacion_documental = st.radio(
-                "Situación documental",
-                ["Con documento", "Sin documento / indocumentado"],
-                horizontal=True,
-                key="situacion_documental_movil_v1619"
-            )
+        with st.form("nuevo_usuario_movil_v111"):
 
             nombres = st.text_input("Nombres *")
             apellidos = st.text_input("Apellidos *")
-            numero_id = st.text_input(
-                "Número de identificación",
-                placeholder=(
-                    "No aplica: se genera código interno"
-                    if situacion_documental == "Sin documento / indocumentado"
-                    else "Ingrese el número"
-                ),
-                disabled=(situacion_documental == "Sin documento / indocumentado")
-            )
+            if situacion_documental == "Sin documento / indocumentado":
+                numero_id = st.text_input(
+                    "Número de identificación",
+                    value="",
+                    placeholder="Se genera automáticamente",
+                    disabled=True
+                )
+            else:
+                numero_id = st.text_input(
+                    "Número de identificación *",
+                    placeholder="Ingrese el número"
+                )
 
             c1, c2 = st.columns(2)
 
-            tipo_id = c1.selectbox(
-                "Tipo identificación",
-                (
-                    ["SIN DOCUMENTO"]
-                    if situacion_documental == "Sin documento / indocumentado"
-                    else ["CC", "TI", "CE", "PEP", "PPT", "Otro"]
+            if situacion_documental == "Sin documento / indocumentado":
+                tipo_id = c1.selectbox(
+                    "Tipo identificación",
+                    ["SIN DOCUMENTO"],
+                    disabled=True
                 )
-            )
+            else:
+                tipo_id = c1.selectbox(
+                    "Tipo identificación",
+                    ["CC", "TI", "CE", "PEP", "PPT", "Otro"]
+                )
 
             sexo = c2.selectbox(
                 "Sexo al nacer",
