@@ -211,7 +211,9 @@ def exigir_login_v12():
             except Exception:
                 pass
 
-            if rol in ["INSPIRADOR", "PROFESIONAL"]:
+            if rol in ["AUXILIAR_ADMINISTRATIVO", "TECNOLOGO_INGENIERIA"]:
+                st.session_state.page = "control_asistencia_albergue_v1613"
+            elif rol in ["INSPIRADOR", "PROFESIONAL"]:
                 st.session_state.page = "gestion_movil"
             else:
                 st.session_state.page = "dashboard_ejecutivo"
@@ -4533,7 +4535,7 @@ def gestion_personal_v12_1():
 
     st.title("👥 Personal autorizado")
     st.caption(
-        "Administración del personal autorizado: Inspiradores, Profesionales y Coordinación."
+        "Administración del personal autorizado y sus perfiles de acceso."
     )
 
     tab_crear, tab_admin = st.tabs(
@@ -4550,7 +4552,9 @@ def gestion_personal_v12_1():
                     "INSPIRADOR",
                     "PROFESIONAL",
                     "COORDINACION",
-                    "MANAGER"
+                    "MANAGER",
+                    "AUXILIAR_ADMINISTRATIVO",
+                    "TECNOLOGO_INGENIERIA"
                 ]
             )
             clave = st.text_input(
@@ -4673,7 +4677,9 @@ def gestion_personal_v12_1():
             "INSPIRADOR",
             "PROFESIONAL",
             "COORDINACION",
-            "MANAGER"
+            "MANAGER",
+            "AUXILIAR_ADMINISTRATIVO",
+            "TECNOLOGO_INGENIERIA"
         ]
 
         c1, c2 = st.columns(2)
@@ -9073,8 +9079,26 @@ exigir_login_v12()
 
 # V16.13 - Permisos Control Diario de Asistencia
 ASISTENCIA_ALBERGUE_DOCUMENTOS_AUTORIZADOS_V1613 = {
-    "16225865", "1090420245", "1087996578", "1088346899"
+    "16225865",      # Jorge Iván Rendón Giraldo
+    "1090420245",    # Maria Fernanda Santiago Pabón
+    "1087996578",    # Apolinar Roa Rentería
+    "1088346899",    # Alexa Jhilleny Orozco Castillo
+    "1088243215",    # Elizabeth Manzo Ospina
 }
+
+
+ROL_NOMBRES_V1618 = {
+    "INSPIRADOR": "Inspirador",
+    "PROFESIONAL": "Profesional",
+    "COORDINACION": "Coordinación",
+    "MANAGER": "Manager",
+    "AUXILIAR_ADMINISTRATIVO": "Auxiliar Administrativo",
+    "TECNOLOGO_INGENIERIA": "Tecnólogo de las áreas de la ingeniería",
+}
+
+def _nombre_rol_v1618(rol):
+    clave = str(rol or "").upper().strip()
+    return ROL_NOMBRES_V1618.get(clave, clave.replace("_", " ").title())
 
 def _puede_control_asistencia_v1613():
     if not bool(st.session_state.get("autenticado", False)):
@@ -9099,7 +9123,7 @@ with st.sidebar:
         f"**{st.session_state.get('nombre_funcionario','')}**"
     )
     st.caption(
-        f"{st.session_state.get('rol_actual','')} · "
+        f"{_nombre_rol_v1618(st.session_state.get('rol_actual',''))} · "
         f"CC {st.session_state.get('documento_funcionario','')}"
     )
     if st.session_state.get("rol_actual") == "MANAGER":
@@ -9179,6 +9203,11 @@ with st.sidebar:
         ):
             st.session_state.page = "historia_integral_v12"
             st.rerun()
+
+    elif rol_menu in ["AUXILIAR_ADMINISTRATIVO", "TECNOLOGO_INGENIERIA"]:
+        # Perfiles administrativos restringidos:
+        # el acceso operativo disponible es Control Diario de Asistencia.
+        pass
 
     elif rol_menu in ["COORDINACION", "MANAGER"]:
 
