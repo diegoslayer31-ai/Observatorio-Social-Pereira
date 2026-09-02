@@ -1912,7 +1912,10 @@ def gestion_usuarios():
 
             fecha_nac_n = n6.date_input(
                 "Fecha de nacimiento",
-                value=date.today() - timedelta(days=30 * 365)
+                value=date.today() - timedelta(days=30 * 365),
+                min_value=date(1900, 1, 1),
+                max_value=date.today(),
+                format="YYYY/MM/DD"
             )
 
             n7, n8, n9 = st.columns(3)
@@ -3328,7 +3331,10 @@ def gestion_usuarios_movil():
 
             fecha_nacimiento = st.date_input(
                 "Fecha de nacimiento",
-                value=date.today() - timedelta(days=30 * 365)
+                value=date.today() - timedelta(days=30 * 365),
+                min_value=date(1900, 1, 1),
+                max_value=date.today(),
+                format="YYYY/MM/DD"
             )
 
             c3, c4 = st.columns(2)
