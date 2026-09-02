@@ -306,6 +306,28 @@ def registrar_auditoria(
         pass
 
 
+
+def generar_identificador_indocumentado_v1619():
+    """
+    Genera un identificador interno único para una persona sin documento.
+    No representa una cédula ni otro documento oficial.
+    """
+    anio = date.today().year
+    for _ in range(10):
+        codigo = f"IND-{anio}-{uuid.uuid4().hex[:8].upper()}"
+        consulta = pd.read_sql(
+            text("""
+                SELECT COUNT(*) AS total
+                FROM habitante_de_calle
+                WHERE TRIM(numero_identificacion::TEXT) = :doc
+            """),
+            engine,
+            params={"doc": codigo},
+        )
+        if int(consulta.iloc[0]["total"] or 0) == 0:
+            return codigo
+    raise RuntimeError("No fue posible generar un identificador interno único.")
+
 def validar_documento_no_duplicado(numero_documento):
     """Comprueba si ya existe una identificación en habitante_de_calle."""
     doc = limpiar_documento(numero_documento)
@@ -1846,16 +1868,35 @@ def gestion_usuarios():
 
         with st.form("nuevo_usuario_v9"):
 
+            situacion_documental_n = st.radio(
+                "Situación documental",
+                ["Con documento", "Sin documento / indocumentado"],
+                horizontal=True,
+                key="situacion_documental_gestion_v1619"
+            )
+
             n1, n2, n3 = st.columns(3)
             nombres_n = n1.text_input("Nombres *")
             apellidos_n = n2.text_input("Apellidos *")
-            numero_n = n3.text_input("Número de identificación *")
+            numero_n = n3.text_input(
+                "Número de identificación",
+                placeholder=(
+                    "No aplica: se genera código interno"
+                    if situacion_documental_n == "Sin documento / indocumentado"
+                    else "Ingrese el número"
+                ),
+                disabled=(situacion_documental_n == "Sin documento / indocumentado")
+            )
 
             n4, n5, n6 = st.columns(3)
 
             tipo_n = n4.selectbox(
                 "Tipo identificación",
-                ["CC", "TI", "CE", "PEP", "PPT", "Otro"]
+                (
+                    ["SIN DOCUMENTO"]
+                    if situacion_documental_n == "Sin documento / indocumentado"
+                    else ["CC", "TI", "CE", "PEP", "PPT", "Otro"]
+                )
             )
 
             sexo_n = n5.selectbox(
@@ -1920,17 +1961,19 @@ def gestion_usuarios():
 
         if guardar_n:
 
-            doc_n = limpiar_documento(numero_n)
+            sin_documento_n = (
+                situacion_documental_n == "Sin documento / indocumentado"
+            )
+            doc_n = (
+                generar_identificador_indocumentado_v1619()
+                if sin_documento_n
+                else limpiar_documento(numero_n)
+            )
 
-            if (
-                not nombres_n.strip()
-                or not apellidos_n.strip()
-                or not doc_n
-                or not procedencia_n.strip()
-            ):
-                st.error(
-                    "Nombres, apellidos, identificación y procedencia son obligatorios."
-                )
+            if not nombres_n.strip() or not apellidos_n.strip() or not procedencia_n.strip():
+                st.error("Nombres, apellidos y procedencia son obligatorios.")
+            elif not sin_documento_n and not doc_n:
+                st.error("Debe ingresar el número de identificación.")
             else:
                 valido, mensaje = validar_documento_no_duplicado(doc_n)
 
@@ -2037,10 +2080,16 @@ def gestion_usuarios():
                     _columnas_habitante.clear()
                     invalidar_cache_datos()
 
-                    st.success(
-                        "✅ Usuario registrado. "
-                        "Ahora puede completarse la caracterización social."
-                    )
+                    if sin_documento_n:
+                        st.success(
+                            f"✅ Persona registrada como SIN DOCUMENTO. "
+                            f"Identificador interno: {doc_n}"
+                        )
+                    else:
+                        st.success(
+                            "✅ Usuario registrado. "
+                            "Ahora puede completarse la caracterización social."
+                        )
                     st.rerun()
 
     # ========================================================
@@ -3230,15 +3279,34 @@ def gestion_usuarios_movil():
 
         with st.form("nuevo_usuario_movil_v111"):
 
+            situacion_documental = st.radio(
+                "Situación documental",
+                ["Con documento", "Sin documento / indocumentado"],
+                horizontal=True,
+                key="situacion_documental_movil_v1619"
+            )
+
             nombres = st.text_input("Nombres *")
             apellidos = st.text_input("Apellidos *")
-            numero_id = st.text_input("Número de identificación *")
+            numero_id = st.text_input(
+                "Número de identificación",
+                placeholder=(
+                    "No aplica: se genera código interno"
+                    if situacion_documental == "Sin documento / indocumentado"
+                    else "Ingrese el número"
+                ),
+                disabled=(situacion_documental == "Sin documento / indocumentado")
+            )
 
             c1, c2 = st.columns(2)
 
             tipo_id = c1.selectbox(
                 "Tipo identificación",
-                ["CC", "TI", "CE", "PEP", "PPT", "Otro"]
+                (
+                    ["SIN DOCUMENTO"]
+                    if situacion_documental == "Sin documento / indocumentado"
+                    else ["CC", "TI", "CE", "PEP", "PPT", "Otro"]
+                )
             )
 
             sexo = c2.selectbox(
@@ -3305,13 +3373,20 @@ def gestion_usuarios_movil():
 
         if guardar:
 
-            doc = limpiar_documento(numero_id)
+            sin_documento = (
+                situacion_documental == "Sin documento / indocumentado"
+            )
+            doc = (
+                generar_identificador_indocumentado_v1619()
+                if sin_documento
+                else limpiar_documento(numero_id)
+            )
 
             if not nombres.strip():
                 st.error("Debe ingresar los nombres.")
             elif not apellidos.strip():
                 st.error("Debe ingresar los apellidos.")
-            elif not doc:
+            elif not sin_documento and not doc:
                 st.error("Debe ingresar el número de identificación.")
             elif not procedencia.strip():
                 st.error("Debe registrar la procedencia.")
