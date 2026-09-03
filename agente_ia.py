@@ -307,6 +307,19 @@ def registrar_auditoria(
 
 
 
+
+def normalizar_texto_ingreso_v16193(valor):
+    """
+    Normaliza textos estructurados del nuevo ingreso:
+    - elimina espacios sobrantes
+    - convierte a MAYÚSCULAS
+    - conserva tildes y caracteres propios del español
+    """
+    if valor is None:
+        return None
+    texto = " ".join(str(valor).strip().split())
+    return texto.upper() if texto else ""
+
 def generar_identificador_indocumentado_v1619():
     """
     Genera un identificador interno único para una persona sin documento.
@@ -1999,24 +2012,35 @@ def gestion_usuarios():
                         )
                     )
 
+                    # V16.19.3: normalización de los textos estructurados
+                    # del NUEVO ingreso. No modifica datos históricos.
+                    nombres_guardar_n = normalizar_texto_ingreso_v16193(nombres_n)
+                    apellidos_guardar_n = normalizar_texto_ingreso_v16193(apellidos_n)
+                    sexo_guardar_n = normalizar_texto_ingreso_v16193(sexo_n)
+                    modalidad_guardar_n = normalizar_texto_ingreso_v16193(modalidad_n)
+                    tipo_guardar_n = normalizar_texto_ingreso_v16193(tipo_n)
+                    salud_guardar_n = normalizar_texto_ingreso_v16193(salud_n)
+                    procedencia_guardar_n = normalizar_texto_ingreso_v16193(procedencia_n)
+                    consumo_guardar_n = normalizar_texto_ingreso_v16193(consumo_n)
+
                     # INSERT dinámico: usa solamente columnas que realmente existen.
                     datos_insert = {
-                        "nombres": nombres_n.strip(),
-                        "apellidos": apellidos_n.strip(),
-                        "sexo_al_nacer": sexo_n,
+                        "nombres": nombres_guardar_n,
+                        "apellidos": apellidos_guardar_n,
+                        "sexo_al_nacer": sexo_guardar_n,
                         "edad": edad_n,
                         "numero_identificacion": doc_n,
                         "estado_caso": "ACTIVO",
-                        "modalidad": modalidad_n
+                        "modalidad": modalidad_guardar_n
                     }
 
                     opcionales = {
-                        C["tipo_id"]: tipo_n,
+                        C["tipo_id"]: tipo_guardar_n,
                         C["fecha_nacimiento"]: fecha_nac_n,
-                        C["salud"]: salud_n,
+                        C["salud"]: salud_guardar_n,
                         C["telefono"]: telefono_n.strip(),
-                        C["procedencia"]: procedencia_n.strip(),
-                        C["consumo"]: consumo_n,
+                        C["procedencia"]: procedencia_guardar_n,
+                        C["consumo"]: consumo_guardar_n,
                         C["fecha_ingreso"]: date.today(),
                         C["numero_atenciones"]: 0
                     }
@@ -2080,8 +2104,8 @@ def gestion_usuarios():
                         documento=doc_n,
                         modulo="Gestión Usuarios",
                         valor_nuevo=(
-                            f"{nombres_n.strip()} {apellidos_n.strip()} - "
-                            f"{modalidad_n}; procedencia={procedencia_n.strip()}; "
+                            f"{nombres_guardar_n} {apellidos_guardar_n} - "
+                            f"{modalidad_guardar_n}; procedencia={procedencia_guardar_n}; "
                             f"consumo={consumo_n}"
                         )
                     )
@@ -3429,23 +3453,34 @@ def gestion_usuarios_movil():
                         )
                     )
 
+                    # V16.19.3: normalización de los textos estructurados
+                    # del NUEVO ingreso. No modifica datos históricos.
+                    nombres_guardar = normalizar_texto_ingreso_v16193(nombres)
+                    apellidos_guardar = normalizar_texto_ingreso_v16193(apellidos)
+                    sexo_guardar = normalizar_texto_ingreso_v16193(sexo)
+                    modalidad_guardar = normalizar_texto_ingreso_v16193(modalidad)
+                    tipo_guardar = normalizar_texto_ingreso_v16193(tipo_id)
+                    salud_guardar = normalizar_texto_ingreso_v16193(salud)
+                    procedencia_guardar = normalizar_texto_ingreso_v16193(procedencia)
+                    consumo_guardar = normalizar_texto_ingreso_v16193(consumo)
+
                     datos = {
-                        "nombres": nombres.strip(),
-                        "apellidos": apellidos.strip(),
-                        "sexo_al_nacer": sexo,
+                        "nombres": nombres_guardar,
+                        "apellidos": apellidos_guardar,
+                        "sexo_al_nacer": sexo_guardar,
                         "edad": edad,
                         "numero_identificacion": doc,
                         "estado_caso": "ACTIVO",
-                        "modalidad": modalidad
+                        "modalidad": modalidad_guardar
                     }
 
                     opcionales = {
-                        CH["tipo_id"]: tipo_id,
+                        CH["tipo_id"]: tipo_guardar,
                         CH["fecha_nacimiento"]: fecha_nacimiento,
-                        CH["salud"]: salud,
+                        CH["salud"]: salud_guardar,
                         CH["telefono"]: telefono.strip(),
-                        CH["procedencia"]: procedencia.strip(),
-                        CH["consumo"]: consumo,
+                        CH["procedencia"]: procedencia_guardar,
+                        CH["consumo"]: consumo_guardar,
                         CH["fecha_ingreso"]: date.today(),
                         CH["numero_atenciones"]: 0
                     }
@@ -3502,7 +3537,7 @@ def gestion_usuarios_movil():
                             """),
                             {
                                 "doc": doc,
-                                "modalidad": modalidad,
+                                "modalidad": modalidad_guardar,
                                 "usuario": usuario_registra
                             }
                         )
