@@ -2136,6 +2136,828 @@ def gestion_usuarios():
             "en el momento del ingreso."
         )
 
+
+        # ====================================================
+        # V16.19.7 - CATÁLOGOS OFICIALES DE LA BASE MADRE
+        # Fuente: USUARIOS UNICOS CORTE JULIO - hoja LIS.
+        # Los campos estructurados ya no admiten texto libre.
+        # ====================================================
+        CATALOGO_RESPUESTA_V16197 = ['SI', 'NO']
+        CATALOGO_ETNIA_V16197 = ['1 - Indígena', '2 - ROM (gitano)', '3 - Raizal (archipiélago de San Andrés y Providencia)', '4 - Palanquero de San Basilio', '5 - Negro(a), Mulato(a), Afrocolombiano(a) o Afro descendiente', '6 Mestizo']
+        CATALOGO_ORIENTACION_V16197 = ['ASEXUAL', 'BISEXUAL', 'HETEROSEXUAL', 'HOMOSEXUAL', 'OTRO']
+        CATALOGO_SALUD_V16197 = ['REGIMEN CONTRIBUTIVO', 'REGIMEN SUBSIDIADO', 'POBLACION VINCULADA']
+        CATALOGO_EDUCACION_V16197 = ['1- Preescolar', '2- Básica Primaria', '3- Básica Secundaria', '4- Media Académica o Clásica', '5- Media Técnica (Bachillerato Técnico)', '6- Normalista', '7- Técnica Profesional', '8- Tecnológica', '9- Profesional', '10- Especialización', '11- Maestría', '12- Doctorado', '13-Univerisitario', '14- Ninguno']
+        CATALOGO_OCUPACION_V16197 = ['AMA DE CASA', 'BUSCANDO EMPLEO', 'DESEMPLEADO', 'EMPLEADO', 'ESTUDIANTE', 'INDEPENDIENTE', 'NINGUNO', 'PENSIONADO']
+        CATALOGO_DISCAPACIDAD_V16197 = ['AUDITIVA', 'FISICA', 'INTELECTUAL', 'MULTIPLE', 'PSICOSOCIAL', 'SORDOCEGUERA', 'VISUAL', 'NINGUNA']
+        CATALOGO_DEPARTAMENTO_V16197 = ['AMAZONAS', 'ANTIOQUIA', 'ARAUCA', 'ATLANTICO', 'BOGOTA', 'BOLIVAR', 'BOYACA', 'CALDAS', 'CAQUETA', 'CASANARE', 'CAUCA', 'CESAR', 'CHOCO', 'CORDOBA', 'CUNDINAMARCA', 'GUAINIA', 'GUAVIARE', 'HUILA', 'LA GUAJIRA', 'MAGDALENA', 'META', 'N. DE SANTANDER', 'NARIÑO', 'PUTUMAYO', 'QUINDIO', 'RISARALDA', 'SAN ANDRES', 'SANTANDER', 'SUCRE', 'TOLIMA', 'VALLE DEL CAUCA', 'VAUPES', 'VICHADA']
+        CATALOGO_POBLACION_V16197 = ['AGENTES COMUNITARIOS', 'DOCENTES', 'ESTUDIANTES', 'HABITANTE DE CALLE', 'PADRES O ACUDIENTES', 'USUARIO EN RIESGO DE CALLE']
+        CATALOGO_CONSUMO_V16197 = ['ALCOHOL', 'BAZUCO', 'COCAINA', 'HEROÍNA', 'MARIHUANA', 'NINGUNA', 'OTRA DROGA', 'PEGANTE/SACOL', 'POLICONSUMO', 'POLICONSUMO CON HEROÍNA', 'TABACO/CIGARRILLO']
+        CATALOGO_ENFERMEDAD_MENTAL_V16197 = ['Trastorno bipolar', 'trastorno de ansiedad', 'trastorno depresivo', 'trastorno mixto (ansiedad-depresion)', 'trastorno demencia senil', 'dependencia sustacias psicoactivas', 'Psicosis (esquizofrenia)', 'Trastorno obsesivo-compulsivo', 'Trastorno cognitivo']
+        CATALOGO_GESTANTE_V16197 = ['GESTANTE', 'LACTANTE', 'NA']
+        BARRIOS_PEREIRA_V16197 = {'1º  DE FEBRERO': {'comuna': 'CENTRO', 'zona': 'URBANO'},
+ '1º  DE MAYO CAIMALITO': {'comuna': 'CAIMALITO', 'zona': 'RURAL'},
+ '20 DE JULIO': {'comuna': 'ORIENTE', 'zona': 'URBANO'},
+ '20 DE JULIO CAIMALITO': {'comuna': 'CAIMALITO', 'zona': 'RURAL'},
+ 'AGUAS CLARAS': {'comuna': 'CONSOTA', 'zona': 'URBANO'},
+ 'ALAMEDA': {'comuna': 'EL OSO', 'zona': 'URBANO'},
+ 'ALAMEDA DEL CAFE': {'comuna': 'DEL CAFE', 'zona': 'URBANO'},
+ 'ALAMOS DEL CAFE': {'comuna': 'DEL CAFE', 'zona': 'URBANO'},
+ 'ALCALA DEL CAMPO': {'comuna': 'SAN JOAQUIN', 'zona': 'URBANO'},
+ 'ALCAZAR DE MARAYA': {'comuna': 'EL JARDIN', 'zona': 'URBANO'},
+ 'ALCAZARES': {'comuna': 'OLIMPICA', 'zona': 'URBANO'},
+ 'ALEGRIAS DE LA VILLA': {'comuna': 'OLIMPICA', 'zona': 'URBANO'},
+ 'ALEJANDRIA': {'comuna': 'EL OSO', 'zona': 'URBANO'},
+ 'ALFA': {'comuna': 'OLIMPICA', 'zona': 'URBANO'},
+ 'ALFONSO LOPEZ PUMAREJO': {'comuna': 'ORIENTE', 'zona': 'URBANO'},
+ 'ALHAMBRA': {'comuna': 'OLIMPICA', 'zona': 'URBANO'},
+ 'ALTAGRACIA': {'comuna': 'ALTAGRACIA', 'zona': 'RURAL'},
+ 'ALTAMIRA': {'comuna': 'TRIBUNAS CORCEGA', 'zona': 'RURAL'},
+ 'ALTAVISTA': {'comuna': 'SAN JOAQUIN', 'zona': 'URBANO'},
+ 'ALTO ALEGRIAS': {'comuna': 'TRIBUNAS CORCEGA', 'zona': 'RURAL'},
+ 'ALTO ALEGRIAS ALTAGRACIA': {'comuna': 'ALTAGRACIA', 'zona': 'RURAL'},
+ 'ALTO DE LOS ANGELES': {'comuna': 'DEL CAFE', 'zona': 'URBANO'},
+ 'ALTO ERAZO': {'comuna': 'COMBIA ALTA', 'zona': 'RURAL'},
+ 'ALTOS DE BELMONTE': {'comuna': 'OLIMPICA', 'zona': 'URBANO'},
+ 'ALTOS DE CANAAN': {'comuna': 'UNIVERSIDAD', 'zona': 'URBANO'},
+ 'ALTOS DE CORALES': {'comuna': 'SAN JOAQUIN', 'zona': 'URBANO'},
+ 'ALTOS DE LLANO GRANDE': {'comuna': 'DEL CAFE', 'zona': 'URBANO'},
+ 'ALTOS DE LLANO GRANDE II': {'comuna': 'DEL CAFE', 'zona': 'URBANO'},
+ 'ALTOS DE LOS ANGELES': {'comuna': 'DEL CAFE', 'zona': 'URBANO'},
+ 'ALTOS DE PANORAMA': {'comuna': 'EL OSO', 'zona': 'URBANO'},
+ 'ALTOS DE TANANBI': {'comuna': 'EL JARDIN', 'zona': 'URBANO'},
+ 'ALTOS DEL OTUN': {'comuna': 'ORIENTE', 'zona': 'URBANO'},
+ 'ALTOS DEL OTUN  1 2 3': {'comuna': 'ORIENTE', 'zona': 'URBANO'},
+ 'AMERICA': {'comuna': 'RIO OTUN', 'zona': 'URBANO'},
+ 'AMOLADORA ALTA': {'comuna': 'COMBIA ALTA', 'zona': 'RURAL'},
+ 'AMOLADORA BAJA': {'comuna': 'COMBIA ALTA', 'zona': 'RURAL'},
+ 'ANDALUCIA': {'comuna': 'EL JARDIN', 'zona': 'URBANO'},
+ 'ANTONIO JOSE DE SUCRE': {'comuna': 'CONSOTA', 'zona': 'URBANO'},
+ 'ANTONIO JOSE VALENCIA': {'comuna': 'CONSOTA', 'zona': 'URBANO'},
+ 'ANTONIO NARIÑO': {'comuna': 'ORIENTE', 'zona': 'URBANO'},
+ 'ANTONIO RICAURTE': {'comuna': 'DEL CAFE', 'zona': 'URBANO'},
+ 'ARABIA': {'comuna': 'ARABIA', 'zona': 'RURAL'},
+ 'ARANJUEZ': {'comuna': 'PERLA DEL OTUN', 'zona': 'URBANO'},
+ 'ARBOLEDA DEL RIO': {'comuna': 'ORIENTE', 'zona': 'URBANO'},
+ 'ARCO IRIS DE LA COLINA': {'comuna': 'EL JARDIN', 'zona': 'URBANO'},
+ 'ARENALES': {'comuna': 'ALTAGRACIA', 'zona': 'RURAL'},
+ 'ATENAS': {'comuna': 'SAN JOAQUIN', 'zona': 'URBANO'},
+ 'AV. 30 DE AGOSTO  CON 44': {'comuna': 'EL JARDIN', 'zona': 'URBANO'},
+ 'AZUFRAL': {'comuna': 'CAIMALITO', 'zona': 'RURAL'},
+ 'BALCONES CONDOMINIO': {'comuna': 'EL JARDIN', 'zona': 'URBANO'},
+ 'BALCONES DE VILLA DEL PRADO': {'comuna': 'EL POBLADO', 'zona': 'URBANO'},
+ 'BARAJAS': {'comuna': 'EL POBLADO', 'zona': 'URBANO'},
+ 'BARBEROS': {'comuna': 'CUBA', 'zona': 'URBANO'},
+ 'BARRIO NUEVO': {'comuna': 'CAIMALITO', 'zona': 'RURAL'},
+ 'BATARA': {'comuna': 'SAN JOAQUIN', 'zona': 'URBANO'},
+ 'BATEA': {'comuna': 'MORELIA', 'zona': 'RURAL'},
+ 'BAVARIA': {'comuna': 'RIO OTUN', 'zona': 'URBANO'},
+ 'BAYRON GAVIRIA': {'comuna': 'RIO OTUN', 'zona': 'URBANO'},
+ 'BELALCAZAR': {'comuna': 'BOSTON', 'zona': 'URBANO'},
+ 'BELLA SARDI': {'comuna': 'CONSOTA', 'zona': 'URBANO'},
+ 'BELLA VISTA-COMBIA BAJA': {'comuna': 'COMBIA BAJA', 'zona': 'RURAL'},
+ 'BELLA VISTA-VILLASANTANA': {'comuna': 'VILLA SANTANA', 'zona': 'URBANO'},
+ 'BELLO HORIZONTE': {'comuna': 'SAN JOAQUIN', 'zona': 'URBANO'},
+ 'BELMONTE': {'comuna': 'OLIMPICA', 'zona': 'URBANO'},
+ 'BELMONTE BAJO': {'comuna': 'CERRITOS', 'zona': 'RURAL'},
+ 'BERLIN': {'comuna': 'VILLAVICENCIO', 'zona': 'URBANO'},
+ 'BETANIA': {'comuna': 'COMBIA ALTA', 'zona': 'RURAL'},
+ 'BETULIA': {'comuna': 'ARABIA', 'zona': 'RURAL'},
+ 'BETULIA   BAJA': {'comuna': 'ARABIA', 'zona': 'RURAL'},
+ 'BETULIA ALTA': {'comuna': 'ARABIA', 'zona': 'RURAL'},
+ 'BIRMANIA': {'comuna': 'SAN JOAQUIN', 'zona': 'URBANO'},
+ 'BLOQUES PRIMERO DE FEBRERO': {'comuna': 'CENTRO', 'zona': 'URBANO'},
+ 'BOSQUE BAJO': {'comuna': 'PERLA DEL OTUN', 'zona': 'URBANO'},
+ 'BOSQUES DE CANAAN': {'comuna': 'UNIVERSIDAD', 'zona': 'URBANO'},
+ 'BOSQUES DE CANTABRIA': {'comuna': 'OLIMPICA', 'zona': 'URBANO'},
+ 'BOSQUES DE CUBA': {'comuna': 'CUBA', 'zona': 'URBANO'},
+ 'BOSQUES DE LA SALLE': {'comuna': 'BOSTON', 'zona': 'URBANO'},
+ 'BOSQUES DE SANTA ELENA I': {'comuna': 'EL JARDIN', 'zona': 'URBANO'},
+ 'BOSTON': {'comuna': 'BOSTON', 'zona': 'URBANO'},
+ 'BRASILIA': {'comuna': 'EL JARDIN', 'zona': 'URBANO'},
+ 'BRISAS DE LAS AMERICAS': {'comuna': 'SAN NICOLAS', 'zona': 'URBANO'},
+ 'BRISAS DEL CONSOTA': {'comuna': 'CUBA', 'zona': 'URBANO'},
+ 'BRISAS DEL OTUN': {'comuna': 'ORIENTE', 'zona': 'URBANO'},
+ 'BUENOS AIRES-ALTAGRACIA': {'comuna': 'ALTAGRACIA', 'zona': 'RURAL'},
+ 'BUENOS AIRES-CENTRO': {'comuna': 'CENTRO', 'zona': 'URBANO'},
+ 'BULEVAR DE LAS VILLAS': {'comuna': 'SAN JOAQUIN', 'zona': 'URBANO'},
+ 'BULEVAR DEL BOSQUE': {'comuna': 'SAN JOAQUIN', 'zona': 'URBANO'},
+ 'BULEVAR DEL CAFE': {'comuna': 'SAN JOAQUIN', 'zona': 'URBANO'},
+ 'CACHIPAY': {'comuna': 'EL POBLADO', 'zona': 'URBANO'},
+ 'CAIMALITO': {'comuna': 'CAIMALITO', 'zona': 'RURAL'},
+ 'CAIMALITO 20 DE JULIO': {'comuna': 'CAIMALITO', 'zona': 'RURAL'},
+ 'CAIMALITO CENTRO': {'comuna': 'CAIMALITO', 'zona': 'RURAL'},
+ 'CALLE LARGA': {'comuna': 'MORELIA', 'zona': 'RURAL'},
+ 'CAMBULOS': {'comuna': 'UNIVERSIDAD', 'zona': 'URBANO'},
+ 'CAMELIAS': {'comuna': 'PUERTO CALDAS', 'zona': 'RURAL'},
+ 'CAMILO TORRES': {'comuna': 'ARABIA', 'zona': 'RURAL'},
+ 'CAMINOS DE CANAAN': {'comuna': 'BOSTON', 'zona': 'URBANO'},
+ 'CAMINOS DE MARAYA': {'comuna': 'EL JARDIN', 'zona': 'URBANO'},
+ 'CAMPIÑA DEL RIO OTUN': {'comuna': 'RIO OTUN', 'zona': 'URBANO'},
+ 'CAMPO ALEGRE': {'comuna': 'SAN JOAQUIN', 'zona': 'URBANO'},
+ 'CAMPO ALEGRE 3': {'comuna': 'SAN JOAQUIN', 'zona': 'URBANO'},
+ 'CANCELES': {'comuna': 'LA BELLA', 'zona': 'RURAL'},
+ 'CANTAMONOS': {'comuna': 'TRIBUNAS CORCEGA', 'zona': 'RURAL'},
+ 'CARACOL LA CURVA': {'comuna': 'TRIBUNAS CORCEGA', 'zona': 'RURAL'},
+ 'CARACOL LA CURVA ROCIO': {'comuna': 'EL ROCIO', 'zona': 'URBANO'},
+ 'CARLOS ALBERTO BENAVIDES': {'comuna': 'PERLA DEL OTUN', 'zona': 'URBANO'},
+ 'CARLOS ENRIQUE SOTO': {'comuna': 'DEL CAFE', 'zona': 'URBANO'},
+ 'CASTANO ROBLEDO-ORIENTE': {'comuna': 'ORIENTE', 'zona': 'URBANO'},
+ 'CASTAÑO ROBLEDO-CONSOTA': {'comuna': 'CONSOTA', 'zona': 'URBANO'},
+ 'CATALAN': {'comuna': 'FERROCARRIL', 'zona': 'URBANO'},
+ 'CAÑARTE': {'comuna': 'RIO OTUN', 'zona': 'URBANO'},
+ 'CAÑAVERAL': {'comuna': 'ALTAGRACIA', 'zona': 'RURAL'},
+ 'CAÑAVERAL II': {'comuna': 'OLIMPICA', 'zona': 'URBANO'},
+ 'CEDRITOS': {'comuna': 'EL JARDIN', 'zona': 'URBANO'},
+ 'CENTENARIO': {'comuna': 'BOSTON', 'zona': 'URBANO'},
+ 'CENTENARIOS LOS ROBLES': {'comuna': 'BOSTON', 'zona': 'URBANO'},
+ 'CENTRAL': {'comuna': 'BOSTON', 'zona': 'URBANO'},
+ 'CERRITOS': {'comuna': 'CERRITOS', 'zona': 'RURAL'},
+ 'CESAR NADER NADER': {'comuna': 'ORIENTE', 'zona': 'URBANO'},
+ 'CESAR TORO': {'comuna': 'CAIMALITO', 'zona': 'RURAL'},
+ 'CESTILLAL': {'comuna': 'LA ESTRELLA - LA PALMILLA', 'zona': 'RURAL'},
+ 'CHARCO NEGRO-BRISAS DEL OTUN': {'comuna': 'SAN JOAQUIN', 'zona': 'URBANO'},
+ 'CHICO RESTREPO': {'comuna': 'ORIENTE', 'zona': 'URBANO'},
+ 'CINCO DE OCTUBRE': {'comuna': 'EL OSO', 'zona': 'URBANO'},
+ 'CIUDAD BELMONTE': {'comuna': 'OLIMPICA', 'zona': 'URBANO'},
+ 'CIUDAD BOQUIA': {'comuna': 'DEL CAFE', 'zona': 'URBANO'},
+ 'CIUDAD JARDIN': {'comuna': 'UNIVERSIDAD', 'zona': 'URBANO'},
+ 'CIUDAD PALERMO': {'comuna': 'BOSTON', 'zona': 'URBANO'},
+ 'CIUDAD PEREIRA': {'comuna': 'BOSTON', 'zona': 'URBANO'},
+ 'CIUDADELA COMFAMILIAR BOQUIA': {'comuna': 'DEL CAFE', 'zona': 'URBANO'},
+ 'CIUDADELA COMFAMILIAR I': {'comuna': 'SAN JOAQUIN', 'zona': 'URBANO'},
+ 'CIUDADELA COMFAMILIAR II': {'comuna': 'SAN JOAQUIN', 'zona': 'URBANO'},
+ 'CIUDADELA CONFAMILIAR': {'comuna': 'CUBA', 'zona': 'URBANO'},
+ 'CIUDADELA DEL CAFE SECT A': {'comuna': 'DEL CAFE', 'zona': 'URBANO'},
+ 'CIUDADELA DEL CAFE SECT B.C': {'comuna': 'DEL CAFE', 'zona': 'URBANO'},
+ 'CIUDADELA DEL CAFE SECT D': {'comuna': 'DEL CAFE', 'zona': 'URBANO'},
+ 'CIUDADELA DEL CAFE SECT E': {'comuna': 'DEL CAFE', 'zona': 'URBANO'},
+ 'CIUDADELA SALAMANCA': {'comuna': 'SAN JOAQUIN', 'zona': 'URBANO'},
+ 'CIUDADELA TOKIO': {'comuna': 'VILLA SANTANA', 'zona': 'URBANO'},
+ 'CIUDADELA TOKIO 2': {'comuna': 'VILLA SANTANA', 'zona': 'URBANO'},
+ 'CIUDADELA VILLA DE LEYVA': {'comuna': 'EL OSO', 'zona': 'URBANO'},
+ 'CODELMAR I': {'comuna': 'SAN JOAQUIN', 'zona': 'URBANO'},
+ 'CODELMAR II': {'comuna': 'SAN JOAQUIN', 'zona': 'URBANO'},
+ 'CODELMAR III': {'comuna': 'SAN JOAQUIN', 'zona': 'URBANO'},
+ 'CODELMAR IV': {'comuna': 'SAN JOAQUIN', 'zona': 'URBANO'},
+ 'COLINAS DEL TRIUNFO': {'comuna': 'RIO OTUN', 'zona': 'URBANO'},
+ 'COLONIAS': {'comuna': 'CERRITOS', 'zona': 'RURAL'},
+ 'COLORES DE LA VILLA': {'comuna': 'OLIMPICA', 'zona': 'URBANO'},
+ 'COMBIA ALTA': {'comuna': 'COMBIA ALTA', 'zona': 'RURAL'},
+ 'COMBIA BAJA': {'comuna': 'COMBIA BAJA', 'zona': 'RURAL'},
+ 'COMFAMILIAR BOQUIA': {'comuna': 'DEL CAFE', 'zona': 'URBANO'},
+ 'COMFAMILIAR I ETAPA': {'comuna': 'SAN JOAQUIN', 'zona': 'URBANO'},
+ 'COMFAMILIAR II ETAPA': {'comuna': 'SAN JOAQUIN', 'zona': 'URBANO'},
+ 'COMFAMILIAR VILLASANTANA': {'comuna': 'VILLA SANTANA', 'zona': 'URBANO'},
+ 'CONDINA - GUACARY': {'comuna': 'TRIBUNAS CORCEGA', 'zona': 'RURAL'},
+ 'CONFAMILIAR': {'comuna': 'DEL CAFE', 'zona': 'URBANO'},
+ 'CONJUNTO RESIDENCIAL TISU': {'comuna': 'EL JARDIN', 'zona': 'URBANO'},
+ 'CONQUISTADORES': {'comuna': 'CUBA', 'zona': 'URBANO'},
+ 'CONSOTA-LUSTRABOTAS': {'comuna': 'CONSOTA', 'zona': 'URBANO'},
+ 'CONSTRUCTORES': {'comuna': 'RIO OTUN', 'zona': 'URBANO'},
+ 'COODELMAR IV': {'comuna': 'SAN JOAQUIN', 'zona': 'URBANO'},
+ 'CORAL PLAZA': {'comuna': 'OLIMPICA', 'zona': 'URBANO'},
+ 'CORALES': {'comuna': 'OLIMPICA', 'zona': 'URBANO'},
+ 'CORALIA': {'comuna': 'ALTAGRACIA', 'zona': 'RURAL'},
+ 'CORALINA': {'comuna': 'SAN JOAQUIN', 'zona': 'URBANO'},
+ 'COROCITO': {'comuna': 'VILLAVICENCIO', 'zona': 'URBANO'},
+ 'CORTES': {'comuna': 'CUBA', 'zona': 'URBANO'},
+ 'CRUCERO DE COMBIA': {'comuna': 'COMBIA BAJA', 'zona': 'RURAL'},
+ 'CUBA': {'comuna': 'CUBA', 'zona': 'URBANO'},
+ 'DEPARTAMENTO': {'comuna': 'PERLA DEL OTUN', 'zona': 'URBANO'},
+ 'DORADO I': {'comuna': 'CONSOTA', 'zona': 'URBANO'},
+ 'DORADO II': {'comuna': 'CONSOTA', 'zona': 'URBANO'},
+ 'EL ACUARIO': {'comuna': 'EL OSO', 'zona': 'URBANO'},
+ 'EL AGUACATE  LA ESTRELLA': {'comuna': 'LA ESTRELLA - LA PALMILLA', 'zona': 'RURAL'},
+ 'EL AGUACATE LA BELLA': {'comuna': 'LA BELLA', 'zona': 'RURAL'},
+ 'EL BOSQUE LA FLORIDA': {'comuna': 'LA FLORIDA', 'zona': 'RURAL'},
+ 'EL BOSQUE PERLA DEL OTUN': {'comuna': 'PERLA DEL OTUN', 'zona': 'URBANO'},
+ 'EL BOSQUE UTP': {'comuna': 'UNIVERSIDAD', 'zona': 'URBANO'},
+ 'EL BRILLANTE': {'comuna': 'MORELIA', 'zona': 'RURAL'},
+ 'EL CAMPIN': {'comuna': 'OLIMPICA', 'zona': 'URBANO'},
+ 'EL CAMPIN 1 2 3': {'comuna': 'OLIMPICA', 'zona': 'URBANO'},
+ 'EL CARDAL': {'comuna': 'SAN JOAQUIN', 'zona': 'URBANO'},
+ 'EL CHAQUIRO': {'comuna': 'COMBIA BAJA', 'zona': 'RURAL'},
+ 'EL CHOCHO': {'comuna': 'LA BELLA', 'zona': 'RURAL'},
+ 'EL COFRE': {'comuna': 'PUERTO CALDAS', 'zona': 'RURAL'},
+ 'EL CONGOLO': {'comuna': 'MORELIA', 'zona': 'RURAL'},
+ 'EL CONTENTO': {'comuna': 'LA ESTRELLA - LA PALMILLA', 'zona': 'RURAL'},
+ 'EL CRUCERO': {'comuna': 'SAN JOAQUIN', 'zona': 'URBANO'},
+ 'EL DANUBIO': {'comuna': 'VILLA SANTANA', 'zona': 'URBANO'},
+ 'EL DEPARTAMENTO': {'comuna': 'PERLA DEL OTUN', 'zona': 'URBANO'},
+ 'EL DORADO': {'comuna': 'CONSOTA', 'zona': 'URBANO'},
+ 'EL EDEN COMBIA': {'comuna': 'COMBIA BAJA', 'zona': 'RURAL'},
+ 'EL EDEN SAN JOAQUIN': {'comuna': 'SAN JOAQUIN', 'zona': 'URBANO'},
+ 'EL ESTANQUILLO': {'comuna': 'ALTAGRACIA', 'zona': 'RURAL'},
+ 'EL FUTURO': {'comuna': 'CONSOTA', 'zona': 'URBANO'},
+ 'EL GUAYABO COMBIA BAJA': {'comuna': 'COMBIA BAJA', 'zona': 'RURAL'},
+ 'EL GUAYABO TRUBUNAS CORCEGA': {'comuna': 'TRIBUNAS CORCEGA', 'zona': 'RURAL'},
+ 'EL GURRIO': {'comuna': 'LA ESTRELLA - LA PALMILLA', 'zona': 'RURAL'},
+ 'EL HOGAR': {'comuna': 'ARABIA', 'zona': 'RURAL'},
+ 'EL INTERMEDIO': {'comuna': 'VILLA SANTANA', 'zona': 'URBANO'},
+ 'EL JARDÍN': {'comuna': 'LA ESTRELLA - LA PALMILLA', 'zona': 'RURAL'},
+ 'EL JAZMIN': {'comuna': 'ALTAGRACIA', 'zona': 'RURAL'},
+ 'EL JORDAN': {'comuna': 'TRIBUNAS CORCEGA', 'zona': 'RURAL'},
+ 'EL KIOSKO': {'comuna': 'ALTAGRACIA', 'zona': 'RURAL'},
+ 'EL LAGO': {'comuna': 'CENTRO', 'zona': 'URBANO'},
+ 'EL LIBERTADOR': {'comuna': 'EL OSO', 'zona': 'URBANO'},
+ 'EL LIBERTADOR II': {'comuna': 'EL OSO', 'zona': 'URBANO'},
+ 'EL MANGO': {'comuna': 'COMBIA ALTA', 'zona': 'RURAL'},
+ 'EL MANZANO': {'comuna': 'TRIBUNAS CORCEGA', 'zona': 'RURAL'},
+ 'EL MILAGRO': {'comuna': 'CUBA', 'zona': 'URBANO'},
+ 'EL NOGAL CLUB RESIDENCIAL': {'comuna': 'SAN JOAQUIN', 'zona': 'URBANO'},
+ 'EL OSO': {'comuna': 'EL OSO', 'zona': 'URBANO'},
+ 'EL OTONO': {'comuna': 'VILLA SANTANA', 'zona': 'URBANO'},
+ 'EL OTOÑO': {'comuna': 'VILLA SANTANA', 'zona': 'URBANO'},
+ 'EL PALMAR': {'comuna': 'OLIMPICA', 'zona': 'URBANO'},
+ 'EL PALMAR DE VILLA VERDE': {'comuna': 'CONSOTA', 'zona': 'URBANO'},
+ 'EL PARAISO': {'comuna': 'PERLA DEL OTUN', 'zona': 'URBANO'},
+ 'EL PARAISO CONSOTA': {'comuna': 'CONSOTA', 'zona': 'URBANO'},
+ 'EL PIZAMO': {'comuna': 'OLIMPICA', 'zona': 'URBANO'},
+ 'EL PIZAMO ORIENTE': {'comuna': 'ORIENTE', 'zona': 'URBANO'},
+ 'EL PLACER': {'comuna': 'COMBIA BAJA', 'zona': 'RURAL'},
+ 'EL PLUMON': {'comuna': 'FERROCARRIL', 'zona': 'URBANO'},
+ 'EL PLUMON ALTO': {'comuna': 'FERROCARRIL', 'zona': 'URBANO'},
+ 'EL PLUMON BAJO': {'comuna': 'FERROCARRIL', 'zona': 'URBANO'},
+ 'EL POBLADO': {'comuna': 'EL POBLADO', 'zona': 'URBANO'},
+ 'EL POMO': {'comuna': 'COMBIA BAJA', 'zona': 'RURAL'},
+ 'EL PORVENIR': {'comuna': 'CENTRO', 'zona': 'URBANO'},
+ 'EL PORVENIR-LA FLORIDA': {'comuna': 'LA FLORIDA', 'zona': 'RURAL'},
+ 'EL PORVENIR-PUERTO CALDAS': {'comuna': 'PUERTO CALDAS', 'zona': 'RURAL'},
+ 'EL PRADO': {'comuna': 'RIO OTUN', 'zona': 'URBANO'},
+ 'EL PROGRESO': {'comuna': 'RIO OTUN', 'zona': 'URBANO'},
+ 'EL RECREO': {'comuna': 'SAN JOAQUIN', 'zona': 'URBANO'},
+ 'EL REMANSO': {'comuna': 'VILLA SANTANA', 'zona': 'URBANO'},
+ 'EL REMANSO SECTOR COMFAMILIAR': {'comuna': 'VILLA SANTANA', 'zona': 'URBANO'},
+ 'EL REMANSO SECTOR UNO': {'comuna': 'VILLA SANTANA', 'zona': 'URBANO'},
+ 'EL RETIRO': {'comuna': 'MORELIA', 'zona': 'RURAL'},
+ 'EL RINCON': {'comuna': 'LA BELLA', 'zona': 'RURAL'},
+ 'EL ROCIO': {'comuna': 'EL ROCIO', 'zona': 'URBANO'},
+ 'EL ROSAL': {'comuna': 'CONSOTA', 'zona': 'URBANO'},
+ 'EL TERMINAL-BOSTON': {'comuna': 'BOSTON', 'zona': 'URBANO'},
+ 'EL TERMINAL-UNIVERSIAD': {'comuna': 'UNIVERSIDAD', 'zona': 'URBANO'},
+ 'EL TRIUNFO': {'comuna': 'RIO OTUN', 'zona': 'URBANO'},
+ 'EL VERGEL': {'comuna': 'BOSTON', 'zona': 'URBANO'},
+ 'ENRIQUE MILLAN RUBIO': {'comuna': 'RIO OTUN', 'zona': 'URBANO'},
+ 'ESPERANZA GALICIA': {'comuna': 'CERRITOS', 'zona': 'RURAL'},
+ 'ESTACIÓN VILLEGAS': {'comuna': 'CERRITOS', 'zona': 'RURAL'},
+ 'ESTRELLA MORRÓN': {'comuna': 'LA BELLA', 'zona': 'RURAL'},
+ 'ESTRELLA PALMILLA': {'comuna': 'LA ESTRELLA - LA PALMILLA', 'zona': 'RURAL'},
+ 'EVEN-EZER': {'comuna': 'EL OSO', 'zona': 'URBANO'},
+ 'FAVI UTP': {'comuna': 'UNIVERSIDAD', 'zona': 'URBANO'},
+ 'FEGOVE': {'comuna': 'OLIMPICA', 'zona': 'URBANO'},
+ 'FILIPINAS': {'comuna': 'ALTAGRACIA', 'zona': 'RURAL'},
+ 'FILOBONITO': {'comuna': 'ALTAGRACIA', 'zona': 'RURAL'},
+ 'FRASCATE': {'comuna': 'MORELIA', 'zona': 'RURAL'},
+ 'GABRIEL TRUJILLO': {'comuna': 'FERROCARRIL', 'zona': 'URBANO'},
+ 'GAITAN': {'comuna': 'RIO OTUN', 'zona': 'URBANO'},
+ 'GALERIA CENTRAL': {'comuna': 'CENTRO', 'zona': 'URBANO'},
+ 'GALICIA ALTA': {'comuna': 'CERRITOS', 'zona': 'RURAL'},
+ 'GALICIA BAJA': {'comuna': 'CERRITOS', 'zona': 'RURAL'},
+ 'GAMMA': {'comuna': 'OLIMPICA', 'zona': 'URBANO'},
+ 'GAMMA II': {'comuna': 'OLIMPICA', 'zona': 'URBANO'},
+ 'GAMMA III': {'comuna': 'OLIMPICA', 'zona': 'URBANO'},
+ 'GAMMA IV': {'comuna': 'OLIMPICA', 'zona': 'URBANO'},
+ 'GAMMA V': {'comuna': 'OLIMPICA', 'zona': 'URBANO'},
+ 'GAVIRIA TRUJILLO': {'comuna': 'PERLA DEL OTUN', 'zona': 'URBANO'},
+ 'GETSEMANI': {'comuna': 'RIO OTUN', 'zona': 'URBANO'},
+ 'GIBRALTAR': {'comuna': 'SAN JOAQUIN', 'zona': 'URBANO'},
+ 'GILBERTO PELÁEZ': {'comuna': 'FERROCARRIL', 'zona': 'URBANO'},
+ 'GIRASOLES': {'comuna': 'SAN JOAQUIN', 'zona': 'URBANO'},
+ 'GUADALCANAL OLIMPICA': {'comuna': 'OLIMPICA', 'zona': 'URBANO'},
+ 'GUADALCANAL OSO': {'comuna': 'EL OSO', 'zona': 'URBANO'},
+ 'GUADALUPE': {'comuna': 'EL OSO', 'zona': 'URBANO'},
+ 'GUADUALES DE CANAAN': {'comuna': 'BOSTON', 'zona': 'URBANO'},
+ 'GUADUALITO-ALTAGRACIA': {'comuna': 'ALTAGRACIA', 'zona': 'RURAL'},
+ 'GUADUALITO-COMBIA ALTA': {'comuna': 'COMBIA ALTA', 'zona': 'RURAL'},
+ 'GUALANDAY': {'comuna': 'RIO OTUN', 'zona': 'URBANO'},
+ 'GUAYABAL': {'comuna': 'TRIBUNAS CORCEGA', 'zona': 'RURAL'},
+ 'GUAYACANES': {'comuna': 'SAN JOAQUIN', 'zona': 'URBANO'},
+ 'HACIENDA CUBA': {'comuna': 'EL OSO', 'zona': 'URBANO'},
+ 'HAMBURGO': {'comuna': 'EL POBLADO', 'zona': 'URBANO'},
+ 'HERIBERTO HERRERA': {'comuna': 'TRIBUNAS CORCEGA', 'zona': 'RURAL'},
+ 'HERNANDO VELEZ MARULANDA': {'comuna': 'ORIENTE', 'zona': 'URBANO'},
+ 'HEROES  PARTE  ALTA': {'comuna': 'PERLA DEL OTUN', 'zona': 'URBANO'},
+ 'HEROES  PARTE BAJA': {'comuna': 'PERLA DEL OTUN', 'zona': 'URBANO'},
+ 'HEROES I': {'comuna': 'PERLA DEL OTUN', 'zona': 'URBANO'},
+ 'HEROES II': {'comuna': 'PERLA DEL OTUN', 'zona': 'URBANO'},
+ 'HORIZONTES': {'comuna': 'DEL CAFE', 'zona': 'URBANO'},
+ 'HUERTAS': {'comuna': 'TRIBUNAS CORCEGA', 'zona': 'RURAL'},
+ 'INDEPENDIENTE': {'comuna': 'PERLA DEL OTUN', 'zona': 'URBANO'},
+ 'JAIME PARDO LEAL': {'comuna': 'EL OSO', 'zona': 'URBANO'},
+ 'JAIME SALAZAR ROBLEDO': {'comuna': 'RIO OTUN', 'zona': 'URBANO'},
+ 'JARDIN DE VELEZ Y VELEZ': {'comuna': 'EL JARDIN', 'zona': 'URBANO'},
+ 'JARDIN I': {'comuna': 'EL JARDIN', 'zona': 'URBANO'},
+ 'JARDIN II': {'comuna': 'EL JARDIN', 'zona': 'URBANO'},
+ 'JARDIN III': {'comuna': 'EL JARDIN', 'zona': 'URBANO'},
+ 'JARDINES DE LA VILLA': {'comuna': 'OLIMPICA', 'zona': 'URBANO'},
+ 'JARDINES DE TANAMBI': {'comuna': 'EL JARDIN', 'zona': 'URBANO'},
+ 'JESUS DE LA BUENA ESPERANZA': {'comuna': 'RIO OTUN', 'zona': 'URBANO'},
+ 'JESUS SALAZAR LONDOÑO': {'comuna': 'RIO OTUN', 'zona': 'URBANO'},
+ 'JHON F. KENNDY': {'comuna': 'ORIENTE', 'zona': 'URBANO'},
+ 'JORGE ELIECER GAITAN': {'comuna': 'RIO OTUN', 'zona': 'URBANO'},
+ 'JOSE ANTONIO GALAN': {'comuna': 'RIO OTUN', 'zona': 'URBANO'},
+ 'JOSE DOMINGO ESCOBAR': {'comuna': 'PERLA DEL OTUN', 'zona': 'URBANO'},
+ 'JOSE HILARIO LOPEZ': {'comuna': 'FERROCARRIL', 'zona': 'URBANO'},
+ 'JOSE HILARIO LOPEZ I': {'comuna': 'FERROCARRIL', 'zona': 'URBANO'},
+ 'JOSE HILARIO LOPEZ II': {'comuna': 'FERROCARRIL', 'zona': 'URBANO'},
+ 'JOSE MARIA CORDOBA': {'comuna': 'SAN JOAQUIN', 'zona': 'URBANO'},
+ 'JOSE MARTI': {'comuna': 'RIO OTUN', 'zona': 'URBANO'},
+ 'KENNEDY': {'comuna': 'ORIENTE', 'zona': 'URBANO'},
+ 'LA ACUARELA': {'comuna': 'EL OSO', 'zona': 'URBANO'},
+ 'LA ALAMEDA': {'comuna': 'EL OSO', 'zona': 'URBANO'},
+ 'LA ALBANIA': {'comuna': 'PERLA DEL OTUN', 'zona': 'URBANO'},
+ 'LA ARBOLEDA': {'comuna': 'BOSTON', 'zona': 'URBANO'},
+ 'LA ARENOSA': {'comuna': 'SAN NICOLAS', 'zona': 'URBANO'},
+ 'LA AURORA': {'comuna': 'UNIVERSIDAD', 'zona': 'URBANO'},
+ 'LA BAMBA': {'comuna': 'MORELIA', 'zona': 'RURAL'},
+ 'LA BANANERA': {'comuna': 'LA FLORIDA', 'zona': 'RURAL'},
+ 'LA BELLA': {'comuna': 'LA BELLA', 'zona': 'RURAL'},
+ 'LA BODEGA': {'comuna': 'COMBIA BAJA', 'zona': 'RURAL'},
+ 'LA BRETAÑA': {'comuna': 'EL OSO', 'zona': 'URBANO'},
+ 'LA CABAÑITA': {'comuna': 'ALTAGRACIA', 'zona': 'RURAL'},
+ 'LA CAMPIÑA': {'comuna': 'PERLA DEL OTUN', 'zona': 'URBANO'},
+ 'LA CARBONERA': {'comuna': 'CAIMALITO', 'zona': 'RURAL'},
+ 'LA CARMELITA': {'comuna': 'COMBIA BAJA', 'zona': 'RURAL'},
+ 'LA CASTELLANA': {'comuna': 'EL JARDIN', 'zona': 'URBANO'},
+ 'LA CHURRIA-TRAVESURAS': {'comuna': 'BOSTON', 'zona': 'URBANO'},
+ 'LA COLONIA': {'comuna': 'LA BELLA', 'zona': 'RURAL'},
+ 'LA CONVENCION': {'comuna': 'COMBIA ALTA', 'zona': 'RURAL'},
+ 'LA DIVISA': {'comuna': 'CONSOTA', 'zona': 'URBANO'},
+ 'LA DULCERA': {'comuna': 'SAN NICOLAS', 'zona': 'URBANO'},
+ 'LA ELVIRA EL JARDIN': {'comuna': 'EL JARDIN', 'zona': 'URBANO'},
+ 'LA ELVIRA TRIBUNAS CORCEGA': {'comuna': 'TRIBUNAS CORCEGA', 'zona': 'RURAL'},
+ 'LA ENSEÑANZA': {'comuna': 'UNIVERSIDAD', 'zona': 'URBANO'},
+ 'LA ESPERANZA RIO OTUN': {'comuna': 'RIO OTUN', 'zona': 'URBANO'},
+ 'LA ESPERANZA-COMBIA ALTA': {'comuna': 'COMBIA ALTA', 'zona': 'RURAL'},
+ 'LA ESPERANZA-LA ESPERANZA': {'comuna': 'ARABIA', 'zona': 'RURAL'},
+ 'LA FLORESTA': {'comuna': 'EL OSO', 'zona': 'URBANO'},
+ 'LA FLORIDA': {'comuna': 'LA FLORIDA', 'zona': 'RURAL'},
+ 'LA FLORIDA BOSTON': {'comuna': 'BOSTON', 'zona': 'URBANO'},
+ 'LA FRANCIA': {'comuna': 'PERLA DEL OTUN', 'zona': 'URBANO'},
+ 'LA GLORIETA': {'comuna': 'OLIMPICA', 'zona': 'URBANO'},
+ 'LA GRAMINEA': {'comuna': 'TRIBUNAS CORCEGA', 'zona': 'RURAL'},
+ 'LA HABANA': {'comuna': 'EL OSO', 'zona': 'URBANO'},
+ 'LA HABANA I': {'comuna': 'EL OSO', 'zona': 'URBANO'},
+ 'LA HABANA II': {'comuna': 'EL OSO', 'zona': 'URBANO'},
+ 'LA HACIENDA FERROCARRIL': {'comuna': 'FERROCARRIL', 'zona': 'URBANO'},
+ 'LA HONDA': {'comuna': 'COMBIA BAJA', 'zona': 'RURAL'},
+ 'LA IDALIA': {'comuna': 'CONSOTA', 'zona': 'URBANO'},
+ 'LA IDALIA I': {'comuna': 'CONSOTA', 'zona': 'URBANO'},
+ 'LA IDALIA II': {'comuna': 'CONSOTA', 'zona': 'URBANO'},
+ 'LA INDEPENDENCIA': {'comuna': 'CUBA', 'zona': 'URBANO'},
+ 'LA ISLA': {'comuna': 'SAN JOAQUIN', 'zona': 'URBANO'},
+ 'LA ISLA VILLA SANTANA': {'comuna': 'VILLA SANTANA', 'zona': 'URBANO'},
+ 'LA ITALIA': {'comuna': 'OLIMPICA', 'zona': 'URBANO'},
+ 'LA JULIA': {'comuna': 'UNIVERSIDAD', 'zona': 'URBANO'},
+ 'LA JULITA': {'comuna': 'UNIVERSIDAD', 'zona': 'URBANO'},
+ 'LA LAGUNA BOSTON': {'comuna': 'BOSTON', 'zona': 'URBANO'},
+ 'LA LAGUNA FLORIDA': {'comuna': 'LA FLORIDA', 'zona': 'RURAL'},
+ 'LA LIBERTAD': {'comuna': 'FERROCARRIL', 'zona': 'URBANO'},
+ 'LA LINDA ALTAGRACIA': {'comuna': 'ALTAGRACIA', 'zona': 'RURAL'},
+ 'LA LINDA ARABIA': {'comuna': 'ARABIA', 'zona': 'RURAL'},
+ 'LA LORENA I': {'comuna': 'BOSTON', 'zona': 'URBANO'},
+ 'LA LORENA II': {'comuna': 'BOSTON', 'zona': 'URBANO'},
+ 'LA LORENA III': {'comuna': 'BOSTON', 'zona': 'URBANO'},
+ 'LA LORENA IV': {'comuna': 'BOSTON', 'zona': 'URBANO'},
+ 'LA MECENIA': {'comuna': 'LA ESTRELLA - LA PALMILLA', 'zona': 'RURAL'},
+ 'LA NUEVA VILLA': {'comuna': 'EL OSO', 'zona': 'URBANO'},
+ 'LA PALMERA': {'comuna': 'RIO OTUN', 'zona': 'URBANO'},
+ 'LA PALMILLA': {'comuna': 'LA ESTRELLA - LA PALMILLA', 'zona': 'RURAL'},
+ 'LA PARCELA': {'comuna': 'UNIVERSIDAD', 'zona': 'URBANO'},
+ 'LA PAZ  CAIMALITO': {'comuna': 'CAIMALITO', 'zona': 'RURAL'},
+ 'LA PAZ CENTRO': {'comuna': 'CENTRO', 'zona': 'URBANO'},
+ 'LA PLATANERA': {'comuna': 'BOSTON', 'zona': 'URBANO'},
+ 'LA PLAYA LIBARE': {'comuna': 'ORIENTE', 'zona': 'URBANO'},
+ 'LA PLAYA SAN FERNANDO': {'comuna': 'CUBA', 'zona': 'URBANO'},
+ 'LA PLAYITA': {'comuna': 'CUBA', 'zona': 'URBANO'},
+ 'LA POLICIA': {'comuna': 'PERLA DEL OTUN', 'zona': 'URBANO'},
+ 'LA PUPI': {'comuna': 'ORIENTE', 'zona': 'URBANO'},
+ 'LA RATONERA': {'comuna': 'COMBIA ALTA', 'zona': 'RURAL'},
+ 'LA RENTA': {'comuna': 'COMBIA BAJA', 'zona': 'RURAL'},
+ 'LA RENTA MORELIA': {'comuna': 'MORELIA', 'zona': 'RURAL'},
+ 'LA REVERSA': {'comuna': 'MORELIA', 'zona': 'RURAL'},
+ 'LA RIVERA': {'comuna': 'ORIENTE', 'zona': 'URBANO'},
+ 'LA SELVA': {'comuna': 'LA ESTRELLA - LA PALMILLA', 'zona': 'RURAL'},
+ 'LA SIERRA': {'comuna': 'UNIVERSIDAD', 'zona': 'URBANO'},
+ 'LA SIRENA': {'comuna': 'RIO OTUN', 'zona': 'URBANO'},
+ 'LA SIRIA': {'comuna': 'COMBIA BAJA', 'zona': 'RURAL'},
+ 'LA SUECIA': {'comuna': 'COMBIA BAJA', 'zona': 'RURAL'},
+ 'LA SUIZA': {'comuna': 'LA FLORIDA', 'zona': 'RURAL'},
+ 'LA UNA': {'comuna': 'ALTAGRACIA', 'zona': 'RURAL'},
+ 'LA UNIDAD': {'comuna': 'BOSTON', 'zona': 'URBANO'},
+ 'LA UNION CERRITOS': {'comuna': 'CERRITOS', 'zona': 'RURAL'},
+ 'LA UNIÓN': {'comuna': 'CUBA', 'zona': 'URBANO'},
+ 'LA VICTORIA': {'comuna': 'CENTRO', 'zona': 'URBANO'},
+ 'LA VILLA': {'comuna': 'OLIMPICA', 'zona': 'URBANO'},
+ 'LA YE': {'comuna': 'TRIBUNAS CORCEGA', 'zona': 'RURAL'},
+ 'LABRADOR': {'comuna': 'CERRITOS', 'zona': 'RURAL'},
+ 'LAGUNETA': {'comuna': 'TRIBUNAS CORCEGA', 'zona': 'RURAL'},
+ 'LAS ANTILLAS': {'comuna': 'SAN NICOLAS', 'zona': 'URBANO'},
+ 'LAS BRISAS': {'comuna': 'VILLA SANTANA', 'zona': 'URBANO'},
+ 'LAS BRISAS SECTOR A': {'comuna': 'VILLA SANTANA', 'zona': 'URBANO'},
+ 'LAS BRISAS SECTOR B': {'comuna': 'VILLA SANTANA', 'zona': 'URBANO'},
+ 'LAS BRISAS SECTOR C': {'comuna': 'VILLA SANTANA', 'zona': 'URBANO'},
+ 'LAS COLONIAS': {'comuna': 'CERRITOS', 'zona': 'RURAL'},
+ 'LAS DELICIAS': {'comuna': 'LA BELLA', 'zona': 'RURAL'},
+ 'LAS GARZAS': {'comuna': 'CENTRO', 'zona': 'URBANO'},
+ 'LAS GAVIOTAS': {'comuna': 'BOSTON', 'zona': 'URBANO'},
+ 'LAS MANGAS': {'comuna': 'EL JARDIN', 'zona': 'URBANO'},
+ 'LAS MARGARITAS': {'comuna': 'VILLA SANTANA', 'zona': 'URBANO'},
+ 'LAS MARGARITAS I': {'comuna': 'VILLA SANTANA', 'zona': 'URBANO'},
+ 'LAS MARGARITAS II': {'comuna': 'VILLA SANTANA', 'zona': 'URBANO'},
+ 'LAS MERCEDES': {'comuna': 'CUBA', 'zona': 'URBANO'},
+ 'LAS PALMAS': {'comuna': 'RIO OTUN', 'zona': 'URBANO'},
+ 'LAS PIRAMIDES': {'comuna': 'CONSOTA', 'zona': 'URBANO'},
+ 'LAURELES I': {'comuna': 'SAN JOAQUIN', 'zona': 'URBANO'},
+ 'LAURELES II': {'comuna': 'SAN JOAQUIN', 'zona': 'URBANO'},
+ 'LENINGRADO II': {'comuna': 'SAN JOAQUIN', 'zona': 'URBANO'},
+ 'LENINGRADO III': {'comuna': 'SAN JOAQUIN', 'zona': 'URBANO'},
+ 'LEON SUAREZ': {'comuna': 'ALTAGRACIA', 'zona': 'RURAL'},
+ 'LETRAS': {'comuna': 'SAN JOAQUIN', 'zona': 'URBANO'},
+ 'LIBARE': {'comuna': 'LA FLORIDA', 'zona': 'RURAL'},
+ 'LIBERTADOR II': {'comuna': 'EL OSO', 'zona': 'URBANO'},
+ 'LIBERTADORES': {'comuna': 'EL OSO', 'zona': 'URBANO'},
+ 'LLANO GRANDE': {'comuna': 'COMBIA ALTA', 'zona': 'RURAL'},
+ 'LOS 2500': {'comuna': 'PERLA DEL OTUN', 'zona': 'URBANO'},
+ 'LOS ALAMOS': {'comuna': 'UNIVERSIDAD', 'zona': 'URBANO'},
+ 'LOS ALCAZARES': {'comuna': 'RIO OTUN', 'zona': 'URBANO'},
+ 'LOS ALMENDROS': {'comuna': 'CUBA', 'zona': 'URBANO'},
+ 'LOS ALMENDROS-BOSTON': {'comuna': 'BOSTON', 'zona': 'URBANO'},
+ 'LOS ALMENDROS-PERLA DEL OTUN': {'comuna': 'PERLA DEL OTUN', 'zona': 'URBANO'},
+ 'LOS ALMENDROS-PUERTO CALDAS': {'comuna': 'PUERTO CALDAS', 'zona': 'RURAL'},
+ 'LOS ALPES': {'comuna': 'UNIVERSIDAD', 'zona': 'URBANO'},
+ 'LOS ANDES-EL JARDIN': {'comuna': 'EL JARDIN', 'zona': 'URBANO'},
+ 'LOS ANDES-VILLAVICENCIO': {'comuna': 'VILLAVICENCIO', 'zona': 'URBANO'},
+ 'LOS ANGELES': {'comuna': 'UNIVERSIDAD', 'zona': 'URBANO'},
+ 'LOS ARRAYANES': {'comuna': 'EL JARDIN', 'zona': 'URBANO'},
+ 'LOS ARREVOLES': {'comuna': 'OLIMPICA', 'zona': 'URBANO'},
+ 'LOS CAMBULOS': {'comuna': 'RIO OTUN', 'zona': 'URBANO'},
+ 'LOS CEDROS': {'comuna': 'EL JARDIN', 'zona': 'URBANO'},
+ 'LOS CISNES': {'comuna': 'SAN JOAQUIN', 'zona': 'URBANO'},
+ 'LOS CONQUISTADORES': {'comuna': 'SAN JOAQUIN', 'zona': 'URBANO'},
+ 'LOS CRISTALES': {'comuna': 'EL OSO', 'zona': 'URBANO'},
+ 'LOS GERANIOS': {'comuna': 'SAN JOAQUIN', 'zona': 'URBANO'},
+ 'LOS GIRASOLES': {'comuna': 'SAN JOAQUIN', 'zona': 'URBANO'},
+ 'LOS HEROES': {'comuna': 'PERLA DEL OTUN', 'zona': 'URBANO'},
+ 'LOS MOLINOS': {'comuna': 'SAN NICOLAS', 'zona': 'URBANO'},
+ 'LOS NOGALES CENTRO': {'comuna': 'CENTRO', 'zona': 'URBANO'},
+ 'LOS NOGALES CONSOTA': {'comuna': 'CONSOTA', 'zona': 'URBANO'},
+ 'LOS NOGALES OLIMPICA': {'comuna': 'OLIMPICA', 'zona': 'URBANO'},
+ 'LOS PARAISOS': {'comuna': 'CONSOTA', 'zona': 'URBANO'},
+ 'LOS PARRAS': {'comuna': 'LA BELLA', 'zona': 'RURAL'},
+ 'LOS PERIODISTAS': {'comuna': 'CENTRO', 'zona': 'URBANO'},
+ 'LOS PINOS': {'comuna': 'EL OSO', 'zona': 'URBANO'},
+ 'LOS PLANES': {'comuna': 'MORELIA', 'zona': 'RURAL'},
+ 'LOS PRADOS': {'comuna': 'EL OSO', 'zona': 'URBANO'},
+ 'LOS PROFESIONALES': {'comuna': 'BOSTON', 'zona': 'URBANO'},
+ 'LOS QUIMBAYAS': {'comuna': 'EL JARDIN', 'zona': 'URBANO'},
+ 'LOS ROSALES': {'comuna': 'UNIVERSIDAD', 'zona': 'URBANO'},
+ 'LUIS ALBERTO DUQUE': {'comuna': 'DEL CAFE', 'zona': 'URBANO'},
+ 'MALAGA': {'comuna': 'DEL CAFE', 'zona': 'URBANO'},
+ 'MARACAIBO': {'comuna': 'COMBIA BAJA', 'zona': 'RURAL'},
+ 'MARAYA': {'comuna': 'EL JARDIN', 'zona': 'URBANO'},
+ 'MARIA AUXILIADORA': {'comuna': 'PUERTO CALDAS', 'zona': 'RURAL'},
+ 'MATADERO METROPOLITANO': {'comuna': 'DEL CAFE', 'zona': 'URBANO'},
+ 'MATECAÑA': {'comuna': 'FERROCARRIL', 'zona': 'URBANO'},
+ 'MAYORCA': {'comuna': 'EL JARDIN', 'zona': 'URBANO'},
+ 'MEJIA ROBLEDO': {'comuna': 'BOSTON', 'zona': 'URBANO'},
+ 'METROPOLITANO': {'comuna': 'PERLA DEL OTUN', 'zona': 'URBANO'},
+ 'MINA SOCORRO': {'comuna': 'COMBIA ALTA', 'zona': 'RURAL'},
+ 'MIRA FLORES': {'comuna': 'CONSOTA', 'zona': 'URBANO'},
+ 'MIRADOR DE BELLA SARDI': {'comuna': 'CONSOTA', 'zona': 'URBANO'},
+ 'MIRADOR DE LA CIEN': {'comuna': 'OLIMPICA', 'zona': 'URBANO'},
+ 'MIRADOR DE LLANO GRANDE': {'comuna': 'DEL CAFE', 'zona': 'URBANO'},
+ 'MIRADOR DE NARANJITO': {'comuna': 'CONSOTA', 'zona': 'URBANO'},
+ 'MIRADOR DE PANORAMA I': {'comuna': 'CONSOTA', 'zona': 'URBANO'},
+ 'MIRADOR DE PANORAMA II': {'comuna': 'CONSOTA', 'zona': 'URBANO'},
+ 'MIRADOR DE PANORAMA III': {'comuna': 'CONSOTA', 'zona': 'URBANO'},
+ 'MIRADOR DEL CAFÉ': {'comuna': 'DEL CAFE', 'zona': 'URBANO'},
+ 'MIRAFLORES': {'comuna': 'CONSOTA', 'zona': 'URBANO'},
+ 'MIRALINDO': {'comuna': 'ARABIA', 'zona': 'RURAL'},
+ 'MIRASOL': {'comuna': 'RIO OTUN', 'zona': 'URBANO'},
+ 'MONSERRATE': {'comuna': 'VILLA SANTANA', 'zona': 'URBANO'},
+ 'MONTELIBANO': {'comuna': 'EL OSO', 'zona': 'URBANO'},
+ 'MORELIA': {'comuna': 'MORELIA', 'zona': 'RURAL'},
+ 'MORRON': {'comuna': 'LA BELLA', 'zona': 'RURAL'},
+ 'MULTIFAMILIAR LA VILLA': {'comuna': 'OLIMPICA', 'zona': 'URBANO'},
+ 'MUNDO NUEVO': {'comuna': 'LA BELLA', 'zona': 'RURAL'},
+ 'NACEDEROS': {'comuna': 'FERROCARRIL', 'zona': 'URBANO'},
+ 'NARANJITO': {'comuna': 'CONSOTA', 'zona': 'URBANO'},
+ 'NARANJITO  TRIBUNAS': {'comuna': 'TRIBUNAS CORCEGA', 'zona': 'RURAL'},
+ 'NEYRA MARQUEZ': {'comuna': 'PERLA DEL OTUN', 'zona': 'URBANO'},
+ 'NIZA I': {'comuna': 'EL JARDIN', 'zona': 'URBANO'},
+ 'NIZA II': {'comuna': 'EL JARDIN', 'zona': 'URBANO'},
+ 'NORMANDIA': {'comuna': 'CONSOTA', 'zona': 'URBANO'},
+ 'NUEVA COLOMBIA': {'comuna': 'EL OSO', 'zona': 'URBANO'},
+ 'NUEVA ESPERANZA': {'comuna': 'FERROCARRIL', 'zona': 'URBANO'},
+ 'NUEVA VILLA': {'comuna': 'OLIMPICA', 'zona': 'URBANO'},
+ 'NUEVO HORIZONTE': {'comuna': 'DEL CAFE', 'zona': 'URBANO'},
+ 'NUEVO MEJICO': {'comuna': 'SAN NICOLAS', 'zona': 'URBANO'},
+ 'NUEVO PEÑOL': {'comuna': 'RIO OTUN', 'zona': 'URBANO'},
+ 'NUEVO PLAN': {'comuna': 'VILLA SANTANA', 'zona': 'URBANO'},
+ 'NUEVO SOL': {'comuna': 'MORELIA', 'zona': 'RURAL'},
+ 'OBELISCO DE LA VILLA': {'comuna': 'OLIMPICA', 'zona': 'URBANO'},
+ 'OLAYA HERRERA': {'comuna': 'BOSTON', 'zona': 'URBANO'},
+ 'OLIMPIA': {'comuna': 'EL OSO', 'zona': 'URBANO'},
+ 'OLIMPICO I': {'comuna': 'OLIMPICA', 'zona': 'URBANO'},
+ 'OLIMPICO II': {'comuna': 'OLIMPICA', 'zona': 'URBANO'},
+ 'OLIVAR DE LOS VIENTOS': {'comuna': 'OLIMPICA', 'zona': 'URBANO'},
+ 'OLIVAR DE LOS VIENTOS II': {'comuna': 'OLIMPICA', 'zona': 'URBANO'},
+ 'ORMAZA': {'comuna': 'ORIENTE', 'zona': 'URBANO'},
+ 'OTRO MUNICIPIO': {'comuna': 'OTRO', 'zona': 'OTRO'},
+ 'PADRE VALENCIA': {'comuna': 'CONSOTA', 'zona': 'URBANO'},
+ 'PALERMO': {'comuna': 'BOSTON', 'zona': 'URBANO'},
+ 'PANORAMA        1': {'comuna': 'CONSOTA', 'zona': 'URBANO'},
+ 'PANORAMA   2': {'comuna': 'CONSOTA', 'zona': 'URBANO'},
+ 'PARQUE DE BOQUIA': {'comuna': 'DEL CAFE', 'zona': 'URBANO'},
+ 'PARQUE INDUSTRIAL': {'comuna': 'DEL CAFE', 'zona': 'URBANO'},
+ 'PARQUE LA LIBERTAD': {'comuna': 'CENTRO', 'zona': 'URBANO'},
+ 'PASEO DE LA CASTELLANA': {'comuna': 'EL JARDIN', 'zona': 'URBANO'},
+ 'PASO NIVEL LA LOMA': {'comuna': 'CAIMALITO', 'zona': 'RURAL'},
+ 'PAZ DEL RIO': {'comuna': 'ORIENTE', 'zona': 'URBANO'},
+ 'PAZ VERDE': {'comuna': 'DEL CAFE', 'zona': 'URBANO'},
+ 'PEDREGALES': {'comuna': 'LA ESTRELLA - LA PALMILLA', 'zona': 'RURAL'},
+ 'PENJAMO': {'comuna': 'COMBIA ALTA', 'zona': 'RURAL'},
+ 'PEREIRA': {'comuna': 'BOSTON', 'zona': 'URBANO'},
+ 'PEREZ ALTO': {'comuna': 'ARABIA', 'zona': 'RURAL'},
+ 'PEREZ BAJO': {'comuna': 'ARABIA', 'zona': 'RURAL'},
+ 'PERLA DEL SUR': {'comuna': 'SAN JOAQUIN', 'zona': 'URBANO'},
+ 'PIMPOLLO': {'comuna': 'ORIENTE', 'zona': 'URBANO'},
+ 'PIMPOLLO - LIBARE': {'comuna': 'ORIENTE', 'zona': 'URBANO'},
+ 'PIMPOLLO - LIBARE 2': {'comuna': 'ORIENTE', 'zona': 'URBANO'},
+ 'PINAR DE BELMONTE': {'comuna': 'OLIMPICA', 'zona': 'URBANO'},
+ 'PINAR DE GAMMA': {'comuna': 'OLIMPICA', 'zona': 'URBANO'},
+ 'PINARES ALTO': {'comuna': 'UNIVERSIDAD', 'zona': 'URBANO'},
+ 'PINARES DE SAN MARTIN': {'comuna': 'UNIVERSIDAD', 'zona': 'URBANO'},
+ 'PIRAMIDES': {'comuna': 'CONSOTA', 'zona': 'URBANO'},
+ 'PITAL DE COMBIA': {'comuna': 'COMBIA ALTA', 'zona': 'RURAL'},
+ 'PLAN CAMILO': {'comuna': 'CONSOTA', 'zona': 'URBANO'},
+ 'PLAN CARVAJAL': {'comuna': 'SAN JOAQUIN', 'zona': 'URBANO'},
+ 'PLAN DE VIVIENDA LA UNIÓN': {'comuna': 'COMBIA ALTA', 'zona': 'RURAL'},
+ 'PLAN DE VIVIENDA YARUMAL': {'comuna': 'ARABIA', 'zona': 'RURAL'},
+ 'PLAN EL MANZANO': {'comuna': 'LA FLORIDA', 'zona': 'RURAL'},
+ 'POBLADO I': {'comuna': 'EL POBLADO', 'zona': 'URBANO'},
+ 'POBLADO II': {'comuna': 'EL POBLADO', 'zona': 'URBANO'},
+ 'POLICIA': {'comuna': 'SAN NICOLAS', 'zona': 'URBANO'},
+ 'POPULAR MODELO': {'comuna': 'UNIVERSIDAD', 'zona': 'URBANO'},
+ 'PORTAL DE BIRMANIA': {'comuna': 'SAN JOAQUIN', 'zona': 'URBANO'},
+ 'PORTAL DE CORALES': {'comuna': 'SAN JOAQUIN', 'zona': 'URBANO'},
+ 'PORTAL DE LA VILLA': {'comuna': 'FERROCARRIL', 'zona': 'URBANO'},
+ 'PORTAL DE LAS MERCEDES': {'comuna': 'CONSOTA', 'zona': 'URBANO'},
+ 'PORTAL DE LLANO GRANDE': {'comuna': 'DEL CAFE', 'zona': 'URBANO'},
+ 'PORTAL DE LOS CEDROS': {'comuna': 'EL JARDIN', 'zona': 'URBANO'},
+ 'PORTAL DE SAN JACINTO': {'comuna': 'EL POBLADO', 'zona': 'URBANO'},
+ 'PORTAL DE SAN JOAQUIN I': {'comuna': 'SAN JOAQUIN', 'zona': 'URBANO'},
+ 'PORTAL DE SAN JOAQUIN II': {'comuna': 'SAN JOAQUIN', 'zona': 'URBANO'},
+ 'PORTAL DE SAN LUIS': {'comuna': 'DEL CAFE', 'zona': 'URBANO'},
+ 'PORTALES DE BIRMANIA': {'comuna': 'SAN JOAQUIN', 'zona': 'URBANO'},
+ 'PORTO ALEGRE': {'comuna': 'SAN JOAQUIN', 'zona': 'URBANO'},
+ 'PORTO ALEGRE ETP 2': {'comuna': 'EL OSO', 'zona': 'URBANO'},
+ 'PORTO ALEGRE OSO': {'comuna': 'EL OSO', 'zona': 'URBANO'},
+ 'PORVENIR CONSOTA': {'comuna': 'CONSOTA', 'zona': 'URBANO'},
+ 'PORVENIR LA FLORIDA': {'comuna': 'LA FLORIDA', 'zona': 'RURAL'},
+ 'PRIMERO DE FEBRERO': {'comuna': 'CENTRO', 'zona': 'URBANO'},
+ 'PRIMERO DE MAYO RIO OTUN': {'comuna': 'RIO OTUN', 'zona': 'URBANO'},
+ 'PROGRESO': {'comuna': 'RIO OTUN', 'zona': 'URBANO'},
+ 'PROGRESO PUERTO CALDAS': {'comuna': 'PUERTO CALDAS', 'zona': 'RURAL'},
+ 'PROVIDENCIA': {'comuna': 'BOSTON', 'zona': 'URBANO'},
+ 'PU ESCONDIDO': {'comuna': 'COMBIA ALTA', 'zona': 'RURAL'},
+ 'PUEBLITO PAISA': {'comuna': 'CONSOTA', 'zona': 'URBANO'},
+ 'PUEBLO NUEVO': {'comuna': 'COMBIA BAJA', 'zona': 'RURAL'},
+ 'PUENTE BLANCO': {'comuna': 'PUERTO CALDAS', 'zona': 'RURAL'},
+ 'PUERTA DE ABACANTO': {'comuna': 'UNIVERSIDAD', 'zona': 'URBANO'},
+ 'PUERTA DE ALCALA': {'comuna': 'SAN JOAQUIN', 'zona': 'URBANO'},
+ 'PUERTO CALDAS': {'comuna': 'PUERTO CALDAS', 'zona': 'RURAL'},
+ 'QUIMBAYITA': {'comuna': 'CERRITOS', 'zona': 'RURAL'},
+ 'QUINTANAR DEL CERRO': {'comuna': 'UNIVERSIDAD', 'zona': 'URBANO'},
+ 'QUINTANAR DEL CERRO 1, 3': {'comuna': 'UNIVERSIDAD', 'zona': 'URBANO'},
+ 'QUINTAS DE CORAZAL': {'comuna': 'SAN JOAQUIN', 'zona': 'URBANO'},
+ 'QUINTAS DE LA ACUARELA I': {'comuna': 'EL OSO', 'zona': 'URBANO'},
+ 'QUINTAS DE LA ACUARELA II': {'comuna': 'EL OSO', 'zona': 'URBANO'},
+ 'QUINTAS DE LA COLINA': {'comuna': 'CUBA', 'zona': 'URBANO'},
+ 'QUINTAS DE LOS SAUCES': {'comuna': 'CONSOTA', 'zona': 'URBANO'},
+ 'QUINTAS DE PANORAMA 1': {'comuna': 'CONSOTA', 'zona': 'URBANO'},
+ 'QUINTAS DE PANORAMA 2': {'comuna': 'CONSOTA', 'zona': 'URBANO'},
+ 'RAFAEL URIBE I': {'comuna': 'SAN JOAQUIN', 'zona': 'URBANO'},
+ 'RAFAEL URIBE II': {'comuna': 'SAN JOAQUIN', 'zona': 'URBANO'},
+ 'RAFAEL URIBE III': {'comuna': 'SAN JOAQUIN', 'zona': 'URBANO'},
+ 'RAFAÉL URIBE URIBE I': {'comuna': 'CUBA', 'zona': 'URBANO'},
+ 'REMANSO': {'comuna': 'VILLA SANTANA', 'zona': 'URBANO'},
+ 'REMANSO SECTOR A': {'comuna': 'VILLA SANTANA', 'zona': 'URBANO'},
+ 'REMANSO SECTOR EL REMANSO': {'comuna': 'VILLA SANTANA', 'zona': 'URBANO'},
+ 'REMIGIO ANTONIO CAÑARTE': {'comuna': 'RIO OTUN', 'zona': 'URBANO'},
+ 'RESERVA DE LA VILLA': {'comuna': 'OLIMPICA', 'zona': 'URBANO'},
+ 'RESTREPO': {'comuna': 'CONSOTA', 'zona': 'URBANO'},
+ 'RICARDO RAMIREZ CARMONA': {'comuna': 'CENTRO', 'zona': 'URBANO'},
+ 'RINCON DE LA PALMA': {'comuna': 'OLIMPICA', 'zona': 'URBANO'},
+ 'RINCON DE LA VILLA': {'comuna': 'OLIMPICA', 'zona': 'URBANO'},
+ 'RINCON DE LAS QUINTAS': {'comuna': 'EL JARDIN', 'zona': 'URBANO'},
+ 'RINCON DE UNICENTRO': {'comuna': 'OLIMPICA', 'zona': 'URBANO'},
+ 'RINCON DEL BOSQUE': {'comuna': 'UNIVERSIDAD', 'zona': 'URBANO'},
+ 'RINCON DEL CAFE': {'comuna': 'DEL CAFE', 'zona': 'URBANO'},
+ 'RISARALDA': {'comuna': 'RIO OTUN', 'zona': 'URBANO'},
+ 'RIVERA CAMPESTRE': {'comuna': 'OLIMPICA', 'zona': 'URBANO'},
+ 'ROCIO ALTO': {'comuna': 'EL ROCIO', 'zona': 'URBANO'},
+ 'ROCIO BAJO': {'comuna': 'EL ROCIO', 'zona': 'URBANO'},
+ 'ROCIÓ BAJO': {'comuna': 'EL POBLADO', 'zona': 'URBANO'},
+ 'SALAMANCA': {'comuna': 'SAN JOAQUIN', 'zona': 'URBANO'},
+ 'SALAZAR LONDOÑO': {'comuna': 'RIO OTUN', 'zona': 'URBANO'},
+ 'SALAZAR ROBLEDO': {'comuna': 'RIO OTUN', 'zona': 'URBANO'},
+ 'SALVADOR ALLENDE': {'comuna': 'RIO OTUN', 'zona': 'URBANO'},
+ 'SAMANES DE BELMONTE': {'comuna': 'OLIMPICA', 'zona': 'URBANO'},
+ 'SAMARIA': {'comuna': 'EL POBLADO', 'zona': 'URBANO'},
+ 'SAMARIA I SECTOR A': {'comuna': 'EL POBLADO', 'zona': 'URBANO'},
+ 'SAMARIA I SECTOR B': {'comuna': 'EL POBLADO', 'zona': 'URBANO'},
+ 'SAMARIA II SECTOR A': {'comuna': 'EL POBLADO', 'zona': 'URBANO'},
+ 'SAMARIA II SECTOR B': {'comuna': 'EL POBLADO', 'zona': 'URBANO'},
+ 'SAMARIA II SECTOR C': {'comuna': 'EL POBLADO', 'zona': 'URBANO'},
+ 'SAN  LUIS': {'comuna': 'COMBIA ALTA', 'zona': 'RURAL'},
+ 'SAN ANTONIO': {'comuna': 'RIO OTUN', 'zona': 'URBANO'},
+ 'SAN CAMILO': {'comuna': 'RIO OTUN', 'zona': 'URBANO'},
+ 'SAN CARLOS': {'comuna': 'ARABIA', 'zona': 'RURAL'},
+ 'SAN CLEMENTE': {'comuna': 'SAN NICOLAS', 'zona': 'URBANO'},
+ 'SAN ESTEBAN': {'comuna': 'CENTRO', 'zona': 'URBANO'},
+ 'SAN FELIPE': {'comuna': 'EL OSO', 'zona': 'URBANO'},
+ 'SAN FELIPE OLIMPICA': {'comuna': 'OLIMPICA', 'zona': 'URBANO'},
+ 'SAN FERNANDO': {'comuna': 'CUBA', 'zona': 'URBANO'},
+ 'SAN FRANCISCO': {'comuna': 'ORIENTE', 'zona': 'URBANO'},
+ 'SAN GRABIEL': {'comuna': 'ARABIA', 'zona': 'RURAL'},
+ 'SAN GREGORIO': {'comuna': 'ORIENTE', 'zona': 'URBANO'},
+ 'SAN ISIDRO': {'comuna': 'PUERTO CALDAS', 'zona': 'RURAL'},
+ 'SAN JACINTO': {'comuna': 'EL POBLADO', 'zona': 'URBANO'},
+ 'SAN JOAQUIN': {'comuna': 'SAN JOAQUIN', 'zona': 'URBANO'},
+ 'SAN JORGE': {'comuna': 'RIO OTUN', 'zona': 'URBANO'},
+ 'SAN JOSE': {'comuna': 'UNIVERSIDAD', 'zona': 'URBANO'},
+ 'SAN JOSE SUR': {'comuna': 'UNIVERSIDAD', 'zona': 'URBANO'},
+ 'SAN JOSÉ': {'comuna': 'LA FLORIDA', 'zona': 'RURAL'},
+ 'SAN JUAN DE DIOS': {'comuna': 'RIO OTUN', 'zona': 'URBANO'},
+ 'SAN LUIS': {'comuna': 'COMBIA ALTA', 'zona': 'RURAL'},
+ 'SAN LUIS GONZAGA': {'comuna': 'BOSTON', 'zona': 'URBANO'},
+ 'SAN MARCOS': {'comuna': 'SAN JOAQUIN', 'zona': 'URBANO'},
+ 'SAN MARCOS BOSTON': {'comuna': 'BOSTON', 'zona': 'URBANO'},
+ 'SAN MARINO': {'comuna': 'COMBIA BAJA', 'zona': 'RURAL'},
+ 'SAN MARTIN': {'comuna': 'ARABIA', 'zona': 'RURAL'},
+ 'SAN MARTIN DE LOBA': {'comuna': 'SAN NICOLAS', 'zona': 'URBANO'},
+ 'SAN NICOLAS': {'comuna': 'SAN NICOLAS', 'zona': 'URBANO'},
+ 'SAN REMO': {'comuna': 'BOSTON', 'zona': 'URBANO'},
+ 'SAN SEBASTIAN': {'comuna': 'OLIMPICA', 'zona': 'URBANO'},
+ 'SAN VICENTE BOSTON': {'comuna': 'BOSTON', 'zona': 'URBANO'},
+ 'SAN VICENTE VILLA SANTANA': {'comuna': 'VILLA SANTANA', 'zona': 'URBANO'},
+ 'SAN VICENTE-COMBIA ALTA': {'comuna': 'COMBIA ALTA', 'zona': 'RURAL'},
+ 'SAN VICENTE-VILLASANTANA': {'comuna': 'VILLA SANTANA', 'zona': 'URBANO'},
+ 'SANTA CATALINA II': {'comuna': 'BOSTON', 'zona': 'URBANO'},
+ 'SANTA CLARA': {'comuna': 'BOSTON', 'zona': 'URBANO'},
+ 'SANTA CLARA DE LAS VILLAS': {'comuna': 'SAN JOAQUIN', 'zona': 'URBANO'},
+ 'SANTA CRUZ DE BARBA': {'comuna': 'ARABIA', 'zona': 'RURAL'},
+ 'SANTA CRUZ DE GAMMA': {'comuna': 'OLIMPICA', 'zona': 'URBANO'},
+ 'SANTA ELENA': {'comuna': 'RIO OTUN', 'zona': 'URBANO'},
+ 'SANTA FE': {'comuna': 'EL OSO', 'zona': 'URBANO'},
+ 'SANTA JUANA DE LAS VILLAS': {'comuna': 'OLIMPICA', 'zona': 'URBANO'},
+ 'SANTA LIBRADA': {'comuna': 'SAN JOAQUIN', 'zona': 'URBANO'},
+ 'SANTA MONICA': {'comuna': 'OLIMPICA', 'zona': 'URBANO'},
+ 'SANTA TERESA': {'comuna': 'MORELIA', 'zona': 'RURAL'},
+ 'SANTA TERESITA-OLIMPICA': {'comuna': 'OLIMPICA', 'zona': 'URBANO'},
+ 'SANTA TERESITA-RIO OTUN': {'comuna': 'RIO OTUN', 'zona': 'URBANO'},
+ 'SANTANDER CENTRO': {'comuna': 'CENTRO', 'zona': 'URBANO'},
+ 'SANTANDER COMBIA BAJA': {'comuna': 'COMBIA BAJA', 'zona': 'RURAL'},
+ 'SANTANDER EL OSO': {'comuna': 'EL OSO', 'zona': 'URBANO'},
+ 'SANTANDER ORIENTE': {'comuna': 'ORIENTE', 'zona': 'URBANO'},
+ 'SANTIAGO TRUJILLO': {'comuna': 'ALTAGRACIA', 'zona': 'RURAL'},
+ 'SAUCES I': {'comuna': 'EL OSO', 'zona': 'URBANO'},
+ 'SAUCES II': {'comuna': 'EL OSO', 'zona': 'URBANO'},
+ 'SAUCES III': {'comuna': 'EL OSO', 'zona': 'URBANO'},
+ 'SAUCES IV': {'comuna': 'EL OSO', 'zona': 'URBANO'},
+ 'SAUCES V': {'comuna': 'EL OSO', 'zona': 'URBANO'},
+ 'SECTOR 30 DE AGOSTO': {'comuna': 'CENTRO', 'zona': 'URBANO'},
+ 'SECTOR 30 DE AGOSTO EL JARDIN': {'comuna': 'EL JARDIN', 'zona': 'URBANO'},
+ 'SECTOR B': {'comuna': 'DEL CAFE', 'zona': 'URBANO'},
+ 'SECTOR GALERIA CENTRAL': {'comuna': 'CENTRO', 'zona': 'URBANO'},
+ 'SECTOR LA MINA DE LA VEREDA CANCELES': {'comuna': 'LA BELLA', 'zona': 'RURAL'},
+ 'SECTOR LAGO URIBE': {'comuna': 'CENTRO', 'zona': 'URBANO'},
+ 'SECTOR PARQUE LA LIBERTAD': {'comuna': 'CENTRO', 'zona': 'URBANO'},
+ 'SECTOR PLAZA DE BOLIVAR': {'comuna': 'CENTRO', 'zona': 'URBANO'},
+ 'SECTOR VILLA AMPARO': {'comuna': 'TRIBUNAS CORCEGA', 'zona': 'RURAL'},
+ 'SENDEROS DE UNICENTRO': {'comuna': 'OLIMPICA', 'zona': 'URBANO'},
+ 'SERREZUELA': {'comuna': 'OLIMPICA', 'zona': 'URBANO'},
+ 'SIMON BOLIVAR': {'comuna': 'ORIENTE', 'zona': 'URBANO'},
+ 'SIMON BOLIVAR FERROCARRIL': {'comuna': 'FERROCARRIL', 'zona': 'URBANO'},
+ 'SINAI': {'comuna': 'CONSOTA', 'zona': 'URBANO'},
+ 'SINAI  2': {'comuna': 'CONSOTA', 'zona': 'URBANO'},
+ 'SINAI I': {'comuna': 'PERLA DEL OTUN', 'zona': 'URBANO'},
+ 'SIRENA': {'comuna': 'RIO OTUN', 'zona': 'URBANO'},
+ 'SURESTE DE LA SIERRA': {'comuna': 'FERROCARRIL', 'zona': 'URBANO'},
+ 'TACARAGUA': {'comuna': 'UNIVERSIDAD', 'zona': 'URBANO'},
+ 'TERMINAL': {'comuna': 'BOSTON', 'zona': 'URBANO'},
+ 'TERRANOVA': {'comuna': 'EL OSO', 'zona': 'URBANO'},
+ 'TERRANOVA I Y II': {'comuna': 'EL OSO', 'zona': 'URBANO'},
+ 'TINAJAS': {'comuna': 'SAN JOAQUIN', 'zona': 'URBANO'},
+ 'TINAJAS ALTAGRACIA': {'comuna': 'ALTAGRACIA', 'zona': 'RURAL'},
+ 'TOKIO I ETAPA': {'comuna': 'VILLA SANTANA', 'zona': 'URBANO'},
+ 'TOKIO II ETAPA': {'comuna': 'VILLA SANTANA', 'zona': 'URBANO'},
+ 'TOKIO SECTOR 3': {'comuna': 'VILLA SANTANA', 'zona': 'URBANO'},
+ 'TOKIO SECTOR 4': {'comuna': 'VILLA SANTANA', 'zona': 'URBANO'},
+ 'TOLUCA': {'comuna': 'OLIMPICA', 'zona': 'URBANO'},
+ 'TORRES DE LA ACUARELA': {'comuna': 'OLIMPICA', 'zona': 'URBANO'},
+ 'TORRES DE SAN MATEO': {'comuna': 'FERROCARRIL', 'zona': 'URBANO'},
+ 'TRAVESURAS - LA CHURRIA': {'comuna': 'BOSTON', 'zona': 'URBANO'},
+ 'TRES ESQUINAS': {'comuna': 'ARABIA', 'zona': 'RURAL'},
+ 'TRES PUERTAS': {'comuna': 'MORELIA', 'zona': 'RURAL'},
+ 'TRIBUNAS CONSOTA': {'comuna': 'CONSOTA', 'zona': 'URBANO'},
+ 'TRIBUNAS CONSOTA -CORCEGA': {'comuna': 'TRIBUNAS CORCEGA', 'zona': 'RURAL'},
+ 'TULCAN I': {'comuna': 'BOSTON', 'zona': 'URBANO'},
+ 'TULCAN II': {'comuna': 'BOSTON', 'zona': 'URBANO'},
+ 'TULCAN III': {'comuna': 'BOSTON', 'zona': 'URBANO'},
+ 'TURIN': {'comuna': 'RIO OTUN', 'zona': 'URBANO'},
+ 'URBANIZACION CIUDAD BOQUIA': {'comuna': 'DEL CAFE', 'zona': 'URBANO'},
+ 'URBANIZACION SAN ANTONIO II': {'comuna': 'RIO OTUN', 'zona': 'URBANO'},
+ 'URBANIZACIÓN  BLOQUES DE LA ACUARELA – ASPORME': {'comuna': 'EL OSO', 'zona': 'URBANO'},
+ 'VASCONIA': {'comuna': 'BOSTON', 'zona': 'URBANO'},
+ 'VENDEDORES AMBULANTES-BOSTON': {'comuna': 'BOSTON', 'zona': 'URBANO'},
+ 'VENDEDORES AMBULANTES-CONSOTA': {'comuna': 'CONSOTA', 'zona': 'URBANO'},
+ 'VENECIA': {'comuna': 'CENTRO', 'zona': 'URBANO'},
+ 'VERACRUZ': {'comuna': 'VILLA SANTANA', 'zona': 'URBANO'},
+ 'VERACRUZ II': {'comuna': 'VILLA SANTANA', 'zona': 'URBANO'},
+ 'VEREDA ALTAMIRA': {'comuna': 'TRIBUNAS CORCEGA', 'zona': 'RURAL'},
+ 'VEREDA CANTAMONOS': {'comuna': 'TRIBUNAS CORCEGA', 'zona': 'RURAL'},
+ 'VEREDA CONDINA': {'comuna': 'TRIBUNAS CORCEGA', 'zona': 'RURAL'},
+ 'VEREDA EL JORDÁN': {'comuna': 'TRIBUNAS CORCEGA', 'zona': 'RURAL'},
+ 'VEREDA EL MANZANO': {'comuna': 'TRIBUNAS CORCEGA', 'zona': 'RURAL'},
+ 'VEREDA GUAYABAL': {'comuna': 'TRIBUNAS CORCEGA', 'zona': 'RURAL'},
+ 'VEREDA GUAYABO GUADALAJARA': {'comuna': 'TRIBUNAS CORCEGA', 'zona': 'RURAL'},
+ 'VEREDA HERIBERTO HERRERA': {'comuna': 'TRIBUNAS CORCEGA', 'zona': 'RURAL'},
+ 'VEREDA HUERTAS': {'comuna': 'TRIBUNAS CORCEGA', 'zona': 'RURAL'},
+ 'VEREDA LAGUNETA': {'comuna': 'TRIBUNAS CORCEGA', 'zona': 'RURAL'},
+ 'VEREDA LOS PARAISOS': {'comuna': 'TRIBUNAS CORCEGA', 'zona': 'RURAL'},
+ 'VEREDA MONTELARGO': {'comuna': 'TRIBUNAS CORCEGA', 'zona': 'RURAL'},
+ 'VEREDA PARAJES DE CONDINA': {'comuna': 'TRIBUNAS CORCEGA', 'zona': 'RURAL'},
+ 'VEREDA TRIBUNAS CORCEGA': {'comuna': 'TRIBUNAS CORCEGA', 'zona': 'RURAL'},
+ 'VEREDA YARUMIRO': {'comuna': 'TRIBUNAS CORCEGA', 'zona': 'RURAL'},
+ 'VERONA': {'comuna': 'BOSTON', 'zona': 'URBANO'},
+ 'VILLA ALICIA BOSTON': {'comuna': 'BOSTON', 'zona': 'URBANO'},
+ 'VILLA ALICIA EL OSO': {'comuna': 'EL OSO', 'zona': 'URBANO'},
+ 'VILLA ALICIA OLIMPICA': {'comuna': 'OLIMPICA', 'zona': 'URBANO'},
+ 'VILLA ANDREA': {'comuna': 'CONSOTA', 'zona': 'URBANO'},
+ 'VILLA ANDREA 2': {'comuna': 'CONSOTA', 'zona': 'URBANO'},
+ 'VILLA CECILIA': {'comuna': 'CONSOTA', 'zona': 'URBANO'},
+ 'VILLA COLOMBIA': {'comuna': 'BOSTON', 'zona': 'URBANO'},
+ 'VILLA COMUNALES SECTOR C': {'comuna': 'DEL CAFE', 'zona': 'URBANO'},
+ 'VILLA CONSOTA': {'comuna': 'CONSOTA', 'zona': 'URBANO'},
+ 'VILLA DE LA PAZ': {'comuna': 'CONSOTA', 'zona': 'URBANO'},
+ 'VILLA DE LEYVA': {'comuna': 'SAN NICOLAS', 'zona': 'URBANO'},
+ 'VILLA DEL BOSQUE DEL CAFÉ': {'comuna': 'DEL CAFE', 'zona': 'URBANO'},
+ 'VILLA DEL BOSQUE EL OSO': {'comuna': 'EL OSO', 'zona': 'URBANO'},
+ 'VILLA DEL CAFE': {'comuna': 'DEL CAFE', 'zona': 'URBANO'},
+ 'VILLA DEL PALMAR': {'comuna': 'DEL CAFE', 'zona': 'URBANO'},
+ 'VILLA DEL PALMAR POBLADO': {'comuna': 'EL POBLADO', 'zona': 'URBANO'},
+ 'VILLA DEL PRADO': {'comuna': 'EL POBLADO', 'zona': 'URBANO'},
+ 'VILLA DEL PRADO ALTO': {'comuna': 'EL POBLADO', 'zona': 'URBANO'},
+ 'VILLA DEL PRADO ETAPA IX-X': {'comuna': 'EL POBLADO', 'zona': 'URBANO'},
+ 'VILLA DEL SOL': {'comuna': 'BOSTON', 'zona': 'URBANO'},
+ 'VILLA DEL SUR': {'comuna': 'BOSTON', 'zona': 'URBANO'},
+ 'VILLA DEL SUR OSO': {'comuna': 'EL OSO', 'zona': 'URBANO'},
+ 'VILLA ELENA': {'comuna': 'CONSOTA', 'zona': 'URBANO'},
+ 'VILLA ELISA': {'comuna': 'EL OSO', 'zona': 'URBANO'},
+ 'VILLA ILUSION': {'comuna': 'OLIMPICA', 'zona': 'URBANO'},
+ 'VILLA KENEDY': {'comuna': 'PERLA DEL OTUN', 'zona': 'URBANO'},
+ 'VILLA KENNEDY': {'comuna': 'PERLA DEL OTUN', 'zona': 'URBANO'},
+ 'VILLA LIGIA': {'comuna': 'EL OSO', 'zona': 'URBANO'},
+ 'VILLA LIGIA ETAPAS I Y II': {'comuna': 'EL OSO', 'zona': 'URBANO'},
+ 'VILLA LIGIA III': {'comuna': 'EL OSO', 'zona': 'URBANO'},
+ 'VILLA LOS ALAMOS': {'comuna': 'UNIVERSIDAD', 'zona': 'URBANO'},
+ 'VILLA LOS COMUNALES': {'comuna': 'DEL CAFE', 'zona': 'URBANO'},
+ 'VILLA LUZ': {'comuna': 'TRIBUNAS CORCEGA', 'zona': 'RURAL'},
+ 'VILLA MARIA': {'comuna': 'PERLA DEL OTUN', 'zona': 'URBANO'},
+ 'VILLA MERY': {'comuna': 'SAN NICOLAS', 'zona': 'URBANO'},
+ 'VILLA NAVARRA': {'comuna': 'EL OSO', 'zona': 'URBANO'},
+ 'VILLA NOHEMY': {'comuna': 'SAN NICOLAS', 'zona': 'URBANO'},
+ 'VILLA OLIMPICA': {'comuna': 'OLIMPICA', 'zona': 'URBANO'},
+ 'VILLA ROCIO': {'comuna': 'PERLA DEL OTUN', 'zona': 'URBANO'},
+ 'VILLA VERDE': {'comuna': 'EL POBLADO', 'zona': 'URBANO'},
+ 'VILLAS DE LA MADRID': {'comuna': 'OLIMPICA', 'zona': 'URBANO'},
+ 'VILLAS DEL JARDIN I': {'comuna': 'EL JARDIN', 'zona': 'URBANO'},
+ 'VILLAS DEL JARDIN II': {'comuna': 'EL JARDIN', 'zona': 'URBANO'},
+ 'VILLAS DEL JARDIN III': {'comuna': 'EL JARDIN', 'zona': 'URBANO'},
+ 'VILLASOL PARQUE RESIDENCIAL': {'comuna': 'OLIMPICA', 'zona': 'URBANO'},
+ 'VILLAVICENCIO': {'comuna': 'VILLAVICENCIO', 'zona': 'URBANO'},
+ 'VISTA HERMOSA-EL OSO': {'comuna': 'EL OSO', 'zona': 'URBANO'},
+ 'VISTA HERMOSA-LA BELLA': {'comuna': 'LA BELLA', 'zona': 'RURAL'},
+ 'VOLCAN': {'comuna': 'LA BELLA', 'zona': 'RURAL'},
+ 'YARUMAL': {'comuna': 'ARABIA', 'zona': 'RURAL'},
+ 'YARUMITO': {'comuna': 'TRIBUNAS CORCEGA', 'zona': 'RURAL'},
+ 'ZEA': {'comuna': 'RIO OTUN', 'zona': 'URBANO'}}
+
+        def _opciones_catalogo_v16197(catalogo, actual):
+            """Conserva valores históricos fuera de catálogo para que puedan revisarse."""
+            actual = "" if actual is None else str(actual).strip()
+            opciones = [""] + list(catalogo)
+            if actual and actual not in opciones:
+                opciones.append(actual)
+            return opciones
+
+        def _indice_catalogo_v16197(opciones, actual):
+            actual = "" if actual is None else str(actual).strip()
+            return opciones.index(actual) if actual in opciones else 0
+
         # ====================================================
         # V16.19.5 - SEGUIMIENTO GENERAL DE CARACTERIZACIÓN
         # Usa exactamente los mismos campos del cálculo individual.
@@ -2407,12 +3229,80 @@ def gestion_usuarios():
         else:
             st.success("✅ Caracterización prioritaria completa.")
 
+        # Barrio se selecciona fuera del form para que comuna y zona
+        # se actualicen inmediatamente.
+        barrio_actual = str(_valor_persona(
+            persona_car,
+            C["barrio"] if C["barrio"] else "__none__"
+        )).strip()
+
+        opciones_barrio = [""] + sorted(BARRIOS_PEREIRA_V16197.keys())
+        if barrio_actual and barrio_actual not in opciones_barrio:
+            opciones_barrio.append(barrio_actual)
+
+        barrio_car = st.selectbox(
+            "Barrio / vereda",
+            opciones_barrio,
+            index=_indice_catalogo_v16197(opciones_barrio, barrio_actual),
+            key=f"barrio_car_v16197_{doc_car}"
+        )
+
+        barrio_param = BARRIOS_PEREIRA_V16197.get(barrio_car)
+        if barrio_param:
+            comuna_derivada = barrio_param.get("comuna", "")
+            zona_derivada = barrio_param.get("zona", "")
+        else:
+            comuna_derivada = str(_valor_persona(
+                persona_car,
+                C["comuna"] if C["comuna"] else "__none__"
+            )).strip()
+            zona_derivada = str(_valor_persona(
+                persona_car,
+                C["zona"] if C["zona"] else "__none__"
+            )).strip()
+
+        # Avisar cuando haya valores históricos fuera del catálogo oficial.
+        revisar_catalogo = []
+        controles_catalogo = [
+            ("Discapacidad", C["discapacidad"], CATALOGO_RESPUESTA_V16197),
+            ("Categoría discapacidad", C["categoria_discapacidad"], CATALOGO_DISCAPACIDAD_V16197),
+            ("Cabeza de familia", C["cabeza_familia"], CATALOGO_RESPUESTA_V16197),
+            ("Gestante / lactante", C["gestante"], CATALOGO_GESTANTE_V16197),
+            ("Migración", C["migracion"], CATALOGO_RESPUESTA_V16197),
+            ("Educación", C["educacion"], CATALOGO_EDUCACION_V16197),
+            ("Ocupación", C["ocupacion"], CATALOGO_OCUPACION_V16197),
+            ("Procedencia", C["procedencia"], CATALOGO_DEPARTAMENTO_V16197),
+            ("Salud", C["salud"], CATALOGO_SALUD_V16197),
+            ("Consumo", C["consumo"], CATALOGO_CONSUMO_V16197),
+            ("Salud mental", C["enfermedad_mental"], CATALOGO_ENFERMEDAD_MENTAL_V16197),
+            ("Etnia", C["etnia"], CATALOGO_ETNIA_V16197),
+            ("Orientación sexual", C["orientacion"], CATALOGO_ORIENTACION_V16197),
+            ("Población", C["poblacion"], CATALOGO_POBLACION_V16197),
+        ]
+        for etiqueta_rev, col_rev, catalogo_rev in controles_catalogo:
+            if not col_rev:
+                continue
+            valor_rev = str(_valor_persona(persona_car, col_rev)).strip()
+            if valor_rev and valor_rev not in catalogo_rev:
+                revisar_catalogo.append(f"{etiqueta_rev}: {valor_rev}")
+
+        if barrio_actual and barrio_actual not in BARRIOS_PEREIRA_V16197:
+            revisar_catalogo.append(f"Barrio / vereda: {barrio_actual}")
+
+        if revisar_catalogo:
+            st.warning(
+                "Hay valores históricos fuera de los parámetros de la base madre. "
+                "Puedes corregirlos al diligenciar: "
+                + " | ".join(revisar_catalogo)
+            )
+
         with st.form(f"completar_caracterizacion_v9_{doc_car}"):
 
             st.markdown("#### 🧍 Datos sociales y diferenciales")
 
             c1, c2, c3 = st.columns(3)
 
+            # La base madre no establece lista cerrada para GRUPO SISBÉN.
             sisben_car = c1.text_input(
                 "Grupo SISBÉN",
                 value=str(_valor_persona(
@@ -2423,119 +3313,144 @@ def gestion_usuarios():
 
             discapacidad_actual = str(_valor_persona(
                 persona_car,
-                C["discapacidad"] if C["discapacidad"] else "__none__",
-                default="No"
-            ))
+                C["discapacidad"] if C["discapacidad"] else "__none__"
+            )).strip()
+            opciones_disc = _opciones_catalogo_v16197(
+                CATALOGO_RESPUESTA_V16197,
+                discapacidad_actual
+            )
             discapacidad_car = c2.selectbox(
                 "Persona con discapacidad",
-                ["No", "Sí"],
-                index=1 if discapacidad_actual.strip().lower() in ("sí", "si", "1", "true") else 0
+                opciones_disc,
+                index=_indice_catalogo_v16197(opciones_disc, discapacidad_actual)
             )
 
-            categoria_disc_car = c3.text_input(
-                "Categoría de discapacidad",
-                value=str(_valor_persona(
-                    persona_car,
-                    C["categoria_discapacidad"]
-                    if C["categoria_discapacidad"] else "__none__"
-                ))
+            categoria_disc_actual = str(_valor_persona(
+                persona_car,
+                C["categoria_discapacidad"]
+                if C["categoria_discapacidad"] else "__none__"
+            )).strip()
+            opciones_cat_disc = _opciones_catalogo_v16197(
+                CATALOGO_DISCAPACIDAD_V16197,
+                categoria_disc_actual
             )
+            categoria_disc_car = c3.selectbox(
+                "Categoría de discapacidad",
+                opciones_cat_disc,
+                index=_indice_catalogo_v16197(opciones_cat_disc, categoria_disc_actual),
+                disabled=(discapacidad_car == "NO")
+            )
+            if discapacidad_car == "NO":
+                categoria_disc_car = "NINGUNA"
 
             c4, c5, c6 = st.columns(3)
 
             cabeza_actual = str(_valor_persona(
                 persona_car,
-                C["cabeza_familia"] if C["cabeza_familia"] else "__none__",
-                default="No"
-            ))
+                C["cabeza_familia"] if C["cabeza_familia"] else "__none__"
+            )).strip()
+            opciones_cabeza = _opciones_catalogo_v16197(
+                CATALOGO_RESPUESTA_V16197,
+                cabeza_actual
+            )
             cabeza_car = c4.selectbox(
                 "Cabeza de familia",
-                ["No", "Sí"],
-                index=1 if cabeza_actual.strip().lower() in ("sí", "si", "1", "true") else 0
+                opciones_cabeza,
+                index=_indice_catalogo_v16197(opciones_cabeza, cabeza_actual)
             )
 
             gestante_actual = str(_valor_persona(
                 persona_car,
-                C["gestante"] if C["gestante"] else "__none__",
-                default="No"
-            ))
+                C["gestante"] if C["gestante"] else "__none__"
+            )).strip()
+            opciones_gestante = _opciones_catalogo_v16197(
+                CATALOGO_GESTANTE_V16197,
+                gestante_actual
+            )
             gestante_car = c5.selectbox(
                 "Gestante / lactante",
-                ["No", "Sí", "No aplica"],
-                index=(
-                    1 if gestante_actual.strip().lower() in ("sí", "si", "1", "true")
-                    else 2 if "aplica" in gestante_actual.lower()
-                    else 0
-                )
+                opciones_gestante,
+                index=_indice_catalogo_v16197(opciones_gestante, gestante_actual)
             )
 
-            migracion_car = c6.text_input(
+            migracion_actual = str(_valor_persona(
+                persona_car,
+                C["migracion"] if C["migracion"] else "__none__"
+            )).strip()
+            opciones_migracion = _opciones_catalogo_v16197(
+                CATALOGO_RESPUESTA_V16197,
+                migracion_actual
+            )
+            migracion_car = c6.selectbox(
                 "Experiencia migratoria",
-                value=str(_valor_persona(
-                    persona_car,
-                    C["migracion"] if C["migracion"] else "__none__"
-                ))
+                opciones_migracion,
+                index=_indice_catalogo_v16197(opciones_migracion, migracion_actual)
             )
 
             st.markdown("#### 🎓 Educación, ocupación y procedencia")
 
             c7, c8, c9 = st.columns(3)
 
-            educacion_car = c7.text_input(
+            educacion_actual = str(_valor_persona(
+                persona_car,
+                C["educacion"] if C["educacion"] else "__none__"
+            )).strip()
+            opciones_educacion = _opciones_catalogo_v16197(
+                CATALOGO_EDUCACION_V16197,
+                educacion_actual
+            )
+            educacion_car = c7.selectbox(
                 "Nivel educativo",
-                value=str(_valor_persona(
-                    persona_car,
-                    C["educacion"] if C["educacion"] else "__none__"
-                ))
+                opciones_educacion,
+                index=_indice_catalogo_v16197(opciones_educacion, educacion_actual)
             )
 
-            ocupacion_car = c8.text_input(
-                "Condición / perfil ocupacional",
-                value=str(_valor_persona(
-                    persona_car,
-                    C["ocupacion"] if C["ocupacion"] else "__none__"
-                ))
+            ocupacion_actual = str(_valor_persona(
+                persona_car,
+                C["ocupacion"] if C["ocupacion"] else "__none__"
+            )).strip()
+            opciones_ocupacion = _opciones_catalogo_v16197(
+                CATALOGO_OCUPACION_V16197,
+                ocupacion_actual
+            )
+            ocupacion_car = c8.selectbox(
+                "Condición ocupacional",
+                opciones_ocupacion,
+                index=_indice_catalogo_v16197(opciones_ocupacion, ocupacion_actual)
             )
 
-            procedencia_car = c9.text_input(
-                "Departamento / lugar de procedencia",
-                value=str(_valor_persona(
-                    persona_car,
-                    C["procedencia"] if C["procedencia"] else "__none__"
-                ))
+            procedencia_actual = str(_valor_persona(
+                persona_car,
+                C["procedencia"] if C["procedencia"] else "__none__"
+            )).strip()
+            opciones_procedencia = _opciones_catalogo_v16197(
+                CATALOGO_DEPARTAMENTO_V16197,
+                procedencia_actual
+            )
+            procedencia_car = c9.selectbox(
+                "Departamento de procedencia",
+                opciones_procedencia,
+                index=_indice_catalogo_v16197(opciones_procedencia, procedencia_actual)
             )
 
             st.markdown("#### 🏠 Residencia y contacto")
+            st.caption(
+                f"Barrio / vereda seleccionado: {barrio_car or 'Sin seleccionar'}"
+            )
 
             c10, c11, c12 = st.columns(3)
 
-            barrio_car = c10.text_input(
-                "Barrio / vereda",
-                value=str(_valor_persona(
-                    persona_car,
-                    C["barrio"] if C["barrio"] else "__none__"
-                ))
-            )
-
-            comuna_car = c11.text_input(
+            c10.text_input(
                 "Comuna / corregimiento",
-                value=str(_valor_persona(
-                    persona_car,
-                    C["comuna"] if C["comuna"] else "__none__"
-                ))
+                value=comuna_derivada,
+                disabled=True
             )
-
-            zona_car = c12.text_input(
+            c11.text_input(
                 "Zona de residencia",
-                value=str(_valor_persona(
-                    persona_car,
-                    C["zona"] if C["zona"] else "__none__"
-                ))
+                value=zona_derivada,
+                disabled=True
             )
-
-            c13, c14, c15 = st.columns(3)
-
-            direccion_car = c13.text_input(
+            direccion_car = c12.text_input(
                 "Dirección",
                 value=str(_valor_persona(
                     persona_car,
@@ -2543,7 +3458,9 @@ def gestion_usuarios():
                 ))
             )
 
-            telefono_car = c14.text_input(
+            c13, c14 = st.columns(2)
+
+            telefono_car = c13.text_input(
                 "Teléfono",
                 value=str(_valor_persona(
                     persona_car,
@@ -2551,7 +3468,7 @@ def gestion_usuarios():
                 ))
             )
 
-            correo_car = c15.text_input(
+            correo_car = c14.text_input(
                 "Correo",
                 value=str(_valor_persona(
                     persona_car,
@@ -2563,55 +3480,91 @@ def gestion_usuarios():
 
             c16, c17, c18 = st.columns(3)
 
-            salud_car = c16.text_input(
+            salud_actual = str(_valor_persona(
+                persona_car,
+                C["salud"] if C["salud"] else "__none__"
+            )).strip()
+            opciones_salud = _opciones_catalogo_v16197(
+                CATALOGO_SALUD_V16197,
+                salud_actual
+            )
+            salud_car = c16.selectbox(
                 "Seguridad social en salud",
-                value=str(_valor_persona(
-                    persona_car,
-                    C["salud"] if C["salud"] else "__none__"
-                ))
+                opciones_salud,
+                index=_indice_catalogo_v16197(opciones_salud, salud_actual)
             )
 
-            consumo_car = c17.text_input(
+            consumo_actual = str(_valor_persona(
+                persona_car,
+                C["consumo"] if C["consumo"] else "__none__"
+            )).strip()
+            opciones_consumo = _opciones_catalogo_v16197(
+                CATALOGO_CONSUMO_V16197,
+                consumo_actual
+            )
+            consumo_car = c17.selectbox(
                 "Tipo de consumo",
-                value=str(_valor_persona(
-                    persona_car,
-                    C["consumo"] if C["consumo"] else "__none__"
-                ))
+                opciones_consumo,
+                index=_indice_catalogo_v16197(opciones_consumo, consumo_actual)
             )
 
-            salud_mental_car = c18.text_input(
+            salud_mental_actual = str(_valor_persona(
+                persona_car,
+                C["enfermedad_mental"]
+                if C["enfermedad_mental"] else "__none__"
+            )).strip()
+            opciones_mental = _opciones_catalogo_v16197(
+                CATALOGO_ENFERMEDAD_MENTAL_V16197,
+                salud_mental_actual
+            )
+            salud_mental_car = c18.selectbox(
                 "Salud / enfermedad mental",
-                value=str(_valor_persona(
-                    persona_car,
-                    C["enfermedad_mental"]
-                    if C["enfermedad_mental"] else "__none__"
-                ))
+                opciones_mental,
+                index=_indice_catalogo_v16197(opciones_mental, salud_mental_actual)
             )
 
             c19, c20, c21 = st.columns(3)
 
-            etnia_car = c19.text_input(
+            etnia_actual = str(_valor_persona(
+                persona_car,
+                C["etnia"] if C["etnia"] else "__none__"
+            )).strip()
+            opciones_etnia = _opciones_catalogo_v16197(
+                CATALOGO_ETNIA_V16197,
+                etnia_actual
+            )
+            etnia_car = c19.selectbox(
                 "Grupo étnico",
-                value=str(_valor_persona(
-                    persona_car,
-                    C["etnia"] if C["etnia"] else "__none__"
-                ))
+                opciones_etnia,
+                index=_indice_catalogo_v16197(opciones_etnia, etnia_actual)
             )
 
-            orientacion_car = c20.text_input(
-                "Orientación sexual / LGBTI",
-                value=str(_valor_persona(
-                    persona_car,
-                    C["orientacion"] if C["orientacion"] else "__none__"
-                ))
+            orientacion_actual = str(_valor_persona(
+                persona_car,
+                C["orientacion"] if C["orientacion"] else "__none__"
+            )).strip()
+            opciones_orientacion = _opciones_catalogo_v16197(
+                CATALOGO_ORIENTACION_V16197,
+                orientacion_actual
+            )
+            orientacion_car = c20.selectbox(
+                "Orientación sexual",
+                opciones_orientacion,
+                index=_indice_catalogo_v16197(opciones_orientacion, orientacion_actual)
             )
 
-            poblacion_car = c21.text_input(
-                "Población diferencial",
-                value=str(_valor_persona(
-                    persona_car,
-                    C["poblacion"] if C["poblacion"] else "__none__"
-                ))
+            poblacion_actual_car = str(_valor_persona(
+                persona_car,
+                C["poblacion"] if C["poblacion"] else "__none__"
+            )).strip()
+            opciones_poblacion = _opciones_catalogo_v16197(
+                CATALOGO_POBLACION_V16197,
+                poblacion_actual_car
+            )
+            poblacion_car = c21.selectbox(
+                "Población",
+                opciones_poblacion,
+                index=_indice_catalogo_v16197(opciones_poblacion, poblacion_actual_car)
             )
 
             guardar_car = st.form_submit_button(
@@ -2625,25 +3578,25 @@ def gestion_usuarios():
             cambios_car = {
                 C["sisben"]: sisben_car.strip(),
                 C["discapacidad"]: discapacidad_car,
-                C["categoria_discapacidad"]: categoria_disc_car.strip(),
+                C["categoria_discapacidad"]: categoria_disc_car,
                 C["cabeza_familia"]: cabeza_car,
                 C["gestante"]: gestante_car,
-                C["migracion"]: migracion_car.strip(),
-                C["educacion"]: educacion_car.strip(),
-                C["ocupacion"]: ocupacion_car.strip(),
-                C["procedencia"]: procedencia_car.strip(),
-                C["barrio"]: barrio_car.strip(),
-                C["comuna"]: comuna_car.strip(),
-                C["zona"]: zona_car.strip(),
+                C["migracion"]: migracion_car,
+                C["educacion"]: educacion_car,
+                C["ocupacion"]: ocupacion_car,
+                C["procedencia"]: procedencia_car,
+                C["barrio"]: barrio_car,
+                C["comuna"]: comuna_derivada,
+                C["zona"]: zona_derivada,
                 C["direccion"]: direccion_car.strip(),
                 C["telefono"]: telefono_car.strip(),
                 C["correo"]: correo_car.strip(),
-                C["salud"]: salud_car.strip(),
-                C["consumo"]: consumo_car.strip(),
-                C["enfermedad_mental"]: salud_mental_car.strip(),
-                C["etnia"]: etnia_car.strip(),
-                C["orientacion"]: orientacion_car.strip(),
-                C["poblacion"]: poblacion_car.strip()
+                C["salud"]: salud_car,
+                C["consumo"]: consumo_car,
+                C["enfermedad_mental"]: salud_mental_car,
+                C["etnia"]: etnia_car,
+                C["orientacion"]: orientacion_car,
+                C["poblacion"]: poblacion_car
             }
 
             ok = _actualizar_campos_persona(
