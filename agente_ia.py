@@ -13909,6 +13909,142 @@ def caracterizacion_habitabilidad_v1611():
             step=1.0
         )
 
+
+        st.markdown("#### 🛡️ Reducción de riesgos y daños")
+
+        posicion_opts = [
+            "",
+            "SIN INTENCIÓN DE CAMBIO",
+            "RECONOCE RIESGOS PERO NO DESEA CAMBIAR",
+            "AMBIVALENTE / CONTEMPLA CAMBIOS",
+            "PREPARÁNDOSE PARA CAMBIAR",
+            "EN PROCESO ACTIVO DE CAMBIO",
+            "MANTENIENDO CAMBIOS",
+            "RECAÍDA / RETORNO AL CONSUMO",
+            "NO SABE / POR VERIFICAR"
+        ]
+        posicion_consumo = st.selectbox(
+            "Posición frente al consumo",
+            posicion_opts,
+            index=_idx(
+                posicion_opts,
+                str(_v("posicion_frente_consumo", "")).upper()
+            ),
+            help=(
+                "Registra la disposición actual de la persona frente a cambios "
+                "en su patrón de consumo. No constituye un diagnóstico."
+            )
+        )
+
+        objetivo_consumo_opts = [
+            "",
+            "NO DESEA MODIFICAR EL CONSUMO",
+            "REDUCIR FRECUENCIA O CANTIDAD",
+            "REDUCIR RIESGOS SIN SUSPENDER",
+            "SUSPENDER UNA SUSTANCIA ESPECÍFICA",
+            "ABSTINENCIA",
+            "VINCULARSE A TRATAMIENTO",
+            "MANTENER CAMBIOS ALCANZADOS",
+            "POR DEFINIR CON LA PERSONA"
+        ]
+        objetivo_consumo = st.selectbox(
+            "Objetivo acordado frente al consumo",
+            objetivo_consumo_opts,
+            index=_idx(
+                objetivo_consumo_opts,
+                str(_v("objetivo_frente_consumo", "")).upper()
+            )
+        )
+
+        estrategias_opts = [
+            "EDUCACIÓN SOBRE RIESGOS DEL CONSUMO",
+            "EVITAR MEZCLA DE SUSTANCIAS",
+            "EVITAR CONSUMIR EN SOLEDAD",
+            "REDUCIR CANTIDAD O FRECUENCIA",
+            "EVITAR COMPARTIR ELEMENTOS DE CONSUMO",
+            "USAR ELEMENTOS LIMPIOS / HIGIÉNICOS",
+            "IDENTIFICAR SIGNOS DE SOBREDOSIS O INTOXICACIÓN",
+            "ACTIVAR RUTA DE URGENCIAS ANTE SIGNOS DE ALARMA",
+            "PRUEBAS Y TAMIZAJE VIH / ITS / HEPATITIS / TB",
+            "VINCULACIÓN A SERVICIOS DE SALUD",
+            "VINCULACIÓN A TRATAMIENTO POR CONSUMO",
+            "PLAN DE SEGURIDAD / RED DE APOYO",
+            "NALOXONA / PREVENCIÓN DE SOBREDOSIS POR OPIOIDES",
+            "OTRA"
+        ]
+
+        estrategias_previas = [
+            x.strip()
+            for x in str(_v("estrategias_reduccion_danos", "")).split("||")
+            if x.strip()
+        ]
+        estrategias_reduccion = st.multiselect(
+            "Estrategias de reducción de riesgos y daños trabajadas",
+            estrategias_opts,
+            default=[
+                x for x in estrategias_previas
+                if x in estrategias_opts
+            ]
+        )
+
+        rr1, rr2, rr3 = st.columns(3)
+
+        antecedente_sobredosis_opts = [
+            "",
+            "NO",
+            "SÍ",
+            "NO SABE / POR VERIFICAR"
+        ]
+        antecedente_sobredosis = rr1.selectbox(
+            "Antecedente de sobredosis / intoxicación grave",
+            antecedente_sobredosis_opts,
+            index=_idx(
+                antecedente_sobredosis_opts,
+                str(_v("antecedente_sobredosis", "")).upper()
+            )
+        )
+
+        riesgo_sobredosis_opts = [
+            "",
+            "BAJO",
+            "MODERADO",
+            "ALTO",
+            "NO VALORADO"
+        ]
+        riesgo_sobredosis = rr2.selectbox(
+            "Riesgo actual de sobredosis",
+            riesgo_sobredosis_opts,
+            index=_idx(
+                riesgo_sobredosis_opts,
+                str(_v("riesgo_sobredosis", "")).upper()
+            ),
+            help="Valoración orientativa del equipo; no reemplaza valoración médica."
+        )
+
+        educacion_rd_opts = [
+            "",
+            "NO",
+            "SÍ",
+            "PENDIENTE"
+        ]
+        educacion_reduccion_danos = rr3.selectbox(
+            "Educación en reducción de riesgos y daños",
+            educacion_rd_opts,
+            index=_idx(
+                educacion_rd_opts,
+                str(_v("educacion_reduccion_danos", "")).upper()
+            )
+        )
+
+        observacion_reduccion_danos = st.text_area(
+            "Observaciones sobre reducción de riesgos y daños",
+            value=str(_v("observacion_reduccion_danos", "")),
+            placeholder=(
+                "Acuerdos con la persona, riesgos identificados, educación realizada "
+                "o acciones pendientes."
+            )
+        )
+
     # ---------------- Redes ----------------
     with tabs[2]:
         st.markdown("### Redes familiares, afectivas y comunitarias")
@@ -14299,6 +14435,13 @@ def caracterizacion_habitabilidad_v1611():
             "tratamiento_spa_actual": tratamiento_actual or None,
             "numero_recaidas": int(recaidas),
             "meses_sin_consumo": float(meses_sin_consumo),
+            "posicion_frente_consumo": posicion_consumo or None,
+            "objetivo_frente_consumo": objetivo_consumo or None,
+            "estrategias_reduccion_danos": "||".join(estrategias_reduccion) if estrategias_reduccion else None,
+            "antecedente_sobredosis": antecedente_sobredosis or None,
+            "riesgo_sobredosis": riesgo_sobredosis or None,
+            "educacion_reduccion_danos": educacion_reduccion_danos or None,
+            "observacion_reduccion_danos": observacion_reduccion_danos.strip() or None,
             "tiene_red_apoyo": tiene_red_apoyo or None,
             "tipo_red_apoyo": tipo_red_apoyo or None,
             "tiempo_ultimo_contacto_familiar": tiempo_ultimo_contacto_familiar or None,
@@ -14363,6 +14506,13 @@ def caracterizacion_habitabilidad_v1611():
                             tratamiento_spa_actual,
                             numero_recaidas,
                             meses_sin_consumo,
+                            posicion_frente_consumo,
+                            objetivo_frente_consumo,
+                            estrategias_reduccion_danos,
+                            antecedente_sobredosis,
+                            riesgo_sobredosis,
+                            educacion_reduccion_danos,
+                            observacion_reduccion_danos,
                             tiene_red_apoyo,
                             tipo_red_apoyo,
                             tiempo_ultimo_contacto_familiar,
@@ -14423,6 +14573,13 @@ def caracterizacion_habitabilidad_v1611():
                             :tratamiento_spa_actual,
                             :numero_recaidas,
                             :meses_sin_consumo,
+                            :posicion_frente_consumo,
+                            :objetivo_frente_consumo,
+                            :estrategias_reduccion_danos,
+                            :antecedente_sobredosis,
+                            :riesgo_sobredosis,
+                            :educacion_reduccion_danos,
+                            :observacion_reduccion_danos,
                             :tiene_red_apoyo,
                             :tipo_red_apoyo,
                             :tiempo_ultimo_contacto_familiar,
@@ -14483,6 +14640,13 @@ def caracterizacion_habitabilidad_v1611():
                             tratamiento_spa_actual = EXCLUDED.tratamiento_spa_actual,
                             numero_recaidas = EXCLUDED.numero_recaidas,
                             meses_sin_consumo = EXCLUDED.meses_sin_consumo,
+                            posicion_frente_consumo = EXCLUDED.posicion_frente_consumo,
+                            objetivo_frente_consumo = EXCLUDED.objetivo_frente_consumo,
+                            estrategias_reduccion_danos = EXCLUDED.estrategias_reduccion_danos,
+                            antecedente_sobredosis = EXCLUDED.antecedente_sobredosis,
+                            riesgo_sobredosis = EXCLUDED.riesgo_sobredosis,
+                            educacion_reduccion_danos = EXCLUDED.educacion_reduccion_danos,
+                            observacion_reduccion_danos = EXCLUDED.observacion_reduccion_danos,
                             tiene_red_apoyo = EXCLUDED.tiene_red_apoyo,
                             tipo_red_apoyo = EXCLUDED.tipo_red_apoyo,
                             tiempo_ultimo_contacto_familiar = EXCLUDED.tiempo_ultimo_contacto_familiar,
