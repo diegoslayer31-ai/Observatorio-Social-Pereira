@@ -2182,13 +2182,50 @@ def gestion_usuarios():
         for idx_seg, fila_seg in df_gestion.iterrows():
             comp_seg, pend_seg, total_seg, pct_seg = _estado_completitud_car_v16195(fila_seg)
             modalidad_seg = str(fila_seg.get("modalidad", "")).strip().upper()
-            estado_seg = str(fila_seg.get("estado_caso", "ACTIVO")).strip().upper()
+            estado_seg = str(fila_seg.get("estado_caso", "")).strip().upper()
+
+            # Fecha de ingreso: se usa solo para identificar registros creados
+            # desde la implementación del nuevo sistema.
+            fecha_ingreso_raw = fila_seg.get("fecha_ingreso_albergue", None)
+            fecha_ingreso_seg = pd.to_datetime(fecha_ingreso_raw, errors="coerce", dayfirst=True)
+
+            es_actual = (
+                estado_seg == "ACTIVO"
+                and modalidad_seg in ("URBANO", "GRANJA")
+            )
+            es_nuevo = (
+                pd.notna(fecha_ingreso_seg)
+                and fecha_ingreso_seg.date() >= pd.Timestamp("2026-09-01").date()
+            )
+
+            # Universo de seguimiento:
+            # 1. población actualmente vinculada, o
+            # 2. cualquier nuevo ingreso desde la implementación.
+            debe_caracterizar = es_actual or es_nuevo
+
+            if es_actual and es_nuevo:
+                origen_seg = "ACTUAL + NUEVO INGRESO"
+            elif es_actual:
+                origen_seg = "POBLACIÓN ACTUAL"
+            elif es_nuevo:
+                origen_seg = "NUEVO INGRESO"
+            else:
+                origen_seg = "HISTÓRICO"
+
             filas_seg.append({
                 "_indice": idx_seg,
                 "Nombre": str(fila_seg.get("nombre_completo", "")).strip(),
                 "Documento": str(fila_seg.get("numero_identificacion", "")).strip(),
                 "Modalidad": modalidad_seg,
                 "Estado": estado_seg,
+                "Fecha ingreso": (
+                    fecha_ingreso_seg.strftime("%Y-%m-%d")
+                    if pd.notna(fecha_ingreso_seg) else ""
+                ),
+                "Origen seguimiento": origen_seg,
+                "_debe_caracterizar": debe_caracterizar,
+                "_es_actual": es_actual,
+                "_es_nuevo": es_nuevo,
                 "Completitud": pct_seg,
                 "Completos": comp_seg,
                 "Pendientes": len(pend_seg),
@@ -2198,39 +2235,57 @@ def gestion_usuarios():
         df_seg_car = pd.DataFrame(filas_seg)
 
         if not df_seg_car.empty:
-            # El seguimiento operativo se concentra en personas activas.
-            df_seg_act = df_seg_car[
-                df_seg_car["Estado"].isin(["ACTIVO", "ACTIVE", ""])
-            ].copy()
+            # Los históricos anteriores a la implementación NO se consideran
+            # pendientes automáticamente. Solo entran población actual o nuevos ingresos.
+            df_seg_obj = df_seg_car[df_seg_car["_debe_caracterizar"]].copy()
 
             st.markdown("### 📋 Seguimiento de caracterización")
+            st.caption(
+                "Incluye población actualmente vinculada al programa y nuevos ingresos "
+                "desde la implementación del sistema. Los registros históricos anteriores "
+                "no se marcan automáticamente como pendientes."
+            )
 
-            total_act = len(df_seg_act)
-            completos_act = int((df_seg_act["Completitud"] >= 100).sum())
-            pendientes_act = int((df_seg_act["Completitud"] < 100).sum())
+            total_obj = len(df_seg_obj)
+            poblacion_actual = int(df_seg_obj["_es_actual"].sum())
+            nuevos_ingresos = int(df_seg_obj["_es_nuevo"].sum())
+            completos_obj = int((df_seg_obj["Completitud"] >= 100).sum())
+            pendientes_obj = int((df_seg_obj["Completitud"] < 100).sum())
 
-            sc1, sc2, sc3 = st.columns(3)
-            sc1.metric("👥 Activos", total_act)
-            sc2.metric("✅ Caracterización completa", completos_act)
-            sc3.metric("⚠️ Pendientes por completar", pendientes_act)
+            sc1, sc2, sc3, sc4 = st.columns(4)
+            sc1.metric("👥 Población actual", poblacion_actual)
+            sc2.metric("🆕 Nuevos ingresos", nuevos_ingresos)
+            sc3.metric("✅ Completas", completos_obj)
+            sc4.metric("⚠️ Pendientes", pendientes_obj)
 
-            f1, f2 = st.columns(2)
+            f0, f1, f2 = st.columns(3)
+            filtro_universo = f0.selectbox(
+                "Población a revisar",
+                ["TODOS", "POBLACIÓN ACTUAL", "NUEVOS INGRESOS"],
+                key="filtro_universo_car_v16196"
+            )
             modalidades_seg = sorted([
-                x for x in df_seg_act["Modalidad"].dropna().unique().tolist()
+                x for x in df_seg_obj["Modalidad"].dropna().unique().tolist()
                 if str(x).strip()
             ])
             filtro_modalidad = f1.selectbox(
-                "Filtrar por modalidad",
+                "Modalidad",
                 ["TODAS"] + modalidades_seg,
-                key="filtro_modalidad_car_v16195"
+                key="filtro_modalidad_car_v16196"
             )
             filtro_nivel = f2.selectbox(
-                "Estado de completitud",
+                "Completitud",
                 ["PENDIENTES", "TODOS", "MENOS DE 50%", "50% A 79%", "80% A 99%", "COMPLETOS"],
-                key="filtro_nivel_car_v16195"
+                key="filtro_nivel_car_v16196"
             )
 
-            df_seg_fil = df_seg_act.copy()
+            df_seg_fil = df_seg_obj.copy()
+
+            if filtro_universo == "POBLACIÓN ACTUAL":
+                df_seg_fil = df_seg_fil[df_seg_fil["_es_actual"]]
+            elif filtro_universo == "NUEVOS INGRESOS":
+                df_seg_fil = df_seg_fil[df_seg_fil["_es_nuevo"]]
+
             if filtro_modalidad != "TODAS":
                 df_seg_fil = df_seg_fil[df_seg_fil["Modalidad"] == filtro_modalidad]
 
@@ -2257,8 +2312,8 @@ def gestion_usuarios():
             )
 
             mostrar_seg = df_seg_fil[
-                ["Nombre", "Documento", "Modalidad", "Completitud",
-                 "Pendientes", "Campos pendientes"]
+                ["Nombre", "Documento", "Modalidad", "Fecha ingreso",
+                 "Origen seguimiento", "Completitud", "Pendientes", "Campos pendientes"]
             ].copy()
             mostrar_seg["Completitud"] = mostrar_seg["Completitud"].map(
                 lambda x: f"{x:.0f}%"
@@ -2274,21 +2329,19 @@ def gestion_usuarios():
                 st.download_button(
                     "⬇️ Descargar listado",
                     data=csv_seg,
-                    file_name="seguimiento_caracterizacion_pendiente.csv",
+                    file_name="seguimiento_caracterizacion.csv",
                     mime="text/csv",
                     use_container_width=True,
-                    key="descargar_pendientes_car_v16195"
+                    key="descargar_pendientes_car_v16196"
                 )
 
-            # Acceso directo: escoger una persona pendiente y cargarla
-            # inmediatamente en el formulario inferior.
             opciones_pend = df_seg_fil["_indice"].tolist()
             indice_preseleccionado = None
             if opciones_pend:
                 indice_preseleccionado = st.selectbox(
                     "🎯 Trabajar caracterización de",
                     opciones_pend,
-                    key="trabajar_pendiente_car_v16195",
+                    key="trabajar_pendiente_car_v16196",
                     format_func=lambda i: (
                         f"{df_gestion.loc[i, 'nombre_completo']} - "
                         f"{df_gestion.loc[i, 'numero_identificacion']}"
