@@ -3463,11 +3463,85 @@ def gestion_usuarios():
 
             c10, c11, c12 = st.columns(3)
 
-            comuna_car = c10.text_input(
-                "Comuna / corregimiento",
-                value=comuna_sugerida,
-                help="Se sugiere automáticamente cuando el barrio está parametrizado, pero puede corregirse."
+            # V16.19.9: división político-administrativa oficial de Pereira.
+            COMUNAS_PEREIRA_V16199 = [
+                "BOSTON",
+                "CENTRO",
+                "CONSOTA",
+                "CUBA",
+                "DEL CAFÉ",
+                "EL JARDÍN",
+                "EL OSO",
+                "EL POBLADO",
+                "EL ROCÍO",
+                "FERROCARRIL",
+                "OLÍMPICA",
+                "ORIENTE",
+                "PERLA DEL OTÚN",
+                "RÍO OTÚN",
+                "SAN JOAQUÍN",
+                "SAN NICOLÁS",
+                "UNIVERSIDAD",
+                "VILLA SANTANA",
+                "VILLAVICENCIO",
+            ]
+
+            CORREGIMIENTOS_PEREIRA_V16199 = [
+                "ALTAGRACIA",
+                "ARABIA",
+                "CAIMALITO",
+                "CERRITOS",
+                "COMBIA ALTA",
+                "COMBIA BAJA",
+                "LA BELLA",
+                "LA ESTRELLA - LA PALMILLA",
+                "LA FLORIDA",
+                "MORELIA",
+                "PUERTO CALDAS",
+                "TRIBUNAS CÓRCEGA",
+            ]
+
+            opciones_comuna_corr_v16199 = (
+                [""]
+                + [f"COMUNA - {x}" for x in COMUNAS_PEREIRA_V16199]
+                + [f"CORREGIMIENTO - {x}" for x in CORREGIMIENTOS_PEREIRA_V16199]
             )
+
+            comuna_base_v16199 = str(comuna_sugerida).strip()
+            comuna_busqueda_v16199 = comuna_base_v16199.upper()
+
+            # Intentar convertir valores históricos/sugeridos al nuevo formato.
+            valor_comuna_v16199 = ""
+            for _op in opciones_comuna_corr_v16199:
+                if not _op:
+                    continue
+                _nombre = _op.split(" - ", 1)[1].strip().upper()
+                if comuna_busqueda_v16199 == _nombre or comuna_busqueda_v16199 == _op.upper():
+                    valor_comuna_v16199 = _op
+                    break
+
+            if comuna_base_v16199 and not valor_comuna_v16199:
+                opciones_comuna_corr_v16199.append(comuna_base_v16199)
+                valor_comuna_v16199 = comuna_base_v16199
+
+            comuna_sel_v16199 = c10.selectbox(
+                "Comuna / corregimiento",
+                opciones_comuna_corr_v16199,
+                index=_indice_catalogo_v16197(
+                    opciones_comuna_corr_v16199,
+                    valor_comuna_v16199
+                ),
+                help="Seleccione una de las 19 comunas o uno de los 12 corregimientos de Pereira."
+            )
+
+            # Guardamos solamente el nombre, sin el prefijo COMUNA/CORREGIMIENTO,
+            # para mantener compatibilidad con la base madre.
+            if comuna_sel_v16199.startswith("COMUNA - "):
+                comuna_car = comuna_sel_v16199.replace("COMUNA - ", "", 1)
+            elif comuna_sel_v16199.startswith("CORREGIMIENTO - "):
+                comuna_car = comuna_sel_v16199.replace("CORREGIMIENTO - ", "", 1)
+            else:
+                comuna_car = comuna_sel_v16199
 
             opciones_zona_v16198 = ["", "URBANA", "RURAL"]
             zona_base = str(zona_sugerida).strip().upper()
