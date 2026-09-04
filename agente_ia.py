@@ -2136,19 +2136,10 @@ def gestion_usuarios():
             "en el momento del ingreso."
         )
 
-        indice_car = st.selectbox(
-            "Seleccione usuario",
-            df_gestion.index.tolist(),
-            key="caracterizacion_usuario_v9",
-            format_func=lambda i: (
-                f"{df_gestion.loc[i, 'nombre_completo']} - "
-                f"{df_gestion.loc[i, 'numero_identificacion']}"
-            )
-        )
-
-        persona_car = df_gestion.loc[indice_car]
-        doc_car = str(persona_car["numero_identificacion"]).strip()
-
+        # ====================================================
+        # V16.19.5 - SEGUIMIENTO GENERAL DE CARACTERIZACIÓN
+        # Usa exactamente los mismos campos del cálculo individual.
+        # ====================================================
         campos_control = [
             ("Salud", C["salud"]),
             ("Procedencia", C["procedencia"]),
@@ -2165,6 +2156,167 @@ def gestion_usuarios():
             ("Población diferencial", C["poblacion"]),
             ("Salud mental", C["enfermedad_mental"])
         ]
+
+        def _estado_completitud_car_v16195(fila):
+            completos = 0
+            pendientes = []
+            total = 0
+            for etiqueta, col in campos_control:
+                if not col or col not in fila.index:
+                    continue
+                total += 1
+                valor = fila.get(col)
+                tiene = (
+                    pd.notna(valor)
+                    and str(valor).strip().lower()
+                    not in ("", "nan", "none", "null")
+                )
+                if tiene:
+                    completos += 1
+                else:
+                    pendientes.append(etiqueta)
+            pct = round((completos / total * 100), 1) if total else 0
+            return completos, pendientes, total, pct
+
+        filas_seg = []
+        for idx_seg, fila_seg in df_gestion.iterrows():
+            comp_seg, pend_seg, total_seg, pct_seg = _estado_completitud_car_v16195(fila_seg)
+            modalidad_seg = str(fila_seg.get("modalidad", "")).strip().upper()
+            estado_seg = str(fila_seg.get("estado_caso", "ACTIVO")).strip().upper()
+            filas_seg.append({
+                "_indice": idx_seg,
+                "Nombre": str(fila_seg.get("nombre_completo", "")).strip(),
+                "Documento": str(fila_seg.get("numero_identificacion", "")).strip(),
+                "Modalidad": modalidad_seg,
+                "Estado": estado_seg,
+                "Completitud": pct_seg,
+                "Completos": comp_seg,
+                "Pendientes": len(pend_seg),
+                "Campos pendientes": ", ".join(pend_seg)
+            })
+
+        df_seg_car = pd.DataFrame(filas_seg)
+
+        if not df_seg_car.empty:
+            # El seguimiento operativo se concentra en personas activas.
+            df_seg_act = df_seg_car[
+                df_seg_car["Estado"].isin(["ACTIVO", "ACTIVE", ""])
+            ].copy()
+
+            st.markdown("### 📋 Seguimiento de caracterización")
+
+            total_act = len(df_seg_act)
+            completos_act = int((df_seg_act["Completitud"] >= 100).sum())
+            pendientes_act = int((df_seg_act["Completitud"] < 100).sum())
+
+            sc1, sc2, sc3 = st.columns(3)
+            sc1.metric("👥 Activos", total_act)
+            sc2.metric("✅ Caracterización completa", completos_act)
+            sc3.metric("⚠️ Pendientes por completar", pendientes_act)
+
+            f1, f2 = st.columns(2)
+            modalidades_seg = sorted([
+                x for x in df_seg_act["Modalidad"].dropna().unique().tolist()
+                if str(x).strip()
+            ])
+            filtro_modalidad = f1.selectbox(
+                "Filtrar por modalidad",
+                ["TODAS"] + modalidades_seg,
+                key="filtro_modalidad_car_v16195"
+            )
+            filtro_nivel = f2.selectbox(
+                "Estado de completitud",
+                ["PENDIENTES", "TODOS", "MENOS DE 50%", "50% A 79%", "80% A 99%", "COMPLETOS"],
+                key="filtro_nivel_car_v16195"
+            )
+
+            df_seg_fil = df_seg_act.copy()
+            if filtro_modalidad != "TODAS":
+                df_seg_fil = df_seg_fil[df_seg_fil["Modalidad"] == filtro_modalidad]
+
+            if filtro_nivel == "PENDIENTES":
+                df_seg_fil = df_seg_fil[df_seg_fil["Completitud"] < 100]
+            elif filtro_nivel == "MENOS DE 50%":
+                df_seg_fil = df_seg_fil[df_seg_fil["Completitud"] < 50]
+            elif filtro_nivel == "50% A 79%":
+                df_seg_fil = df_seg_fil[
+                    (df_seg_fil["Completitud"] >= 50) &
+                    (df_seg_fil["Completitud"] < 80)
+                ]
+            elif filtro_nivel == "80% A 99%":
+                df_seg_fil = df_seg_fil[
+                    (df_seg_fil["Completitud"] >= 80) &
+                    (df_seg_fil["Completitud"] < 100)
+                ]
+            elif filtro_nivel == "COMPLETOS":
+                df_seg_fil = df_seg_fil[df_seg_fil["Completitud"] >= 100]
+
+            df_seg_fil = df_seg_fil.sort_values(
+                ["Completitud", "Nombre"],
+                ascending=[True, True]
+            )
+
+            mostrar_seg = df_seg_fil[
+                ["Nombre", "Documento", "Modalidad", "Completitud",
+                 "Pendientes", "Campos pendientes"]
+            ].copy()
+            mostrar_seg["Completitud"] = mostrar_seg["Completitud"].map(
+                lambda x: f"{x:.0f}%"
+            )
+
+            with st.expander(
+                f"🔎 Ver listado ({len(mostrar_seg)} personas)",
+                expanded=(filtro_nivel == "PENDIENTES")
+            ):
+                st.dataframe(mostrar_seg, use_container_width=True, hide_index=True)
+
+                csv_seg = mostrar_seg.to_csv(index=False).encode("utf-8-sig")
+                st.download_button(
+                    "⬇️ Descargar listado",
+                    data=csv_seg,
+                    file_name="seguimiento_caracterizacion_pendiente.csv",
+                    mime="text/csv",
+                    use_container_width=True,
+                    key="descargar_pendientes_car_v16195"
+                )
+
+            # Acceso directo: escoger una persona pendiente y cargarla
+            # inmediatamente en el formulario inferior.
+            opciones_pend = df_seg_fil["_indice"].tolist()
+            indice_preseleccionado = None
+            if opciones_pend:
+                indice_preseleccionado = st.selectbox(
+                    "🎯 Trabajar caracterización de",
+                    opciones_pend,
+                    key="trabajar_pendiente_car_v16195",
+                    format_func=lambda i: (
+                        f"{df_gestion.loc[i, 'nombre_completo']} - "
+                        f"{df_gestion.loc[i, 'numero_identificacion']}"
+                    )
+                )
+
+            st.divider()
+        else:
+            indice_preseleccionado = None
+
+        indices_gestion = df_gestion.index.tolist()
+        indice_default = 0
+        if indice_preseleccionado in indices_gestion:
+            indice_default = indices_gestion.index(indice_preseleccionado)
+
+        indice_car = st.selectbox(
+            "Seleccione usuario",
+            indices_gestion,
+            index=indice_default,
+            key="caracterizacion_usuario_v16195",
+            format_func=lambda i: (
+                f"{df_gestion.loc[i, 'nombre_completo']} - "
+                f"{df_gestion.loc[i, 'numero_identificacion']}"
+            )
+        )
+
+        persona_car = df_gestion.loc[indice_car]
+        doc_car = str(persona_car["numero_identificacion"]).strip()
 
         pendientes_car = []
         completos_car = 0
