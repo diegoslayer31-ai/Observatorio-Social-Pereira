@@ -10724,12 +10724,6 @@ with st.sidebar:
             st.session_state.page = "funcionarios_sistema_v12"
             st.rerun()
 
-        if st.button(
-            "♀️ Género y Diversidad",
-            use_container_width=True
-        ):
-            st.session_state.page = "genero_diversidad"
-            st.rerun()
 
     if _puede_control_asistencia_v1613():
         st.markdown("#### 🏠 Albergue")
