@@ -13832,6 +13832,28 @@ def caracterizacion_habitabilidad_v1611():
             sustancia_opts,
             index=_idx(sustancia_opts, _v("sustancia_principal", ""))
         )
+
+        vias_administracion_opts = [
+            "",
+            "FUMADA",
+            "INHALADA / ASPIRADA",
+            "ORAL / INGERIDA",
+            "INYECTADA / INTRAVENOSA",
+            "SUBLINGUAL",
+            "TRANSDÉRMICA",
+            "OTRA",
+            "NO SABE / POR VERIFICAR"
+        ]
+        via_administracion_consumo = st.selectbox(
+            "Vía de administración principal",
+            vias_administracion_opts,
+            index=_idx(
+                vias_administracion_opts,
+                str(_v("via_administracion_consumo", "")).upper()
+            ),
+            help="Registre la principal vía utilizada para administrar la sustancia."
+        )
+
         sustancias_secundarias = st.text_input(
             "Otras sustancias consumidas",
             value=str(_v("sustancias_secundarias", "")),
@@ -14268,6 +14290,7 @@ def caracterizacion_habitabilidad_v1611():
             "relacion_consumo_calle": relacion_consumo_calle or None,
             "consume_spa_actualmente": consume_actualmente or None,
             "sustancia_principal": sustancia_principal or None,
+            "via_administracion_consumo": via_administracion_consumo or None,
             "sustancias_secundarias": sustancias_secundarias.strip() or None,
             "edad_inicio_consumo": int(edad_inicio_consumo) if edad_inicio_consumo else None,
             "tiempo_anos_consumo": float(tiempo_anos_consumo),
@@ -14331,6 +14354,7 @@ def caracterizacion_habitabilidad_v1611():
                             relacion_consumo_calle,
                             consume_spa_actualmente,
                             sustancia_principal,
+                            via_administracion_consumo,
                             sustancias_secundarias,
                             edad_inicio_consumo,
                             tiempo_anos_consumo,
@@ -14390,6 +14414,7 @@ def caracterizacion_habitabilidad_v1611():
                             :relacion_consumo_calle,
                             :consume_spa_actualmente,
                             :sustancia_principal,
+                            :via_administracion_consumo,
                             :sustancias_secundarias,
                             :edad_inicio_consumo,
                             :tiempo_anos_consumo,
@@ -14449,6 +14474,7 @@ def caracterizacion_habitabilidad_v1611():
                             relacion_consumo_calle = EXCLUDED.relacion_consumo_calle,
                             consume_spa_actualmente = EXCLUDED.consume_spa_actualmente,
                             sustancia_principal = EXCLUDED.sustancia_principal,
+                            via_administracion_consumo = EXCLUDED.via_administracion_consumo,
                             sustancias_secundarias = EXCLUDED.sustancias_secundarias,
                             edad_inicio_consumo = EXCLUDED.edad_inicio_consumo,
                             tiempo_anos_consumo = EXCLUDED.tiempo_anos_consumo,
