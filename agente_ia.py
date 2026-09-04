@@ -9355,6 +9355,13 @@ with st.sidebar:
             st.session_state.page = "dashboard_ejecutivo"
             st.rerun()
 
+        if st.button(
+            "📊 Indicadores Habitabilidad",
+            use_container_width=True
+        ):
+            st.session_state.page = "tablero_habitabilidad_v1611"
+            st.rerun()
+
         st.markdown("##### 🎯 Intervención profesional")
 
         if st.button(
@@ -12926,7 +12933,7 @@ def tablero_habitabilidad_v1611():
         st.error("Acceso exclusivo para Coordinación y Manager.")
         return
 
-    st.title("📊 Indicadores de habitabilidad en calle")
+    st.title("📊 Resultados de Habitabilidad en Calle")
     st.caption(
         "Trayectorias, causas de inicio y permanencia, consumo de SPA, redes de apoyo "
         "y condiciones asociadas a la superación."
