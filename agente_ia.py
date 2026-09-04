@@ -10749,96 +10749,180 @@ with st.sidebar:
 # FUNCIÓN GÉNERO Y DIVERSIDAD (ACTUALIZADA)
 # =====================================
 
-def formulario_genero_diversidad():
+def formulario_genero_diversidad(doc_forzado=None, nombre_persona=None, incrustado=False):
 
-    st.header("♀️ Equidad de Género y Diversidad")
+    if not incrustado:
+        st.header("♀️ Equidad de Género y Diversidad")
+    else:
+        st.markdown("### 🏳️‍🌈 Género y diversidad")
+        if nombre_persona:
+            st.caption(
+                f"Caracterización de {nombre_persona} · {doc_forzado}"
+            )
 
-    with st.form("form_genero_diversidad"):
+    # Cargar el último registro disponible de la persona para no empezar de cero.
+    registro_genero = {}
+    if doc_forzado:
+        try:
+            _gen_prev = pd.read_sql(
+                text("""
+                    SELECT *
+                    FROM caracterizacion_genero_diversidad
+                    WHERE TRIM(CAST(numero_identificacion AS TEXT)) = :doc
+                    ORDER BY fecha_registro DESC
+                    LIMIT 1
+                """),
+                engine,
+                params={"doc": str(doc_forzado).strip()}
+            )
+            if not _gen_prev.empty:
+                registro_genero = _gen_prev.iloc[0].to_dict()
+        except Exception:
+            registro_genero = {}
 
-        numero_identificacion = st.text_input(
-            "Número de identificación"
-        )
+    def _gv(campo, default=""):
+        valor = registro_genero.get(campo, default)
+        if pd.isna(valor):
+            return default
+        return valor
+
+    def _gidx(opciones, valor, default=0):
+        valor = "" if valor is None else str(valor).strip()
+        return opciones.index(valor) if valor in opciones else default
+
+    with st.form(f"form_genero_diversidad_{doc_forzado or 'manual'}"):
+
+        if doc_forzado:
+            numero_identificacion = str(doc_forzado).strip()
+            st.text_input(
+                "Número de identificación",
+                value=numero_identificacion,
+                disabled=True
+            )
+        else:
+            numero_identificacion = st.text_input(
+                "Número de identificación"
+            )
 
         nombre_identitario = st.text_input(
-            "Nombre identitario"
+            "Nombre identitario / social",
+            value=str(_gv("nombre_identitario", ""))
         )
 
+        sexo_opts = [
+            "Masculino",
+            "Femenino",
+            "Intersex",
+            "No informa",
+            "Prefiere no responder"
+        ]
         sexo_al_nacer = st.selectbox(
             "Sexo al nacer",
-            ["Masculino", "Femenino", "Intersex", "Prefiere no responder"]
+            sexo_opts,
+            index=_gidx(sexo_opts, _gv("sexo_al_nacer", "Masculino"))
         )
 
+        identidad_opts = [
+            "Mujer cisgénero",
+            "Mujer trans",
+            "Hombre cisgénero",
+            "Hombre trans",
+            "Persona no binaria",
+            "Género fluido",
+            "Queer",
+            "Otra",
+            "No informa",
+            "Prefiere no responder"
+        ]
         identidad_genero = st.selectbox(
-            "Identidad de género",
-            [
-                "Mujer cisgénero",
-                "Mujer trans",
-                "Hombre cisgénero",
-                "Hombre trans",
-                "Persona no binaria",
-                "Género fluido",
-                "Queer",
-                "Otra",
-                "Prefiere no responder"
-            ]
+            "Identidad de género / se reconoce como",
+            identidad_opts,
+            index=_gidx(
+                identidad_opts,
+                _gv("identidad_genero", "Hombre cisgénero")
+            )
         )
 
+        orientacion_opts = [
+            "Heterosexual",
+            "Homosexual",
+            "Lesbiana",
+            "Bisexual",
+            "Pansexual",
+            "Asexual",
+            "Otra",
+            "No informa",
+            "Prefiere no responder"
+        ]
         orientacion_sexual = st.selectbox(
             "Orientación sexual",
-            [
-                "Heterosexual",
-                "Homosexual",
-                "Lesbiana",
-                "Bisexual",
-                "Pansexual",
-                "Asexual",
-                "Otra",
-                "Prefiere no responder"
-            ]
+            orientacion_opts,
+            index=_gidx(
+                orientacion_opts,
+                _gv("orientacion_sexual", "Heterosexual")
+            )
         )
 
+        expresion_opts = [
+            "Masculina",
+            "Femenina",
+            "Andrógina",
+            "Variable",
+            "Otra",
+            "No informa"
+        ]
         expresion_genero = st.selectbox(
             "Expresión de género",
-            [
-                "Masculina",
-                "Femenina",
-                "Andrógina",
-                "Variable",
-                "Otra"
-            ]
+            expresion_opts,
+            index=_gidx(
+                expresion_opts,
+                _gv("expresion_genero", "Masculina")
+            )
         )
 
         discriminacion = st.checkbox(
-            "¿Ha sufrido discriminación?"
+            "¿Refiere experiencias de discriminación?",
+            value=bool(_gv("discriminacion", False))
         )
 
         tipo_discriminacion = st.text_area(
-            "Tipo de discriminación"
+            "Descripción / tipo de discriminación",
+            value=str(_gv("tipo_discriminacion", ""))
         )
 
         violencia_genero = st.checkbox(
-            "Violencia basada en género"
+            "Violencia basada en género",
+            value=bool(_gv("violencia_genero", False))
         )
 
         violencia_fisica = st.checkbox(
-            "Violencia física"
+            "Violencia física",
+            value=bool(_gv("violencia_fisica", False))
         )
 
         violencia_sexual = st.checkbox(
-            "Violencia sexual"
+            "Violencia sexual",
+            value=bool(_gv("violencia_sexual", False))
         )
 
         violencia_institucional = st.checkbox(
-            "Violencia institucional"
+            "Violencia institucional",
+            value=bool(_gv("violencia_institucional", False))
         )
 
+        trabajo_sexual_opts = [
+            "Nunca",
+            "Anteriormente",
+            "Actualmente",
+            "No informa"
+        ]
         trabajo_sexual = st.selectbox(
             "Trabajo sexual",
-            [
-                "Nunca",
-                "Anteriormente",
-                "Actualmente"
-            ]
+            trabajo_sexual_opts,
+            index=_gidx(
+                trabajo_sexual_opts,
+                _gv("trabajo_sexual", "Nunca")
+            )
         )
 
         estado_vih = st.selectbox(
@@ -10888,24 +10972,29 @@ def formulario_genero_diversidad():
         )
 
         amenazas = st.checkbox(
-            "¿Ha recibido amenazas?"
+            "¿Refiere amenazas relacionadas con género/diversidad?",
+            value=bool(_gv("amenazas", False))
         )
 
         custodia_hijos = st.text_input(
-            "Situación de hijos"
+            "Situación de hijos / cuidado",
+            value=str(_gv("custodia_hijos", ""))
         )
 
         fuente_ingresos = st.text_input(
-            "Fuente principal de ingresos"
+            "Fuente principal de ingresos",
+            value=str(_gv("fuente_ingresos", ""))
         )
 
         necesidades_prioritarias = st.text_area(
-            "Necesidades prioritarias"
+            "Necesidades prioritarias / derechos a gestionar",
+            value=str(_gv("necesidades_prioritarias", ""))
         )
 
         # 🔹 NUEVOS CAMPOS SPA Y PROGRAMAS
         uso_sustancias = st.checkbox(
-            "¿Consumo de sustancias psicoactivas?"
+            "¿Consumo de sustancias psicoactivas?",
+            value=bool(_gv("uso_sustancias", False))
         )
 
         sustancias_consumidas = st.multiselect(
@@ -10922,11 +11011,13 @@ def formulario_genero_diversidad():
         )
 
         acceso_otros_programas = st.checkbox(
-            "¿Ha accedido a otros programas?"
+            "¿Ha accedido a otros programas?",
+            value=bool(_gv("acceso_otros_programas", False))
         )
 
         activacion_ruta_vbg = st.checkbox(
-            "¿Ha activado ruta de atención en VBG?"
+            "¿Se ha activado ruta de atención en VBG?",
+            value=bool(_gv("activacion_ruta_vbg", False))
         )
 
         guardar_genero = st.form_submit_button(
@@ -11041,7 +11132,7 @@ def formulario_genero_diversidad():
 if st.session_state.page == "genero_diversidad":
 
     st.markdown("---")
-    st.subheader("📊 Indicadores de Género, Diversidad y Salud")
+    st.subheader("📊 Indicadores de Género y Diversidad")
 
     try:
 
@@ -13723,6 +13814,7 @@ def caracterizacion_habitabilidad_v1611():
         "🛣️ Trayectoria en calle",
         "🧪 Consumo de SPA",
         "🤝 Redes y apoyos",
+        "🏳️‍🌈 Género y diversidad",
         "⚖️ Restablecimiento de derechos",
         "🩺 Salud integral",
         "📈 Superación y análisis",
@@ -14103,8 +14195,16 @@ def caracterizacion_habitabilidad_v1611():
             index=_idx(si_no, _v("antecedente_salud_mental", ""))
         )
 
-    # ---------------- Restablecimiento de derechos ----------------
+    # ---------------- Género y diversidad ----------------
     with tabs[3]:
+        formulario_genero_diversidad(
+            doc_forzado=documento,
+            nombre_persona=nombre,
+            incrustado=True
+        )
+
+    # ---------------- Restablecimiento de derechos ----------------
+    with tabs[4]:
         st.markdown("### ⚖️ Restablecimiento de derechos")
         st.caption(
             "Seguimiento documental y de aseguramiento en salud para orientar las gestiones de acceso efectivo a derechos."
@@ -14159,7 +14259,7 @@ def caracterizacion_habitabilidad_v1611():
             st.success("Aseguramiento e identificación sin alertas pendientes registradas.")
 
     # ---------------- Salud integral ----------------
-    with tabs[4]:
+    with tabs[5]:
         st.markdown("### 🩺 Salud integral")
         st.caption(
             "Registro clínico-social de apoyo para seguimiento del programa. "
@@ -14305,7 +14405,7 @@ def caracterizacion_habitabilidad_v1611():
         )
 
     # ---------------- Superación / análisis ----------------
-    with tabs[5]:
+    with tabs[6]:
         st.markdown("### Condiciones para la superación")
 
         a1, a2 = st.columns(2)
@@ -14381,7 +14481,7 @@ def caracterizacion_habitabilidad_v1611():
         )
 
     # ---------------- PAI dentro de Habitabilidad ----------------
-    with tabs[6]:
+    with tabs[7]:
         st.markdown("### 🎯 Plan de Atención Individual (PAI)")
         if rol == "PROFESIONAL":
             st.caption(
