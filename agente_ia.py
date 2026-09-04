@@ -3236,30 +3236,56 @@ def gestion_usuarios():
             C["barrio"] if C["barrio"] else "__none__"
         )).strip()
 
-        opciones_barrio = [""] + sorted(BARRIOS_PEREIRA_V16197.keys())
-        if barrio_actual and barrio_actual not in opciones_barrio:
-            opciones_barrio.append(barrio_actual)
+        opciones_barrio = [""] + sorted(BARRIOS_PEREIRA_V16197.keys()) + [
+            "OTRO / VEREDA NO LISTADA"
+        ]
 
-        barrio_car = st.selectbox(
-            "Barrio / vereda",
-            opciones_barrio,
-            index=_indice_catalogo_v16197(opciones_barrio, barrio_actual),
-            key=f"barrio_car_v16197_{doc_car}"
+        barrio_actual_en_catalogo = barrio_actual in BARRIOS_PEREIRA_V16197
+        barrio_actual_manual = (
+            barrio_actual
+            if barrio_actual and not barrio_actual_en_catalogo
+            else ""
         )
 
-        barrio_param = BARRIOS_PEREIRA_V16197.get(barrio_car)
-        if barrio_param:
-            comuna_derivada = barrio_param.get("comuna", "")
-            zona_derivada = barrio_param.get("zona", "")
+        if barrio_actual_en_catalogo:
+            barrio_preseleccion = barrio_actual
+        elif barrio_actual_manual:
+            barrio_preseleccion = "OTRO / VEREDA NO LISTADA"
         else:
-            comuna_derivada = str(_valor_persona(
-                persona_car,
-                C["comuna"] if C["comuna"] else "__none__"
-            )).strip()
-            zona_derivada = str(_valor_persona(
-                persona_car,
-                C["zona"] if C["zona"] else "__none__"
-            )).strip()
+            barrio_preseleccion = ""
+
+        barrio_sel = st.selectbox(
+            "Barrio / vereda",
+            opciones_barrio,
+            index=_indice_catalogo_v16197(opciones_barrio, barrio_preseleccion),
+            key=f"barrio_car_v16198_{doc_car}"
+        )
+
+        if barrio_sel == "OTRO / VEREDA NO LISTADA":
+            barrio_car = st.text_input(
+                "Escriba barrio / vereda",
+                value=barrio_actual_manual,
+                key=f"barrio_manual_car_v16198_{doc_car}"
+            ).strip()
+        else:
+            barrio_car = barrio_sel
+
+        barrio_param = BARRIOS_PEREIRA_V16197.get(barrio_car)
+        comuna_actual = str(_valor_persona(
+            persona_car,
+            C["comuna"] if C["comuna"] else "__none__"
+        )).strip()
+        zona_actual = str(_valor_persona(
+            persona_car,
+            C["zona"] if C["zona"] else "__none__"
+        )).strip()
+
+        if barrio_param:
+            comuna_sugerida = barrio_param.get("comuna", "") or comuna_actual
+            zona_sugerida = barrio_param.get("zona", "") or zona_actual
+        else:
+            comuna_sugerida = comuna_actual
+            zona_sugerida = zona_actual
 
         # Avisar cuando haya valores históricos fuera del catálogo oficial.
         revisar_catalogo = []
@@ -3285,9 +3311,6 @@ def gestion_usuarios():
             valor_rev = str(_valor_persona(persona_car, col_rev)).strip()
             if valor_rev and valor_rev not in catalogo_rev:
                 revisar_catalogo.append(f"{etiqueta_rev}: {valor_rev}")
-
-        if barrio_actual and barrio_actual not in BARRIOS_PEREIRA_V16197:
-            revisar_catalogo.append(f"Barrio / vereda: {barrio_actual}")
 
         if revisar_catalogo:
             st.warning(
@@ -3435,21 +3458,29 @@ def gestion_usuarios():
 
             st.markdown("#### 🏠 Residencia y contacto")
             st.caption(
-                f"Barrio / vereda seleccionado: {barrio_car or 'Sin seleccionar'}"
+                f"Barrio / vereda: {barrio_car or 'Sin seleccionar'}"
             )
 
             c10, c11, c12 = st.columns(3)
 
-            c10.text_input(
+            comuna_car = c10.text_input(
                 "Comuna / corregimiento",
-                value=comuna_derivada,
-                disabled=True
+                value=comuna_sugerida,
+                help="Se sugiere automáticamente cuando el barrio está parametrizado, pero puede corregirse."
             )
-            c11.text_input(
+
+            opciones_zona_v16198 = ["", "URBANA", "RURAL"]
+            zona_base = str(zona_sugerida).strip().upper()
+            if zona_base and zona_base not in opciones_zona_v16198:
+                opciones_zona_v16198.append(zona_base)
+
+            zona_car = c11.selectbox(
                 "Zona de residencia",
-                value=zona_derivada,
-                disabled=True
+                opciones_zona_v16198,
+                index=_indice_catalogo_v16197(opciones_zona_v16198, zona_base),
+                help="Seleccione URBANA o RURAL."
             )
+
             direccion_car = c12.text_input(
                 "Dirección",
                 value=str(_valor_persona(
@@ -3586,8 +3617,8 @@ def gestion_usuarios():
                 C["ocupacion"]: ocupacion_car,
                 C["procedencia"]: procedencia_car,
                 C["barrio"]: barrio_car,
-                C["comuna"]: comuna_derivada,
-                C["zona"]: zona_derivada,
+                C["comuna"]: comuna_car.strip(),
+                C["zona"]: zona_car,
                 C["direccion"]: direccion_car.strip(),
                 C["telefono"]: telefono_car.strip(),
                 C["correo"]: correo_car.strip(),
