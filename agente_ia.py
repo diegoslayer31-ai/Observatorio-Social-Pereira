@@ -8125,11 +8125,12 @@ def tablero_contribucion_ods_v16():
     )
 
 
-def panel_profesional_v15():
-    st.title("🩺 Mi Panel Profesional")
-    st.caption(
-        "Seleccione una sola persona y trabaje todo su expediente PAI sin cambiar de contexto."
-    )
+def panel_profesional_v15(doc_forzado=None, incrustado=False):
+    if not incrustado:
+        st.title("🩺 Mi Panel Profesional")
+        st.caption(
+            "Seleccione una sola persona y trabaje todo su expediente PAI sin cambiar de contexto."
+        )
 
     rol_actual = str(st.session_state.get("rol_actual", "")).upper()
     cedula_actual = str(st.session_state.get("documento_funcionario", "")).strip()
@@ -8456,25 +8457,33 @@ def panel_profesional_v15():
         + personas["apellidos"].fillna("").astype(str).str.strip()
     ).str.strip()
 
-    # Si venimos desde Gestión Profesional, conservar usuario pendiente
+    # Si venimos desde Gestión Profesional, conservar usuario pendiente.
     pendiente = st.session_state.pop("v15_usuario_pendiente", None)
 
     docs = personas["documento"].astype(str).tolist()
     default_index = 0
-    if pendiente is not None and str(pendiente) in docs:
+    if doc_forzado is not None and str(doc_forzado) in docs:
+        default_index = docs.index(str(doc_forzado))
+    elif pendiente is not None and str(pendiente) in docs:
         default_index = docs.index(str(pendiente))
 
-    st.markdown("## 👤 Expediente PAI")
-    doc_sel = st.selectbox(
-        "Seleccione la persona",
-        docs,
-        index=default_index,
-        format_func=lambda d: (
-            f"{personas.loc[personas['documento'].astype(str)==str(d), 'nombre_completo'].iloc[0]}"
-            f" · CC {d}"
-        ),
-        key="v16_2_usuario_unico"
-    )
+    if not incrustado:
+        st.markdown("## 👤 Expediente PAI")
+        doc_sel = st.selectbox(
+            "Seleccione la persona",
+            docs,
+            index=default_index,
+            format_func=lambda d: (
+                f"{personas.loc[personas['documento'].astype(str)==str(d), 'nombre_completo'].iloc[0]}"
+                f" · CC {d}"
+            ),
+            key="v16_2_usuario_unico"
+        )
+    else:
+        if doc_forzado is None or str(doc_forzado) not in docs:
+            st.warning("La persona seleccionada no está disponible para trabajar el PAI.")
+            return
+        doc_sel = str(doc_forzado)
 
     persona_sel = personas.loc[
         personas["documento"].astype(str) == str(doc_sel)
@@ -13714,7 +13723,10 @@ def caracterizacion_habitabilidad_v1611():
         "🛣️ Trayectoria en calle",
         "🧪 Consumo de SPA",
         "🤝 Redes y apoyos",
-        "📈 Superación y análisis"
+        "⚖️ Restablecimiento de derechos",
+        "🩺 Salud integral",
+        "📈 Superación y análisis",
+        "🎯 PAI"
     ])
 
     # ---------------- Trayectoria ----------------
@@ -13933,8 +13945,209 @@ def caracterizacion_habitabilidad_v1611():
             index=_idx(si_no, _v("antecedente_salud_mental", ""))
         )
 
-    # ---------------- Superación / análisis ----------------
+    # ---------------- Restablecimiento de derechos ----------------
     with tabs[3]:
+        st.markdown("### ⚖️ Restablecimiento de derechos")
+        st.caption(
+            "Seguimiento documental y de aseguramiento en salud para orientar las gestiones de acceso efectivo a derechos."
+        )
+
+        regimen_opts = [
+            "",
+            "CONTRIBUTIVO",
+            "SUBSIDIADO",
+            "ESPECIAL / EXCEPCIÓN",
+            "NO ASEGURADO",
+            "NO SABE / POR VERIFICAR"
+        ]
+        cedula_opts = ["", "SÍ", "NO", "EN TRÁMITE", "POR VERIFICAR"]
+        fisico_opts = ["", "SÍ", "NO", "NO APLICA", "POR VERIFICAR"]
+
+        rd1, rd2 = st.columns(2)
+        regimen_salud = rd1.selectbox(
+            "Régimen de aseguramiento en salud",
+            regimen_opts,
+            index=_idx(regimen_opts, str(_v("regimen_salud", "")).upper())
+        )
+        eps_nombre = rd2.text_input(
+            "Nombre de la EPS / entidad aseguradora",
+            value=str(_v("eps_nombre", "")),
+            placeholder="Ej. NUEVA EPS, ASMET SALUD..."
+        )
+
+        rd3, rd4 = st.columns(2)
+        cedulado = rd3.selectbox(
+            "¿Está cedulado?",
+            cedula_opts,
+            index=_idx(cedula_opts, str(_v("cedulado", "")).upper())
+        )
+        documento_fisico = rd4.selectbox(
+            "¿Tiene el documento de identidad en físico?",
+            fisico_opts,
+            index=_idx(fisico_opts, str(_v("documento_fisico", "")).upper())
+        )
+
+        estado_derechos = []
+        if regimen_salud in ("", "NO ASEGURADO", "NO SABE / POR VERIFICAR"):
+            estado_derechos.append("Aseguramiento en salud pendiente")
+        if cedulado in ("", "NO", "EN TRÁMITE", "POR VERIFICAR"):
+            estado_derechos.append("Cedulación / identificación pendiente")
+        if cedulado == "SÍ" and documento_fisico in ("", "NO", "POR VERIFICAR"):
+            estado_derechos.append("Documento físico pendiente")
+
+        if estado_derechos:
+            st.warning(" · ".join(estado_derechos))
+        else:
+            st.success("Aseguramiento e identificación sin alertas pendientes registradas.")
+
+    # ---------------- Salud integral ----------------
+    with tabs[4]:
+        st.markdown("### 🩺 Salud integral")
+        st.caption(
+            "Registro clínico-social de apoyo para seguimiento del programa. "
+            "No sustituye la historia clínica oficial de la IPS/EPS."
+        )
+
+        st.markdown("#### Enfermedades infectocontagiosas / transmisibles")
+
+        opciones_estado_salud = [
+            "",
+            "NO REFIERE",
+            "SOSPECHA",
+            "DIAGNÓSTICO CONFIRMADO",
+            "EN TRATAMIENTO",
+            "TRATAMIENTO FINALIZADO",
+            "POR VERIFICAR"
+        ]
+
+        s1, s2, s3 = st.columns(3)
+        tuberculosis = s1.selectbox(
+            "Tuberculosis (TB)",
+            opciones_estado_salud,
+            index=_idx(opciones_estado_salud, str(_v("tuberculosis", "")).upper())
+        )
+        vih = s2.selectbox(
+            "VIH",
+            opciones_estado_salud,
+            index=_idx(opciones_estado_salud, str(_v("vih", "")).upper())
+        )
+        its = s3.selectbox(
+            "ITS / Sífilis",
+            opciones_estado_salud,
+            index=_idx(opciones_estado_salud, str(_v("its_sifilis", "")).upper())
+        )
+
+        s4, s5, s6 = st.columns(3)
+        hepatitis_b = s4.selectbox(
+            "Hepatitis B",
+            opciones_estado_salud,
+            index=_idx(opciones_estado_salud, str(_v("hepatitis_b", "")).upper())
+        )
+        hepatitis_c = s5.selectbox(
+            "Hepatitis C",
+            opciones_estado_salud,
+            index=_idx(opciones_estado_salud, str(_v("hepatitis_c", "")).upper())
+        )
+        otra_infectocontagiosa = s6.text_input(
+            "Otra enfermedad transmisible",
+            value=str(_v("otra_infectocontagiosa", ""))
+        )
+
+        st.markdown("#### Salud mental")
+
+        sm1, sm2 = st.columns([1, 2])
+        cie10_salud_mental = sm1.text_input(
+            "Código CIE-10",
+            value=str(_v("cie10_salud_mental", "")),
+            placeholder="Ej. F20.0, F32.1, F41.1"
+        )
+        diagnostico_salud_mental = sm2.text_input(
+            "Diagnóstico / descripción",
+            value=str(_v("diagnostico_salud_mental", ""))
+        )
+
+        salud_mental_confirmada_opts = [
+            "",
+            "NO REFIERE",
+            "SOSPECHA",
+            "DIAGNÓSTICO CONFIRMADO",
+            "POR VERIFICAR"
+        ]
+        sm3, sm4 = st.columns(2)
+        estado_salud_mental = sm3.selectbox(
+            "Estado del diagnóstico de salud mental",
+            salud_mental_confirmada_opts,
+            index=_idx(
+                salud_mental_confirmada_opts,
+                str(_v("estado_salud_mental", "")).upper()
+            )
+        )
+        seguimiento_salud_mental = sm4.selectbox(
+            "Seguimiento en salud mental",
+            ["", "NO", "SÍ", "PENDIENTE", "POR VERIFICAR"],
+            index=_idx(
+                ["", "NO", "SÍ", "PENDIENTE", "POR VERIFICAR"],
+                str(_v("seguimiento_salud_mental", "")).upper()
+            )
+        )
+
+        st.markdown("#### Medicación y tratamiento")
+
+        med1, med2 = st.columns(2)
+        usa_medicacion = med1.selectbox(
+            "¿Tiene medicación formulada actualmente?",
+            ["", "NO", "SÍ", "POR VERIFICAR"],
+            index=_idx(
+                ["", "NO", "SÍ", "POR VERIFICAR"],
+                str(_v("usa_medicacion", "")).upper()
+            )
+        )
+        adherencia_medicacion = med2.selectbox(
+            "Adherencia a la medicación",
+            ["", "NO APLICA", "ADECUADA", "IRREGULAR", "NO ADHERENTE", "POR VERIFICAR"],
+            index=_idx(
+                ["", "NO APLICA", "ADECUADA", "IRREGULAR", "NO ADHERENTE", "POR VERIFICAR"],
+                str(_v("adherencia_medicacion", "")).upper()
+            )
+        )
+
+        medicamentos_actuales = st.text_area(
+            "Medicamentos actuales",
+            value=str(_v("medicamentos_actuales", "")),
+            placeholder="Nombre, dosis y frecuencia si se conocen."
+        )
+
+        alergias = st.text_input(
+            "Alergias conocidas",
+            value=str(_v("alergias", ""))
+        )
+
+        s7, s8 = st.columns(2)
+        hospitalizacion_reciente = s7.selectbox(
+            "Hospitalización reciente",
+            ["", "NO", "SÍ", "POR VERIFICAR"],
+            index=_idx(
+                ["", "NO", "SÍ", "POR VERIFICAR"],
+                str(_v("hospitalizacion_reciente", "")).upper()
+            )
+        )
+        requiere_remision_salud = s8.selectbox(
+            "¿Requiere remisión / gestión en salud?",
+            ["", "NO", "SÍ", "PENDIENTE VALORACIÓN"],
+            index=_idx(
+                ["", "NO", "SÍ", "PENDIENTE VALORACIÓN"],
+                str(_v("requiere_remision_salud", "")).upper()
+            )
+        )
+
+        observaciones_salud = st.text_area(
+            "Observaciones de salud",
+            value=str(_v("observaciones_salud", "")),
+            placeholder="Antecedentes relevantes, controles pendientes, recomendaciones o gestiones realizadas."
+        )
+
+    # ---------------- Superación / análisis ----------------
+    with tabs[5]:
         st.markdown("### Condiciones para la superación")
 
         a1, a2 = st.columns(2)
@@ -14009,6 +14222,23 @@ def caracterizacion_habitabilidad_v1611():
             "Este indicador se usa para análisis poblacional y priorización; no constituye diagnóstico."
         )
 
+    # ---------------- PAI dentro de Habitabilidad ----------------
+    with tabs[6]:
+        st.markdown("### 🎯 Plan de Atención Individual (PAI)")
+        if rol == "PROFESIONAL":
+            st.caption(
+                f"El PAI que diligencie aquí corresponde a {nombre} · {documento}."
+            )
+            panel_profesional_v15(
+                doc_forzado=documento,
+                incrustado=True
+            )
+        else:
+            st.info(
+                "El diligenciamiento del PAI en esta sección está habilitado para los profesionales. "
+                "Coordinación y Manager pueden realizar la supervisión desde el módulo correspondiente."
+            )
+
     st.markdown("---")
     confirmar = st.checkbox(
         f"Confirmo que la información corresponde a {nombre} · CC {documento}",
@@ -14053,6 +14283,27 @@ def caracterizacion_habitabilidad_v1611():
             "apoyo_emocional": apoyo_emocional or None,
             "apoyo_psicosocial": apoyo_psicosocial or None,
             "antecedente_salud_mental": antecedente_salud_mental or None,
+            "regimen_salud": regimen_salud or None,
+            "eps_nombre": normalizar_texto_ingreso_v16193(eps_nombre) or None,
+            "cedulado": cedulado or None,
+            "documento_fisico": documento_fisico or None,
+            "tuberculosis": tuberculosis or None,
+            "vih": vih or None,
+            "its_sifilis": its or None,
+            "hepatitis_b": hepatitis_b or None,
+            "hepatitis_c": hepatitis_c or None,
+            "otra_infectocontagiosa": normalizar_texto_ingreso_v16193(otra_infectocontagiosa) or None,
+            "cie10_salud_mental": normalizar_texto_ingreso_v16193(cie10_salud_mental) or None,
+            "diagnostico_salud_mental": normalizar_texto_ingreso_v16193(diagnostico_salud_mental) or None,
+            "estado_salud_mental": estado_salud_mental or None,
+            "seguimiento_salud_mental": seguimiento_salud_mental or None,
+            "usa_medicacion": usa_medicacion or None,
+            "medicamentos_actuales": medicamentos_actuales.strip() or None,
+            "adherencia_medicacion": adherencia_medicacion or None,
+            "alergias": alergias.strip() or None,
+            "hospitalizacion_reciente": hospitalizacion_reciente or None,
+            "requiere_remision_salud": requiere_remision_salud or None,
+            "observaciones_salud": observaciones_salud.strip() or None,
             "fuente_ingreso": fuente_ingreso or None,
             "ingreso_regular": ingreso_regular or None,
             "alojamiento_actual": alojamiento_actual or None,
@@ -14095,6 +14346,27 @@ def caracterizacion_habitabilidad_v1611():
                             apoyo_emocional,
                             apoyo_psicosocial,
                             antecedente_salud_mental,
+                            regimen_salud,
+                            eps_nombre,
+                            cedulado,
+                            documento_fisico,
+                            tuberculosis,
+                            vih,
+                            its_sifilis,
+                            hepatitis_b,
+                            hepatitis_c,
+                            otra_infectocontagiosa,
+                            cie10_salud_mental,
+                            diagnostico_salud_mental,
+                            estado_salud_mental,
+                            seguimiento_salud_mental,
+                            usa_medicacion,
+                            medicamentos_actuales,
+                            adherencia_medicacion,
+                            alergias,
+                            hospitalizacion_reciente,
+                            requiere_remision_salud,
+                            observaciones_salud,
                             fuente_ingreso,
                             ingreso_regular,
                             alojamiento_actual,
@@ -14133,6 +14405,27 @@ def caracterizacion_habitabilidad_v1611():
                             :apoyo_emocional,
                             :apoyo_psicosocial,
                             :antecedente_salud_mental,
+                            :regimen_salud,
+                            :eps_nombre,
+                            :cedulado,
+                            :documento_fisico,
+                            :tuberculosis,
+                            :vih,
+                            :its_sifilis,
+                            :hepatitis_b,
+                            :hepatitis_c,
+                            :otra_infectocontagiosa,
+                            :cie10_salud_mental,
+                            :diagnostico_salud_mental,
+                            :estado_salud_mental,
+                            :seguimiento_salud_mental,
+                            :usa_medicacion,
+                            :medicamentos_actuales,
+                            :adherencia_medicacion,
+                            :alergias,
+                            :hospitalizacion_reciente,
+                            :requiere_remision_salud,
+                            :observaciones_salud,
                             :fuente_ingreso,
                             :ingreso_regular,
                             :alojamiento_actual,
@@ -14171,6 +14464,27 @@ def caracterizacion_habitabilidad_v1611():
                             apoyo_emocional = EXCLUDED.apoyo_emocional,
                             apoyo_psicosocial = EXCLUDED.apoyo_psicosocial,
                             antecedente_salud_mental = EXCLUDED.antecedente_salud_mental,
+                            regimen_salud = EXCLUDED.regimen_salud,
+                            eps_nombre = EXCLUDED.eps_nombre,
+                            cedulado = EXCLUDED.cedulado,
+                            documento_fisico = EXCLUDED.documento_fisico,
+                            tuberculosis = EXCLUDED.tuberculosis,
+                            vih = EXCLUDED.vih,
+                            its_sifilis = EXCLUDED.its_sifilis,
+                            hepatitis_b = EXCLUDED.hepatitis_b,
+                            hepatitis_c = EXCLUDED.hepatitis_c,
+                            otra_infectocontagiosa = EXCLUDED.otra_infectocontagiosa,
+                            cie10_salud_mental = EXCLUDED.cie10_salud_mental,
+                            diagnostico_salud_mental = EXCLUDED.diagnostico_salud_mental,
+                            estado_salud_mental = EXCLUDED.estado_salud_mental,
+                            seguimiento_salud_mental = EXCLUDED.seguimiento_salud_mental,
+                            usa_medicacion = EXCLUDED.usa_medicacion,
+                            medicamentos_actuales = EXCLUDED.medicamentos_actuales,
+                            adherencia_medicacion = EXCLUDED.adherencia_medicacion,
+                            alergias = EXCLUDED.alergias,
+                            hospitalizacion_reciente = EXCLUDED.hospitalizacion_reciente,
+                            requiere_remision_salud = EXCLUDED.requiere_remision_salud,
+                            observaciones_salud = EXCLUDED.observaciones_salud,
                             fuente_ingreso = EXCLUDED.fuente_ingreso,
                             ingreso_regular = EXCLUDED.ingreso_regular,
                             alojamiento_actual = EXCLUDED.alojamiento_actual,
