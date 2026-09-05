@@ -15475,32 +15475,567 @@ def tablero_habitabilidad_v1611():
         )
         st.plotly_chart(fig, use_container_width=True)
 
+    # ============================================================
+    # V16.32 - MOTOR DE CRUCES ESTRATÉGICOS
+    # ============================================================
     st.markdown("### 📌 Cruces estratégicos")
-    cruces = dfh[[
-        "numero_identificacion",
-        "nombres",
-        "apellidos",
+    st.caption(
+        "Relaciona variables de habitabilidad para identificar patrones, "
+        "concentraciones y alertas útiles para la intervención y la política pública. "
+        "Las asociaciones son descriptivas y no implican causalidad."
+    )
+
+    df_analisis = dfh.copy()
+
+    # ------------------------------------------------------------
+    # Limpieza analítica: NULL/None no se convierten en cero.
+    # Los ceros exactos en variables de duración se muestran como
+    # '0 registrado / por validar' y se excluyen de promedios de duración.
+    # ------------------------------------------------------------
+    def _limpia_cat_v1632(serie):
+        s = serie.where(serie.notna(), "").astype(str).str.strip()
+        s = s.replace({
+            "": "Sin información",
+            "None": "Sin información",
+            "none": "Sin información",
+            "NULL": "Sin información",
+            "null": "Sin información",
+            "nan": "Sin información",
+            "NaN": "Sin información"
+        })
+        return s
+
+    def _tramo_duracion_v1632(serie, etiqueta="años"):
+        n = pd.to_numeric(serie, errors="coerce")
+        def clasificar(x):
+            if pd.isna(x):
+                return "Sin información"
+            if x == 0:
+                return "0 registrado / por validar"
+            if 0 < x < 1:
+                return "Menos de 1 año"
+            if 1 <= x <= 5:
+                return "1 a 5 años"
+            if 5 < x <= 10:
+                return "Más de 5 a 10 años"
+            if x > 10:
+                return "Más de 10 años"
+            return "Sin información"
+        return n.apply(clasificar)
+
+    if "tiempo_anos_calle" in df_analisis.columns:
+        df_analisis["tramo_tiempo_calle"] = _tramo_duracion_v1632(
+            df_analisis["tiempo_anos_calle"]
+        )
+    else:
+        df_analisis["tramo_tiempo_calle"] = "Sin información"
+
+    if "tiempo_anos_consumo" in df_analisis.columns:
+        df_analisis["tramo_tiempo_consumo"] = _tramo_duracion_v1632(
+            df_analisis["tiempo_anos_consumo"]
+        )
+    else:
+        df_analisis["tramo_tiempo_consumo"] = "Sin información"
+
+    # Normalizar categorías relevantes sin borrar el valor original.
+    for _col in [
         "modalidad",
-        "tiempo_anos_calle",
-        "tiempo_anos_consumo",
         "causa_inicio_calle",
         "causa_permanencia_calle",
         "sustancia_principal",
         "frecuencia_consumo",
+        "via_administracion_consumo",
+        "posicion_frente_consumo",
+        "objetivo_frente_consumo",
+        "riesgo_sobredosis",
         "tiene_red_apoyo",
         "tiempo_ultimo_contacto_familiar",
         "posibilidad_retorno_familiar",
-        "fuente_ingreso",
-        "alojamiento_actual",
+        "regimen_salud",
+        "cedulado",
+        "documento_fisico",
+        "estado_salud_mental",
+        "requiere_remision_salud",
         "etapa_proceso"
-    ]].copy()
-    st.dataframe(cruces, use_container_width=True, hide_index=True)
+    ]:
+        if _col in df_analisis.columns:
+            df_analisis[_col] = _limpia_cat_v1632(df_analisis[_col])
+
+    # ------------------------------------------------------------
+    # Integración exploratoria con PAI
+    # ------------------------------------------------------------
+    try:
+        _pai_cross = pd.read_sql(
+            text("""
+                SELECT
+                    TRIM(CAST(documento_usuario AS TEXT)) AS numero_identificacion,
+                    COUNT(*) AS objetivos_pai,
+                    AVG(COALESCE(porcentaje_avance,0)) AS avance_pai,
+                    SUM(
+                        CASE
+                            WHEN UPPER(TRIM(COALESCE(estado,'')))='CUMPLIDO'
+                              OR COALESCE(porcentaje_avance,0) >= 100
+                            THEN 1 ELSE 0
+                        END
+                    ) AS objetivos_cumplidos_pai
+                FROM pai_objetivos
+                GROUP BY TRIM(CAST(documento_usuario AS TEXT))
+            """),
+            engine
+        )
+    except Exception:
+        _pai_cross = pd.DataFrame()
+
+    if (
+        not _pai_cross.empty
+        and "numero_identificacion" in df_analisis.columns
+    ):
+        df_analisis["numero_identificacion"] = (
+            df_analisis["numero_identificacion"].astype(str).str.strip()
+        )
+        _pai_cross["numero_identificacion"] = (
+            _pai_cross["numero_identificacion"].astype(str).str.strip()
+        )
+        df_analisis = df_analisis.merge(
+            _pai_cross,
+            on="numero_identificacion",
+            how="left"
+        )
+        df_analisis["objetivos_pai"] = pd.to_numeric(
+            df_analisis["objetivos_pai"], errors="coerce"
+        ).fillna(0)
+        df_analisis["avance_pai"] = pd.to_numeric(
+            df_analisis["avance_pai"], errors="coerce"
+        )
+        df_analisis["estado_pai_analitico"] = df_analisis["objetivos_pai"].apply(
+            lambda x: "Con PAI" if x > 0 else "Sin PAI"
+        )
+    else:
+        df_analisis["objetivos_pai"] = 0
+        df_analisis["avance_pai"] = pd.NA
+        df_analisis["estado_pai_analitico"] = "Sin PAI"
+
+    # ------------------------------------------------------------
+    # Tarjetas: calidad, alertas y protección
+    # ------------------------------------------------------------
+    claves_analiticas = [
+        c for c in [
+            "causa_inicio_calle",
+            "causa_permanencia_calle",
+            "sustancia_principal",
+            "frecuencia_consumo",
+            "tiene_red_apoyo",
+            "posibilidad_retorno_familiar"
+        ]
+        if c in df_analisis.columns
+    ]
+
+    if claves_analiticas:
+        _validos_fila = pd.DataFrame({
+            c: ~df_analisis[c].astype(str).eq("Sin información")
+            for c in claves_analiticas
+        }).sum(axis=1)
+        _cobertura_analitica = round(
+            (_validos_fila >= max(1, len(claves_analiticas) // 2)).mean() * 100,
+            1
+        )
+    else:
+        _cobertura_analitica = 0.0
+
+    _alerta_consumo = 0
+    if "frecuencia_consumo" in df_analisis.columns:
+        _freq_up = df_analisis["frecuencia_consumo"].astype(str).str.upper()
+        _alerta_consumo = int(
+            _freq_up.str.contains(
+                r"DIARIO|TODOS LOS D[IÍ]AS|6-7|7 D[IÍ]AS",
+                regex=True,
+                na=False
+            ).sum()
+        )
+
+    _sin_red = 0
+    if "tiene_red_apoyo" in df_analisis.columns:
+        _sin_red = int(
+            df_analisis["tiene_red_apoyo"]
+            .astype(str).str.upper()
+            .isin(["NO"]).sum()
+        )
+
+    _alto_sobredosis = 0
+    if "riesgo_sobredosis" in df_analisis.columns:
+        _alto_sobredosis = int(
+            df_analisis["riesgo_sobredosis"]
+            .astype(str).str.upper()
+            .eq("ALTO").sum()
+        )
+
+    _con_red = 0
+    if "tiene_red_apoyo" in df_analisis.columns:
+        _con_red = int(
+            df_analisis["tiene_red_apoyo"]
+            .astype(str).str.upper()
+            .isin(["SÍ", "SI"]).sum()
+        )
+
+    ce1, ce2, ce3, ce4 = st.columns(4)
+    ce1.metric("Cobertura analítica", f"{_cobertura_analitica:.1f}%")
+    ce2.metric("Consumo diario / muy frecuente", _alerta_consumo)
+    ce3.metric("Sin red de apoyo", _sin_red)
+    ce4.metric(
+        "Factores protectores: con red",
+        _con_red,
+        help="Número de personas que reportan contar con red de apoyo."
+    )
+
+    if _alto_sobredosis > 0:
+        st.warning(
+            f"⚠️ Se identifican {_alto_sobredosis} registros con riesgo de sobredosis "
+            "clasificado como ALTO. Esta es una alerta operativa y no un diagnóstico clínico."
+        )
+
+    # ------------------------------------------------------------
+    # Catálogo de cruces disponibles
+    # ------------------------------------------------------------
+    cruces_catalogo = {
+        "Causa de inicio × Causa de permanencia": (
+            "causa_inicio_calle",
+            "causa_permanencia_calle"
+        ),
+        "Tiempo en calle × Frecuencia de consumo": (
+            "tramo_tiempo_calle",
+            "frecuencia_consumo"
+        ),
+        "Tiempo en calle × Red de apoyo": (
+            "tramo_tiempo_calle",
+            "tiene_red_apoyo"
+        ),
+        "Modalidad × Sustancia principal": (
+            "modalidad",
+            "sustancia_principal"
+        ),
+        "Modalidad × Frecuencia de consumo": (
+            "modalidad",
+            "frecuencia_consumo"
+        ),
+        "Modalidad × Etapa del proceso": (
+            "modalidad",
+            "etapa_proceso"
+        ),
+        "Red de apoyo × Posibilidad de retorno familiar": (
+            "tiene_red_apoyo",
+            "posibilidad_retorno_familiar"
+        ),
+        "Posición frente al consumo × Objetivo acordado": (
+            "posicion_frente_consumo",
+            "objetivo_frente_consumo"
+        ),
+        "Salud mental × Frecuencia de consumo": (
+            "estado_salud_mental",
+            "frecuencia_consumo"
+        ),
+        "Régimen de salud × Necesidad de remisión": (
+            "regimen_salud",
+            "requiere_remision_salud"
+        ),
+        "Modalidad × Estado PAI": (
+            "modalidad",
+            "estado_pai_analitico"
+        ),
+        "Etapa del proceso × Estado PAI": (
+            "etapa_proceso",
+            "estado_pai_analitico"
+        )
+    }
+
+    cruces_disponibles = {
+        nombre: vars_
+        for nombre, vars_ in cruces_catalogo.items()
+        if all(v in df_analisis.columns for v in vars_)
+    }
+
+    if not cruces_disponibles:
+        st.info(
+            "Todavía no hay suficientes variables diligenciadas para construir cruces estratégicos."
+        )
+    else:
+        st.markdown("#### 🔬 Explorar asociación")
+
+        _cruce_elegido = st.selectbox(
+            "Seleccione el cruce",
+            list(cruces_disponibles.keys()),
+            key="cruce_estrategico_v1632"
+        )
+        _fila_var, _col_var = cruces_disponibles[_cruce_elegido]
+
+        _base_cruce = df_analisis[[_fila_var, _col_var]].copy()
+        _base_cruce[_fila_var] = _limpia_cat_v1632(_base_cruce[_fila_var])
+        _base_cruce[_col_var] = _limpia_cat_v1632(_base_cruce[_col_var])
+
+        # La tabla principal excluye "Sin información" para que los porcentajes
+        # representen registros válidos; la cobertura se informa aparte.
+        _valid_cruce = _base_cruce[
+            (_base_cruce[_fila_var] != "Sin información")
+            & (_base_cruce[_col_var] != "Sin información")
+        ].copy()
+
+        _n_validos = len(_valid_cruce)
+        _pct_validos = round(
+            (_n_validos / len(_base_cruce) * 100), 1
+        ) if len(_base_cruce) else 0
+
+        cv1, cv2, cv3 = st.columns(3)
+        cv1.metric("Registros del cruce", len(_base_cruce))
+        cv2.metric("Registros válidos", _n_validos)
+        cv3.metric("Cobertura del cruce", f"{_pct_validos:.1f}%")
+
+        if _valid_cruce.empty:
+            st.info("No hay datos válidos suficientes para este cruce.")
+        else:
+            _tabla_n = pd.crosstab(
+                _valid_cruce[_fila_var],
+                _valid_cruce[_col_var]
+            )
+
+            _tabla_pct = pd.crosstab(
+                _valid_cruce[_fila_var],
+                _valid_cruce[_col_var],
+                normalize="index"
+            ).mul(100).round(1)
+
+            tcr1, tcr2 = st.tabs([
+                "Frecuencias",
+                "% dentro de cada fila"
+            ])
+
+            with tcr1:
+                st.dataframe(
+                    _tabla_n,
+                    use_container_width=True
+                )
+
+            with tcr2:
+                _tabla_pct_show = _tabla_pct.applymap(
+                    lambda x: f"{x:.1f}%"
+                )
+                st.dataframe(
+                    _tabla_pct_show,
+                    use_container_width=True
+                )
+
+            # Gráfico del cruce
+            _graf = (
+                _valid_cruce
+                .groupby([_fila_var, _col_var], dropna=False)
+                .size()
+                .reset_index(name="Personas")
+            )
+
+            fig_cruce = px.bar(
+                _graf,
+                x=_fila_var,
+                y="Personas",
+                color=_col_var,
+                barmode="group",
+                title=_cruce_elegido
+            )
+            fig_cruce.update_layout(
+                xaxis_title=_fila_var.replace("_", " ").title(),
+                yaxis_title="Personas",
+                legend_title=_col_var.replace("_", " ").title()
+            )
+            st.plotly_chart(fig_cruce, use_container_width=True)
+
+            # ----------------------------------------------------
+            # Hallazgos automáticos del cruce seleccionado
+            # ----------------------------------------------------
+            st.markdown("#### 🧠 Lectura automática del cruce")
+            _hallazgos_cruce = []
+
+            # Combinación más frecuente
+            _combo = (
+                _valid_cruce
+                .groupby([_fila_var, _col_var])
+                .size()
+                .sort_values(ascending=False)
+            )
+            if not _combo.empty:
+                (_v1, _v2), _ncombo = _combo.index[0], int(_combo.iloc[0])
+                _pctcombo = round(_ncombo / _n_validos * 100, 1)
+                _hallazgos_cruce.append(
+                    f"La combinación más frecuente es **{_v1} × {_v2}**, "
+                    f"con {_ncombo} personas ({_pctcombo:.1f}% de los registros válidos del cruce)."
+                )
+
+            # Mayor concentración por fila
+            for _cat_fila in _tabla_pct.index[:5]:
+                _serie_pct = _tabla_pct.loc[_cat_fila]
+                if len(_serie_pct) and _serie_pct.max() >= 50:
+                    _cat_col = _serie_pct.idxmax()
+                    _pct = float(_serie_pct.max())
+                    _n_fila = int(_tabla_n.loc[_cat_fila].sum())
+                    if _n_fila >= 3:
+                        _hallazgos_cruce.append(
+                            f"Entre quienes están en **{_cat_fila}**, "
+                            f"el {_pct:.1f}% se concentra en **{_cat_col}** "
+                            f"(base: {_n_fila} registros válidos)."
+                        )
+
+            if not _hallazgos_cruce:
+                _hallazgos_cruce.append(
+                    "No se observa una concentración dominante con los datos disponibles."
+                )
+
+            for _h in _hallazgos_cruce[:5]:
+                st.write("• " + _h)
+
+            st.caption(
+                "Interpretación descriptiva: estos resultados muestran asociaciones "
+                "dentro de los registros disponibles. No demuestran relaciones de causa y efecto."
+            )
+
+    # ------------------------------------------------------------
+    # Hallazgos estratégicos automáticos adicionales
+    # ------------------------------------------------------------
+    st.markdown("#### 🚦 Hallazgos y alertas estratégicas")
+    _hallazgos_estrategicos = []
+
+    # Cronicidad: excluir cero ambiguo de cálculos.
+    if "tiempo_anos_calle" in df_analisis.columns:
+        _anos_calle = pd.to_numeric(
+            df_analisis["tiempo_anos_calle"],
+            errors="coerce"
+        )
+        _anos_validos = _anos_calle[_anos_calle > 0]
+        _ceros_calle = int((_anos_calle == 0).sum())
+        if not _anos_validos.empty:
+            _pct_cronica = round((_anos_validos >= 10).mean() * 100, 1)
+            _hallazgos_estrategicos.append(
+                f"Entre los registros con duración positiva validable, "
+                f"el {_pct_cronica:.1f}% reporta 10 años o más de trayectoria en calle."
+            )
+        if _ceros_calle:
+            _hallazgos_estrategicos.append(
+                f"Hay {_ceros_calle} registros con **0 años en calle**. "
+                "Se mantienen visibles como '0 registrado / por validar' y no se usan "
+                "en promedios de duración para evitar confundir cero real con dato no diligenciado."
+            )
+
+    # Red + cronicidad
+    if (
+        "tiempo_anos_calle" in df_analisis.columns
+        and "tiene_red_apoyo" in df_analisis.columns
+    ):
+        _tmp = df_analisis[[
+            "tiempo_anos_calle",
+            "tiene_red_apoyo"
+        ]].copy()
+        _tmp["tiempo_anos_calle"] = pd.to_numeric(
+            _tmp["tiempo_anos_calle"],
+            errors="coerce"
+        )
+        _tmp["red"] = _tmp["tiene_red_apoyo"].astype(str).str.upper()
+        _tmp = _tmp[
+            (_tmp["tiempo_anos_calle"] > 0)
+            & (_tmp["red"].isin(["SÍ", "SI", "NO"]))
+        ]
+        if len(_tmp) >= 10:
+            _tmp["cronica"] = _tmp["tiempo_anos_calle"] >= 10
+            _tasas = _tmp.groupby("cronica")["red"].apply(
+                lambda s: (s == "NO").mean() * 100
+            )
+            if True in _tasas.index and False in _tasas.index:
+                _hallazgos_estrategicos.append(
+                    "En la comparación exploratoria, la ausencia de red de apoyo es "
+                    f"{_tasas.loc[True]:.1f}% entre personas con 10 años o más en calle "
+                    f"y {_tasas.loc[False]:.1f}% entre quienes reportan menos de 10 años. "
+                    "La diferencia es asociativa, no causal."
+                )
+
+    # Modalidad y consumo frecuente
+    if (
+        "modalidad" in df_analisis.columns
+        and "frecuencia_consumo" in df_analisis.columns
+    ):
+        _tmp = df_analisis[["modalidad", "frecuencia_consumo"]].copy()
+        _tmp["modalidad"] = _tmp["modalidad"].astype(str).str.upper()
+        _tmp["freq"] = _tmp["frecuencia_consumo"].astype(str).str.upper()
+        _tmp = _tmp[
+            ~_tmp["freq"].eq("SIN INFORMACIÓN")
+            & _tmp["modalidad"].isin(["URBANO", "GRANJA"])
+        ]
+        if not _tmp.empty:
+            _tmp["frecuente"] = _tmp["freq"].str.contains(
+                r"DIARIO|TODOS LOS D[IÍ]AS|6-7|7 D[IÍ]AS",
+                regex=True,
+                na=False
+            )
+            _tasas_mod = _tmp.groupby("modalidad")["frecuente"].mean().mul(100)
+            if "URBANO" in _tasas_mod.index and "GRANJA" in _tasas_mod.index:
+                _hallazgos_estrategicos.append(
+                    f"El consumo diario/muy frecuente representa "
+                    f"{_tasas_mod['URBANO']:.1f}% de los registros válidos en URBANO "
+                    f"y {_tasas_mod['GRANJA']:.1f}% en GRANJA. "
+                    "La comparación describe perfiles registrados y no evalúa efectividad de la modalidad."
+                )
+
+    if not _hallazgos_estrategicos:
+        st.info(
+            "La cobertura actual no permite generar hallazgos estratégicos adicionales con suficiente base."
+        )
+    else:
+        for _h in _hallazgos_estrategicos:
+            st.info("• " + _h)
+
+    # ------------------------------------------------------------
+    # Detalle de casos: evidencia que sustenta los cruces
+    # ------------------------------------------------------------
+    st.markdown("#### 🗂️ Registros que sustentan el análisis")
+
+    columnas_detalle = [
+        c for c in [
+            "numero_identificacion",
+            "nombres",
+            "apellidos",
+            "modalidad",
+            "tiempo_anos_calle",
+            "tramo_tiempo_calle",
+            "tiempo_anos_consumo",
+            "tramo_tiempo_consumo",
+            "causa_inicio_calle",
+            "causa_permanencia_calle",
+            "sustancia_principal",
+            "frecuencia_consumo",
+            "via_administracion_consumo",
+            "posicion_frente_consumo",
+            "tiene_red_apoyo",
+            "tiempo_ultimo_contacto_familiar",
+            "posibilidad_retorno_familiar",
+            "regimen_salud",
+            "estado_salud_mental",
+            "estado_pai_analitico",
+            "avance_pai",
+            "etapa_proceso"
+        ]
+        if c in df_analisis.columns
+    ]
+
+    cruces = df_analisis[columnas_detalle].copy()
+
+    with st.expander(
+        f"Ver detalle individual ({len(cruces)} registros)",
+        expanded=False
+    ):
+        st.dataframe(
+            cruces,
+            use_container_width=True,
+            hide_index=True
+        )
 
     csv = cruces.to_csv(index=False).encode("utf-8-sig")
     st.download_button(
-        "⬇️ Descargar indicadores de habitabilidad (CSV)",
+        "⬇️ Descargar base analítica de habitabilidad (CSV)",
         data=csv,
-        file_name="indicadores_habitabilidad_calle.csv",
+        file_name="base_analitica_habitabilidad_calle.csv",
         mime="text/csv",
         use_container_width=True
     )
