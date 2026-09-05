@@ -10604,6 +10604,15 @@ with st.sidebar:
             st.session_state.page = "historia_integral_v12"
             st.rerun()
 
+        if acceso_pai_menu:
+            if st.button(
+                "📄 Mi Informe Mensual",
+                use_container_width=True,
+                key="btn_informe_mensual_profesional_menu_v1629"
+            ):
+                st.session_state.page = "informe_mensual_profesional_v1627"
+                st.rerun()
+
     elif rol_menu in ["AUXILIAR_ADMINISTRATIVO", "TECNOLOGO_INGENIERIA"]:
         # Perfiles administrativos restringidos:
         # el acceso operativo disponible es Control Diario de Asistencia.
@@ -10670,15 +10679,6 @@ with st.sidebar:
         ):
             st.session_state.page = "reportes_institucionales_v168"
             st.rerun()
-        if st.button(
-            "📄 Informe Mensual Profesional",
-            use_container_width=True,
-            key="btn_informe_mensual_prof_v1627"
-        ):
-            st.session_state.page = "informe_mensual_profesional_v1627"
-            st.rerun()
-
-
         if st.button(
             "🧠 Comité de Casos",
             use_container_width=True
