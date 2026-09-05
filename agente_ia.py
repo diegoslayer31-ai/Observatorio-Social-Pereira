@@ -15814,7 +15814,7 @@ def tablero_habitabilidad_v1611():
                 )
 
             with tcr2:
-                _tabla_pct_show = _tabla_pct.applymap(
+                _tabla_pct_show = _tabla_pct.map(
                     lambda x: f"{x:.1f}%"
                 )
                 st.dataframe(
