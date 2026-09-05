@@ -8215,242 +8215,305 @@ def panel_profesional_v15(doc_forzado=None, incrustado=False):
         prof_nombre = str(prof_row.get("nombre") or "").strip()
 
 
-    # ------------------------------------------------------------
-    # V16.4 - MI GESTIÓN PAI
-    # ------------------------------------------------------------
-    st.markdown("## 📊 Mi gestión PAI")
+    if not incrustado:
+        # ------------------------------------------------------------
+        # V16.4 - MI GESTIÓN PAI
+        # ------------------------------------------------------------
+        st.markdown("## 📊 Mi gestión PAI")
 
-    try:
-        gestion = pd.read_sql(
-            text("""
-                SELECT
-                    p.id,
-                    TRIM(CAST(p.documento_usuario AS TEXT)) AS documento,
-                    p.objetivo_tipo,
-                    p.porcentaje_avance,
-                    p.estado,
-                    p.fecha_meta,
-                    p.fecha_ultimo_seguimiento,
-                    h.nombres,
-                    h.apellidos,
-                    h.modalidad
-                FROM pai_objetivos p
-                LEFT JOIN habitante_de_calle h
-                  ON TRIM(CAST(h.numero_identificacion AS TEXT))
-                   = TRIM(CAST(p.documento_usuario AS TEXT))
-                WHERE p.profesional_referente=:prof
-            """),
-            engine,
-            params={"prof": prof_id}
-        )
-    except Exception:
-        gestion = pd.DataFrame()
-
-    try:
-        seg_total_df = pd.read_sql(
-            text("""
-                SELECT COUNT(*) AS total
-                FROM pai_novedades n
-                JOIN pai_objetivos o ON o.id=n.id_objetivo
-                WHERE o.profesional_referente=:prof
-            """),
-            engine,
-            params={"prof": prof_id}
-        )
-        total_seguimientos = (
-            int(seg_total_df.iloc[0]["total"])
-            if not seg_total_df.empty else 0
-        )
-    except Exception:
-        total_seguimientos = 0
-
-    try:
-        cierres_prof = pd.read_sql(
-            text("""
-                SELECT COUNT(DISTINCT documento_usuario) AS total
-                FROM pai_cierres
-                WHERE profesional_referente=:prof
-            """),
-            engine,
-            params={"prof": prof_id}
-        )
-        total_cerrados = (
-            int(cierres_prof.iloc[0]["total"])
-            if not cierres_prof.empty else 0
-        )
-    except Exception:
-        total_cerrados = 0
-
-    if gestion.empty:
-        personas_pai = 0
-        objetivos_total = 0
-        objetivos_cumplidos = 0
-        objetivos_vencidos = 0
-        casos_sin_seg = 0
-        cumplimiento_promedio = 0
-    else:
-        gestion["porcentaje_avance"] = pd.to_numeric(
-            gestion["porcentaje_avance"], errors="coerce"
-        ).fillna(0)
-        gestion["fecha_meta"] = pd.to_datetime(
-            gestion["fecha_meta"], errors="coerce"
-        )
-        gestion["fecha_ultimo_seguimiento"] = pd.to_datetime(
-            gestion["fecha_ultimo_seguimiento"], errors="coerce"
-        )
-        hoy_g = pd.Timestamp(date.today())
-
-        cumplido_g = (
-            gestion["porcentaje_avance"].ge(100)
-            | gestion["estado"].fillna("").astype(str).str.upper().eq("CUMPLIDO")
-        )
-        dias_meta_g = (gestion["fecha_meta"].dt.normalize() - hoy_g).dt.days
-        dias_seg_g = (
-            hoy_g - gestion["fecha_ultimo_seguimiento"].dt.normalize()
-        ).dt.days
-
-        personas_pai = gestion["documento"].nunique()
-        objetivos_total = len(gestion)
-        objetivos_cumplidos = int(cumplido_g.sum())
-        objetivos_vencidos = int((~cumplido_g & dias_meta_g.lt(0)).sum())
-
-        sin_seg_docs = gestion.loc[
-            ~cumplido_g
-            & (
-                gestion["fecha_ultimo_seguimiento"].isna()
-                | dias_seg_g.gt(15)
-            ),
-            "documento"
-        ]
-        casos_sin_seg = sin_seg_docs.nunique()
-        cumplimiento_promedio = round(
-            float(gestion["porcentaje_avance"].mean()), 1
-        )
-
-    with st.expander("📊 Ver resumen de mi gestión", expanded=True):
-        k1, k2, k3, k4 = st.columns(4)
-        k1.metric("Personas con PAI", personas_pai)
-        k2.metric("Objetivos creados", objetivos_total)
-        k3.metric("Objetivos cumplidos", objetivos_cumplidos)
-        k4.metric("PAI cerrados", total_cerrados)
-
-        k5, k6, k7, k8 = st.columns(4)
-        k5.metric("Objetivos vencidos", objetivos_vencidos)
-        k6.metric("Seguimientos realizados", total_seguimientos)
-        k7.metric("Casos sin seguimiento +15 días", casos_sin_seg)
-        k8.metric("Avance promedio", f"{cumplimiento_promedio}%")
-
-        if not gestion.empty:
-            gestion["nombre_completo"] = (
-                gestion["nombres"].fillna("").astype(str).str.strip()
-                + " "
-                + gestion["apellidos"].fillna("").astype(str).str.strip()
-            ).str.strip()
-
-            filas = []
-            for doc_g, grupo in gestion.groupby("documento", dropna=False):
-                grupo = grupo.copy()
-                grupo["porcentaje_avance"] = pd.to_numeric(
-                    grupo["porcentaje_avance"], errors="coerce"
-                ).fillna(0)
-                metas = pd.to_datetime(grupo["fecha_meta"], errors="coerce")
-                segs = pd.to_datetime(
-                    grupo["fecha_ultimo_seguimiento"], errors="coerce"
-                )
-                cumplidos_g = (
-                    grupo["porcentaje_avance"].ge(100)
-                    | grupo["estado"].fillna("").astype(str).str.upper().eq(
-                        "CUMPLIDO"
-                    )
-                )
-                venc_g = int(
-                    (
-                        ~cumplidos_g
-                        & ((metas.dt.normalize() - pd.Timestamp(date.today())).dt.days < 0)
-                    ).sum()
-                )
-                sin_g = int(
-                    (
-                        ~cumplidos_g
-                        & (
-                            segs.isna()
-                            | (
-                                pd.Timestamp(date.today()) - segs.dt.normalize()
-                            ).dt.days.gt(15)
-                        )
-                    ).sum()
-                )
-
-                if venc_g > 0:
-                    sem = "🔴 VENCIDO"
-                elif sin_g > 0:
-                    sem = "🟠 REQUIERE SEGUIMIENTO"
-                else:
-                    sem = "🟢 AL DÍA"
-
-                filas.append({
-                    "Persona": grupo["nombre_completo"].iloc[0],
-                    "Documento": doc_g,
-                    "Modalidad": grupo["modalidad"].iloc[0],
-                    "Objetivos": len(grupo),
-                    "Cumplidos": int(cumplidos_g.sum()),
-                    "Avance promedio": f"{round(grupo['porcentaje_avance'].mean(), 1)}%",
-                    "Último seguimiento": (
-                        segs.max().strftime("%d/%m/%Y")
-                        if pd.notna(segs.max()) else "Sin seguimiento"
-                    ),
-                    "Próxima meta": (
-                        metas[~cumplidos_g].min().strftime("%d/%m/%Y")
-                        if pd.notna(metas[~cumplidos_g].min()) else "—"
-                    ),
-                    "Estado": sem
-                })
-
-            tabla_gestion = pd.DataFrame(filas)
-            orden_sem = {
-                "🔴 VENCIDO": 0,
-                "🟠 REQUIERE SEGUIMIENTO": 1,
-                "🟢 AL DÍA": 2
-            }
-            tabla_gestion["_orden"] = tabla_gestion["Estado"].map(
-                orden_sem
-            ).fillna(9)
-            tabla_gestion = tabla_gestion.sort_values(
-                ["_orden", "Persona"]
-            ).drop(columns=["_orden"])
-
-            st.markdown("#### 👥 Mis casos PAI")
-            st.dataframe(
-                tabla_gestion,
-                use_container_width=True,
-                hide_index=True
+        try:
+            gestion = pd.read_sql(
+                text("""
+                    SELECT
+                        p.id,
+                        TRIM(CAST(p.documento_usuario AS TEXT)) AS documento,
+                        p.objetivo_tipo,
+                        p.porcentaje_avance,
+                        p.estado,
+                        p.fecha_meta,
+                        p.fecha_ultimo_seguimiento,
+                        h.nombres,
+                        h.apellidos,
+                        h.modalidad
+                    FROM pai_objetivos p
+                    LEFT JOIN LATERAL (
+                        SELECT
+                            hx.nombres,
+                            hx.apellidos,
+                            hx.modalidad
+                        FROM habitante_de_calle hx
+                        WHERE TRIM(CAST(hx.numero_identificacion AS TEXT))
+                              = TRIM(CAST(p.documento_usuario AS TEXT))
+                        ORDER BY
+                            CASE
+                                WHEN UPPER(TRIM(COALESCE(hx.estado_caso,'')))='ACTIVO' THEN 0
+                                ELSE 1
+                            END,
+                            CASE
+                                WHEN hx.modalidad IS NOT NULL
+                                 AND TRIM(CAST(hx.modalidad AS TEXT))<>'' THEN 0
+                                ELSE 1
+                            END
+                        LIMIT 1
+                    ) h ON TRUE
+                    WHERE p.profesional_referente=:prof
+                """),
+                engine,
+                params={"prof": prof_id}
             )
-        else:
-            st.info("Todavía no tiene objetivos PAI registrados.")
+        except Exception:
+            gestion = pd.DataFrame()
 
-    st.divider()
+        try:
+            seg_total_df = pd.read_sql(
+                text("""
+                    SELECT COUNT(*) AS total
+                    FROM pai_novedades n
+                    JOIN pai_objetivos o ON o.id=n.id_objetivo
+                    WHERE o.profesional_referente=:prof
+                """),
+                engine,
+                params={"prof": prof_id}
+            )
+            total_seguimientos = (
+                int(seg_total_df.iloc[0]["total"])
+                if not seg_total_df.empty else 0
+            )
+        except Exception:
+            total_seguimientos = 0
+
+        try:
+            cierres_prof = pd.read_sql(
+                text("""
+                    SELECT COUNT(DISTINCT documento_usuario) AS total
+                    FROM pai_cierres
+                    WHERE profesional_referente=:prof
+                """),
+                engine,
+                params={"prof": prof_id}
+            )
+            total_cerrados = (
+                int(cierres_prof.iloc[0]["total"])
+                if not cierres_prof.empty else 0
+            )
+        except Exception:
+            total_cerrados = 0
+
+        if gestion.empty:
+            personas_pai = 0
+            objetivos_total = 0
+            objetivos_cumplidos = 0
+            objetivos_vencidos = 0
+            casos_sin_seg = 0
+            cumplimiento_promedio = 0
+        else:
+            gestion["porcentaje_avance"] = pd.to_numeric(
+                gestion["porcentaje_avance"], errors="coerce"
+            ).fillna(0)
+            gestion["fecha_meta"] = pd.to_datetime(
+                gestion["fecha_meta"], errors="coerce"
+            )
+            gestion["fecha_ultimo_seguimiento"] = pd.to_datetime(
+                gestion["fecha_ultimo_seguimiento"], errors="coerce"
+            )
+            hoy_g = pd.Timestamp(date.today())
+
+            cumplido_g = (
+                gestion["porcentaje_avance"].ge(100)
+                | gestion["estado"].fillna("").astype(str).str.upper().eq("CUMPLIDO")
+            )
+            dias_meta_g = (gestion["fecha_meta"].dt.normalize() - hoy_g).dt.days
+            dias_seg_g = (
+                hoy_g - gestion["fecha_ultimo_seguimiento"].dt.normalize()
+            ).dt.days
+
+            personas_pai = gestion["documento"].nunique()
+            objetivos_total = len(gestion)
+            objetivos_cumplidos = int(cumplido_g.sum())
+            objetivos_vencidos = int((~cumplido_g & dias_meta_g.lt(0)).sum())
+
+            sin_seg_docs = gestion.loc[
+                ~cumplido_g
+                & (
+                    gestion["fecha_ultimo_seguimiento"].isna()
+                    | dias_seg_g.gt(15)
+                ),
+                "documento"
+            ]
+            casos_sin_seg = sin_seg_docs.nunique()
+            cumplimiento_promedio = round(
+                float(gestion["porcentaje_avance"].mean()), 1
+            )
+
+        with st.expander("📊 Ver resumen de mi gestión", expanded=True):
+            k1, k2, k3, k4 = st.columns(4)
+            k1.metric("Personas con PAI", personas_pai)
+            k2.metric("Objetivos creados", objetivos_total)
+            k3.metric("Objetivos cumplidos", objetivos_cumplidos)
+            k4.metric("PAI cerrados", total_cerrados)
+
+            k5, k6, k7, k8 = st.columns(4)
+            k5.metric("Objetivos vencidos", objetivos_vencidos)
+            k6.metric("Seguimientos realizados", total_seguimientos)
+            k7.metric("Casos sin seguimiento +15 días", casos_sin_seg)
+            k8.metric("Avance promedio", f"{cumplimiento_promedio}%")
+
+            if not gestion.empty:
+                gestion["nombre_completo"] = (
+                    gestion["nombres"].fillna("").astype(str).str.strip()
+                    + " "
+                    + gestion["apellidos"].fillna("").astype(str).str.strip()
+                ).str.strip()
+
+                filas = []
+                for doc_g, grupo in gestion.groupby("documento", dropna=False):
+                    grupo = grupo.copy()
+                    grupo["porcentaje_avance"] = pd.to_numeric(
+                        grupo["porcentaje_avance"], errors="coerce"
+                    ).fillna(0)
+                    metas = pd.to_datetime(grupo["fecha_meta"], errors="coerce")
+                    segs = pd.to_datetime(
+                        grupo["fecha_ultimo_seguimiento"], errors="coerce"
+                    )
+                    cumplidos_g = (
+                        grupo["porcentaje_avance"].ge(100)
+                        | grupo["estado"].fillna("").astype(str).str.upper().eq(
+                            "CUMPLIDO"
+                        )
+                    )
+                    venc_g = int(
+                        (
+                            ~cumplidos_g
+                            & ((metas.dt.normalize() - pd.Timestamp(date.today())).dt.days < 0)
+                        ).sum()
+                    )
+                    sin_g = int(
+                        (
+                            ~cumplidos_g
+                            & (
+                                segs.isna()
+                                | (
+                                    pd.Timestamp(date.today()) - segs.dt.normalize()
+                                ).dt.days.gt(15)
+                            )
+                        ).sum()
+                    )
+
+                    if venc_g > 0:
+                        sem = "🔴 VENCIDO"
+                    elif sin_g > 0:
+                        sem = "🟠 REQUIERE SEGUIMIENTO"
+                    else:
+                        sem = "🟢 AL DÍA"
+
+                    filas.append({
+                        "Persona": grupo["nombre_completo"].iloc[0],
+                        "Documento": doc_g,
+                        "Modalidad": grupo["modalidad"].iloc[0],
+                        "Objetivos": len(grupo),
+                        "Cumplidos": int(cumplidos_g.sum()),
+                        "Avance promedio": f"{round(grupo['porcentaje_avance'].mean(), 1)}%",
+                        "Último seguimiento": (
+                            segs.max().strftime("%d/%m/%Y")
+                            if pd.notna(segs.max()) else "Sin seguimiento"
+                        ),
+                        "Próxima meta": (
+                            metas[~cumplidos_g].min().strftime("%d/%m/%Y")
+                            if pd.notna(metas[~cumplidos_g].min()) else "—"
+                        ),
+                        "Estado": sem
+                    })
+
+                tabla_gestion = pd.DataFrame(filas)
+                orden_sem = {
+                    "🔴 VENCIDO": 0,
+                    "🟠 REQUIERE SEGUIMIENTO": 1,
+                    "🟢 AL DÍA": 2
+                }
+                tabla_gestion["_orden"] = tabla_gestion["Estado"].map(
+                    orden_sem
+                ).fillna(9)
+                tabla_gestion = tabla_gestion.sort_values(
+                    ["_orden", "Persona"]
+                ).drop(columns=["_orden"])
+
+                st.markdown("#### 👥 Mis casos PAI")
+                st.dataframe(
+                    tabla_gestion,
+                    use_container_width=True,
+                    hide_index=True
+                )
+            else:
+                st.info("Todavía no tiene objetivos PAI registrados.")
+
+        st.divider()
 
     # ------------------------------------------------------------
     # Cargar personas asignadas o activas
     # ------------------------------------------------------------
-    personas = pd.read_sql(
-        text("""
-            SELECT
-                TRIM(CAST(numero_identificacion AS TEXT)) AS documento,
-                nombres,
-                apellidos,
-                modalidad,
-                estado_caso
-            FROM habitante_de_calle
-            WHERE UPPER(TRIM(COALESCE(estado_caso,'')))='ACTIVO'
-            ORDER BY nombres, apellidos
-        """),
-        engine
-    )
+    if incrustado and doc_forzado is not None:
+        personas = pd.read_sql(
+            text("""
+                SELECT DISTINCT ON (
+                    TRIM(CAST(numero_identificacion AS TEXT))
+                )
+                    TRIM(CAST(numero_identificacion AS TEXT)) AS documento,
+                    nombres,
+                    apellidos,
+                    modalidad,
+                    estado_caso
+                FROM habitante_de_calle
+                WHERE TRIM(CAST(numero_identificacion AS TEXT))=:doc
+                ORDER BY
+                    TRIM(CAST(numero_identificacion AS TEXT)),
+                    CASE
+                        WHEN UPPER(TRIM(COALESCE(estado_caso,'')))='ACTIVO' THEN 0
+                        ELSE 1
+                    END,
+                    CASE
+                        WHEN modalidad IS NOT NULL
+                         AND TRIM(CAST(modalidad AS TEXT))<>'' THEN 0
+                        ELSE 1
+                    END
+            """),
+            engine,
+            params={"doc": str(doc_forzado).strip()}
+        )
 
-    if personas.empty:
-        st.info("No hay personas activas disponibles.")
-        return
+        if personas.empty:
+            st.warning(
+                "La persona seleccionada no existe en la base maestra de habitantes de calle."
+            )
+            return
+    else:
+        personas = pd.read_sql(
+            text("""
+                SELECT DISTINCT ON (
+                    TRIM(CAST(numero_identificacion AS TEXT))
+                )
+                    TRIM(CAST(numero_identificacion AS TEXT)) AS documento,
+                    nombres,
+                    apellidos,
+                    modalidad,
+                    estado_caso
+                FROM habitante_de_calle
+                WHERE UPPER(TRIM(COALESCE(estado_caso,'')))='ACTIVO'
+                ORDER BY
+                    TRIM(CAST(numero_identificacion AS TEXT)),
+                    CASE
+                        WHEN modalidad IS NOT NULL
+                         AND TRIM(CAST(modalidad AS TEXT))<>'' THEN 0
+                        ELSE 1
+                    END,
+                    nombres,
+                    apellidos
+            """),
+            engine
+        )
+
+        if personas.empty:
+            st.info("No hay personas activas disponibles.")
+            return
 
     personas["nombre_completo"] = (
         personas["nombres"].fillna("").astype(str).str.strip()
@@ -8481,10 +8544,7 @@ def panel_profesional_v15(doc_forzado=None, incrustado=False):
             key="v16_2_usuario_unico"
         )
     else:
-        if doc_forzado is None or str(doc_forzado) not in docs:
-            st.warning("La persona seleccionada no está disponible para trabajar el PAI.")
-            return
-        doc_sel = str(doc_forzado)
+        doc_sel = str(doc_forzado).strip()
 
     persona_sel = personas.loc[
         personas["documento"].astype(str) == str(doc_sel)
@@ -8532,6 +8592,14 @@ def panel_profesional_v15(doc_forzado=None, incrustado=False):
         engine,
         params={"doc": str(doc_sel), "prof": prof_id}
     )
+
+    if incrustado:
+        st.markdown(f"## 🎯 PAI de {nombre_usuario}")
+        if objetivos.empty:
+            st.info(
+                "Esta persona todavía no tiene objetivos PAI. "
+                "Puede iniciar su PAI desde la pestaña **Objetivos**."
+            )
 
     # ------------------------------------------------------------
     # KPIs del expediente
