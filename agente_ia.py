@@ -16214,17 +16214,34 @@ def modulo_informe_mensual_profesional_piloto_v1627():
         st.error("La fecha inicial no puede ser posterior a la fecha final.")
         return
 
-    nombre_sesion = str(
-        st.session_state.get("nombre_usuario")
-        or st.session_state.get("nombre")
-        or st.session_state.get("usuario_nombre")
-        or ""
-    )
-    doc_sesion = str(
-        st.session_state.get("cedula")
-        or st.session_state.get("numero_identificacion")
-        or ""
-    )
+    # El informe pertenece al PROFESIONAL PAI asignado, no al usuario que inició sesión.
+    profesional_pai = _profesional_actual_v15()
+    if not profesional_pai:
+        st.error(
+            "No se encontró un profesional PAI asociado a este acceso. "
+            "Debe existir la asignación en pai_profesional_funcionario."
+        )
+        return
+
+    profesional_id_inf = profesional_pai.get("profesional_id")
+    nombre_profesional_inf = str(profesional_pai.get("nombre") or "").strip()
+    rol_profesional_inf = str(profesional_pai.get("rol") or "").strip()
+
+    # Documento del profesional, si está disponible en la tabla profesionales.
+    documento_profesional_inf = ""
+    try:
+        _dp = pd.read_sql(
+            text("SELECT * FROM profesionales WHERE id = :id LIMIT 1"),
+            engine,
+            params={"id": profesional_id_inf}
+        )
+        if not _dp.empty:
+            for _c in ["numero_identificacion", "cedula", "documento"]:
+                if _c in _dp.columns and pd.notna(_dp.iloc[0][_c]):
+                    documento_profesional_inf = str(_dp.iloc[0][_c]).strip()
+                    break
+    except Exception:
+        pass
 
     try:
         tablas = pd.read_sql(
@@ -16287,16 +16304,33 @@ def modulo_informe_mensual_profesional_piloto_v1627():
             df_seg, fuente_seg = filtrar_periodo(x), t
             break
 
-    # Si existe campo de profesional y coincide con la sesión, filtra su gestión.
+    # Filtrar exclusivamente la gestión del profesional PAI asignado.
     def filtrar_prof(df):
-        if df.empty or not nombre_sesion:
+        if df.empty:
             return df
-        cp = col(df, ["profesional_responsable","profesional","usuario_registra","registrado_por_nombre","responsable","usuario"])
-        if not cp:
-            return df
-        s = df[cp].fillna("").astype(str).str.upper()
-        mask = s.str.contains(nombre_sesion.upper(), regex=False)
-        return df[mask].copy() if mask.any() else df
+
+        cp_id = col(df, ["profesional_id", "id_profesional"])
+        if cp_id and profesional_id_inf is not None:
+            ids = pd.to_numeric(df[cp_id], errors="coerce")
+            mask_id = ids.eq(pd.to_numeric(pd.Series([profesional_id_inf]), errors="coerce").iloc[0])
+            if mask_id.any():
+                return df.loc[mask_id].copy()
+
+        cp = col(
+            df,
+            ["profesional_responsable", "profesional", "profesional_referente",
+             "responsable", "registrado_por_nombre"]
+        )
+        if cp and nombre_profesional_inf:
+            s = df[cp].fillna("").astype(str).str.strip().str.upper()
+            mask = s.eq(nombre_profesional_inf.upper()) | s.str.contains(
+                nombre_profesional_inf.upper(), regex=False
+            )
+            if mask.any():
+                return df.loc[mask].copy()
+
+        # Si la tabla no identifica profesional, no atribuir registros ajenos.
+        return df.iloc[0:0].copy()
 
     df_pai = filtrar_prof(df_pai)
     df_seg = filtrar_prof(df_seg)
@@ -16323,16 +16357,37 @@ def modulo_informe_mensual_profesional_piloto_v1627():
         if not df_seg.empty:
             st.dataframe(df_seg, use_container_width=True, hide_index=True)
 
-    st.markdown("### 👤 Datos del profesional")
-    x1,x2 = st.columns(2)
+    st.markdown("### 👤 Profesional responsable del informe")
+    st.success(f"**{nombre_profesional_inf}**")
+    if rol_profesional_inf:
+        st.caption(f"Perfil PAI: {rol_profesional_inf}")
+
+    # Nombre y documento no son editables: provienen de la asignación profesional.
+    nombre = nombre_profesional_inf
+    documento = documento_profesional_inf
+
+    x1, x2 = st.columns(2)
     with x1:
-        nombre = st.text_input("Nombre", value=nombre_sesion, key="imp_nombre")
+        if documento:
+            st.text_input(
+                "Documento del profesional",
+                value=documento,
+                disabled=True,
+                key="imp_doc_fijo"
+            )
         cargo = st.text_input("Cargo / perfil profesional", key="imp_cargo")
         contrato = st.text_input("Contrato / CPS", key="imp_contrato")
     with x2:
-        documento = st.text_input("Documento", value=doc_sesion, key="imp_doc")
-        proyecto = st.text_input("Proyecto / programa", value="Habitabilidad en Calle", key="imp_proyecto")
-        modalidad = st.selectbox("Modalidad", ["GENERAL","URBANO","GRANJA"], key="imp_modalidad")
+        proyecto = st.text_input(
+            "Proyecto / programa",
+            value="Habitabilidad en Calle",
+            key="imp_proyecto"
+        )
+        modalidad = st.selectbox(
+            "Modalidad",
+            ["GENERAL","URBANO","GRANJA"],
+            key="imp_modalidad"
+        )
 
     st.markdown("### 🧾 Cumplimiento de obligaciones")
     obligaciones = [
