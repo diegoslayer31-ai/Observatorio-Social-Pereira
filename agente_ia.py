@@ -2,6 +2,7 @@ import datetime
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+import json
 from sqlalchemy import create_engine, text
 import os
 import matplotlib.pyplot as plt
@@ -8664,6 +8665,7 @@ def panel_profesional_v15(doc_forzado=None, incrustado=False):
             "Tratamiento consumo SPA",
             "Reducción de riesgos y daños",
             "Vinculación familiar",
+            "Retorno a Ciudad de Origen",
             "Inclusión social",
             "Empleabilidad",
             "Generación de ingresos",
@@ -8683,6 +8685,7 @@ def panel_profesional_v15(doc_forzado=None, incrustado=False):
             "Tratamiento consumo SPA": "Salud",
             "Reducción de riesgos y daños": "Salud",
             "Vinculación familiar": "Inclusión social y familiar",
+            "Retorno a Ciudad de Origen": "Inclusión social y familiar",
             "Inclusión social": "Inclusión social y familiar",
             "Empleabilidad": "Inclusión económica",
             "Generación de ingresos": "Inclusión económica",
@@ -8702,6 +8705,7 @@ def panel_profesional_v15(doc_forzado=None, incrustado=False):
             "Tratamiento consumo SPA": "ODS 3",
             "Reducción de riesgos y daños": "ODS 3",
             "Vinculación familiar": "ODS 10",
+            "Retorno a Ciudad de Origen": "ODS 10",
             "Inclusión social": "ODS 10",
             "Empleabilidad": "ODS 8",
             "Generación de ingresos": "ODS 8",
@@ -8748,6 +8752,12 @@ def panel_profesional_v15(doc_forzado=None, incrustado=False):
                 "Identificar red",
                 "Realizar contacto",
                 "Verificar resultado del acercamiento"
+            ],
+            "Retorno a Ciudad de Origen": [
+                "Identificar ciudad o municipio de origen",
+                "Verificar red de apoyo o condiciones de recepción",
+                "Gestionar articulación y traslado / plan retorno",
+                "Confirmar llegada y vinculación territorial"
             ],
             "Inclusión social": [
                 "Identificar barreras",
@@ -10752,17 +10762,17 @@ with st.sidebar:
 # =====================================
 
 def formulario_genero_diversidad(doc_forzado=None, nombre_persona=None, incrustado=False):
-
+    """
+    V16.30: Género y diversidad sin duplicar variables ya capturadas
+    en Salud, Redes, Restablecimiento de derechos o Consumo.
+    """
     if not incrustado:
-        st.header("♀️ Equidad de Género y Diversidad")
+        st.header("🏳️‍🌈 Género y diversidad")
     else:
         st.markdown("### 🏳️‍🌈 Género y diversidad")
         if nombre_persona:
-            st.caption(
-                f"Caracterización de {nombre_persona} · {doc_forzado}"
-            )
+            st.caption(f"Caracterización de {nombre_persona} · {doc_forzado}")
 
-    # Cargar el último registro disponible de la persona para no empezar de cero.
     registro_genero = {}
     if doc_forzado:
         try:
@@ -10793,7 +10803,6 @@ def formulario_genero_diversidad(doc_forzado=None, nombre_persona=None, incrusta
         return opciones.index(valor) if valor in opciones else default
 
     with st.form(f"form_genero_diversidad_{doc_forzado or 'manual'}"):
-
         if doc_forzado:
             numero_identificacion = str(doc_forzado).strip()
             st.text_input(
@@ -10802,38 +10811,31 @@ def formulario_genero_diversidad(doc_forzado=None, nombre_persona=None, incrusta
                 disabled=True
             )
         else:
-            numero_identificacion = st.text_input(
-                "Número de identificación"
-            )
+            numero_identificacion = st.text_input("Número de identificación")
 
-        nombre_identitario = st.text_input(
+        st.markdown("#### Identidad y expresión")
+        g1, g2 = st.columns(2)
+
+        nombre_identitario = g1.text_input(
             "Nombre identitario / social",
             value=str(_gv("nombre_identitario", ""))
         )
 
         sexo_opts = [
-            "Masculino",
-            "Femenino",
-            "Intersex",
-            "No informa",
-            "Prefiere no responder"
+            "Masculino", "Femenino", "Intersex",
+            "No informa", "Prefiere no responder"
         ]
-        sexo_al_nacer = st.selectbox(
+        sexo_al_nacer = g2.selectbox(
             "Sexo al nacer",
             sexo_opts,
             index=_gidx(sexo_opts, _gv("sexo_al_nacer", "Masculino"))
         )
 
         identidad_opts = [
-            "Mujer cisgénero",
-            "Mujer trans",
-            "Hombre cisgénero",
-            "Hombre trans",
-            "Persona no binaria",
-            "Género fluido",
-            "Queer",
-            "Otra",
-            "No informa",
+            "Mujer cisgénero", "Mujer trans",
+            "Hombre cisgénero", "Hombre trans",
+            "Persona no binaria", "Género fluido",
+            "Queer", "Otra", "No informa",
             "Prefiere no responder"
         ]
         identidad_genero = st.selectbox(
@@ -10846,15 +10848,9 @@ def formulario_genero_diversidad(doc_forzado=None, nombre_persona=None, incrusta
         )
 
         orientacion_opts = [
-            "Heterosexual",
-            "Homosexual",
-            "Lesbiana",
-            "Bisexual",
-            "Pansexual",
-            "Asexual",
-            "Otra",
-            "No informa",
-            "Prefiere no responder"
+            "Heterosexual", "Homosexual", "Lesbiana",
+            "Bisexual", "Pansexual", "Asexual",
+            "Otra", "No informa", "Prefiere no responder"
         ]
         orientacion_sexual = st.selectbox(
             "Orientación sexual",
@@ -10866,12 +10862,8 @@ def formulario_genero_diversidad(doc_forzado=None, nombre_persona=None, incrusta
         )
 
         expresion_opts = [
-            "Masculina",
-            "Femenina",
-            "Andrógina",
-            "Variable",
-            "Otra",
-            "No informa"
+            "Masculina", "Femenina", "Andrógina",
+            "Variable", "Otra", "No informa"
         ]
         expresion_genero = st.selectbox(
             "Expresión de género",
@@ -10882,95 +10874,42 @@ def formulario_genero_diversidad(doc_forzado=None, nombre_persona=None, incrusta
             )
         )
 
+        st.markdown("#### Discriminación, violencias y protección")
         discriminacion = st.checkbox(
             "¿Refiere experiencias de discriminación?",
             value=bool(_gv("discriminacion", False))
         )
-
         tipo_discriminacion = st.text_area(
             "Descripción / tipo de discriminación",
             value=str(_gv("tipo_discriminacion", ""))
         )
 
-        violencia_genero = st.checkbox(
+        vg1, vg2 = st.columns(2)
+        violencia_genero = vg1.checkbox(
             "Violencia basada en género",
             value=bool(_gv("violencia_genero", False))
         )
-
-        violencia_fisica = st.checkbox(
+        violencia_fisica = vg2.checkbox(
             "Violencia física",
             value=bool(_gv("violencia_fisica", False))
         )
-
-        violencia_sexual = st.checkbox(
+        violencia_sexual = vg1.checkbox(
             "Violencia sexual",
             value=bool(_gv("violencia_sexual", False))
         )
-
-        violencia_institucional = st.checkbox(
+        violencia_institucional = vg2.checkbox(
             "Violencia institucional",
             value=bool(_gv("violencia_institucional", False))
         )
 
-        trabajo_sexual_opts = [
-            "Nunca",
-            "Anteriormente",
-            "Actualmente",
-            "No informa"
-        ]
+        trabajo_opts = ["Nunca", "Anteriormente", "Actualmente", "No informa"]
         trabajo_sexual = st.selectbox(
             "Trabajo sexual",
-            trabajo_sexual_opts,
+            trabajo_opts,
             index=_gidx(
-                trabajo_sexual_opts,
+                trabajo_opts,
                 _gv("trabajo_sexual", "Nunca")
             )
-        )
-
-        estado_vih = st.selectbox(
-            "Estado VIH",
-            [
-                "Negativo",
-                "Positivo",
-                "No conoce"
-            ]
-        )
-
-        tratamiento_vih = st.selectbox(
-            "Tratamiento VIH",
-            [
-                "Sí",
-                "No",
-                "No aplica"
-            ]
-        )
-
-        acceso_salud = st.selectbox(
-            "Acceso a salud",
-            [
-                "Sí",
-                "No",
-                "Parcial"
-            ]
-        )
-
-        regimen_salud = st.selectbox(
-            "Régimen de salud",
-            [
-                "Subsidiado",
-                "Contributivo",
-                "Especial",
-                "No afiliado"
-            ]
-        )
-
-        red_apoyo = st.selectbox(
-            "Red de apoyo",
-            [
-                "Sí",
-                "No",
-                "Parcial"
-            ]
         )
 
         amenazas = st.checkbox(
@@ -10978,231 +10917,110 @@ def formulario_genero_diversidad(doc_forzado=None, nombre_persona=None, incrusta
             value=bool(_gv("amenazas", False))
         )
 
-        custodia_hijos = st.text_input(
-            "Situación de hijos / cuidado",
-            value=str(_gv("custodia_hijos", ""))
+        st.markdown("#### Hijos y cuidado")
+        hc1, hc2 = st.columns(2)
+        cantidad_hijos = hc1.number_input(
+            "Cantidad de hijos",
+            min_value=0,
+            max_value=30,
+            value=int(_gv("cantidad_hijos", 0) or 0),
+            step=1
         )
-
-        fuente_ingresos = st.text_input(
-            "Fuente principal de ingresos",
-            value=str(_gv("fuente_ingresos", ""))
-        )
-
-        necesidades_prioritarias = st.text_area(
-            "Necesidades prioritarias / derechos a gestionar",
-            value=str(_gv("necesidades_prioritarias", ""))
-        )
-
-        # 🔹 NUEVOS CAMPOS SPA Y PROGRAMAS
-        uso_sustancias = st.checkbox(
-            "¿Consumo de sustancias psicoactivas?",
-            value=bool(_gv("uso_sustancias", False))
-        )
-
-        sustancias_consumidas = st.multiselect(
-            "Sustancias consumidas",
-            [
-                "Marihuana",
-                "Tusi",
-                "Heroína",
-                "Bazuco",
-                "Alcohol",
-                "Cocaína",
-                "Otra"
-            ]
+        cuidador_hijos = hc2.text_input(
+            "¿Quién cuida actualmente a sus hijos?",
+            value=str(_gv("cuidador_hijos", "")),
+            placeholder="Ej. madre, abuela, pareja, institución, no aplica..."
         )
 
         acceso_otros_programas = st.checkbox(
-            "¿Ha accedido a otros programas?",
+            "¿Ha accedido a otros programas relacionados con protección o inclusión?",
             value=bool(_gv("acceso_otros_programas", False))
         )
-
         activacion_ruta_vbg = st.checkbox(
             "¿Se ha activado ruta de atención en VBG?",
             value=bool(_gv("activacion_ruta_vbg", False))
         )
 
         guardar_genero = st.form_submit_button(
-            "💾 Guardar Caracterización"
+            "💾 Guardar Género y Diversidad",
+            use_container_width=True,
+            type="primary"
         )
-
-    # ==========================
-    # GUARDAR EN BASE DE DATOS
-    # ==========================
 
     if guardar_genero:
-
-        with engine.begin() as conn:
-
-            conn.execute(
-                text("""
-                    INSERT INTO caracterizacion_genero_diversidad (
-                        numero_identificacion,
-                        identidad_genero,
-                        orientacion_sexual,
-                        expresion_genero,
-                        nombre_identitario,
-                        sexo_al_nacer,
-                        discriminacion,
-                        tipo_discriminacion,
-                        violencia_genero,
-                        violencia_fisica,
-                        violencia_sexual,
-                        violencia_institucional,
-                        trabajo_sexual,
-                        estado_vih,
-                        tratamiento_vih,
-                        acceso_salud,
-                        regimen_salud,
-                        red_apoyo,
-                        amenazas,
-                        custodia_hijos,
-                        fuente_ingresos,
-                        necesidades_prioritarias,
-                        uso_sustancias,
-                        sustancias_consumidas,
-                        acceso_otros_programas,
-                        activacion_ruta_vbg,
-                        fecha_registro
-                    )
-                    VALUES (
-                        :numero_identificacion,
-                        :identidad_genero,
-                        :orientacion_sexual,
-                        :expresion_genero,
-                        :nombre_identitario,
-                        :sexo_al_nacer,
-                        :discriminacion,
-                        :tipo_discriminacion,
-                        :violencia_genero,
-                        :violencia_fisica,
-                        :violencia_sexual,
-                        :violencia_institucional,
-                        :trabajo_sexual,
-                        :estado_vih,
-                        :tratamiento_vih,
-                        :acceso_salud,
-                        :regimen_salud,
-                        :red_apoyo,
-                        :amenazas,
-                        :custodia_hijos,
-                        :fuente_ingresos,
-                        :necesidades_prioritarias,
-                        :uso_sustancias,
-                        :sustancias_consumidas,
-                        :acceso_otros_programas,
-                        :activacion_ruta_vbg,
-                        NOW()
-                    )
-                """),
-                {
-                    "numero_identificacion": numero_identificacion,
-                    "identidad_genero": identidad_genero,
-                    "orientacion_sexual": orientacion_sexual,
-                    "expresion_genero": expresion_genero,
-                    "nombre_identitario": nombre_identitario,
-                    "sexo_al_nacer": sexo_al_nacer,
-                    "discriminacion": discriminacion,
-                    "tipo_discriminacion": tipo_discriminacion,
-                    "violencia_genero": violencia_genero,
-                    "violencia_fisica": violencia_fisica,
-                    "violencia_sexual": violencia_sexual,
-                    "violencia_institucional": violencia_institucional,
-                    "trabajo_sexual": trabajo_sexual,
-                    "estado_vih": estado_vih,
-                    "tratamiento_vih": tratamiento_vih,
-                    "acceso_salud": acceso_salud,
-                    "regimen_salud": regimen_salud,
-                    "red_apoyo": red_apoyo,
-                    "amenazas": amenazas,
-                    "custodia_hijos": custodia_hijos,
-                    "fuente_ingresos": fuente_ingresos,
-                    "necesidades_prioritarias": necesidades_prioritarias,
-                    "uso_sustancias": uso_sustancias,
-                    "sustancias_consumidas": sustancias_consumidas,
-                    "acceso_otros_programas": acceso_otros_programas,
-                    "activacion_ruta_vbg": activacion_ruta_vbg
-                }
-            )
-
-        st.success("✅ Caracterización guardada correctamente")
-
-# =====================================
-# INDICADORES
-# =====================================
-
-if st.session_state.page == "genero_diversidad":
-
-    st.markdown("---")
-    st.subheader("📊 Indicadores de Género y Diversidad")
-
-    try:
-
-        df_genero = pd.read_sql(
-            """
-            SELECT *
-            FROM caracterizacion_genero_diversidad
-            """,
-            engine
-        )
-
-        if df_genero.empty:
-            st.warning("No hay registros aún en la base de datos.")
-
-        else:
-
-            total = len(df_genero)
-
-            discriminacion = df_genero["discriminacion"].sum()
-            violencia_genero = df_genero["violencia_genero"].sum()
-            violencia_fisica = df_genero["violencia_fisica"].sum()
-            violencia_sexual = df_genero["violencia_sexual"].sum()
-            violencia_institucional = df_genero["violencia_institucional"].sum()
-            activacion_vbg = df_genero["activacion_ruta_vbg"].sum()
-
-            vih_positivo = len(
-                df_genero[df_genero["estado_vih"] == "Positivo"]
-            )
-
-            uso_sustancias = df_genero["uso_sustancias"].sum()
-            acceso_programas = df_genero["acceso_otros_programas"].sum()
-
-            c1, c2, c3, c4 = st.columns(4)
-
-            c1.metric("👥 Total caracterizaciones", total)
-            c2.metric("⚠️ Discriminación", int(discriminacion))
-            c3.metric("🚨 Violencia de género", int(violencia_genero))
-            c4.metric("🧬 VIH positivo", vih_positivo)
-
-            st.markdown("### 🚨 Violencias")
-
-            c5, c6, c7, c8 = st.columns(4)
-
-            c5.metric("💥 Violencia física", int(violencia_fisica))
-            c6.metric("🔥 Violencia sexual", int(violencia_sexual))
-            c7.metric("🏛️ Violencia institucional", int(violencia_institucional))
-            c8.metric("🛑 Ruta VBG activada", int(activacion_vbg))
-
-            st.markdown("### 🏥 Salud y programas")
-
-            c9, c10 = st.columns(2)
-
-            c9.metric("💊 Consumo de sustancias", int(uso_sustancias))
-            c10.metric("📌 Acceso a otros programas", int(acceso_programas))
-
-    except Exception as e:
-
-        st.warning("Error cargando indicadores")
-        st.caption(str(e))
-# =====================================
-# ROUTER V12
-# =====================================
+        try:
+            with engine.begin() as conn:
+                conn.execute(
+                    text("""
+                        INSERT INTO caracterizacion_genero_diversidad (
+                            numero_identificacion,
+                            identidad_genero,
+                            orientacion_sexual,
+                            expresion_genero,
+                            nombre_identitario,
+                            sexo_al_nacer,
+                            discriminacion,
+                            tipo_discriminacion,
+                            violencia_genero,
+                            violencia_fisica,
+                            violencia_sexual,
+                            violencia_institucional,
+                            trabajo_sexual,
+                            amenazas,
+                            cantidad_hijos,
+                            cuidador_hijos,
+                            acceso_otros_programas,
+                            activacion_ruta_vbg,
+                            fecha_registro
+                        )
+                        VALUES (
+                            :numero_identificacion,
+                            :identidad_genero,
+                            :orientacion_sexual,
+                            :expresion_genero,
+                            :nombre_identitario,
+                            :sexo_al_nacer,
+                            :discriminacion,
+                            :tipo_discriminacion,
+                            :violencia_genero,
+                            :violencia_fisica,
+                            :violencia_sexual,
+                            :violencia_institucional,
+                            :trabajo_sexual,
+                            :amenazas,
+                            :cantidad_hijos,
+                            :cuidador_hijos,
+                            :acceso_otros_programas,
+                            :activacion_ruta_vbg,
+                            NOW()
+                        )
+                    """),
+                    {
+                        "numero_identificacion": numero_identificacion,
+                        "identidad_genero": identidad_genero,
+                        "orientacion_sexual": orientacion_sexual,
+                        "expresion_genero": expresion_genero,
+                        "nombre_identitario": nombre_identitario.strip(),
+                        "sexo_al_nacer": sexo_al_nacer,
+                        "discriminacion": discriminacion,
+                        "tipo_discriminacion": tipo_discriminacion.strip(),
+                        "violencia_genero": violencia_genero,
+                        "violencia_fisica": violencia_fisica,
+                        "violencia_sexual": violencia_sexual,
+                        "violencia_institucional": violencia_institucional,
+                        "trabajo_sexual": trabajo_sexual,
+                        "amenazas": amenazas,
+                        "cantidad_hijos": int(cantidad_hijos),
+                        "cuidador_hijos": cuidador_hijos.strip(),
+                        "acceso_otros_programas": acceso_otros_programas,
+                        "activacion_ruta_vbg": activacion_ruta_vbg
+                    }
+                )
+            st.success("✅ Género y Diversidad guardado correctamente.")
+        except Exception as e:
+            st.error(f"No fue posible guardar Género y Diversidad: {e}")
 
 
-# ============================================================
-# V16.7 - INICIO EJECUTIVO
-# Menú lateral = navegación. Inicio = estado del programa.
-# ============================================================
 def inicio_ejecutivo_v167():
 
     st.title("🏠 Sistema Integral de Atención y Seguimiento")
@@ -14298,6 +14116,29 @@ def modulo_carga_activos_v169():
 # Captura progresiva + indicadores analíticos.
 # ============================================================
 def caracterizacion_habitabilidad_v1611():
+    # V16.30 - contraste legible en campos de texto/textarea.
+    st.markdown("""
+    <style>
+    div[data-baseweb="input"] input,
+    div[data-baseweb="textarea"] textarea,
+    input, textarea {
+        color: #111827 !important;
+        -webkit-text-fill-color: #111827 !important;
+        background-color: #ffffff !important;
+    }
+    div[data-baseweb="input"] input::placeholder,
+    div[data-baseweb="textarea"] textarea::placeholder {
+        color: #6b7280 !important;
+        -webkit-text-fill-color: #6b7280 !important;
+        opacity: 1 !important;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+    _flash_hab = st.session_state.pop("habcalle_flash_v1630", None)
+    if _flash_hab:
+        st.success(_flash_hab)
+
     rol = str(st.session_state.get("rol_actual", "")).upper()
     if rol not in ["PROFESIONAL", "COORDINACION", "MANAGER"]:
         st.error("Acceso exclusivo para profesionales, Coordinación y Manager.")
@@ -14740,9 +14581,17 @@ def caracterizacion_habitabilidad_v1611():
         )
 
         contacto_opts = [
-            "", "0 a 6 meses", "Más de 6 meses a 1 año",
-            "Más de 1 a 5 años", "Más de 5 años",
-            "Nunca / sin contacto", "No sabe"
+            "",
+            "Hoy / últimas 24 horas",
+            "2 a 7 días",
+            "8 a 30 días",
+            "1 a 3 meses",
+            "4 a 6 meses",
+            "Más de 6 meses a 1 año",
+            "Más de 1 a 5 años",
+            "Más de 5 años",
+            "Nunca / sin contacto",
+            "No sabe"
         ]
         tiempo_ultimo_contacto_familiar = st.selectbox(
             "Tiempo desde el último contacto con red familiar",
@@ -14759,23 +14608,6 @@ def caracterizacion_habitabilidad_v1611():
             index=_idx(si_no, _v("posibilidad_retorno_familiar", ""))
         )
 
-        r1, r2 = st.columns(2)
-        apoyo_emocional = r1.selectbox(
-            "¿Recibe apoyo emocional o afectivo?",
-            si_no,
-            index=_idx(si_no, _v("apoyo_emocional", ""))
-        )
-        apoyo_psicosocial = r2.selectbox(
-            "¿Recibe apoyo psicológico / psicosocial?",
-            si_no,
-            index=_idx(si_no, _v("apoyo_psicosocial", ""))
-        )
-
-        antecedente_salud_mental = st.selectbox(
-            "Antecedente o necesidad identificada en salud mental",
-            si_no,
-            index=_idx(si_no, _v("antecedente_salud_mental", ""))
-        )
 
     # ---------------- Género y diversidad ----------------
     with tabs[3]:
@@ -14813,6 +14645,13 @@ def caracterizacion_habitabilidad_v1611():
             "Nombre de la EPS / entidad aseguradora",
             value=str(_v("eps_nombre", "")),
             placeholder="Ej. NUEVA EPS, ASMET SALUD..."
+        )
+
+        municipio_eps = st.text_input(
+            "Municipio / ciudad donde tiene registrada la EPS",
+            value=str(_v("municipio_eps", "")),
+            placeholder="Ej. Pereira, Dosquebradas, Medellín...",
+            help="Permite identificar si requiere gestión de portabilidad."
         )
 
         rd3, rd4 = st.columns(2)
@@ -14894,6 +14733,23 @@ def caracterizacion_habitabilidad_v1611():
         )
 
         st.markdown("#### Salud mental")
+
+        mh1, mh2 = st.columns(2)
+        apoyo_emocional = mh1.selectbox(
+            "¿Recibe apoyo emocional o afectivo?",
+            si_no,
+            index=_idx(si_no, _v("apoyo_emocional", ""))
+        )
+        apoyo_psicosocial = mh2.selectbox(
+            "¿Recibe apoyo psicológico / psicosocial?",
+            si_no,
+            index=_idx(si_no, _v("apoyo_psicosocial", ""))
+        )
+        antecedente_salud_mental = st.selectbox(
+            "Antecedente o necesidad identificada en salud mental",
+            si_no,
+            index=_idx(si_no, _v("antecedente_salud_mental", ""))
+        )
 
         sm1, sm2 = st.columns([1, 2])
         cie10_salud_mental = sm1.text_input(
@@ -15133,6 +14989,7 @@ def caracterizacion_habitabilidad_v1611():
             "antecedente_salud_mental": antecedente_salud_mental or None,
             "regimen_salud": regimen_salud or None,
             "eps_nombre": normalizar_texto_ingreso_v16193(eps_nombre) or None,
+            "municipio_eps": normalizar_texto_ingreso_v16193(municipio_eps) or None,
             "cedulado": cedulado or None,
             "documento_fisico": documento_fisico or None,
             "tuberculosis": tuberculosis or None,
@@ -15204,6 +15061,7 @@ def caracterizacion_habitabilidad_v1611():
                             antecedente_salud_mental,
                             regimen_salud,
                             eps_nombre,
+                            municipio_eps,
                             cedulado,
                             documento_fisico,
                             tuberculosis,
@@ -15271,6 +15129,7 @@ def caracterizacion_habitabilidad_v1611():
                             :antecedente_salud_mental,
                             :regimen_salud,
                             :eps_nombre,
+                            :municipio_eps,
                             :cedulado,
                             :documento_fisico,
                             :tuberculosis,
@@ -15338,6 +15197,7 @@ def caracterizacion_habitabilidad_v1611():
                             antecedente_salud_mental = EXCLUDED.antecedente_salud_mental,
                             regimen_salud = EXCLUDED.regimen_salud,
                             eps_nombre = EXCLUDED.eps_nombre,
+                            municipio_eps = EXCLUDED.municipio_eps,
                             cedulado = EXCLUDED.cedulado,
                             documento_fisico = EXCLUDED.documento_fisico,
                             tuberculosis = EXCLUDED.tuberculosis,
@@ -15370,7 +15230,9 @@ def caracterizacion_habitabilidad_v1611():
                     """),
                     payload
                 )
-            st.success("Caracterización especializada guardada correctamente.")
+            st.session_state["habcalle_flash_v1630"] = (
+                f"✅ Caracterización especializada de {nombre} guardada correctamente."
+            )
             st.rerun()
         except Exception as e:
             st.error(f"No fue posible guardar la caracterización: {e}")
@@ -20043,6 +19905,7 @@ def calcular_indice_ods(salud, empleo, inclusion, derechos):
 
 
 mapa_politica = {
+    "Retorno a Ciudad de Origen": "Inclusión social y familiar",
     "Documentación y ciudadanía":"Restablecimiento de derechos",
     "Cedulación":"Restablecimiento de derechos",
     "Aseguramiento en salud":"Atención integral en salud",
@@ -20062,6 +19925,7 @@ mapa_politica = {
 }
 
 mapa_ods = {
+    "Retorno a Ciudad de Origen": ["ODS 10"],
     "Documentación y ciudadanía":["ODS 16"],
     "Cedulación":["ODS 16"],
     "Aseguramiento en salud":["ODS 3","ODS 10"],
@@ -20081,6 +19945,12 @@ mapa_ods = {
 }
 
 mapa_hitos = {
+    "Retorno a Ciudad de Origen": [
+        "Identificar ciudad o municipio de origen",
+        "Verificar red de apoyo o condiciones de recepción",
+        "Gestionar articulación y traslado / plan retorno",
+        "Confirmar llegada y vinculación territorial"
+    ],
     "Documentación y ciudadanía": [
         "Identificación de documentos",
         "Inicio de trámite",
