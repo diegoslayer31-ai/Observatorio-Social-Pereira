@@ -11689,6 +11689,91 @@ def modulo_reportes_institucionales_v169():
             df_f = df_f[mascara]
             filtros_texto.append("Búsqueda: " + busqueda)
 
+    # ------------------------------------------------------------
+    # V16.26 - DATOS ESPECIALIZADOS DE HABITABILIDAD
+    # Se cruzan con la misma población seleccionada por los filtros.
+    # ------------------------------------------------------------
+    df_hab_rep = pd.DataFrame()
+    df_gen_rep = pd.DataFrame()
+
+    try:
+        df_hab_rep = pd.read_sql(
+            text("SELECT * FROM caracterizacion_habitabilidad_calle"),
+            engine
+        )
+    except Exception:
+        df_hab_rep = pd.DataFrame()
+
+    try:
+        df_gen_rep = pd.read_sql(
+            text("""
+                SELECT DISTINCT ON (TRIM(CAST(numero_identificacion AS TEXT))) *
+                FROM caracterizacion_genero_diversidad
+                ORDER BY TRIM(CAST(numero_identificacion AS TEXT)), fecha_registro DESC
+            """),
+            engine
+        )
+    except Exception:
+        df_gen_rep = pd.DataFrame()
+
+    docs_filtrados_rep = set()
+    if col_doc and col_doc in df_f.columns:
+        docs_filtrados_rep = set(
+            df_f[col_doc].astype(str).str.strip().tolist()
+        )
+
+    if not df_hab_rep.empty and "numero_identificacion" in df_hab_rep.columns:
+        df_hab_rep["__doc"] = (
+            df_hab_rep["numero_identificacion"].astype(str).str.strip()
+        )
+        if docs_filtrados_rep:
+            df_hab_rep = df_hab_rep[
+                df_hab_rep["__doc"].isin(docs_filtrados_rep)
+            ].copy()
+
+    if not df_gen_rep.empty and "numero_identificacion" in df_gen_rep.columns:
+        df_gen_rep["__doc"] = (
+            df_gen_rep["numero_identificacion"].astype(str).str.strip()
+        )
+        if docs_filtrados_rep:
+            df_gen_rep = df_gen_rep[
+                df_gen_rep["__doc"].isin(docs_filtrados_rep)
+            ].copy()
+
+    def _hab_serie(columna):
+        if df_hab_rep.empty or columna not in df_hab_rep.columns:
+            return pd.Series(dtype="object")
+        s = df_hab_rep[columna].where(
+            df_hab_rep[columna].notna(), ""
+        ).astype(str).str.strip()
+        return s[
+            (s != "") &
+            (~s.str.upper().isin(["NAN", "NONE", "NULL"]))
+        ]
+
+    def _hab_top(columna, n=5):
+        s = _hab_serie(columna)
+        if s.empty:
+            return []
+        vc = s.value_counts().head(n)
+        total_validos = len(s)
+        return [
+            (str(k), int(v), round(v / total_validos * 100, 1))
+            for k, v in vc.items()
+        ]
+
+    def _hab_tasa_si(columna):
+        s = _hab_serie(columna).str.upper()
+        if s.empty:
+            return None
+        positivos = s.isin(["SÍ", "SI", "TRUE", "1", "YES"]).sum()
+        return round(float(positivos) / len(s) * 100, 1)
+
+    def _hab_num(columna):
+        if df_hab_rep.empty or columna not in df_hab_rep.columns:
+            return pd.Series(dtype="float64")
+        return pd.to_numeric(df_hab_rep[columna], errors="coerce").dropna()
+
     if df_f.empty:
         st.warning("Los filtros seleccionados no arrojan registros.")
     else:
@@ -12059,6 +12144,248 @@ def modulo_reportes_institucionales_v169():
                 )
 
         st.info("\n\n".join([f"• {c}" for c in conclusiones]))
+
+        # --------------------------------------------------------
+        # LECTURA ESPECIALIZADA DE HABITABILIDAD EN CALLE
+        # --------------------------------------------------------
+        st.markdown("---")
+        st.subheader("🧭 Análisis especializado de habitabilidad en calle")
+
+        cobertura_hab = len(df_hab_rep)
+        pct_cobertura_hab = round(
+            cobertura_hab / len(df_f) * 100, 1
+        ) if len(df_f) else 0
+
+        anos_calle_s = _hab_num("tiempo_anos_calle")
+        anos_consumo_s = _hab_num("tiempo_anos_consumo")
+
+        h1, h2, h3, h4 = st.columns(4)
+        h1.metric("Caracterizaciones especializadas", cobertura_hab)
+        h2.metric("Cobertura sobre población filtrada", f"{pct_cobertura_hab:.1f}%")
+        h3.metric(
+            "Promedio años en calle",
+            f"{anos_calle_s.mean():.1f}" if not anos_calle_s.empty else "Sin dato"
+        )
+        h4.metric(
+            "Promedio años de consumo",
+            f"{anos_consumo_s.mean():.1f}" if not anos_consumo_s.empty else "Sin dato"
+        )
+
+        if df_hab_rep.empty:
+            st.info(
+                "La población filtrada todavía no tiene caracterizaciones especializadas "
+                "de habitabilidad suficientes para este análisis."
+            )
+        else:
+            hab_tabs = st.tabs([
+                "Trayectoria",
+                "Consumo y reducción de daños",
+                "Derechos y salud",
+                "Redes y superación",
+                "Género y diversidad"
+            ])
+
+            with hab_tabs[0]:
+                for col_h, titulo_h in [
+                    ("causa_inicio_calle", "Causas de inicio de vida en calle"),
+                    ("causa_permanencia_calle", "Causas de permanencia en calle"),
+                    ("numero_episodios_calle", "Número de episodios de calle")
+                ]:
+                    top_h = _hab_top(col_h, 10)
+                    if top_h:
+                        tabla_h = pd.DataFrame(
+                            top_h,
+                            columns=["Categoría", "Cantidad", "% válido"]
+                        )
+                        st.markdown(f"**{titulo_h}**")
+                        st.dataframe(tabla_h, use_container_width=True, hide_index=True)
+
+            with hab_tabs[1]:
+                for col_h, titulo_h in [
+                    ("sustancia_principal", "Sustancia principal"),
+                    ("frecuencia_consumo", "Frecuencia de consumo"),
+                    ("via_administracion_consumo", "Vía de administración"),
+                    ("posicion_frente_consumo", "Posición frente al consumo"),
+                    ("objetivo_frente_consumo", "Objetivo acordado"),
+                    ("riesgo_sobredosis", "Riesgo de sobredosis")
+                ]:
+                    top_h = _hab_top(col_h, 10)
+                    if top_h:
+                        st.markdown(f"**{titulo_h}**")
+                        st.dataframe(
+                            pd.DataFrame(
+                                top_h,
+                                columns=["Categoría", "Cantidad", "% válido"]
+                            ),
+                            use_container_width=True,
+                            hide_index=True
+                        )
+
+            with hab_tabs[2]:
+                for col_h, titulo_h in [
+                    ("regimen_salud", "Régimen de aseguramiento"),
+                    ("eps_nombre", "EPS / entidad aseguradora"),
+                    ("cedulado", "Situación de cedulación"),
+                    ("documento_fisico", "Disponibilidad de documento físico"),
+                    ("tuberculosis", "Tuberculosis"),
+                    ("vih", "VIH"),
+                    ("its_sifilis", "ITS / Sífilis"),
+                    ("estado_salud_mental", "Estado de salud mental"),
+                    ("requiere_remision_salud", "Necesidad de remisión en salud")
+                ]:
+                    top_h = _hab_top(col_h, 10)
+                    if top_h:
+                        st.markdown(f"**{titulo_h}**")
+                        st.dataframe(
+                            pd.DataFrame(
+                                top_h,
+                                columns=["Categoría", "Cantidad", "% válido"]
+                            ),
+                            use_container_width=True,
+                            hide_index=True
+                        )
+
+            with hab_tabs[3]:
+                for col_h, titulo_h in [
+                    ("tiene_red_apoyo", "Red de apoyo"),
+                    ("posibilidad_retorno_familiar", "Posibilidad de retorno familiar"),
+                    ("tratamiento_spa_actual", "Tratamiento SPA actual"),
+                    ("ingreso_regular", "Ingreso regular"),
+                    ("apoyo_psicosocial", "Apoyo psicosocial")
+                ]:
+                    top_h = _hab_top(col_h, 10)
+                    if top_h:
+                        st.markdown(f"**{titulo_h}**")
+                        st.dataframe(
+                            pd.DataFrame(
+                                top_h,
+                                columns=["Categoría", "Cantidad", "% válido"]
+                            ),
+                            use_container_width=True,
+                            hide_index=True
+                        )
+
+            with hab_tabs[4]:
+                if df_gen_rep.empty:
+                    st.info("No hay registros de Género y Diversidad para la población filtrada.")
+                else:
+                    for col_g, titulo_g in [
+                        ("identidad_genero", "Identidad de género"),
+                        ("orientacion_sexual", "Orientación sexual"),
+                        ("discriminacion", "Experiencias de discriminación"),
+                        ("violencia_genero", "Violencia basada en género"),
+                        ("activacion_ruta_vbg", "Activación de ruta VBG")
+                    ]:
+                        if col_g in df_gen_rep.columns:
+                            s_g = df_gen_rep[col_g].where(
+                                df_gen_rep[col_g].notna(), ""
+                            ).astype(str).str.strip()
+                            s_g = s_g[
+                                (s_g != "") &
+                                (~s_g.str.upper().isin(["NAN", "NONE", "NULL"]))
+                            ]
+                            if not s_g.empty:
+                                vc_g = s_g.value_counts().head(10)
+                                t_g = pd.DataFrame({
+                                    "Categoría": vc_g.index.astype(str),
+                                    "Cantidad": vc_g.values,
+                                    "% válido": (vc_g.values / len(s_g) * 100).round(1)
+                                })
+                                st.markdown(f"**{titulo_g}**")
+                                st.dataframe(t_g, use_container_width=True, hide_index=True)
+
+            # Inferencias descriptivas / asociaciones, sin atribuir causalidad.
+            st.markdown("#### 🔬 Lectura analítica e inferencias prudentes")
+            inferencias_hab = []
+
+            if not anos_calle_s.empty:
+                mediana_anos = float(anos_calle_s.median())
+                pct_10 = round((anos_calle_s >= 10).mean() * 100, 1)
+                inferencias_hab.append(
+                    f"La mediana de tiempo acumulado en calle es {mediana_anos:.1f} años; "
+                    f"{pct_10:.1f}% de los registros con dato reportan 10 años o más. "
+                    "Esto permite dimensionar la cronicidad de las trayectorias, sin asumir que "
+                    "el tiempo por sí solo explique las demás condiciones observadas."
+                )
+
+            top_inicio = _hab_top("causa_inicio_calle", 1)
+            top_perm = _hab_top("causa_permanencia_calle", 1)
+            if top_inicio:
+                inferencias_hab.append(
+                    f"La causa de inicio más frecuente entre quienes tienen información es "
+                    f"“{top_inicio[0][0]}” ({top_inicio[0][2]:.1f}%)."
+                )
+            if top_perm:
+                inferencias_hab.append(
+                    f"La causa de permanencia más frecuente es "
+                    f"“{top_perm[0][0]}” ({top_perm[0][2]:.1f}%). "
+                    "La diferencia entre causas de inicio y permanencia es relevante para orientar "
+                    "intervenciones distintas para ingreso, permanencia y superación."
+                )
+
+            # Asociación exploratoria: cronicidad y red de apoyo.
+            if (
+                "tiempo_anos_calle" in df_hab_rep.columns
+                and "tiene_red_apoyo" in df_hab_rep.columns
+            ):
+                tmp = df_hab_rep[["tiempo_anos_calle", "tiene_red_apoyo"]].copy()
+                tmp["tiempo_anos_calle"] = pd.to_numeric(
+                    tmp["tiempo_anos_calle"], errors="coerce"
+                )
+                tmp["tiene_red_apoyo"] = (
+                    tmp["tiene_red_apoyo"].astype(str).str.strip().str.upper()
+                )
+                tmp = tmp.dropna(subset=["tiempo_anos_calle"])
+                tmp = tmp[tmp["tiene_red_apoyo"].isin(["SÍ", "SI", "NO"])]
+                if len(tmp) >= 10:
+                    tmp["cronica"] = tmp["tiempo_anos_calle"] >= 10
+                    sin_red = (
+                        tmp.groupby("cronica")["tiene_red_apoyo"]
+                        .apply(lambda s: (s == "NO").mean() * 100)
+                    )
+                    if True in sin_red.index and False in sin_red.index:
+                        inferencias_hab.append(
+                            "En la comparación exploratoria, la proporción sin red de apoyo es "
+                            f"{sin_red.loc[True]:.1f}% entre personas con 10 años o más en calle "
+                            f"y {sin_red.loc[False]:.1f}% entre quienes reportan menos de 10 años. "
+                            "Esta diferencia describe una asociación en los datos y no demuestra causalidad."
+                        )
+
+            # Asociación exploratoria: consumo y permanencia prolongada.
+            if (
+                "tiempo_anos_calle" in df_hab_rep.columns
+                and "frecuencia_consumo" in df_hab_rep.columns
+            ):
+                tmp = df_hab_rep[["tiempo_anos_calle", "frecuencia_consumo"]].copy()
+                tmp["tiempo_anos_calle"] = pd.to_numeric(
+                    tmp["tiempo_anos_calle"], errors="coerce"
+                )
+                tmp["frecuencia_consumo"] = (
+                    tmp["frecuencia_consumo"].astype(str).str.strip().str.upper()
+                )
+                tmp = tmp.dropna(subset=["tiempo_anos_calle"])
+                consumo_frec = tmp["frecuencia_consumo"].str.contains(
+                    "DIAR|TODOS LOS DÍAS|FRECUENTE",
+                    na=False
+                )
+                if consumo_frec.sum() >= 5 and (~consumo_frec).sum() >= 5:
+                    prom_f = tmp.loc[consumo_frec, "tiempo_anos_calle"].mean()
+                    prom_o = tmp.loc[~consumo_frec, "tiempo_anos_calle"].mean()
+                    inferencias_hab.append(
+                        "Como lectura exploratoria, el promedio de años en calle es "
+                        f"{prom_f:.1f} entre quienes reportan consumo de alta frecuencia y "
+                        f"{prom_o:.1f} en el resto de registros con información comparable. "
+                        "La diferencia debe interpretarse como asociación descriptiva, no como efecto causal."
+                    )
+
+            if not inferencias_hab:
+                inferencias_hab.append(
+                    "La cobertura o completitud actual todavía no permite producir asociaciones "
+                    "robustas. El informe conservará una lectura descriptiva hasta contar con más registros."
+                )
+
+            for inf_h in inferencias_hab:
+                st.write("• " + inf_h)
 
         # --------------------------------------------------------
         # EXPORTACIONES
@@ -12971,6 +13298,259 @@ def modulo_reportes_institucionales_v169():
                         Paragraph(
                             f"{seccion}. Hallazgos principales",
                             estilo_h1
+                        )
+                    )
+
+                    # ==================================================
+                    # HABITABILIDAD EN CALLE - ANÁLISIS ESPECIALIZADO
+                    # ==================================================
+                    contenido.append(PageBreak())
+                    contenido.append(
+                        Paragraph(
+                            "Análisis especializado de habitabilidad en calle",
+                            estilo_h1
+                        )
+                    )
+
+                    contenido.append(
+                        Paragraph(
+                            "Esta sección integra la caracterización especializada disponible "
+                            "para la población incluida en los filtros del informe. Los porcentajes "
+                            "se calculan sobre registros válidos para cada variable; por ello, los "
+                            "denominadores pueden variar entre indicadores.",
+                            estilo_cuerpo
+                        )
+                    )
+
+                    cobertura_hab_pdf = len(df_hab_rep)
+                    pct_cobertura_hab_pdf = (
+                        round(cobertura_hab_pdf / len(df_f) * 100, 1)
+                        if len(df_f) else 0
+                    )
+
+                    resumen_hab_pdf = [
+                        ["Indicador", "Resultado"],
+                        ["Población del reporte", _fmt_num(len(df_f))],
+                        ["Con caracterización de habitabilidad", _fmt_num(cobertura_hab_pdf)],
+                        ["Cobertura especializada", f"{pct_cobertura_hab_pdf:.1f}%"],
+                    ]
+
+                    anos_calle_pdf = _hab_num("tiempo_anos_calle")
+                    anos_consumo_pdf = _hab_num("tiempo_anos_consumo")
+                    if not anos_calle_pdf.empty:
+                        resumen_hab_pdf.append([
+                            "Promedio de años acumulados en calle",
+                            f"{anos_calle_pdf.mean():.1f}"
+                        ])
+                        resumen_hab_pdf.append([
+                            "Mediana de años acumulados en calle",
+                            f"{anos_calle_pdf.median():.1f}"
+                        ])
+                        resumen_hab_pdf.append([
+                            "10 años o más en calle",
+                            f"{(anos_calle_pdf >= 10).mean() * 100:.1f}%"
+                        ])
+                    if not anos_consumo_pdf.empty:
+                        resumen_hab_pdf.append([
+                            "Promedio de años de consumo",
+                            f"{anos_consumo_pdf.mean():.1f}"
+                        ])
+
+                    contenido.append(
+                        _tabla_pdf(
+                            resumen_hab_pdf,
+                            anchos=[10.7 * cm, 6.0 * cm],
+                            fontsize=8.5
+                        )
+                    )
+
+                    def _agregar_tabla_hab_pdf(titulo, columna, n=8):
+                        top = _hab_top(columna, n)
+                        if not top:
+                            return
+                        contenido.append(Paragraph(titulo, estilo_h2))
+                        datos = [["Categoría", "n", "% válido"]]
+                        for categoria, cantidad, pct in top:
+                            datos.append([
+                                _texto_pdf(categoria),
+                                str(cantidad),
+                                f"{pct:.1f}%"
+                            ])
+                        contenido.append(
+                            _tabla_pdf(
+                                datos,
+                                anchos=[10.5 * cm, 2.3 * cm, 3.4 * cm],
+                                fontsize=8
+                            )
+                        )
+
+                    contenido.append(Paragraph("Trayectoria de vida en calle", estilo_h2))
+                    _agregar_tabla_hab_pdf(
+                        "Principales causas de inicio de vida en calle",
+                        "causa_inicio_calle"
+                    )
+                    _agregar_tabla_hab_pdf(
+                        "Principales causas de permanencia en calle",
+                        "causa_permanencia_calle"
+                    )
+
+                    contenido.append(Paragraph("Consumo y reducción de riesgos y daños", estilo_h2))
+                    for _titulo, _col in [
+                        ("Sustancia principal", "sustancia_principal"),
+                        ("Frecuencia de consumo", "frecuencia_consumo"),
+                        ("Vía de administración", "via_administracion_consumo"),
+                        ("Posición frente al consumo", "posicion_frente_consumo"),
+                        ("Objetivo acordado frente al consumo", "objetivo_frente_consumo"),
+                        ("Riesgo actual de sobredosis", "riesgo_sobredosis"),
+                        ("Educación en reducción de riesgos y daños", "educacion_reduccion_danos")
+                    ]:
+                        _agregar_tabla_hab_pdf(_titulo, _col)
+
+                    contenido.append(Paragraph("Restablecimiento de derechos y salud", estilo_h2))
+                    for _titulo, _col in [
+                        ("Régimen de aseguramiento en salud", "regimen_salud"),
+                        ("EPS / entidad aseguradora", "eps_nombre"),
+                        ("Situación de cedulación", "cedulado"),
+                        ("Documento de identidad en físico", "documento_fisico"),
+                        ("Tuberculosis", "tuberculosis"),
+                        ("VIH", "vih"),
+                        ("ITS / Sífilis", "its_sifilis"),
+                        ("Estado de salud mental", "estado_salud_mental"),
+                        ("Necesidad de remisión / gestión en salud", "requiere_remision_salud")
+                    ]:
+                        _agregar_tabla_hab_pdf(_titulo, _col)
+
+                    contenido.append(Paragraph("Redes, apoyos y posibilidades de superación", estilo_h2))
+                    for _titulo, _col in [
+                        ("Red de apoyo", "tiene_red_apoyo"),
+                        ("Tipo de red de apoyo", "tipo_red_apoyo"),
+                        ("Posibilidad de retorno familiar", "posibilidad_retorno_familiar"),
+                        ("Tratamiento SPA actual", "tratamiento_spa_actual"),
+                        ("Ingreso regular", "ingreso_regular"),
+                        ("Apoyo psicosocial", "apoyo_psicosocial")
+                    ]:
+                        _agregar_tabla_hab_pdf(_titulo, _col)
+
+                    if not df_gen_rep.empty:
+                        contenido.append(Paragraph("Género y diversidad", estilo_h2))
+                        for _titulo, _col in [
+                            ("Identidad de género", "identidad_genero"),
+                            ("Orientación sexual", "orientacion_sexual"),
+                            ("Experiencias de discriminación", "discriminacion"),
+                            ("Violencia basada en género", "violencia_genero"),
+                            ("Activación de ruta VBG", "activacion_ruta_vbg")
+                        ]:
+                            if _col not in df_gen_rep.columns:
+                                continue
+                            _s = df_gen_rep[_col].where(
+                                df_gen_rep[_col].notna(), ""
+                            ).astype(str).str.strip()
+                            _s = _s[
+                                (_s != "") &
+                                (~_s.str.upper().isin(["NAN", "NONE", "NULL"]))
+                            ]
+                            if _s.empty:
+                                continue
+                            _vc = _s.value_counts().head(8)
+                            _datos = [["Categoría", "n", "% válido"]]
+                            for _cat, _cant in _vc.items():
+                                _datos.append([
+                                    _texto_pdf(_cat),
+                                    str(int(_cant)),
+                                    f"{(_cant / len(_s) * 100):.1f}%"
+                                ])
+                            contenido.append(Paragraph(_titulo, estilo_h2))
+                            contenido.append(
+                                _tabla_pdf(
+                                    _datos,
+                                    anchos=[10.5 * cm, 2.3 * cm, 3.4 * cm],
+                                    fontsize=8
+                                )
+                            )
+
+                    contenido.append(Paragraph("Lectura analítica e inferencias", estilo_h2))
+                    inferencias_pdf_hab = []
+
+                    if not anos_calle_pdf.empty:
+                        inferencias_pdf_hab.append(
+                            f"La mediana del tiempo acumulado en calle es "
+                            f"{anos_calle_pdf.median():.1f} años y "
+                            f"{(anos_calle_pdf >= 10).mean() * 100:.1f}% de los registros "
+                            "con información reportan diez años o más. Este resultado describe "
+                            "la cronicidad observada en la población caracterizada."
+                        )
+
+                    _inicio_pdf = _hab_top("causa_inicio_calle", 1)
+                    _perm_pdf = _hab_top("causa_permanencia_calle", 1)
+                    if _inicio_pdf:
+                        inferencias_pdf_hab.append(
+                            f"La categoría más frecuente como causa de inicio es "
+                            f"“{_inicio_pdf[0][0]}” ({_inicio_pdf[0][2]:.1f}% de registros válidos)."
+                        )
+                    if _perm_pdf:
+                        inferencias_pdf_hab.append(
+                            f"La categoría más frecuente como causa de permanencia es "
+                            f"“{_perm_pdf[0][0]}” ({_perm_pdf[0][2]:.1f}%). "
+                            "La distinción entre inicio y permanencia permite orientar respuestas "
+                            "diferenciales y evita asumir que las razones de llegada a calle son "
+                            "idénticas a las que dificultan su superación."
+                        )
+
+                    if (
+                        "tiempo_anos_calle" in df_hab_rep.columns
+                        and "tiene_red_apoyo" in df_hab_rep.columns
+                    ):
+                        _tmp = df_hab_rep[[
+                            "tiempo_anos_calle", "tiene_red_apoyo"
+                        ]].copy()
+                        _tmp["tiempo_anos_calle"] = pd.to_numeric(
+                            _tmp["tiempo_anos_calle"], errors="coerce"
+                        )
+                        _tmp["tiene_red_apoyo"] = (
+                            _tmp["tiene_red_apoyo"].astype(str).str.strip().str.upper()
+                        )
+                        _tmp = _tmp.dropna(subset=["tiempo_anos_calle"])
+                        _tmp = _tmp[
+                            _tmp["tiene_red_apoyo"].isin(["SÍ", "SI", "NO"])
+                        ]
+                        if len(_tmp) >= 10:
+                            _tmp["cronica"] = _tmp["tiempo_anos_calle"] >= 10
+                            _sin_red = (
+                                _tmp.groupby("cronica")["tiene_red_apoyo"]
+                                .apply(lambda s: (s == "NO").mean() * 100)
+                            )
+                            if True in _sin_red.index and False in _sin_red.index:
+                                inferencias_pdf_hab.append(
+                                    "Se observa una asociación exploratoria entre mayor tiempo "
+                                    "de habitabilidad en calle y ausencia de red de apoyo: "
+                                    f"{_sin_red.loc[True]:.1f}% sin red entre quienes reportan "
+                                    "10 años o más, frente a "
+                                    f"{_sin_red.loc[False]:.1f}% en quienes reportan menos de 10 años. "
+                                    "Esta comparación no establece causalidad."
+                                )
+
+                    if not inferencias_pdf_hab:
+                        inferencias_pdf_hab.append(
+                            "La cobertura actual de la caracterización especializada no permite "
+                            "realizar comparaciones suficientemente estables. Se recomienda fortalecer "
+                            "la completitud antes de utilizar asociaciones para orientar decisiones."
+                        )
+
+                    for _inf in inferencias_pdf_hab:
+                        contenido.append(
+                            Paragraph(
+                                "• " + _texto_pdf(_inf),
+                                estilo_cuerpo
+                            )
+                        )
+
+                    contenido.append(
+                        Paragraph(
+                            "<b>Nota metodológica:</b> las inferencias incluidas son descriptivas "
+                            "y exploratorias. Identifican patrones y asociaciones dentro de los datos "
+                            "registrados, pero no demuestran relaciones causales ni sustituyen "
+                            "valoraciones clínicas, sociales o epidemiológicas individuales.",
+                            estilo_nota
                         )
                     )
 
