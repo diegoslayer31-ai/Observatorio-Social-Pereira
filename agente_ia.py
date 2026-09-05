@@ -10670,6 +10670,14 @@ with st.sidebar:
         ):
             st.session_state.page = "reportes_institucionales_v168"
             st.rerun()
+        if st.button(
+            "📄 Informe Mensual Profesional",
+            use_container_width=True,
+            key="btn_informe_mensual_prof_v1627"
+        ):
+            st.session_state.page = "informe_mensual_profesional_v1627"
+            st.rerun()
+
 
         if st.button(
             "🧠 Comité de Casos",
@@ -16188,6 +16196,277 @@ if st.session_state.page == "egresos_impacto_v168":
         st.error("Acceso exclusivo para Coordinación o Manager.")
     else:
         modulo_egresos_impacto_v169()
+    st.stop()
+
+
+def modulo_informe_mensual_profesional_piloto_v1627():
+    st.title("📄 Informe Mensual Profesional")
+    st.caption("Piloto para consolidar PAI, seguimientos y gestión mensual del profesional.")
+
+    hoy = datetime.today().date()
+    inicio_mes = hoy.replace(day=1)
+    c1, c2 = st.columns(2)
+    with c1:
+        fecha_inicio = st.date_input("Fecha inicial", inicio_mes, key="imp_fecha_ini")
+    with c2:
+        fecha_fin = st.date_input("Fecha final", hoy, key="imp_fecha_fin")
+    if fecha_inicio > fecha_fin:
+        st.error("La fecha inicial no puede ser posterior a la fecha final.")
+        return
+
+    nombre_sesion = str(
+        st.session_state.get("nombre_usuario")
+        or st.session_state.get("nombre")
+        or st.session_state.get("usuario_nombre")
+        or ""
+    )
+    doc_sesion = str(
+        st.session_state.get("cedula")
+        or st.session_state.get("numero_identificacion")
+        or ""
+    )
+
+    try:
+        tablas = pd.read_sql(
+            text("SELECT table_name FROM information_schema.tables WHERE table_schema='public'"),
+            engine
+        )["table_name"].astype(str).tolist()
+    except Exception:
+        tablas = []
+
+    def leer(tabla):
+        try:
+            return pd.read_sql(text(f'SELECT * FROM "{tabla}"'), engine)
+        except Exception:
+            return pd.DataFrame()
+
+    def col(df, nombres):
+        if df is None or df.empty:
+            return None
+        mapa = {str(x).lower().strip(): x for x in df.columns}
+        for n in nombres:
+            if n.lower() in mapa:
+                return mapa[n.lower()]
+        for x in df.columns:
+            lx = str(x).lower()
+            if any(n.lower() in lx for n in nombres):
+                return x
+        return None
+
+    def filtrar_periodo(df):
+        if df is None or df.empty:
+            return pd.DataFrame()
+        cf = col(df, ["fecha_registro","fecha_seguimiento","fecha_creacion","created_at","fecha_atencion","fecha"])
+        if not cf:
+            return df.copy()
+        tmp = df.copy()
+        ff = pd.to_datetime(tmp[cf], errors="coerce", dayfirst=True)
+        return tmp[(ff.dt.date >= fecha_inicio) & (ff.dt.date <= fecha_fin)].copy()
+
+    # Detecta las tablas reales existentes en esta instalación.
+    tablas_pai = [t for t in tablas if "pai" in t.lower()]
+    tablas_seg = [
+        t for t in tablas
+        if any(k in t.lower() for k in ["seguimiento","intervencion"])
+        and "asistencia" not in t.lower()
+    ]
+
+    df_pai = pd.DataFrame()
+    fuente_pai = ""
+    for t in tablas_pai:
+        x = leer(t)
+        if not x.empty:
+            df_pai, fuente_pai = filtrar_periodo(x), t
+            break
+
+    df_seg = pd.DataFrame()
+    fuente_seg = ""
+    for t in tablas_seg:
+        x = leer(t)
+        if not x.empty:
+            df_seg, fuente_seg = filtrar_periodo(x), t
+            break
+
+    # Si existe campo de profesional y coincide con la sesión, filtra su gestión.
+    def filtrar_prof(df):
+        if df.empty or not nombre_sesion:
+            return df
+        cp = col(df, ["profesional_responsable","profesional","usuario_registra","registrado_por_nombre","responsable","usuario"])
+        if not cp:
+            return df
+        s = df[cp].fillna("").astype(str).str.upper()
+        mask = s.str.contains(nombre_sesion.upper(), regex=False)
+        return df[mask].copy() if mask.any() else df
+
+    df_pai = filtrar_prof(df_pai)
+    df_seg = filtrar_prof(df_seg)
+
+    docs = set()
+    for df in [df_pai, df_seg]:
+        cd = col(df, ["numero_identificacion","documento","cedula"])
+        if cd:
+            docs.update(df[cd].dropna().astype(str).str.strip().tolist())
+    docs.discard("")
+
+    st.markdown("### 📊 Consolidado automático")
+    a,b,c,d = st.columns(4)
+    a.metric("PAI del período", len(df_pai))
+    b.metric("Seguimientos / intervenciones", len(df_seg))
+    c.metric("Personas únicas", len(docs))
+    d.metric("Fuentes detectadas", int(bool(fuente_pai)) + int(bool(fuente_seg)))
+
+    with st.expander("🔎 Revisar registros que alimentan el informe"):
+        st.write("Fuente PAI:", fuente_pai or "No detectada")
+        st.write("Fuente seguimientos:", fuente_seg or "No detectada")
+        if not df_pai.empty:
+            st.dataframe(df_pai, use_container_width=True, hide_index=True)
+        if not df_seg.empty:
+            st.dataframe(df_seg, use_container_width=True, hide_index=True)
+
+    st.markdown("### 👤 Datos del profesional")
+    x1,x2 = st.columns(2)
+    with x1:
+        nombre = st.text_input("Nombre", value=nombre_sesion, key="imp_nombre")
+        cargo = st.text_input("Cargo / perfil profesional", key="imp_cargo")
+        contrato = st.text_input("Contrato / CPS", key="imp_contrato")
+    with x2:
+        documento = st.text_input("Documento", value=doc_sesion, key="imp_doc")
+        proyecto = st.text_input("Proyecto / programa", value="Habitabilidad en Calle", key="imp_proyecto")
+        modalidad = st.selectbox("Modalidad", ["GENERAL","URBANO","GRANJA"], key="imp_modalidad")
+
+    st.markdown("### 🧾 Cumplimiento de obligaciones")
+    obligaciones = [
+        "Realizar intervenciones, valoraciones y seguimientos individuales.",
+        "Mantener actualizada la información y bases de datos de las personas atendidas.",
+        "Participar en reuniones interdisciplinarias y estudios de caso.",
+        "Presentar informe mensual e indicadores de las actividades desarrolladas.",
+        "Desarrollar acciones de prevención, educación para la salud y reducción de riesgos y daños.",
+        "Realizar las demás actividades relacionadas con el objeto contractual."
+    ]
+    filas = []
+    for i, ob in enumerate(obligaciones, 1):
+        with st.expander(f"{i}. {ob}", expanded=(i==1)):
+            act = st.text_area("Actividades ejecutadas", key=f"imp_act_{i}")
+            sop = st.text_area("Evidencias / soportes", key=f"imp_sop_{i}")
+            log = st.text_area("Logros / resultados", key=f"imp_log_{i}")
+            filas.append([ob, act, sop, log])
+
+    st.markdown("### 🧠 Síntesis profesional")
+    analisis = st.text_area("Análisis del período", height=140, key="imp_analisis")
+    compromisos = st.text_area("Compromisos / acciones siguientes", height=100, key="imp_compromisos")
+
+    st.markdown("### 👁️ Vista previa")
+    st.write(
+        f"**Profesional:** {nombre or 'Sin diligenciar'}  \n"
+        f"**Cargo:** {cargo or 'Sin diligenciar'}  \n"
+        f"**Contrato:** {contrato or 'Sin diligenciar'}  \n"
+        f"**Proyecto:** {proyecto}  \n"
+        f"**Período:** {fecha_inicio:%d/%m/%Y} al {fecha_fin:%d/%m/%Y}"
+    )
+    st.dataframe(
+        pd.DataFrame(filas, columns=["Obligación contractual","Actividades ejecutadas","Evidencias / soportes","Logros / resultados"]),
+        use_container_width=True,
+        hide_index=True
+    )
+
+    # PDF piloto, sin guardar ni modificar datos.
+    try:
+        from io import BytesIO
+        from reportlab.lib import colors
+        from reportlab.lib.enums import TA_CENTER
+        from reportlab.lib.pagesizes import letter
+        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+        from reportlab.lib.units import cm
+        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+
+        def esc(v):
+            import html
+            return html.escape(str(v or "")).replace("\n","<br/>")
+
+        bio = BytesIO()
+        docpdf = SimpleDocTemplate(
+            bio, pagesize=letter, leftMargin=1.3*cm, rightMargin=1.3*cm,
+            topMargin=1.2*cm, bottomMargin=1.2*cm
+        )
+        ss = getSampleStyleSheet()
+        tit = ParagraphStyle("tit", parent=ss["Heading1"], alignment=TA_CENTER, fontSize=12, leading=15)
+        body = ParagraphStyle("body", parent=ss["BodyText"], fontSize=7.6, leading=9.5)
+        story = [
+            Paragraph("ASOCIACIÓN CIUDAD FUTURO", tit),
+            Paragraph("INFORME MENSUAL PROFESIONAL", tit),
+            Spacer(1,6)
+        ]
+        ident = [
+            ["Profesional", nombre], ["Documento", documento], ["Cargo / perfil", cargo],
+            ["Contrato", contrato], ["Proyecto", proyecto], ["Modalidad", modalidad],
+            ["Período", f"{fecha_inicio:%d/%m/%Y} al {fecha_fin:%d/%m/%Y}"]
+        ]
+        t = Table(ident, colWidths=[4*cm, 13*cm])
+        t.setStyle(TableStyle([
+            ("GRID",(0,0),(-1,-1),0.35,colors.grey),
+            ("BACKGROUND",(0,0),(0,-1),colors.whitesmoke),
+            ("FONTNAME",(0,0),(0,-1),"Helvetica-Bold"),
+            ("FONTSIZE",(0,0),(-1,-1),8),
+            ("VALIGN",(0,0),(-1,-1),"TOP")
+        ]))
+        story += [t, Spacer(1,8)]
+        inds = [
+            ["Indicador","Resultado"],
+            ["PAI registrados",str(len(df_pai))],
+            ["Seguimientos / intervenciones",str(len(df_seg))],
+            ["Personas únicas",str(len(docs))]
+        ]
+        ti = Table(inds, colWidths=[11*cm,6*cm])
+        ti.setStyle(TableStyle([
+            ("GRID",(0,0),(-1,-1),0.35,colors.grey),
+            ("BACKGROUND",(0,0),(-1,0),colors.whitesmoke),
+            ("FONTNAME",(0,0),(-1,0),"Helvetica-Bold"),
+            ("FONTSIZE",(0,0),(-1,-1),8)
+        ]))
+        story += [ti, Spacer(1,8)]
+        data = [[Paragraph("<b>Obligación contractual</b>",body),
+                 Paragraph("<b>Actividades ejecutadas</b>",body),
+                 Paragraph("<b>Evidencias / soportes</b>",body),
+                 Paragraph("<b>Logros / resultados</b>",body)]]
+        for row in filas:
+            data.append([Paragraph(esc(x),body) for x in row])
+        tt = Table(data, colWidths=[4.5*cm,4.5*cm,3.8*cm,4.2*cm], repeatRows=1)
+        tt.setStyle(TableStyle([
+            ("GRID",(0,0),(-1,-1),0.3,colors.grey),
+            ("BACKGROUND",(0,0),(-1,0),colors.whitesmoke),
+            ("VALIGN",(0,0),(-1,-1),"TOP"),
+            ("LEFTPADDING",(0,0),(-1,-1),3),
+            ("RIGHTPADDING",(0,0),(-1,-1),3)
+        ]))
+        story += [tt, Spacer(1,8),
+                  Paragraph("<b>Análisis del período</b>",body),
+                  Paragraph(esc(analisis) or "Sin observaciones.",body),
+                  Spacer(1,6),
+                  Paragraph("<b>Compromisos / siguiente período</b>",body),
+                  Paragraph(esc(compromisos) or "Sin compromisos registrados.",body),
+                  Spacer(1,20),
+                  Paragraph("________________________________________",body),
+                  Paragraph(esc(nombre) or "Firma del profesional",body)]
+        docpdf.build(story)
+        bio.seek(0)
+        st.download_button(
+            "📥 Generar PDF piloto",
+            data=bio.getvalue(),
+            file_name=f"Informe_mensual_{fecha_inicio:%Y%m%d}_{fecha_fin:%Y%m%d}.pdf",
+            mime="application/pdf",
+            use_container_width=True
+        )
+    except Exception as e:
+        st.warning("No fue posible generar el PDF piloto: " + str(e))
+
+    st.info(
+        "Este piloto consulta los registros existentes y genera el documento. "
+        "Todavía no guarda, aprueba ni modifica informes en la base de datos."
+    )
+
+
+if st.session_state.page == "informe_mensual_profesional_v1627":
+    modulo_informe_mensual_profesional_piloto_v1627()
     st.stop()
 
 if st.session_state.page == "reportes_institucionales_v168":
