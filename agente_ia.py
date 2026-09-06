@@ -4770,8 +4770,27 @@ def panel_inspirador_simple_v14():
 
 def gestion_usuarios_movil():
 
-    st.title("📱 Gestión de Usuarios")
-    st.caption("Vista rápida para trabajo desde celular.")
+    st.title("📱 Gestión Móvil")
+    st.caption(
+        "Módulo operativo unificado para ingresos, reingresos, permisos, "
+        "regresos de permiso, sanciones, expulsiones y control de turno."
+    )
+
+    # V16.38 - Unificación operativa.
+    # Control de Turno deja de ser un módulo separado del menú lateral.
+    seccion_movil = st.radio(
+        "Sección",
+        [
+            "👤 Gestión de usuarios",
+            "🕐 Turno y presencia"
+        ],
+        horizontal=True,
+        key="seccion_gestion_movil_v1638"
+    )
+
+    if seccion_movil == "🕐 Turno y presencia":
+        control_turno_v13()
+        return
 
     # --------------------------------------------------------
     # Rol operativo
@@ -4794,6 +4813,9 @@ def gestion_usuarios_movil():
 
     # --------------------------------------------------------
     # Entrada principal móvil
+    # Incluye en una sola gestión:
+    # ingreso/reingreso, permisos, regreso de permiso,
+    # sanciones/expulsiones, caracterización e historia.
     # --------------------------------------------------------
     if rol_visible == "INSPIRADOR":
         opciones_inicio = [
@@ -5130,7 +5152,7 @@ def gestion_usuarios_movil():
                         "✅ Usuario registrado correctamente. "
                         "Ya puede buscarlo y completar su caracterización."
                     )
-                    # V16.36 - reporte temporal con fotografía para compartir.
+                    # V16.38 - reporte temporal con fotografía para compartir.
                     if foto_ingreso is not None:
                         foto_bytes = foto_ingreso.getvalue()
 
@@ -6921,7 +6943,7 @@ def control_turno_v13():
         st.error("Este módulo está habilitado para Inspiradores, Coordinación y Manager.")
         return
 
-    st.title("🕐 Control de Turno y Presencia")
+    st.markdown("## 🕐 Turno y presencia")
     st.caption(
         "Estado operativo del albergue en tiempo real. "
         "Se considera presente a toda persona ACTIVA con modalidad que no tenga un permiso abierto."
@@ -11258,13 +11280,6 @@ with st.sidebar:
             use_container_width=True
         ):
             st.session_state.page = "gestion_movil"
-            st.rerun()
-
-        if st.button(
-            "🕐 Control de Turno",
-            use_container_width=True
-        ):
-            st.session_state.page = "control_turno_v13"
             st.rerun()
 
         if st.button(
@@ -17984,19 +17999,11 @@ elif st.session_state.page == "auditoria_sesiones_v1634":
 
 elif st.session_state.page == "control_turno_v13":
 
-    if rol_router not in [
-        "INSPIRADOR",
-        "COORDINACION",
-        "MANAGER"
-    ]:
-        st.error(
-            "Control de Turno está habilitado para "
-            "Inspiradores, Coordinación y Manager."
-        )
-    else:
-        control_turno_v13()
-
-    st.stop()
+    # V16.38 - Compatibilidad con enlaces/sesiones antiguas:
+    # el control de turno ahora vive dentro de Gestión Móvil.
+    st.session_state.page = "gestion_movil"
+    st.session_state["seccion_gestion_movil_v1638"] = "🕐 Turno y presencia"
+    st.rerun()
 
 elif st.session_state.page == "historia_integral_v12":
 
