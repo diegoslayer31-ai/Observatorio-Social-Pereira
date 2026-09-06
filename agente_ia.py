@@ -589,6 +589,137 @@ def generar_historia_integral(documento, engine):
                 ]))
 
                 elements.append(table)
+
+        # ============================================================
+        # V16.39 - HISTÓRICO PAI 2026 EN HISTORIA INTEGRAL
+        # ============================================================
+        try:
+            hist_obj_pdf, hist_seg_pdf, hist_prof_pdf = (
+                _cargar_pai_historico_v1639(documento)
+            )
+        except Exception:
+            hist_obj_pdf = pd.DataFrame()
+            hist_seg_pdf = pd.DataFrame()
+            hist_prof_pdf = pd.DataFrame()
+
+        if (
+            not hist_obj_pdf.empty
+            or not hist_seg_pdf.empty
+            or not hist_prof_pdf.empty
+        ):
+            elements.append(Spacer(1, 14))
+            elements.append(Paragraph(
+                "3.1 HISTÓRICO PAI 2026 MIGRADO",
+                styles["Heading2"]
+            ))
+            elements.append(Paragraph(
+                "Los siguientes registros provienen del PAI histórico 2026 "
+                "y se presentan separados de la gestión operativa actual.",
+                styles["BodyText"]
+            ))
+            elements.append(Spacer(1, 6))
+
+            actuales_pdf, historicos_pdf = (
+                _resumen_profesionales_historicos_v1639(hist_prof_pdf)
+            )
+
+            if actuales_pdf:
+                elements.append(Paragraph(
+                    "Profesionales actuales emparejados: "
+                    + ", ".join(actuales_pdf),
+                    styles["BodyText"]
+                ))
+
+            if historicos_pdf:
+                elements.append(Paragraph(
+                    "Profesionales/equipos históricos: "
+                    + " | ".join(historicos_pdf),
+                    styles["BodyText"]
+                ))
+
+            elements.append(Spacer(1, 8))
+
+            if not hist_obj_pdf.empty:
+                elements.append(Paragraph(
+                    f"Objetivos históricos: {len(hist_obj_pdf)}",
+                    styles["Heading3"]
+                ))
+
+                for _, oh in hist_obj_pdf.iterrows():
+                    fecha_oh = pd.to_datetime(
+                        oh.get("fecha_apertura"),
+                        errors="coerce"
+                    )
+                    fecha_oh_txt = (
+                        fecha_oh.strftime("%d/%m/%Y")
+                        if pd.notna(fecha_oh)
+                        else "Sin fecha"
+                    )
+
+                    elements.append(Paragraph(
+                        f"{fecha_oh_txt} · {str(oh.get('objetivo_descripcion') or '')}",
+                        styles["BodyText"]
+                    ))
+
+                    acts_pdf = oh.get("actividades")
+                    try:
+                        if isinstance(acts_pdf, str):
+                            acts_pdf = json.loads(acts_pdf)
+                    except Exception:
+                        pass
+
+                    if isinstance(acts_pdf, list) and acts_pdf:
+                        elements.append(Paragraph(
+                            "Cómo se desarrolla: "
+                            + " | ".join(
+                                str(a) for a in acts_pdf if str(a).strip()
+                            ),
+                            styles["BodyText"]
+                        ))
+
+                    if oh.get("elaborado_por_original"):
+                        elements.append(Paragraph(
+                            "Elaborado por (histórico): "
+                            + str(oh.get("elaborado_por_original")),
+                            styles["BodyText"]
+                        ))
+                    elements.append(Spacer(1, 5))
+
+            if not hist_seg_pdf.empty:
+                elements.append(Paragraph(
+                    f"Seguimientos históricos: {len(hist_seg_pdf)}",
+                    styles["Heading3"]
+                ))
+
+                data_hist_seg = [[
+                    "Fecha",
+                    "Responsable(s)",
+                    "Seguimiento"
+                ]]
+
+                for _, sh in hist_seg_pdf.iterrows():
+                    fh = pd.to_datetime(sh.get("fecha"), errors="coerce")
+                    data_hist_seg.append([
+                        fh.strftime("%d/%m/%Y") if pd.notna(fh) else "—",
+                        str(sh.get("responsables_original") or "—"),
+                        str(sh.get("descripcion") or "")
+                    ])
+
+                table_hist_seg = Table(
+                    data_hist_seg,
+                    colWidths=[65, 120, 300]
+                )
+                table_hist_seg.setStyle(TableStyle([
+                    ("BACKGROUND", (0,0), (-1,0), colors.grey),
+                    ("TEXTCOLOR", (0,0), (-1,0), colors.whitesmoke),
+                    ("GRID", (0,0), (-1,-1), 0.5, colors.black),
+                    ("FONTNAME", (0,0), (-1,0), "Helvetica-Bold"),
+                    ("FONTSIZE", (0,0), (-1,-1), 6.5),
+                    ("VALIGN", (0,0), (-1,-1), "TOP"),
+                ]))
+                elements.append(table_hist_seg)
+                elements.append(Spacer(1, 10))
+
         timeline_df = pd.read_sql(text("""
         SELECT
             o.fecha_apertura AS fecha,
@@ -608,6 +739,17 @@ def generar_historia_integral(documento, engine):
         FROM pai_novedades n
         JOIN pai_objetivos o ON o.id = n.id_objetivo
         WHERE o.documento_usuario = :doc
+
+        UNION ALL
+
+        SELECT
+            s.fecha AS fecha,
+            'SEGUIMIENTO HISTÓRICO 2026' AS tipo_evento,
+            COALESCE(s.responsables_original, 'Seguimiento histórico') AS descripcion,
+            s.descripcion AS detalle
+        FROM pai_seguimientos_historicos s
+        WHERE TRIM(CAST(s.documento_usuario AS TEXT)) = :doc
+          AND COALESCE(s.fuente,'')='MIGRADO PAI 2026'
 
         ORDER BY fecha ASC
     """), engine, params={"doc": documento})
@@ -4776,7 +4918,7 @@ def gestion_usuarios_movil():
         "regresos de permiso, sanciones, expulsiones y control de turno."
     )
 
-    # V16.38 - Unificación operativa.
+    # V16.39 - Unificación operativa.
     # Control de Turno deja de ser un módulo separado del menú lateral.
     seccion_movil = st.radio(
         "Sección",
@@ -5364,8 +5506,11 @@ def gestion_usuarios_movil():
             "📚 Ver historia"
         ]
     else:
+        # COORDINACIÓN / MANAGER: gestión operativa completa en un solo lugar.
         acciones = [
             "➕ Ingreso / Reingreso",
+            "🚪 Salida de permiso",
+            "↩️ Regreso de permiso",
             "🏆 Registrar egreso",
             "⛔ Sanciones / Expulsiones",
             "🧾 Caracterización",
@@ -8635,6 +8780,126 @@ def tablero_contribucion_ods_v16():
     )
 
 
+
+# ============================================================
+# V16.39 - PAI HISTÓRICO 2026 + MODELO MULTIPROFESIONAL
+# ============================================================
+def _cargar_pai_historico_v1639(documento):
+    """
+    Recupera objetivos, seguimientos y profesionales/equipos provenientes
+    de la migración PAI 2026. Si las tablas aún no existen, devuelve
+    DataFrames vacíos para no afectar la operación normal de la app.
+    """
+    doc = str(documento).strip()
+
+    try:
+        objetivos_hist = pd.read_sql(
+            text("""
+                SELECT
+                    p.id,
+                    p.documento_usuario,
+                    p.objetivo_tipo,
+                    p.objetivo_descripcion,
+                    p.actividades,
+                    p.fecha_apertura,
+                    p.elaborado_por_original,
+                    p.area_origen,
+                    p.fila_origen_excel,
+                    p.clave_migracion,
+                    p.profesional_referente
+                FROM pai_objetivos p
+                WHERE TRIM(CAST(p.documento_usuario AS TEXT))=:doc
+                  AND COALESCE(p.origen_registro,'')='MIGRADO PAI 2026'
+                ORDER BY p.fecha_apertura NULLS LAST, p.id
+            """),
+            engine,
+            params={"doc": doc}
+        )
+    except Exception:
+        objetivos_hist = pd.DataFrame()
+
+    try:
+        seguimientos_hist = pd.read_sql(
+            text("""
+                SELECT
+                    id,
+                    documento_usuario,
+                    fecha,
+                    descripcion,
+                    responsables_original,
+                    elaborado_por_original,
+                    area_origen,
+                    fila_origen_excel,
+                    numero_seguimiento_origen,
+                    clave_migracion
+                FROM pai_seguimientos_historicos
+                WHERE TRIM(CAST(documento_usuario AS TEXT))=:doc
+                  AND COALESCE(fuente,'')='MIGRADO PAI 2026'
+                ORDER BY fecha NULLS LAST, id
+            """),
+            engine,
+            params={"doc": doc}
+        )
+    except Exception:
+        seguimientos_hist = pd.DataFrame()
+
+    try:
+        profesionales_hist = pd.read_sql(
+            text("""
+                SELECT
+                    v.profesional_id,
+                    p.nombre AS profesional_actual,
+                    v.nombre_historico,
+                    v.tipo_participacion,
+                    v.id_objetivo,
+                    v.id_seguimiento_historico,
+                    v.fuente
+                FROM pai_profesionales_vinculados v
+                LEFT JOIN profesionales p
+                  ON p.id=v.profesional_id
+                WHERE TRIM(CAST(v.documento_usuario AS TEXT))=:doc
+                  AND COALESCE(v.fuente,'')='MIGRADO PAI 2026'
+                ORDER BY
+                    COALESCE(p.nombre, v.nombre_historico),
+                    v.tipo_participacion
+            """),
+            engine,
+            params={"doc": doc}
+        )
+    except Exception:
+        profesionales_hist = pd.DataFrame()
+
+    return objetivos_hist, seguimientos_hist, profesionales_hist
+
+
+def _resumen_profesionales_historicos_v1639(df):
+    """
+    Devuelve listas limpias de profesionales actuales emparejados
+    y referencias históricas conservadas.
+    """
+    actuales = []
+    historicos = []
+
+    if df is None or df.empty:
+        return actuales, historicos
+
+    if "profesional_actual" in df.columns:
+        actuales = sorted({
+            str(x).strip()
+            for x in df["profesional_actual"].dropna().tolist()
+            if str(x).strip()
+        })
+
+    if "nombre_historico" in df.columns:
+        historicos = sorted({
+            str(x).strip()
+            for x in df["nombre_historico"].dropna().tolist()
+            if str(x).strip()
+        })
+
+    return actuales, historicos
+
+
 def panel_profesional_v15(doc_forzado=None, incrustado=False):
     if not incrustado:
         st.title("🩺 Mi Panel Profesional")
@@ -9070,8 +9335,30 @@ def panel_profesional_v15(doc_forzado=None, incrustado=False):
 
     semaforo_integral, razones_integrales = _semaforo_integral_usuario_v16(doc_sel)
 
+    # V16.39 - Cargar el histórico migrado independientemente del profesional
+    # que tenga abierta la sesión. Un usuario puede haber sido atendido por
+    # varios profesionales y equipos.
+    objetivos_hist_2026, seguimientos_hist_2026, profesionales_hist_2026 = (
+        _cargar_pai_historico_v1639(doc_sel)
+    )
+    prof_actuales_hist, prof_texto_hist = (
+        _resumen_profesionales_historicos_v1639(profesionales_hist_2026)
+    )
+
+    if (
+        not objetivos_hist_2026.empty
+        or not seguimientos_hist_2026.empty
+        or not profesionales_hist_2026.empty
+    ):
+        st.info(
+            f"📚 Esta persona tiene información histórica migrada del PAI 2026: "
+            f"**{len(objetivos_hist_2026)} objetivos** · "
+            f"**{len(seguimientos_hist_2026)} seguimientos** · "
+            f"**{len(prof_actuales_hist)} profesionales actuales emparejados**."
+        )
+
     # ------------------------------------------------------------
-    # Cargar objetivos SOLO de la persona seleccionada
+    # Cargar objetivos OPERATIVOS del profesional actual
     # ------------------------------------------------------------
     objetivos = pd.read_sql(
         text("""
@@ -9105,10 +9392,17 @@ def panel_profesional_v15(doc_forzado=None, incrustado=False):
     if incrustado:
         st.markdown(f"## 🎯 PAI de {nombre_usuario}")
         if objetivos.empty:
-            st.info(
-                "Esta persona todavía no tiene objetivos PAI. "
-                "Puede iniciar su PAI desde la pestaña **Objetivos**."
-            )
+            if objetivos_hist_2026.empty:
+                st.info(
+                    "Esta persona todavía no tiene objetivos PAI operativos. "
+                    "Puede iniciar su PAI desde la pestaña **Objetivos**."
+                )
+            else:
+                st.info(
+                    "Esta persona no tiene objetivos operativos asignados al profesional actual, "
+                    "pero sí cuenta con **PAI histórico 2026**. Revíselo en la pestaña "
+                    "**Histórico 2026**."
+                )
 
     # ------------------------------------------------------------
     # KPIs del expediente
@@ -9164,8 +9458,14 @@ def panel_profesional_v15(doc_forzado=None, incrustado=False):
     # ------------------------------------------------------------
     # Tabs del expediente único
     # ------------------------------------------------------------
-    tab_resumen, tab_obj, tab_seg, tab_cierre = st.tabs(
-        ["📋 Resumen PAI", "🎯 Objetivos", "📝 Seguimientos", "✅ Cierre"]
+    tab_resumen, tab_obj, tab_seg, tab_hist, tab_cierre = st.tabs(
+        [
+            "📋 Resumen PAI",
+            "🎯 Objetivos",
+            "📝 Seguimientos",
+            "📚 Histórico 2026",
+            "✅ Cierre"
+        ]
     )
 
     # ============================================================
@@ -9742,6 +10042,173 @@ def panel_profesional_v15(doc_forzado=None, incrustado=False):
                     use_container_width=True,
                     hide_index=True
                 )
+
+    # ============================================================
+    # HISTÓRICO PAI 2026
+    # ============================================================
+    with tab_hist:
+        st.markdown(f"### 📚 Histórico PAI 2026 de {nombre_usuario}")
+        st.caption(
+            "Información recuperada del Excel histórico. Se conserva separada "
+            "de la gestión operativa actual para mantener trazabilidad."
+        )
+
+        if (
+            objetivos_hist_2026.empty
+            and seguimientos_hist_2026.empty
+            and profesionales_hist_2026.empty
+        ):
+            st.info("No hay información histórica PAI 2026 migrada para esta persona.")
+        else:
+            h1, h2, h3 = st.columns(3)
+            h1.metric("Objetivos históricos", len(objetivos_hist_2026))
+            h2.metric("Seguimientos históricos", len(seguimientos_hist_2026))
+            h3.metric(
+                "Profesionales actuales vinculados",
+                len(prof_actuales_hist)
+            )
+
+            st.markdown("#### 👥 Profesionales y equipos vinculados")
+
+            if prof_actuales_hist:
+                st.success(
+                    "**Profesionales actuales emparejados:** "
+                    + ", ".join(prof_actuales_hist)
+                )
+            else:
+                st.info(
+                    "No se logró emparejar un profesional actual para este histórico."
+                )
+
+            if prof_texto_hist:
+                with st.expander(
+                    "Ver profesionales/equipos tal como aparecían en el Excel",
+                    expanded=False
+                ):
+                    for nombre_h in prof_texto_hist:
+                        st.write("• " + nombre_h)
+
+            if not profesionales_hist_2026.empty:
+                with st.expander(
+                    "Ver detalle de vinculaciones profesionales",
+                    expanded=False
+                ):
+                    vista_prof_hist = profesionales_hist_2026[
+                        [
+                            c for c in [
+                                "profesional_actual",
+                                "nombre_historico",
+                                "tipo_participacion",
+                                "id_objetivo",
+                                "id_seguimiento_historico"
+                            ]
+                            if c in profesionales_hist_2026.columns
+                        ]
+                    ].copy()
+                    st.dataframe(
+                        vista_prof_hist,
+                        use_container_width=True,
+                        hide_index=True
+                    )
+
+            st.markdown("#### 🎯 Objetivos históricos")
+
+            if objetivos_hist_2026.empty:
+                st.info("No se migraron objetivos históricos para esta persona.")
+            else:
+                for _, objh in objetivos_hist_2026.iterrows():
+                    titulo_h = str(
+                        objh.get("objetivo_descripcion")
+                        or objh.get("objetivo_tipo")
+                        or "Objetivo histórico"
+                    ).strip()
+
+                    fecha_h = pd.to_datetime(
+                        objh.get("fecha_apertura"),
+                        errors="coerce"
+                    )
+                    fecha_txt_h = (
+                        fecha_h.strftime("%d/%m/%Y")
+                        if pd.notna(fecha_h)
+                        else "Fecha no disponible"
+                    )
+
+                    with st.expander(
+                        f"🎯 {fecha_txt_h} · {titulo_h[:110]}",
+                        expanded=False
+                    ):
+                        st.write(
+                            "**Objetivo:** "
+                            + str(objh.get("objetivo_descripcion") or "—")
+                        )
+
+                        acts_h = objh.get("actividades")
+                        try:
+                            if isinstance(acts_h, str):
+                                acts_h = json.loads(acts_h)
+                        except Exception:
+                            pass
+
+                        if isinstance(acts_h, list) and acts_h:
+                            st.write("**Cómo se desarrolla / actividades:**")
+                            for a in acts_h:
+                                if str(a).strip():
+                                    st.write("• " + str(a).strip())
+                        elif acts_h:
+                            st.write("**Cómo se desarrolla:** " + str(acts_h))
+
+                        if objh.get("area_origen"):
+                            st.write(
+                                "**Área de origen:** "
+                                + str(objh.get("area_origen"))
+                            )
+
+                        if objh.get("elaborado_por_original"):
+                            st.write(
+                                "**Elaborado por (registro histórico):** "
+                                + str(objh.get("elaborado_por_original"))
+                            )
+
+                        if objh.get("fila_origen_excel") is not None:
+                            st.caption(
+                                f"Fuente: MIGRADO PAI 2026 · "
+                                f"Fila Excel {objh.get('fila_origen_excel')}"
+                            )
+
+            st.markdown("#### 📝 Seguimientos históricos")
+
+            if seguimientos_hist_2026.empty:
+                st.info("No se migraron seguimientos históricos para esta persona.")
+            else:
+                vista_seg_hist = seguimientos_hist_2026.copy()
+                if "fecha" in vista_seg_hist.columns:
+                    vista_seg_hist["fecha"] = pd.to_datetime(
+                        vista_seg_hist["fecha"],
+                        errors="coerce"
+                    ).dt.strftime("%d/%m/%Y")
+
+                cols_hist = [
+                    c for c in [
+                        "fecha",
+                        "descripcion",
+                        "responsables_original",
+                        "area_origen",
+                        "numero_seguimiento_origen"
+                    ]
+                    if c in vista_seg_hist.columns
+                ]
+
+                st.dataframe(
+                    vista_seg_hist[cols_hist],
+                    use_container_width=True,
+                    hide_index=True
+                )
+
+            st.warning(
+                "Los registros de esta pestaña son históricos. "
+                "No se utilizan para calcular vencimientos, avance o cumplimiento "
+                "del PAI operativo actual."
+            )
 
     # ============================================================
     # CIERRE
