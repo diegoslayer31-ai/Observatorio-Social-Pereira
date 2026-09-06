@@ -3896,6 +3896,97 @@ def _texto_whatsapp_movimiento(
     return "\n".join(lineas)
 
 
+
+def _texto_whatsapp_ingreso_completo_v1637(tipo_mov, u, documento, modalidad, observacion=""):
+    """Reporte amplio solo para INGRESO / REINGRESO usando datos existentes."""
+    datos = {}
+    for tabla in ["habitante_de_calle", "caracterizacion_habitabilidad_calle"]:
+        try:
+            df_tmp = pd.read_sql(
+                text(f"SELECT * FROM {tabla} WHERE TRIM(CAST(numero_identificacion AS TEXT)) = :doc LIMIT 1"),
+                engine, params={"doc": str(documento).strip()}
+            )
+            if not df_tmp.empty:
+                for k, v in df_tmp.iloc[0].to_dict().items():
+                    if pd.notna(v) and str(v).strip() not in ["", "None", "nan", "NaT"]:
+                        datos[str(k).lower()] = v
+        except Exception:
+            pass
+    try:
+        for k, v in dict(u).items():
+            if pd.notna(v) and str(v).strip() not in ["", "None", "nan", "NaT"]:
+                datos.setdefault(str(k).lower(), v)
+    except Exception:
+        pass
+
+    def val(*nombres, default="NO REGISTRA"):
+        for n in nombres:
+            v = datos.get(str(n).lower())
+            if v is not None and str(v).strip() not in ["", "None", "nan", "NaT"]:
+                return str(v).strip()
+        return default
+
+    nombres = val("nombres", default="")
+    apellidos = val("apellidos", default="")
+    nombre = f"{nombres} {apellidos}".strip() or "NO REGISTRA"
+    fn_raw = val("fecha_nacimiento", "fecha_de_nacimiento_dd_mm_aa", default="")
+    fn_txt, edad_txt = "NO REGISTRA", val("edad", default="")
+    if fn_raw:
+        try:
+            fn = pd.to_datetime(fn_raw, errors="coerce")
+            if pd.notna(fn):
+                fn_txt = fn.strftime("%d-%m-%Y")
+                if not edad_txt:
+                    hoy = date.today()
+                    edad_txt = str(hoy.year - fn.year - ((hoy.month, hoy.day) < (fn.month, fn.day)))
+            else:
+                fn_txt = fn_raw
+        except Exception:
+            fn_txt = fn_raw
+    edad_txt = edad_txt or "NO REGISTRA"
+
+    eps = val("eps_nombre", "eps", "nombre_eps", default="") or val("tipo_seguridad_salud", "tipo_de_seguridad_social_en_salud")
+    tiempo_calle = val("tiempo_anos_calle", "tiempo_en_situacion_de_calle", default="")
+    if tiempo_calle:
+        try:
+            tiempo_calle = f"{float(str(tiempo_calle).replace(',', '.')):g} años"
+        except Exception:
+            pass
+    else:
+        tiempo_calle = "NO REGISTRA"
+
+    sustancia = val("sustancia_principal", "tipo_consumo", "tipo_de_consumo")
+    droga_impacto = val("droga_impacto", "sustancia_de_mayor_impacto", "sustancia_principal", "tipo_consumo")
+    medicado = val("usa_medicacion", "medicado")
+    formula = val("medicamentos_actuales", "formula_medica", "formula")
+    alergias = val("alergias", "alergias_medicamentos", "alergia_a_medicamentos")
+    ciudad_origen = val("ciudad_origen", "municipio_procedencia", "departamento_procedencia", "departamento_de_procedencia")
+    documento_fisico = val("documento_fisico")
+    pacto = val("acepta_pacto_convivencia", "pacto_convivencia", "acepta_pacto", default="POR VERIFICAR")
+    tipo_txt = "reingresó" if str(tipo_mov).upper() == "REINGRESO" else "nuevo"
+    obs = str(observacion or "").strip() or "NO REGISTRA"
+
+    return "\n".join([
+        f"*INGRESO:* {tipo_txt}",
+        f"*ALBERGUE:* {str(modalidad).lower()}",
+        f"*FECHA:* {date.today().strftime('%d-%m-%Y')}",
+        f"*NOMBRE COMPLETO:* {nombre}",
+        f"*CC:* {str(documento).strip()}",
+        f"*DOCUMENTO FÍSICO:* {documento_fisico}",
+        f"*FECHA DE NACIMIENTO:* {fn_txt}",
+        f"*EDAD:* {edad_txt}",
+        f"*EPS:* {eps}",
+        f"*TIEMPO EN SITUACIÓN DE CALLE:* {tiempo_calle}",
+        f"*QUÉ SUSTANCIAS CONSUME:* {sustancia}",
+        f"*DROGA DE IMPACTO:* {droga_impacto}",
+        f"*MEDICADO:* {medicado}",
+        f"*FÓRMULA:* {formula}",
+        f"*ALERGIA A MEDICAMENTOS:* {alergias}",
+        f"*CIUDAD DE ORIGEN:* {ciudad_origen}",
+        f"*ACEPTA PACTO DE CONVIVENCIA:* {pacto}",
+        f"*OBSERVACIONES:* {obs}"
+    ])
+
 def _boton_whatsapp(texto, key):
     """Abre WhatsApp con el reporte ya diligenciado."""
     enlace = "https://wa.me/?text=" + urllib.parse.quote(texto)
@@ -5381,17 +5472,12 @@ def gestion_usuarios_movil():
                 )
                 invalidar_cache_datos()
 
-                reporte = _texto_whatsapp_movimiento(
+                reporte = _texto_whatsapp_ingreso_completo_v1637(
                     tipo_mov,
-                    u.get("nombres"),
-                    u.get("apellidos"),
+                    u,
                     documento,
-                    modalidad=modalidad,
-                    fecha=date.today(),
-                    detalle=observacion.strip(),
-                    responsable=st.session_state.get(
-                        "usuario_actual", "inspirador"
-                    )
+                    modalidad,
+                    observacion=observacion.strip()
                 )
                 st.session_state[
                     f"reporte_whatsapp_{documento}"
