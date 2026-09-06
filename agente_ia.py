@@ -1,8 +1,10 @@
 import datetime
 import streamlit as st
+import streamlit.components.v1 as components
 import pandas as pd
 import plotly.express as px
 import json
+import base64
 from sqlalchemy import create_engine, text
 import os
 import matplotlib.pyplot as plt
@@ -3905,6 +3907,64 @@ def _boton_whatsapp(texto, key):
     st.code(texto, language=None)
 
 
+def _compartir_foto_texto_nativo_v1635(foto_bytes, texto, key="share_foto_v1635"):
+    """
+    Comparte una fotografía temporal + texto usando Web Share API.
+    La imagen no se guarda en Supabase ni en la base de datos.
+    En navegadores sin soporte, se ofrece descarga temporal + WhatsApp de texto.
+    """
+    if not foto_bytes:
+        return
+
+    b64 = base64.b64encode(foto_bytes).decode("ascii")
+    texto_js = json.dumps(str(texto))
+    key_js = json.dumps(str(key))
+
+    html = f"""
+    <div style="width:100%; font-family:Arial,sans-serif;">
+      <button id="btnShare" style="
+        width:100%; padding:14px 16px; border:0; border-radius:10px;
+        background:#25D366; color:white; font-size:16px; font-weight:700;
+        cursor:pointer;">
+        📲 Compartir foto + mensaje
+      </button>
+      <div id="msgShare" style="margin-top:8px;font-size:13px;color:#666;"></div>
+    </div>
+    <script>
+    (function() {{
+      const btn = document.getElementById('btnShare');
+      const msg = document.getElementById('msgShare');
+      const texto = {texto_js};
+      const dataUrl = 'data:image/jpeg;base64,{b64}';
+
+      async function dataUrlToFile(dataUrl, filename) {{
+        const res = await fetch(dataUrl);
+        const blob = await res.blob();
+        return new File([blob], filename, {{type: blob.type || 'image/jpeg'}});
+      }}
+
+      btn.addEventListener('click', async () => {{
+        try {{
+          const file = await dataUrlToFile(dataUrl, 'nuevo_ingreso.jpg');
+          const data = {{ text: texto, files: [file] }};
+
+          if (navigator.share && (!navigator.canShare || navigator.canShare({{files:[file]}}))) {{
+            await navigator.share(data);
+            msg.textContent = 'Reporte enviado al menú de compartir del dispositivo.';
+          }} else {{
+            msg.textContent = 'Este navegador no permite compartir archivo + texto directamente. Use las opciones de descarga y WhatsApp que aparecen debajo.';
+          }}
+        }} catch (err) {{
+          if (err && err.name === 'AbortError') return;
+          msg.textContent = 'No fue posible abrir el menú de compartir. Use las opciones alternativas debajo.';
+        }}
+      }});
+    }})();
+    </script>
+    """
+    components.html(html, height=78)
+
+
 
 def registrar_egreso_profesional_v12(u, documento):
 
@@ -4679,6 +4739,16 @@ def gestion_usuarios_movil():
 
             telefono = st.text_input("Teléfono")
 
+            st.markdown("#### 📷 Foto para reporte de ingreso")
+            st.caption(
+                "Opcional. La fotografía se usa únicamente para compartir el reporte; "
+                "no se guarda en la base de datos ni en Supabase."
+            )
+            foto_ingreso = st.camera_input(
+                "Tomar fotografía",
+                key="foto_nuevo_ingreso_v1635"
+            )
+
             confirmar = st.checkbox(
                 "Confirmo que la información fue verificada con el usuario."
             )
@@ -4835,6 +4905,65 @@ def gestion_usuarios_movil():
                         "✅ Usuario registrado correctamente. "
                         "Ya puede buscarlo y completar su caracterización."
                     )
+                    # V16.35 - reporte temporal con fotografía para compartir.
+                    if foto_ingreso is not None:
+                        foto_bytes = foto_ingreso.getvalue()
+
+                        fecha_nac_txt = (
+                            fecha_nacimiento.strftime("%d-%m-%Y")
+                            if hasattr(fecha_nacimiento, "strftime")
+                            else str(fecha_nacimiento)
+                        )
+
+                        lineas_reporte = [
+                            "*INGRESO:* NUEVO",
+                            f"*ALBERGUE:* {modalidad_guardar}",
+                            f"*FECHA:* {date.today().strftime('%d-%m-%Y')}",
+                            f"*NOMBRE COMPLETO:* {nombres_guardar} {apellidos_guardar}",
+                            f"*DOCUMENTO:* {doc}",
+                            f"*TIPO DOCUMENTO:* {tipo_guardar}",
+                            f"*FECHA DE NACIMIENTO:* {fecha_nac_txt}",
+                            f"*EDAD:* {edad}",
+                            f"*SEGURIDAD SOCIAL:* {salud_guardar}",
+                            f"*PROCEDENCIA:* {procedencia_guardar}",
+                            f"*CONSUMO PRINCIPAL:* {consumo_guardar}",
+                            f"*REGISTRA:* {usuario_registra}",
+                        ]
+                        texto_reporte_foto = "\n".join(lineas_reporte)
+
+                        st.markdown("### 📲 Reporte listo para compartir")
+                        st.image(foto_bytes, caption=f"{nombres_guardar} {apellidos_guardar}")
+                        st.code(texto_reporte_foto, language=None)
+
+                        _compartir_foto_texto_nativo_v1635(
+                            foto_bytes,
+                            texto_reporte_foto,
+                            key=f"share_ingreso_{doc}"
+                        )
+
+                        # Alternativas si Web Share API no está disponible.
+                        st.download_button(
+                            "⬇️ Descargar foto temporal",
+                            data=foto_bytes,
+                            file_name=f"ingreso_{doc}.jpg",
+                            mime="image/jpeg",
+                            use_container_width=True,
+                            key=f"descargar_foto_ingreso_{doc}"
+                        )
+                        _boton_whatsapp(
+                            texto_reporte_foto,
+                            f"whatsapp_ingreso_foto_{doc}"
+                        )
+
+                        st.caption(
+                            "La fotografía no se almacena en la base de datos. "
+                            "Existe solo durante esta sesión/pantalla para facilitar el envío."
+                        )
+                    else:
+                        st.info(
+                            "El ingreso quedó registrado sin fotografía. "
+                            "La foto era opcional y no afecta el registro."
+                        )
 
         # V14.1: herramientas operativas debajo de Gestión de usuarios.
         if rol_visible == "INSPIRADOR":
