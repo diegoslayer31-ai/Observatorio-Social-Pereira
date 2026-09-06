@@ -6555,7 +6555,7 @@ def control_turno_v13():
     st.title("🕐 Control de Turno y Presencia")
     st.caption(
         "Estado operativo del albergue en tiempo real. "
-        "La presencia se calcula automáticamente a partir de usuarios activos y permisos abiertos."
+        "Se considera presente a toda persona ACTIVA con modalidad que no tenga un permiso abierto."
     )
 
     ahora = datetime.now()
@@ -6579,6 +6579,16 @@ def control_turno_v13():
         """),
         engine
     )
+
+    # V16.33 - Normalizar modalidades para evitar diferencias por espacios/mayúsculas.
+    if not activos.empty:
+        activos["modalidad"] = (
+            activos["modalidad"]
+            .fillna("")
+            .astype(str)
+            .str.upper()
+            .str.strip()
+        )
 
     # --------------------------------------------------------
     # Permisos abiertos
@@ -6703,6 +6713,19 @@ def control_turno_v13():
     except Exception:
         capacidades = pd.DataFrame()
 
+    if not capacidades.empty:
+        capacidades["modalidad"] = (
+            capacidades["modalidad"]
+            .fillna("")
+            .astype(str)
+            .str.upper()
+            .str.strip()
+        )
+        capacidades["capacidad"] = pd.to_numeric(
+            capacidades["capacidad"],
+            errors="coerce"
+        )
+
     # --------------------------------------------------------
     # KPIs
     # --------------------------------------------------------
@@ -6719,48 +6742,143 @@ def control_turno_v13():
     k8.metric("👥 Activos con modalidad", len(activos))
 
     # --------------------------------------------------------
-    # Ocupación por modalidad
+    # V16.33 - Ocupación por modalidad
+    # La tabla se construye desde las modalidades ACTIVAS, no únicamente
+    # desde capacidades_modalidad. Así GRANJA aparece aunque su capacidad
+    # todavía no esté configurada.
     # --------------------------------------------------------
     st.markdown("### 🏘️ Ocupación actual")
 
-    if presentes.empty:
-        ocupacion = pd.DataFrame(columns=["modalidad", "presentes"])
-    else:
-        ocupacion = (
-            presentes.groupby("modalidad")
-            .size()
-            .reset_index(name="presentes")
+    activos_mod = (
+        activos.groupby("modalidad")
+        .size()
+        .reset_index(name="activos")
+        if not activos.empty
+        else pd.DataFrame(columns=["modalidad", "activos"])
+    )
+
+    presentes_mod = (
+        presentes.groupby("modalidad")
+        .size()
+        .reset_index(name="presentes")
+        if not presentes.empty
+        else pd.DataFrame(columns=["modalidad", "presentes"])
+    )
+
+    permisos_mod = (
+        fuera.groupby("modalidad")
+        .size()
+        .reset_index(name="con_permiso")
+        if not fuera.empty
+        else pd.DataFrame(columns=["modalidad", "con_permiso"])
+    )
+
+    # Universo de modalidades: todo lo que exista en población activa
+    # más cualquier capacidad configurada.
+    modalidades_base = pd.DataFrame({
+        "modalidad": sorted(
+            set(activos_mod.get("modalidad", pd.Series(dtype=str)).dropna().astype(str))
+            | set(capacidades.get("modalidad", pd.Series(dtype=str)).dropna().astype(str))
         )
+    })
+
+    ocupacion = (
+        modalidades_base
+        .merge(activos_mod, on="modalidad", how="left")
+        .merge(presentes_mod, on="modalidad", how="left")
+        .merge(permisos_mod, on="modalidad", how="left")
+    )
 
     if not capacidades.empty:
-        ocupacion = capacidades.merge(
-            ocupacion,
+        ocupacion = ocupacion.merge(
+            capacidades[["modalidad", "capacidad"]],
             on="modalidad",
             how="left"
         )
-        ocupacion["presentes"] = ocupacion["presentes"].fillna(0).astype(int)
-        ocupacion["cupos_disponibles"] = (
-            ocupacion["capacidad"] - ocupacion["presentes"]
-        )
-        ocupacion["ocupacion_%"] = (
-            ocupacion["presentes"] / ocupacion["capacidad"] * 100
-        ).round(1)
-
-        st.dataframe(
-            ocupacion,
-            use_container_width=True,
-            hide_index=True
-        )
     else:
-        if not ocupacion.empty:
-            st.dataframe(
-                ocupacion,
-                use_container_width=True,
-                hide_index=True
-            )
-        st.info(
-            "Aún no hay capacidades configuradas. "
-            "Coordinación o Manager puede definirlas en Configuración de cupos."
+        ocupacion["capacidad"] = pd.NA
+
+    for c in ["activos", "presentes", "con_permiso"]:
+        ocupacion[c] = pd.to_numeric(
+            ocupacion[c], errors="coerce"
+        ).fillna(0).astype(int)
+
+    ocupacion["cupos_disponibles"] = pd.NA
+    ocupacion["ocupacion_%"] = pd.NA
+
+    mask_cap = (
+        pd.to_numeric(ocupacion["capacidad"], errors="coerce").notna()
+        & pd.to_numeric(ocupacion["capacidad"], errors="coerce").gt(0)
+    )
+
+    ocupacion.loc[mask_cap, "cupos_disponibles"] = (
+        pd.to_numeric(
+            ocupacion.loc[mask_cap, "capacidad"],
+            errors="coerce"
+        )
+        - ocupacion.loc[mask_cap, "presentes"]
+    )
+
+    ocupacion.loc[mask_cap, "ocupacion_%"] = (
+        ocupacion.loc[mask_cap, "presentes"]
+        / pd.to_numeric(
+            ocupacion.loc[mask_cap, "capacidad"],
+            errors="coerce"
+        )
+        * 100
+    ).round(1)
+
+    # Presentación institucional: no inventar capacidad si aún no existe.
+    ocupacion_vista = ocupacion[
+        [
+            "modalidad",
+            "capacidad",
+            "activos",
+            "presentes",
+            "con_permiso",
+            "cupos_disponibles",
+            "ocupacion_%"
+        ]
+    ].copy()
+
+    ocupacion_vista["capacidad"] = ocupacion_vista["capacidad"].apply(
+        lambda x: (
+            int(x)
+            if pd.notna(x)
+            else "Sin configurar"
+        )
+    )
+    ocupacion_vista["cupos_disponibles"] = ocupacion_vista["cupos_disponibles"].apply(
+        lambda x: (
+            int(x)
+            if pd.notna(x)
+            else "—"
+        )
+    )
+    ocupacion_vista["ocupacion_%"] = ocupacion_vista["ocupacion_%"].apply(
+        lambda x: (
+            f"{float(x):.1f}%"
+            if pd.notna(x)
+            else "—"
+        )
+    )
+
+    st.dataframe(
+        ocupacion_vista,
+        use_container_width=True,
+        hide_index=True
+    )
+
+    modalidades_sin_capacidad = ocupacion.loc[
+        ~mask_cap, "modalidad"
+    ].astype(str).tolist()
+
+    if modalidades_sin_capacidad:
+        st.warning(
+            "Capacidad pendiente de configurar para: "
+            + ", ".join(modalidades_sin_capacidad)
+            + ". La población y la presencia sí se muestran; "
+              "solo quedan pendientes cupos disponibles y porcentaje de ocupación."
         )
 
     # --------------------------------------------------------
