@@ -124,6 +124,11 @@ def _autenticar_funcionario(cedula, clave):
 
 
 def cerrar_sesion_v12():
+    try:
+        _v1634_cerrar_sesion_registro()
+    except Exception:
+        pass
+
     for clave in [
         "autenticado",
         "usuario_actual",
@@ -198,6 +203,13 @@ def exigir_login_v12():
             st.session_state["usuario_actual"] = (
                 f"{nombre} | CC {doc} | {rol}"
             )
+
+            # V16.34 - iniciar trazabilidad de sesión.
+            try:
+                st.session_state.pop("sesion_sistema_id_v1634", None)
+                _v1634_crear_sesion()
+            except Exception:
+                pass
 
             try:
                 with engine.begin() as conn:
@@ -10928,6 +10940,14 @@ with st.sidebar:
             st.session_state.page = "funcionarios_sistema_v12"
             st.rerun()
 
+        if st.button(
+            "🛡️ Auditoría y sesiones",
+            use_container_width=True,
+            key="btn_auditoria_sesiones_v1634"
+        ):
+            st.session_state.page = "auditoria_sesiones_v1634"
+            st.rerun()
+
 
     if _puede_control_asistencia_v1613():
         st.markdown("#### 🏠 Albergue")
@@ -17103,6 +17123,456 @@ def modulo_informe_mensual_profesional_piloto_v1627():
     )
 
 
+
+# ============================================================
+# V16.34 - AUDITORÍA Y SESIONES DE USUARIOS
+# ============================================================
+
+def _v1634_sesiones_disponibles():
+    try:
+        q = pd.read_sql(
+            text("""
+                SELECT EXISTS (
+                    SELECT 1
+                    FROM information_schema.tables
+                    WHERE table_schema='public'
+                      AND table_name='sesiones_sistema'
+                ) AS existe
+            """),
+            engine
+        )
+        return bool(q.iloc[0]["existe"]) if not q.empty else False
+    except Exception:
+        return False
+
+
+def _v1634_crear_sesion():
+    if not _v1634_sesiones_disponibles():
+        return
+
+    cedula = str(st.session_state.get("documento_funcionario", "")).strip()
+    nombre = str(st.session_state.get("nombre_funcionario", "")).strip()
+    rol = str(st.session_state.get("rol_actual", "")).strip().upper()
+
+    if not cedula:
+        return
+
+    if st.session_state.get("sesion_sistema_id_v1634"):
+        return
+
+    try:
+        with engine.begin() as conn:
+            fila = conn.execute(
+                text("""
+                    INSERT INTO sesiones_sistema (
+                        cedula_usuario,
+                        nombre_usuario,
+                        rol_usuario,
+                        inicio_sesion,
+                        ultima_actividad,
+                        estado_sesion
+                    )
+                    VALUES (
+                        :cedula,
+                        :nombre,
+                        :rol,
+                        NOW(),
+                        NOW(),
+                        'ACTIVA'
+                    )
+                    RETURNING id
+                """),
+                {
+                    "cedula": cedula,
+                    "nombre": nombre,
+                    "rol": rol
+                }
+            ).fetchone()
+
+        if fila:
+            st.session_state["sesion_sistema_id_v1634"] = int(fila[0])
+    except Exception:
+        pass
+
+
+def _v1634_tocar_sesion():
+    sid = st.session_state.get("sesion_sistema_id_v1634")
+    if not sid or not _v1634_sesiones_disponibles():
+        return
+
+    try:
+        with engine.begin() as conn:
+            conn.execute(
+                text("""
+                    UPDATE sesiones_sistema
+                    SET ultima_actividad=NOW()
+                    WHERE id=:id
+                      AND estado_sesion='ACTIVA'
+                """),
+                {"id": int(sid)}
+            )
+    except Exception:
+        pass
+
+
+def _v1634_cerrar_sesion_registro():
+    sid = st.session_state.get("sesion_sistema_id_v1634")
+    if not sid or not _v1634_sesiones_disponibles():
+        return
+
+    try:
+        with engine.begin() as conn:
+            conn.execute(
+                text("""
+                    UPDATE sesiones_sistema
+                    SET ultima_actividad=NOW(),
+                        fin_sesion=NOW(),
+                        estado_sesion='CERRADA'
+                    WHERE id=:id
+                """),
+                {"id": int(sid)}
+            )
+    except Exception:
+        pass
+
+    st.session_state.pop("sesion_sistema_id_v1634", None)
+
+
+def modulo_auditoria_sesiones_v1634():
+    rol = str(st.session_state.get("rol_actual", "")).upper()
+
+    if rol not in ["COORDINACION", "MANAGER"]:
+        st.error("Acceso exclusivo para Coordinación o Manager.")
+        return
+
+    st.title("🛡️ Auditoría y sesiones")
+    st.caption(
+        "Consulta de accesos y trazabilidad de acciones del personal. "
+        "La duración es exacta cuando se usa Cerrar sesión; si se cierra el navegador, "
+        "se estima hasta la última actividad registrada."
+    )
+
+    if not _v1634_sesiones_disponibles():
+        st.warning(
+            "La tabla sesiones_sistema todavía no existe. "
+            "Ejecute primero la migración SQL de la V16.34."
+        )
+        return
+
+    hoy = date.today()
+    f1, f2 = st.columns(2)
+
+    with f1:
+        desde = st.date_input(
+            "Desde",
+            value=hoy.replace(day=1),
+            key="audit_desde_v1634"
+        )
+
+    with f2:
+        hasta = st.date_input(
+            "Hasta",
+            value=hoy,
+            key="audit_hasta_v1634"
+        )
+
+    if desde > hasta:
+        st.error("La fecha inicial no puede ser posterior a la final.")
+        return
+
+    try:
+        sesiones = pd.read_sql(
+            text("""
+                SELECT
+                    id,
+                    cedula_usuario,
+                    nombre_usuario,
+                    rol_usuario,
+                    inicio_sesion,
+                    ultima_actividad,
+                    fin_sesion,
+                    estado_sesion
+                FROM sesiones_sistema
+                WHERE inicio_sesion >= CAST(:desde AS DATE)
+                  AND inicio_sesion < CAST(:hasta AS DATE) + INTERVAL '1 day'
+                ORDER BY inicio_sesion DESC
+            """),
+            engine,
+            params={"desde": str(desde), "hasta": str(hasta)}
+        )
+    except Exception as e:
+        st.error(f"No fue posible consultar las sesiones: {e}")
+        return
+
+    try:
+        auditoria = pd.read_sql(
+            text("""
+                SELECT
+                    id,
+                    fecha_hora,
+                    usuario,
+                    modulo,
+                    accion,
+                    numero_identificacion,
+                    valor_anterior,
+                    valor_nuevo,
+                    observacion
+                FROM auditoria_sistema
+                WHERE fecha_hora >= CAST(:desde AS DATE)
+                  AND fecha_hora < CAST(:hasta AS DATE) + INTERVAL '1 day'
+                ORDER BY fecha_hora DESC
+            """),
+            engine,
+            params={"desde": str(desde), "hasta": str(hasta)}
+        )
+    except Exception:
+        auditoria = pd.DataFrame()
+
+    if not sesiones.empty:
+        for c in ["inicio_sesion", "ultima_actividad", "fin_sesion"]:
+            sesiones[c] = pd.to_datetime(sesiones[c], errors="coerce")
+
+        fin_estimado = sesiones["fin_sesion"].fillna(
+            sesiones["ultima_actividad"]
+        )
+
+        sesiones["duracion_minutos"] = (
+            (fin_estimado - sesiones["inicio_sesion"])
+            .dt.total_seconds()
+            .div(60)
+            .clip(lower=0)
+            .round(1)
+        )
+
+        ahora = pd.Timestamp.now(tz="UTC")
+        ultima_utc = pd.to_datetime(
+            sesiones["ultima_actividad"],
+            errors="coerce",
+            utc=True
+        )
+
+        sesiones["actividad_reciente"] = (
+            sesiones["estado_sesion"].fillna("").astype(str).str.upper().eq("ACTIVA")
+            & ((ahora - ultima_utc).dt.total_seconds() <= 15 * 60)
+        )
+    else:
+        sesiones["duracion_minutos"] = pd.Series(dtype=float)
+        sesiones["actividad_reciente"] = pd.Series(dtype=bool)
+
+    sesiones_total = len(sesiones)
+    usuarios_total = (
+        sesiones["cedula_usuario"].nunique()
+        if not sesiones.empty else 0
+    )
+    conectados_recientes = (
+        int(sesiones["actividad_reciente"].sum())
+        if not sesiones.empty else 0
+    )
+    acciones_total = len(auditoria)
+
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("Sesiones", sesiones_total)
+    m2.metric("Usuarios únicos", usuarios_total)
+    m3.metric("Actividad últimos 15 min", conectados_recientes)
+    m4.metric("Acciones registradas", acciones_total)
+
+    tab_ses, tab_acc, tab_res = st.tabs([
+        "👤 Sesiones",
+        "🧾 Acciones realizadas",
+        "📊 Resumen por usuario"
+    ])
+
+    with tab_ses:
+        if sesiones.empty:
+            st.info("No hay sesiones registradas en el período.")
+        else:
+            vista_s = sesiones.copy()
+
+            vista_s["duración"] = vista_s["duracion_minutos"].apply(
+                lambda x: (
+                    f"{int(x // 60)} h {int(round(x % 60))} min"
+                    if pd.notna(x) and x >= 60
+                    else f"{int(round(x))} min"
+                    if pd.notna(x)
+                    else "—"
+                )
+            )
+
+            vista_s["estado"] = vista_s.apply(
+                lambda r: (
+                    "🟢 Actividad reciente"
+                    if bool(r.get("actividad_reciente", False))
+                    else (
+                        "✅ Cerrada"
+                        if str(r.get("estado_sesion", "")).upper() == "CERRADA"
+                        else "⚪ Sin actividad reciente"
+                    )
+                ),
+                axis=1
+            )
+
+            st.dataframe(
+                vista_s[[
+                    "nombre_usuario",
+                    "cedula_usuario",
+                    "rol_usuario",
+                    "inicio_sesion",
+                    "ultima_actividad",
+                    "fin_sesion",
+                    "duración",
+                    "estado"
+                ]],
+                use_container_width=True,
+                hide_index=True
+            )
+
+    with tab_acc:
+        if auditoria.empty:
+            st.info("No hay acciones de auditoría registradas en el período.")
+        else:
+            af1, af2 = st.columns(2)
+
+            usuarios = sorted(
+                auditoria["usuario"]
+                .dropna()
+                .astype(str)
+                .unique()
+                .tolist()
+            )
+
+            modulos = sorted(
+                auditoria["modulo"]
+                .dropna()
+                .astype(str)
+                .unique()
+                .tolist()
+            )
+
+            with af1:
+                filtro_usuario = st.selectbox(
+                    "Usuario",
+                    ["TODOS"] + usuarios,
+                    key="audit_usuario_v1634"
+                )
+
+            with af2:
+                filtro_modulo = st.selectbox(
+                    "Módulo",
+                    ["TODOS"] + modulos,
+                    key="audit_modulo_v1634"
+                )
+
+            vista_a = auditoria.copy()
+
+            if filtro_usuario != "TODOS":
+                vista_a = vista_a[
+                    vista_a["usuario"] == filtro_usuario
+                ]
+
+            if filtro_modulo != "TODOS":
+                vista_a = vista_a[
+                    vista_a["modulo"] == filtro_modulo
+                ]
+
+            st.dataframe(
+                vista_a,
+                use_container_width=True,
+                hide_index=True
+            )
+
+    with tab_res:
+        if sesiones.empty:
+            st.info("No hay información suficiente para consolidar.")
+        else:
+            resumen = (
+                sesiones.groupby(
+                    ["cedula_usuario", "nombre_usuario", "rol_usuario"],
+                    dropna=False
+                )
+                .agg(
+                    sesiones=("id", "count"),
+                    minutos_estimados=("duracion_minutos", "sum"),
+                    ultima_actividad=("ultima_actividad", "max")
+                )
+                .reset_index()
+            )
+
+            if not auditoria.empty:
+                auditoria["cedula_auditoria"] = (
+                    auditoria["usuario"]
+                    .fillna("")
+                    .astype(str)
+                    .str.extract(r"CC\s+([0-9A-Za-z\-]+)", expand=False)
+                )
+
+                acciones = (
+                    auditoria.groupby("cedula_auditoria")
+                    .size()
+                    .reset_index(name="acciones")
+                )
+
+                resumen = resumen.merge(
+                    acciones,
+                    left_on="cedula_usuario",
+                    right_on="cedula_auditoria",
+                    how="left"
+                )
+
+                resumen["acciones"] = (
+                    resumen["acciones"]
+                    .fillna(0)
+                    .astype(int)
+                )
+
+                resumen = resumen.drop(
+                    columns=["cedula_auditoria"],
+                    errors="ignore"
+                )
+            else:
+                resumen["acciones"] = 0
+
+            resumen["tiempo_estimado"] = resumen[
+                "minutos_estimados"
+            ].apply(
+                lambda x: (
+                    f"{int(x // 60)} h {int(round(x % 60))} min"
+                    if pd.notna(x) and x >= 60
+                    else f"{int(round(x))} min"
+                    if pd.notna(x)
+                    else "—"
+                )
+            )
+
+            st.dataframe(
+                resumen[[
+                    "nombre_usuario",
+                    "cedula_usuario",
+                    "rol_usuario",
+                    "sesiones",
+                    "tiempo_estimado",
+                    "acciones",
+                    "ultima_actividad"
+                ]].sort_values(
+                    ["acciones", "sesiones"],
+                    ascending=False
+                ),
+                use_container_width=True,
+                hide_index=True
+            )
+
+    st.caption(
+        "La auditoría registra qué acción se realizó y sobre qué usuario cuando aplica. "
+        "No replica notas clínicas, diagnósticos ni contenido sensible completo."
+    )
+
+
+# Mantener actualizada la última actividad del usuario autenticado.
+if st.session_state.get("autenticado"):
+    if not st.session_state.get("sesion_sistema_id_v1634"):
+        _v1634_crear_sesion()
+    _v1634_tocar_sesion()
+
+
 if st.session_state.page == "informe_mensual_profesional_v1627":
     modulo_informe_mensual_profesional_piloto_v1627()
     st.stop()
@@ -17136,6 +17606,15 @@ if st.session_state.page == "gestion_movil":
         st.error("No tiene permisos para este módulo.")
     else:
         gestion_usuarios_movil()
+
+    st.stop()
+
+elif st.session_state.page == "auditoria_sesiones_v1634":
+
+    if rol_router not in ["COORDINACION", "MANAGER"]:
+        st.error("Acceso exclusivo para Coordinación o Manager.")
+    else:
+        modulo_auditoria_sesiones_v1634()
 
     st.stop()
 
