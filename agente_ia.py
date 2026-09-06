@@ -3965,6 +3965,140 @@ def _compartir_foto_texto_nativo_v1635(foto_bytes, texto, key="share_foto_v1635"
     components.html(html, height=78)
 
 
+def _capturar_foto_temporal_movimiento_v1636(documento, evento):
+    """
+    Captura una foto para un reporte operativo.
+    La imagen vive solo en session_state de la sesión actual.
+    No se guarda en BD ni Storage.
+    """
+    clave = f"foto_temp_mov_{evento}_{documento}"
+
+    foto = st.camera_input(
+        "📷 Tomar foto para el reporte",
+        key=f"cam_{evento}_{documento}",
+        help="La fotografía se usa solo para compartir el reporte y no se almacena en la base de datos."
+    )
+
+    if foto is not None:
+        try:
+            st.session_state[clave] = foto.getvalue()
+        except Exception:
+            pass
+
+    foto_bytes = st.session_state.get(clave)
+
+    if foto_bytes:
+        st.caption("✅ Foto temporal lista para compartir. No se guardará en el sistema.")
+        if st.button(
+            "🗑️ Descartar foto",
+            key=f"descartar_{evento}_{documento}",
+            use_container_width=True
+        ):
+            st.session_state.pop(clave, None)
+            st.rerun()
+
+    return st.session_state.get(clave)
+
+
+def _compartir_foto_texto_movimiento_v1636(
+    foto_bytes,
+    texto,
+    documento,
+    evento,
+    filename=None
+):
+    """
+    Comparte foto + texto mediante el menú nativo del celular.
+    Si no hay soporte, deja respaldo con descarga temporal y WhatsApp de texto.
+    """
+    if not foto_bytes:
+        _boton_whatsapp(texto, f"wa_txt_{evento}_{documento}")
+        return
+
+    b64 = base64.b64encode(foto_bytes).decode("ascii")
+    texto_js = json.dumps(str(texto))
+    nombre_archivo = filename or f"{evento}_{documento}.jpg"
+    archivo_js = json.dumps(nombre_archivo)
+
+    html = f"""
+    <div style="width:100%;font-family:Arial,sans-serif;">
+      <button id="btnShareMov" style="
+        width:100%;padding:14px 16px;border:0;border-radius:10px;
+        background:#25D366;color:white;font-size:16px;font-weight:700;
+        cursor:pointer;">
+        📲 Compartir foto + reporte
+      </button>
+      <div id="msgShareMov" style="margin-top:8px;font-size:13px;color:#777;"></div>
+    </div>
+    <script>
+    (function() {{
+      const btn = document.getElementById('btnShareMov');
+      const msg = document.getElementById('msgShareMov');
+      const texto = {texto_js};
+      const filename = {archivo_js};
+      const dataUrl = 'data:image/jpeg;base64,{b64}';
+
+      async function dataUrlToFile(dataUrl, filename) {{
+        const res = await fetch(dataUrl);
+        const blob = await res.blob();
+        return new File([blob], filename, {{type: blob.type || 'image/jpeg'}});
+      }}
+
+      btn.addEventListener('click', async () => {{
+        try {{
+          const file = await dataUrlToFile(dataUrl, filename);
+          const data = {{ text: texto, files: [file] }};
+
+          if (navigator.share && (!navigator.canShare || navigator.canShare({{files:[file]}}))) {{
+            await navigator.share(data);
+            msg.textContent = 'El reporte fue enviado al menú de compartir del dispositivo.';
+          }} else {{
+            msg.textContent = 'Este navegador no permite compartir foto + texto directamente. Use las opciones alternativas debajo.';
+          }}
+        }} catch (err) {{
+          if (err && err.name === 'AbortError') return;
+          msg.textContent = 'No fue posible abrir el menú de compartir. Use las opciones alternativas debajo.';
+        }}
+      }});
+    }})();
+    </script>
+    """
+    components.html(html, height=82)
+
+    st.download_button(
+        "⬇️ Descargar foto temporal",
+        data=foto_bytes,
+        file_name=nombre_archivo,
+        mime="image/jpeg",
+        use_container_width=True,
+        key=f"dl_foto_{evento}_{documento}"
+    )
+
+    _boton_whatsapp(
+        texto,
+        f"wa_respaldo_{evento}_{documento}"
+    )
+
+
+def _mostrar_reporte_movimiento_v1636(documento, evento):
+    reporte = st.session_state.get(f"reporte_whatsapp_{documento}")
+    if not reporte:
+        return
+
+    foto_bytes = st.session_state.get(
+        f"foto_temp_mov_{evento}_{documento}"
+    )
+
+    st.markdown("##### 📲 Reporte listo para compartir")
+    _compartir_foto_texto_movimiento_v1636(
+        foto_bytes,
+        reporte,
+        documento,
+        evento
+    )
+
+
+
 
 def registrar_egreso_profesional_v12(u, documento):
 
@@ -4905,7 +5039,7 @@ def gestion_usuarios_movil():
                         "✅ Usuario registrado correctamente. "
                         "Ya puede buscarlo y completar su caracterización."
                     )
-                    # V16.35 - reporte temporal con fotografía para compartir.
+                    # V16.36 - reporte temporal con fotografía para compartir.
                     if foto_ingreso is not None:
                         foto_bytes = foto_ingreso.getvalue()
 
@@ -5150,6 +5284,11 @@ def gestion_usuarios_movil():
             key=f"movil_obs_ingreso_{documento}"
         )
 
+        _capturar_foto_temporal_movimiento_v1636(
+            documento,
+            "ingreso_reingreso"
+        )
+
         confirmar = st.checkbox(
             "Confirmo el ingreso/reingreso",
             key=f"movil_conf_ingreso_{documento}"
@@ -5259,10 +5398,11 @@ def gestion_usuarios_movil():
                 ] = reporte
 
                 st.success(f"✅ {tipo_mov.title()} registrado correctamente.")
-                _boton_whatsapp(
-                    reporte,
-                    f"wa_ingreso_{documento}"
-                )
+
+        _mostrar_reporte_movimiento_v1636(
+            documento,
+            "ingreso_reingreso"
+        )
 
     # --------------------------------------------------------
     # Salida de permiso
@@ -5333,6 +5473,11 @@ def gestion_usuarios_movil():
             observacion_permiso = st.text_area(
                 "Observación",
                 key=f"perm_obs_{documento}"
+            )
+
+            _capturar_foto_temporal_movimiento_v1636(
+                documento,
+                "salida_permiso"
             )
 
             conf_permiso = st.checkbox(
@@ -5452,14 +5597,10 @@ def gestion_usuarios_movil():
                     st.success("✅ Salida de permiso registrada.")
                     invalidar_cache_datos()
 
-        reporte_guardado = st.session_state.get(
-            f"reporte_whatsapp_{documento}"
+        _mostrar_reporte_movimiento_v1636(
+            documento,
+            "salida_permiso"
         )
-        if reporte_guardado:
-            _boton_whatsapp(
-                reporte_guardado,
-                f"wa_permiso_{documento}"
-            )
 
     # --------------------------------------------------------
     # Regreso de permiso
@@ -5511,6 +5652,11 @@ def gestion_usuarios_movil():
             obs_regreso = st.text_area(
                 "Observación del regreso",
                 key=f"perm_obs_regreso_{documento}"
+            )
+
+            _capturar_foto_temporal_movimiento_v1636(
+                documento,
+                "regreso_permiso"
             )
 
             conf_regreso = st.checkbox(
@@ -5603,14 +5749,10 @@ def gestion_usuarios_movil():
                     st.success("✅ Regreso de permiso registrado.")
                     invalidar_cache_datos()
 
-            reporte_guardado = st.session_state.get(
-                f"reporte_whatsapp_{documento}"
+            _mostrar_reporte_movimiento_v1636(
+                documento,
+                "regreso_permiso"
             )
-            if reporte_guardado:
-                _boton_whatsapp(
-                    reporte_guardado,
-                    f"wa_regreso_{documento}"
-                )
 
     # --------------------------------------------------------
     # Sanción / Expulsión
