@@ -17329,8 +17329,16 @@ def modulo_auditoria_sesiones_v1634():
         auditoria = pd.DataFrame()
 
     if not sesiones.empty:
+        # V16.34.1 - Normalizar TODAS las fechas a UTC.
+        # PostgreSQL TIMESTAMPTZ puede llegar mezclando objetos timezone-aware
+        # y valores interpretados como naive según el driver/pandas.
+        # Convertir explícitamente con utc=True evita restas incompatibles.
         for c in ["inicio_sesion", "ultima_actividad", "fin_sesion"]:
-            sesiones[c] = pd.to_datetime(sesiones[c], errors="coerce")
+            sesiones[c] = pd.to_datetime(
+                sesiones[c],
+                errors="coerce",
+                utc=True
+            )
 
         fin_estimado = sesiones["fin_sesion"].fillna(
             sesiones["ultima_actividad"]
@@ -17345,15 +17353,14 @@ def modulo_auditoria_sesiones_v1634():
         )
 
         ahora = pd.Timestamp.now(tz="UTC")
-        ultima_utc = pd.to_datetime(
-            sesiones["ultima_actividad"],
-            errors="coerce",
-            utc=True
-        )
 
         sesiones["actividad_reciente"] = (
             sesiones["estado_sesion"].fillna("").astype(str).str.upper().eq("ACTIVA")
-            & ((ahora - ultima_utc).dt.total_seconds() <= 15 * 60)
+            & (
+                (ahora - sesiones["ultima_actividad"])
+                .dt.total_seconds()
+                .between(0, 15 * 60, inclusive="both")
+            )
         )
     else:
         sesiones["duracion_minutos"] = pd.Series(dtype=float)
