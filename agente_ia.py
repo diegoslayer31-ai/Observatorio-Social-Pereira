@@ -13710,9 +13710,11 @@ def modulo_reportes_institucionales_v169():
                 if tabla_cat.empty:
                     st.info(f"No hay información disponible para {titulo.lower()}.")
                 else:
-                    # V16.40.2.2 - En Procedencia sustituir la barra por mapa geográfico.
                     if titulo == "Departamento de procedencia":
-                        st.caption("🗺️ Versión 16.40.4 · Mapa geográfico de procedencia activo")
+                        st.caption(
+                            "🗺️ Versión 16.40.5 · Mapa geográfico de procedencia activo"
+                        )
+
                         fig_geo_proc, dep_no_reconocidos = _fig_mapa_departamentos_co(
                             df_f[columna],
                             "Departamento de procedencia"
@@ -15657,11 +15659,9 @@ def modulo_reportes_institucionales_v169():
                 if tabla_cat.empty:
                     st.info(f"No hay información disponible para {titulo.lower()}.")
                 else:
-                    # V16.40.4 - Corrección del SEGUNDO bloque de Caracterización social.
-                    # Procedencia debe mostrar mapa, no barra.
                     if titulo == "Departamento de procedencia":
                         st.caption(
-                            "🗺️ Versión 16.40.4 · Mapa geográfico de procedencia activo"
+                            "🗺️ Versión 16.40.5 · Mapa geográfico de procedencia activo"
                         )
 
                         fig_geo_proc, dep_no_reconocidos = _fig_mapa_departamentos_co(
