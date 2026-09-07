@@ -5760,7 +5760,7 @@ def gestion_usuarios_movil():
                 modalidad_salida = str(u.get("modalidad") or "").strip().upper() or None
                 usuario_salida = st.session_state.get("usuario_actual", "sistema")
 
-                # V16.40.2.2 - Guardar la salida voluntaria en tabla propia.
+                # V16.40.3 - Guardar la salida voluntaria en tabla propia.
                 # Así evitamos las restricciones de movimientos_habitante.
                 obs_salida_vol = motivo_salida_vol.strip()
 
@@ -7335,7 +7335,7 @@ def control_turno_v13():
     if not permisos.empty:
         docs_fuera = set(permisos["documento"].astype(str).str.strip())
 
-    # V16.40.2.2 - Presencia física según última salida voluntaria
+    # V16.40.3 - Presencia física según última salida voluntaria
     # versus último ingreso/reingreso.
     try:
         estado_salida_vol = pd.read_sql(
@@ -13034,7 +13034,7 @@ def modulo_egresos_impacto_v169():
 
 
 # ============================================================
-# V16.40.2.2 - MAPA GEOGRÁFICO DE PROCEDENCIA POR DEPARTAMENTO
+# V16.40.3 - MAPA GEOGRÁFICO DE PROCEDENCIA POR DEPARTAMENTO
 # ============================================================
 _COORD_DEPARTAMENTOS_CO = {
     "AMAZONAS": (-1.4429, -71.5724),
@@ -13710,9 +13710,9 @@ def modulo_reportes_institucionales_v169():
                 if tabla_cat.empty:
                     st.info(f"No hay información disponible para {titulo.lower()}.")
                 else:
-                    # V16.40.2.2 - En Procedencia sustituir la barra por mapa geográfico.
+                    # V16.40.3 - En Procedencia sustituir la barra por mapa geográfico.
                     if titulo == "Departamento de procedencia":
-                        st.caption("🗺️ Versión 16.40.2 · Mapa geográfico de procedencia activo")
+                        st.caption("🗺️ Versión 16.40.3 · Mapa geográfico de procedencia activo")
                         fig_geo_proc, dep_no_reconocidos = _fig_mapa_departamentos_co(
                             df_f[columna],
                             "Departamento de procedencia"
@@ -15657,22 +15657,50 @@ def modulo_reportes_institucionales_v169():
                 if tabla_cat.empty:
                     st.info(f"No hay información disponible para {titulo.lower()}.")
                 else:
-                    fig_cat = px.bar(
-                        tabla_cat.sort_values("cantidad"),
-                        x="cantidad",
-                        y="categoria",
-                        orientation="h",
-                        text="cantidad",
-                        title=titulo
-                    )
-                    fig_cat.update_layout(
-                        xaxis_title="Personas",
-                        yaxis_title=""
-                    )
-                    st.plotly_chart(
-                        fig_cat,
-                        use_container_width=True
-                    )
+                    # V16.40.3 - Forzar mapa en TODA vista cuyo título sea
+                    # "Departamento de procedencia". Esto corrige un bloque
+                    # antiguo que todavía renderizaba barras.
+                    if titulo == "Departamento de procedencia":
+                        st.caption("🗺️ Versión 16.40.3 · Mapa geográfico de procedencia activo")
+                        fig_geo_proc, dep_no_reconocidos = _fig_mapa_departamentos_co(
+                            df_f[columna],
+                            "Departamento de procedencia"
+                        )
+
+                        if fig_geo_proc is not None:
+                            st.plotly_chart(
+                                fig_geo_proc,
+                                use_container_width=True
+                            )
+                        else:
+                            st.info(
+                                "No fue posible construir el mapa con los valores disponibles."
+                            )
+
+                        if dep_no_reconocidos:
+                            st.warning(
+                                "Valores de procedencia sin ubicación reconocida: "
+                                + ", ".join(
+                                    sorted(set(dep_no_reconocidos))[:20]
+                                )
+                            )
+                    else:
+                        fig_cat = px.bar(
+                            tabla_cat.sort_values("cantidad"),
+                            x="cantidad",
+                            y="categoria",
+                            orientation="h",
+                            text="cantidad",
+                            title=titulo
+                        )
+                        fig_cat.update_layout(
+                            xaxis_title="Personas",
+                            yaxis_title=""
+                        )
+                        st.plotly_chart(
+                            fig_cat,
+                            use_container_width=True
+                        )
 
                     tabla_mostrar = tabla_cat.rename(columns={
                         "categoria": titulo,
