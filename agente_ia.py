@@ -5760,7 +5760,7 @@ def gestion_usuarios_movil():
                 modalidad_salida = str(u.get("modalidad") or "").strip().upper() or None
                 usuario_salida = st.session_state.get("usuario_actual", "sistema")
 
-                # V16.40.1 - Guardar la salida voluntaria en tabla propia.
+                # V16.40.2.2 - Guardar la salida voluntaria en tabla propia.
                 # Así evitamos las restricciones de movimientos_habitante.
                 obs_salida_vol = motivo_salida_vol.strip()
 
@@ -7335,7 +7335,7 @@ def control_turno_v13():
     if not permisos.empty:
         docs_fuera = set(permisos["documento"].astype(str).str.strip())
 
-    # V16.40.1 - Presencia física según última salida voluntaria
+    # V16.40.2.2 - Presencia física según última salida voluntaria
     # versus último ingreso/reingreso.
     try:
         estado_salida_vol = pd.read_sql(
@@ -13034,7 +13034,7 @@ def modulo_egresos_impacto_v169():
 
 
 # ============================================================
-# V16.40.1 - MAPA GEOGRÁFICO DE PROCEDENCIA POR DEPARTAMENTO
+# V16.40.2.2 - MAPA GEOGRÁFICO DE PROCEDENCIA POR DEPARTAMENTO
 # ============================================================
 _COORD_DEPARTAMENTOS_CO = {
     "AMAZONAS": (-1.4429, -71.5724),
@@ -13710,8 +13710,9 @@ def modulo_reportes_institucionales_v169():
                 if tabla_cat.empty:
                     st.info(f"No hay información disponible para {titulo.lower()}.")
                 else:
-                    # V16.40.1.1 - En Procedencia sustituir la barra por mapa geográfico.
+                    # V16.40.2.2 - En Procedencia sustituir la barra por mapa geográfico.
                     if titulo == "Departamento de procedencia":
+                        st.caption("🗺️ Versión 16.40.2 · Mapa geográfico de procedencia activo")
                         fig_geo_proc, dep_no_reconocidos = _fig_mapa_departamentos_co(
                             df_f[columna],
                             "Departamento de procedencia"
