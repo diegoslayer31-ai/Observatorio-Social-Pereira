@@ -5492,6 +5492,7 @@ def gestion_usuarios_movil():
     if rol_visible == "INSPIRADOR":
         acciones = [
             "➕ Ingreso / Reingreso",
+            "🚶 Salida voluntaria",
             "🚪 Salida de permiso",
             "↩️ Regreso de permiso",
             "⛔ Sanción / Expulsión",
@@ -5509,6 +5510,7 @@ def gestion_usuarios_movil():
         # COORDINACIÓN / MANAGER: gestión operativa completa en un solo lugar.
         acciones = [
             "➕ Ingreso / Reingreso",
+            "🚶 Salida voluntaria",
             "🚪 Salida de permiso",
             "↩️ Regreso de permiso",
             "🏆 Registrar egreso",
@@ -5656,6 +5658,78 @@ def gestion_usuarios_movil():
             documento,
             "ingreso_reingreso"
         )
+
+    # --------------------------------------------------------
+    # Salida voluntaria
+    # --------------------------------------------------------
+    elif accion == "🚶 Salida voluntaria":
+
+        st.markdown("#### 🚶 Salida voluntaria")
+        st.caption(
+            "Registra que la persona salió voluntariamente del albergue. "
+            "No la marca como EGRESADA y conserva su expediente e historial."
+        )
+
+        motivo_salida_vol = st.text_area(
+            "Motivo / observación *",
+            placeholder="Indique brevemente la razón manifestada por la persona o la novedad observada.",
+            key=f"movil_obs_salida_vol_{documento}"
+        )
+
+        confirmar_salida_vol = st.checkbox(
+            "Confirmo que la persona salió voluntariamente del albergue",
+            key=f"movil_conf_salida_vol_{documento}"
+        )
+
+        if st.button(
+            "🚶 Registrar salida voluntaria",
+            use_container_width=True,
+            type="primary",
+            key=f"movil_guardar_salida_vol_{documento}"
+        ):
+            if not motivo_salida_vol.strip():
+                st.error("Debe registrar el motivo u observación de la salida voluntaria.")
+            elif not confirmar_salida_vol:
+                st.error("Confirme la salida voluntaria antes de guardar.")
+            else:
+                modalidad_salida = str(u.get("modalidad") or "").strip().upper() or None
+                usuario_salida = st.session_state.get("usuario_actual", "sistema")
+
+                with engine.begin() as conn:
+                    conn.execute(
+                        text("""
+                            INSERT INTO movimientos_habitante (
+                                numero_identificacion,
+                                tipo_movimiento,
+                                modalidad,
+                                usuario_registra,
+                                observacion
+                            )
+                            VALUES (
+                                :doc, 'SALIDA_VOLUNTARIA', :modalidad, :usuario, :obs
+                            )
+                        """),
+                        {
+                            "doc": documento,
+                            "modalidad": modalidad_salida,
+                            "usuario": usuario_salida,
+                            "obs": motivo_salida_vol.strip()
+                        }
+                    )
+
+                registrar_auditoria(
+                    "SALIDA_VOLUNTARIA",
+                    documento=documento,
+                    modulo="Gestión Móvil",
+                    valor_anterior=f"ACTIVO - {modalidad_salida or 'SIN MODALIDAD'}",
+                    valor_nuevo="FUERA DEL ALBERGUE - SALIDA VOLUNTARIA",
+                    observacion=motivo_salida_vol.strip()[:500]
+                )
+                invalidar_cache_datos()
+                st.success(
+                    "✅ Salida voluntaria registrada. La persona conserva su estado de caso y no fue marcada como egresada."
+                )
+                st.rerun()
 
     # --------------------------------------------------------
     # Salida de permiso
@@ -7091,7 +7165,8 @@ def control_turno_v13():
     st.markdown("## 🕐 Turno y presencia")
     st.caption(
         "Estado operativo del albergue en tiempo real. "
-        "Se considera presente a toda persona ACTIVA con modalidad que no tenga un permiso abierto."
+        "Se considera presente a toda persona ACTIVA con modalidad que no tenga un permiso abierto "
+        "ni una salida voluntaria posterior a su último ingreso/reingreso."
     )
 
     ahora = datetime.now()
@@ -7155,6 +7230,33 @@ def control_turno_v13():
     docs_fuera = set()
     if not permisos.empty:
         docs_fuera = set(permisos["documento"].astype(str).str.strip())
+
+    # V16.39.7 - Una salida voluntaria afecta presencia física, no el estado del caso.
+    # Se toma el último movimiento operativo entre salida voluntaria e ingreso/reingreso.
+    try:
+        salidas_voluntarias = pd.read_sql(
+            text("""
+                SELECT DISTINCT ON (TRIM(CAST(numero_identificacion AS TEXT)))
+                    TRIM(CAST(numero_identificacion AS TEXT)) AS documento,
+                    UPPER(TRIM(COALESCE(tipo_movimiento,''))) AS tipo_movimiento
+                FROM movimientos_habitante
+                WHERE UPPER(TRIM(COALESCE(tipo_movimiento,''))) IN (
+                    'SALIDA_VOLUNTARIA', 'INGRESO', 'REINGRESO'
+                )
+                ORDER BY TRIM(CAST(numero_identificacion AS TEXT)), fecha_movimiento DESC
+            """),
+            engine
+        )
+        if not salidas_voluntarias.empty:
+            docs_salida_vol = set(
+                salidas_voluntarias.loc[
+                    salidas_voluntarias["tipo_movimiento"].eq("SALIDA_VOLUNTARIA"),
+                    "documento"
+                ].astype(str).str.strip()
+            )
+            docs_fuera.update(docs_salida_vol)
+    except Exception:
+        pass
 
     presentes = activos[
         ~activos["documento"].astype(str).str.strip().isin(docs_fuera)
