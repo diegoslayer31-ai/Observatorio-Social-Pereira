@@ -591,7 +591,7 @@ def generar_historia_integral(documento, engine):
                 elements.append(table)
 
         # ============================================================
-        # V16.39.2 - HISTÓRICO PAI 2026 EN HISTORIA INTEGRAL
+        # V16.39.3 - HISTÓRICO PAI 2026 EN HISTORIA INTEGRAL
         # ============================================================
         try:
             hist_obj_pdf, hist_seg_pdf, hist_prof_pdf = (
@@ -10754,6 +10754,9 @@ def dashboard_ejecutivo():
     # CONTROL PAI GLOBAL
     # ========================================================
     try:
+        # V16.39.3 - Separar gestión PAI ACTUAL del histórico migrado.
+        # El histórico 2026 no debe generar vencidos, sin seguimiento ni
+        # porcentajes de cumplimiento del profesional actual.
         df_pai_coord = pd.read_sql(
             text("""
                 SELECT
@@ -10765,20 +10768,45 @@ def dashboard_ejecutivo():
                     p.fecha_meta,
                     p.fecha_ultimo_seguimiento,
                     p.profesional_referente,
+                    COALESCE(p.origen_registro, 'ACTUAL') AS origen_registro,
                     pr.nombre AS profesional,
                     pr.rol
                 FROM pai_objetivos p
                 LEFT JOIN profesionales pr
                     ON pr.id = p.profesional_referente
+                WHERE COALESCE(p.origen_registro,'ACTUAL') <> 'MIGRADO PAI 2026'
+            """),
+            engine
+        )
+
+        # Histórico: se usa solo para cobertura/trazabilidad multiprofesional.
+        df_pai_hist_prof = pd.read_sql(
+            text("""
+                SELECT DISTINCT
+                    o.id AS id_objetivo,
+                    TRIM(CAST(o.documento_usuario AS TEXT)) AS documento_usuario,
+                    v.profesional_id,
+                    pr.nombre AS profesional,
+                    pr.rol
+                FROM pai_objetivos o
+                JOIN pai_profesionales_vinculados v
+                  ON v.id_objetivo = o.id
+                 AND v.profesional_id IS NOT NULL
+                 AND COALESCE(v.fuente,'')='MIGRADO PAI 2026'
+                LEFT JOIN profesionales pr
+                  ON pr.id = v.profesional_id
+                WHERE COALESCE(o.origen_registro,'')='MIGRADO PAI 2026'
             """),
             engine
         )
     except Exception:
         df_pai_coord = pd.DataFrame()
+        df_pai_hist_prof = pd.DataFrame()
 
     pai_total = pai_cumplidos = pai_vencidos = pai_proximos = 0
     pai_sin_seg = 0
     resumen_coord_prof = pd.DataFrame()
+    resumen_hist_prof = pd.DataFrame()
     alertas_pai_coord = pd.DataFrame()
 
     if not df_pai_coord.empty:
@@ -10878,6 +10906,31 @@ def dashboard_ejecutivo():
             | df_pai_coord["sin_seguimiento"]
         ].copy()
 
+    # Histórico 2026: solo cobertura, NO desempeño.
+    if not df_pai_hist_prof.empty:
+        df_pai_hist_prof["profesional"] = (
+            df_pai_hist_prof["profesional"]
+            .fillna("Profesional histórico no identificado")
+        )
+        df_pai_hist_prof["rol"] = (
+            df_pai_hist_prof["rol"]
+            .fillna("Sin rol actual")
+        )
+
+        resumen_hist_prof = (
+            df_pai_hist_prof
+            .groupby(["profesional", "rol"], dropna=False)
+            .agg(
+                personas=("documento_usuario", "nunique"),
+                objetivos_historicos=("id_objetivo", "nunique")
+            )
+            .reset_index()
+            .sort_values(
+                ["objetivos_historicos", "personas", "profesional"],
+                ascending=[False, False, True]
+            )
+        )
+
     # ========================================================
     # FILA 1 - INDICADORES OPERATIVOS
     # ========================================================
@@ -10921,10 +10974,10 @@ def dashboard_ejecutivo():
     # ========================================================
     # FILA 2 - PAI
     # ========================================================
-    st.markdown("### 🎯 Control PAI")
+    st.markdown("### 🎯 Control PAI actual")
 
     p1, p2, p3, p4, p5 = st.columns(5)
-    p1.metric("🎯 Objetivos", pai_total)
+    p1.metric("🎯 Objetivos actuales", pai_total)
     p2.metric("🟢 Cumplidos", pai_cumplidos)
     p3.metric("🔴 Vencidos", pai_vencidos)
     p4.metric("🟡 Vencen ≤7 días", pai_proximos)
@@ -10979,12 +11032,17 @@ def dashboard_ejecutivo():
     st.divider()
 
     # ========================================================
-    # CUMPLIMIENTO POR PROFESIONAL
+    # CUMPLIMIENTO POR PROFESIONAL - SOLO PAI ACTUAL
     # ========================================================
-    st.markdown("### 👨‍⚕️ Cumplimiento por profesional")
+    st.markdown("### 👨‍⚕️ Cumplimiento por profesional · PAI actual")
+    st.caption(
+        "Este cuadro mide únicamente objetivos operativos vigentes. "
+        "Los objetivos históricos migrados del Excel PAI 2026 no generan "
+        "vencimientos, falta de seguimiento ni porcentaje de cumplimiento."
+    )
 
     if resumen_coord_prof.empty:
-        st.info("No hay objetivos PAI disponibles para analizar.")
+        st.info("No hay objetivos PAI actuales disponibles para analizar.")
     else:
         resumen_mostrar = resumen_coord_prof.sort_values(
             ["vencidos", "sin_seguimiento", "cumplimiento_%"],
@@ -10995,7 +11053,7 @@ def dashboard_ejecutivo():
             resumen_mostrar.rename(columns={
                 "profesional": "Profesional",
                 "rol": "Rol",
-                "objetivos": "Objetivos",
+                "objetivos": "Objetivos actuales",
                 "cumplidos": "Cumplidos",
                 "vencidos": "Vencidos",
                 "proximos": "Próximos",
@@ -11015,6 +11073,30 @@ def dashboard_ejecutivo():
         )
 
         st.bar_chart(graf_prof)
+
+    # ========================================================
+    # COBERTURA HISTÓRICA MULTIPROFESIONAL
+    # ========================================================
+    st.markdown("### 📚 Participación profesional histórica · PAI 2026")
+    st.caption(
+        "Muestra cuántas personas y objetivos históricos quedaron vinculados "
+        "a cada profesional. Es un indicador de participación/trazabilidad, "
+        "no de desempeño actual."
+    )
+
+    if resumen_hist_prof.empty:
+        st.info("No hay vínculos profesionales históricos PAI 2026 para mostrar.")
+    else:
+        st.dataframe(
+            resumen_hist_prof.rename(columns={
+                "profesional": "Profesional",
+                "rol": "Rol actual",
+                "personas": "Personas atendidas",
+                "objetivos_historicos": "Objetivos históricos vinculados"
+            }),
+            use_container_width=True,
+            hide_index=True
+        )
 
     # ========================================================
     # ALERTAS PAI DETALLADAS
