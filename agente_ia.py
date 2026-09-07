@@ -8,6 +8,7 @@ import json
 import base64
 from sqlalchemy import create_engine, text
 import os
+import unicodedata
 import matplotlib.pyplot as plt
 
 from reportlab.platypus import (
@@ -5759,7 +5760,7 @@ def gestion_usuarios_movil():
                 modalidad_salida = str(u.get("modalidad") or "").strip().upper() or None
                 usuario_salida = st.session_state.get("usuario_actual", "sistema")
 
-                # V16.39.12 - Guardar la salida voluntaria en tabla propia.
+                # V16.40 - Guardar la salida voluntaria en tabla propia.
                 # Así evitamos las restricciones de movimientos_habitante.
                 obs_salida_vol = motivo_salida_vol.strip()
 
@@ -7334,7 +7335,7 @@ def control_turno_v13():
     if not permisos.empty:
         docs_fuera = set(permisos["documento"].astype(str).str.strip())
 
-    # V16.39.12 - Presencia física según última salida voluntaria
+    # V16.40 - Presencia física según última salida voluntaria
     # versus último ingreso/reingreso.
     try:
         estado_salida_vol = pd.read_sql(
@@ -13031,6 +13032,161 @@ def modulo_egresos_impacto_v169():
 
     st.info(f"Total egresados: {total_egresados} | Tasa: {tasa_egreso}%")
 
+
+# ============================================================
+# V16.40 - MAPA GEOGRÁFICO DE PROCEDENCIA POR DEPARTAMENTO
+# ============================================================
+_COORD_DEPARTAMENTOS_CO = {
+    "AMAZONAS": (-1.4429, -71.5724),
+    "ANTIOQUIA": (6.9850, -75.5740),
+    "ARAUCA": (7.0762, -70.7105),
+    "ATLANTICO": (10.9878, -74.7889),
+    "BOGOTA": (4.7110, -74.0721),
+    "BOLIVAR": (8.6704, -74.0300),
+    "BOYACA": (5.4545, -73.3620),
+    "CALDAS": (5.2983, -75.2479),
+    "CAQUETA": (0.8699, -73.8419),
+    "CASANARE": (5.7589, -71.5724),
+    "CAUCA": (2.7050, -76.8260),
+    "CESAR": (9.3373, -73.6536),
+    "CHOCO": (5.2528, -76.8259),
+    "CORDOBA": (8.4029, -75.8990),
+    "CUNDINAMARCA": (5.0260, -74.0300),
+    "GUAINIA": (2.5854, -68.5247),
+    "GUAVIARE": (2.0439, -72.3311),
+    "HUILA": (2.5359, -75.5277),
+    "LA GUAJIRA": (11.3548, -72.5205),
+    "MAGDALENA": (10.4113, -74.4057),
+    "META": (3.2720, -73.0877),
+    "NARINO": (1.2892, -77.3579),
+    "NORTE DE SANTANDER": (7.9463, -72.8988),
+    "PUTUMAYO": (0.4359, -75.5277),
+    "QUINDIO": (4.4610, -75.6674),
+    "RISARALDA": (5.3158, -75.9928),
+    "SAN ANDRES Y PROVIDENCIA": (12.5847, -81.7006),
+    "SANTANDER": (6.6437, -73.6536),
+    "SUCRE": (9.3046, -75.3977),
+    "TOLIMA": (4.0925, -75.1545),
+    "VALLE DEL CAUCA": (3.8009, -76.6413),
+    "VAUPES": (0.8554, -70.8120),
+    "VICHADA": (4.4234, -69.2878),
+}
+
+_ALIAS_DEP_CO = {
+    "BOGOTA D C": "BOGOTA",
+    "BOGOTA DC": "BOGOTA",
+    "DISTRITO CAPITAL": "BOGOTA",
+    "SANTAFE DE BOGOTA": "BOGOTA",
+    "SAN ANDRES": "SAN ANDRES Y PROVIDENCIA",
+    "SAN ANDRES PROVIDENCIA Y SANTA CATALINA": "SAN ANDRES Y PROVIDENCIA",
+    "NARINO": "NARINO",
+    "ATLANTICO": "ATLANTICO",
+    "CHOCO": "CHOCO",
+    "CORDOBA": "CORDOBA",
+}
+
+def _normalizar_departamento_co(valor):
+    if valor is None or pd.isna(valor):
+        return ""
+    txt = unicodedata.normalize("NFD", str(valor))
+    txt = "".join(ch for ch in txt if unicodedata.category(ch) != "Mn")
+    txt = txt.upper().strip()
+    txt = re.sub(r"[^A-Z0-9]+", " ", txt)
+    txt = " ".join(txt.split())
+
+    # Limpiar prefijos/sufijos frecuentes.
+    txt = re.sub(r"^DEPARTAMENTO DE ", "", txt)
+    txt = re.sub(r"^DEPTO DE ", "", txt)
+    txt = re.sub(r"^DEPTO ", "", txt)
+
+    if txt in _ALIAS_DEP_CO:
+        txt = _ALIAS_DEP_CO[txt]
+    return txt
+
+def _datos_mapa_departamentos_co(serie):
+    limpia = (
+        serie.dropna()
+        .astype(str)
+        .str.strip()
+    )
+    limpia = limpia[
+        ~limpia.str.upper().isin(
+            ["", "NAN", "NONE", "NULL", "SIN DATO", "NO REGISTRA"]
+        )
+    ]
+    if limpia.empty:
+        return pd.DataFrame(), []
+
+    base = pd.DataFrame({"original": limpia})
+    base["departamento_norm"] = base["original"].apply(_normalizar_departamento_co)
+
+    conteo = (
+        base.groupby("departamento_norm", dropna=False)
+        .size()
+        .reset_index(name="cantidad")
+    )
+    total = int(conteo["cantidad"].sum())
+    conteo["porcentaje"] = (
+        conteo["cantidad"] / total * 100
+    ).round(1)
+
+    conteo["lat"] = conteo["departamento_norm"].map(
+        lambda x: _COORD_DEPARTAMENTOS_CO.get(x, (None, None))[0]
+    )
+    conteo["lon"] = conteo["departamento_norm"].map(
+        lambda x: _COORD_DEPARTAMENTOS_CO.get(x, (None, None))[1]
+    )
+    conteo["departamento"] = conteo["departamento_norm"].str.title()
+
+    desconocidos = conteo.loc[
+        conteo["lat"].isna() | conteo["lon"].isna(),
+        "departamento_norm"
+    ].dropna().tolist()
+
+    mapa = conteo.dropna(subset=["lat", "lon"]).copy()
+    return mapa, desconocidos
+
+def _fig_mapa_departamentos_co(serie, titulo="Procedencia geográfica por departamento"):
+    mapa, desconocidos = _datos_mapa_departamentos_co(serie)
+    if mapa.empty:
+        return None, desconocidos
+
+    fig = px.scatter_geo(
+        mapa,
+        lat="lat",
+        lon="lon",
+        size="cantidad",
+        hover_name="departamento",
+        hover_data={
+            "cantidad": True,
+            "porcentaje": True,
+            "lat": False,
+            "lon": False,
+            "departamento_norm": False,
+        },
+        size_max=48,
+        title=titulo,
+        labels={
+            "cantidad": "Personas",
+            "porcentaje": "Porcentaje (%)"
+        }
+    )
+    fig.update_geos(
+        fitbounds="locations",
+        visible=True,
+        showcountries=True,
+        showcoastlines=True,
+        showland=True,
+        countrycolor="gray",
+        coastlinecolor="gray"
+    )
+    fig.update_layout(
+        margin=dict(l=0, r=0, t=55, b=0),
+        height=650
+    )
+    return fig, desconocidos
+
+
 def modulo_reportes_institucionales_v169():
 
     df = pd.read_sql("SELECT * FROM habitante_de_calle", engine)
@@ -15400,6 +15556,60 @@ def modulo_reportes_institucionales_v169():
                 use_container_width=True,
                 hide_index=True
             )
+
+    # ------------------------------------------------------------
+    # V16.40 - PROCEDENCIA GEOGRÁFICA
+    # ------------------------------------------------------------
+    if col_procedencia and col_procedencia in df_reporte.columns:
+        st.markdown("### 🗺️ Procedencia geográfica por departamento")
+        st.caption(
+            "El tamaño de cada marcador representa el número de personas "
+            "registradas con procedencia en ese departamento. Al pasar el cursor "
+            "se muestra cantidad y porcentaje."
+        )
+
+        fig_geo_proc, dep_no_reconocidos = _fig_mapa_departamentos_co(
+            df_reporte[col_procedencia],
+            "Procedencia geográfica de la población registrada"
+        )
+
+        if fig_geo_proc is not None:
+            st.plotly_chart(
+                fig_geo_proc,
+                use_container_width=True
+            )
+
+            mapa_proc_df, _ = _datos_mapa_departamentos_co(
+                df_reporte[col_procedencia]
+            )
+            if not mapa_proc_df.empty:
+                tabla_proc_geo = (
+                    mapa_proc_df[
+                        ["departamento", "cantidad", "porcentaje"]
+                    ]
+                    .sort_values(
+                        ["cantidad", "departamento"],
+                        ascending=[False, True]
+                    )
+                    .reset_index(drop=True)
+                )
+                st.dataframe(
+                    tabla_proc_geo.rename(columns={
+                        "departamento": "Departamento",
+                        "cantidad": "Personas",
+                        "porcentaje": "Porcentaje (%)"
+                    }),
+                    use_container_width=True,
+                    hide_index=True
+                )
+
+        if dep_no_reconocidos:
+            st.warning(
+                "Hay valores de procedencia que no pudieron ubicarse en el mapa: "
+                + ", ".join(sorted(set(dep_no_reconocidos))[:20])
+                + ". Conviene normalizarlos en la base."
+            )
+
 
 def modulo_carga_activos_v169():
 
@@ -19976,44 +20186,63 @@ El grupo etario predominante corresponde a **{grupo_top['grupo']}**, con **{grup
 
     st.subheader("📍 Distribución Territorial")
 
-    if "departamento_procedencia" in df.columns:
+    col_geo_dashboard = (
+        "departamento_procedencia"
+        if "departamento_procedencia" in df.columns
+        else "departamento_de_procedencia"
+        if "departamento_de_procedencia" in df.columns
+        else None
+    )
 
-        territorio = (
-            df["departamento_procedencia"]
-            .fillna("Sin dato")
-            .value_counts()
-            .head(10)
-            .reset_index()
+    if col_geo_dashboard:
+
+        fig_territorio, dep_no_reconocidos = _fig_mapa_departamentos_co(
+            df[col_geo_dashboard],
+            "Distribución geográfica por departamento de procedencia"
         )
 
-        territorio.columns = [
-            "territorio",
-            "cantidad"
-        ]
+        if fig_territorio is not None:
+            st.plotly_chart(
+                fig_territorio,
+                use_container_width=True
+            )
 
-        fig_territorio = px.bar(
-            territorio,
-            x="cantidad",
-            y="territorio",
-            orientation="h",
-            title="Distribución por departamento de procedencia"
+        territorio_mapa, _ = _datos_mapa_departamentos_co(
+            df[col_geo_dashboard]
         )
 
-        st.plotly_chart(
-            fig_territorio,
-            use_container_width=True
-        )
+        if not territorio_mapa.empty:
+            territorio_mapa = territorio_mapa.sort_values(
+                "cantidad",
+                ascending=False
+            )
 
-        territorio_top = territorio.iloc[0]
+            top4 = territorio_mapa.head(4).reset_index(drop=True)
+            cols_top = st.columns(min(4, len(top4)))
+            for i, fila in top4.iterrows():
+                cols_top[i].metric(
+                    str(fila["departamento"]),
+                    int(fila["cantidad"]),
+                    f"{float(fila['porcentaje']):.1f}%"
+                )
 
-        st.info(
-            f"La mayor concentración de usuarios se encuentra en {territorio_top['territorio']} ({territorio_top['cantidad']} registros)."
-        )
+            territorio_top = territorio_mapa.iloc[0]
+            st.info(
+                f"La mayor procedencia registrada corresponde a "
+                f"{territorio_top['departamento']} con "
+                f"{int(territorio_top['cantidad'])} personas "
+                f"({float(territorio_top['porcentaje']):.1f}% del total con dato)."
+            )
+
+        if dep_no_reconocidos:
+            st.warning(
+                "Valores sin ubicación geográfica reconocida: "
+                + ", ".join(sorted(set(dep_no_reconocidos))[:15])
+            )
 
     else:
-
         st.warning(
-            "No existe la columna departamento_procedencia."
+            "No existe una columna de departamento de procedencia."
         )
     st.subheader("💊 Tipos de consumo")
 
