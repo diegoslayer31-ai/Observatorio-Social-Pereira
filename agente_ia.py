@@ -591,7 +591,7 @@ def generar_historia_integral(documento, engine):
                 elements.append(table)
 
         # ============================================================
-        # V16.39.5 - HISTÓRICO PAI 2026 EN HISTORIA INTEGRAL
+        # V16.39.6 - HISTÓRICO PAI 2026 EN HISTORIA INTEGRAL
         # ============================================================
         try:
             hist_obj_pdf, hist_seg_pdf, hist_prof_pdf = (
@@ -12606,8 +12606,12 @@ def inicio_ejecutivo_v167():
     try:
         pai = pd.read_sql(
             text("""
-                SELECT estado, porcentaje_avance,
-                       fecha_meta, fecha_ultimo_seguimiento
+                SELECT
+                    TRIM(CAST(documento_usuario AS TEXT)) AS documento_usuario,
+                    estado,
+                    porcentaje_avance,
+                    fecha_meta,
+                    fecha_ultimo_seguimiento
                 FROM pai_objetivos
             """),
             engine
@@ -12654,7 +12658,23 @@ def inicio_ejecutivo_v167():
             estado_pai.isin(["CUMPLIDO", "CERRADO", "FINALIZADO"])
             | avance.ge(100)
         )
-        pai_activos = int((~cerrado).sum())
+        # "PAI activos" debe representar PERSONAS con al menos un PAI,
+        # no cantidad de objetivos.
+        pai_activos = int(
+            pai.loc[
+                ~cerrado,
+                "documento_usuario"
+            ]
+            .dropna()
+            .astype(str)
+            .str.strip()
+            .replace("", pd.NA)
+            .dropna()
+            .nunique()
+        )
+
+        # Las alertas se mantienen a nivel de objetivo porque una misma
+        # persona puede tener varios objetivos con estados/fechas diferentes.
         pai_vencidos = int(
             ((~cerrado) & fecha_meta.notna() & (fecha_meta < hoy)).sum()
         )
@@ -12670,7 +12690,7 @@ def inicio_ejecutivo_v167():
     c3.metric("Urbano", urbano)
     c4.metric("Granja", granja)
     c5.metric("Egresos", egresos)
-    c6.metric("PAI activos", pai_activos)
+    c6.metric("Personas con PAI", pai_activos)
 
     st.markdown("### 🚨 Alertas para gestión")
     a1, a2, a3 = st.columns(3)
