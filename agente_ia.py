@@ -591,7 +591,7 @@ def generar_historia_integral(documento, engine):
                 elements.append(table)
 
         # ============================================================
-        # V16.39.1 - HISTÓRICO PAI 2026 EN HISTORIA INTEGRAL
+        # V16.39.2 - HISTÓRICO PAI 2026 EN HISTORIA INTEGRAL
         # ============================================================
         try:
             hist_obj_pdf, hist_seg_pdf, hist_prof_pdf = (
@@ -8998,7 +8998,7 @@ def panel_profesional_v15(doc_forzado=None, incrustado=False):
         try:
             gestion = pd.read_sql(
                 text("""
-                    SELECT
+                    SELECT DISTINCT
                         p.id,
                         TRIM(CAST(p.documento_usuario AS TEXT)) AS documento,
                         p.objetivo_tipo,
@@ -9006,6 +9006,7 @@ def panel_profesional_v15(doc_forzado=None, incrustado=False):
                         p.estado,
                         p.fecha_meta,
                         p.fecha_ultimo_seguimiento,
+                        COALESCE(p.origen_registro, 'ACTUAL') AS origen_registro,
                         h.nombres,
                         h.apellidos,
                         h.modalidad
@@ -9030,7 +9031,15 @@ def panel_profesional_v15(doc_forzado=None, incrustado=False):
                             END
                         LIMIT 1
                     ) h ON TRUE
-                    WHERE p.profesional_referente=:prof
+                    WHERE
+                        p.profesional_referente=:prof
+                        OR EXISTS (
+                            SELECT 1
+                            FROM pai_profesionales_vinculados v
+                            WHERE v.id_objetivo=p.id
+                              AND v.profesional_id=:prof
+                              AND COALESCE(v.fuente,'')='MIGRADO PAI 2026'
+                        )
                 """),
                 engine,
                 params={"prof": prof_id}
@@ -9044,7 +9053,15 @@ def panel_profesional_v15(doc_forzado=None, incrustado=False):
                     SELECT COUNT(*) AS total
                     FROM pai_novedades n
                     JOIN pai_objetivos o ON o.id=n.id_objetivo
-                    WHERE o.profesional_referente=:prof
+                    WHERE
+                        o.profesional_referente=:prof
+                        OR EXISTS (
+                            SELECT 1
+                            FROM pai_profesionales_vinculados v
+                            WHERE v.id_objetivo=o.id
+                              AND v.profesional_id=:prof
+                              AND COALESCE(v.fuente,'')='MIGRADO PAI 2026'
+                        )
                 """),
                 engine,
                 params={"prof": prof_id}
@@ -9121,8 +9138,8 @@ def panel_profesional_v15(doc_forzado=None, incrustado=False):
 
         with st.expander("📊 Ver resumen de mi gestión", expanded=True):
             k1, k2, k3, k4 = st.columns(4)
-            k1.metric("Personas con PAI", personas_pai)
-            k2.metric("Objetivos creados", objetivos_total)
+            k1.metric("Personas vinculadas", personas_pai)
+            k2.metric("Objetivos vinculados", objetivos_total)
             k3.metric("Objetivos cumplidos", objetivos_cumplidos)
             k4.metric("PAI cerrados", total_cerrados)
 
@@ -9180,10 +9197,26 @@ def panel_profesional_v15(doc_forzado=None, incrustado=False):
                     else:
                         sem = "🟢 AL DÍA"
 
+                    origenes_g = set(
+                        grupo.get("origen_registro", pd.Series(dtype=str))
+                        .fillna("ACTUAL")
+                        .astype(str)
+                        .str.upper()
+                        .tolist()
+                    )
+                    origen_txt = (
+                        "HISTÓRICO 2026"
+                        if origenes_g and origenes_g.issubset({"MIGRADO PAI 2026"})
+                        else "ACTUAL + HISTÓRICO"
+                        if "MIGRADO PAI 2026" in origenes_g
+                        else "ACTUAL"
+                    )
+
                     filas.append({
                         "Persona": grupo["nombre_completo"].iloc[0],
                         "Documento": doc_g,
                         "Modalidad": grupo["modalidad"].iloc[0],
+                        "Origen": origen_txt,
                         "Objetivos": len(grupo),
                         "Cumplidos": int(cumplidos_g.sum()),
                         "Avance promedio": f"{round(grupo['porcentaje_avance'].mean(), 1)}%",
