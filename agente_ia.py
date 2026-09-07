@@ -5695,41 +5695,43 @@ def gestion_usuarios_movil():
                 modalidad_salida = str(u.get("modalidad") or "").strip().upper() or None
                 usuario_salida = st.session_state.get("usuario_actual", "sistema")
 
-                # Algunas instalaciones tienen una restricción CHECK
-                # en movimientos_habitante.tipo_movimiento que no permite
-                # el valor nuevo SALIDA_VOLUNTARIA. Para no romper producción,
-                # registramos la salida voluntaria usando un tipo ya permitido
-                # y una marca inequívoca en observacion.
-                obs_salida_vol = (
-                    "[SALIDA_VOLUNTARIA] "
-                    + motivo_salida_vol.strip()
-                )
+                # V16.39.9 - Guardar la salida voluntaria en tabla propia.
+                # Así evitamos las restricciones de movimientos_habitante.
+                obs_salida_vol = motivo_salida_vol.strip()
 
-                with engine.begin() as conn:
-                    conn.execute(
-                        text("""
-                            INSERT INTO movimientos_habitante (
-                                numero_identificacion,
-                                tipo_movimiento,
-                                modalidad,
-                                usuario_registra,
-                                observacion
-                            )
-                            VALUES (
-                                :doc,
-                                'ACTUALIZACION_USUARIO',
-                                :modalidad,
-                                :usuario,
-                                :obs
-                            )
-                        """),
-                        {
-                            "doc": documento,
-                            "modalidad": modalidad_salida,
-                            "usuario": usuario_salida,
-                            "obs": obs_salida_vol
-                        }
+                try:
+                    with engine.begin() as conn:
+                        conn.execute(
+                            text("""
+                                INSERT INTO salidas_voluntarias_albergue (
+                                    numero_identificacion,
+                                    modalidad,
+                                    observacion,
+                                    usuario_registra,
+                                    fecha_hora
+                                )
+                                VALUES (
+                                    :doc,
+                                    :modalidad,
+                                    :obs,
+                                    :usuario,
+                                    NOW()
+                                )
+                            """),
+                            {
+                                "doc": documento,
+                                "modalidad": modalidad_salida,
+                                "usuario": usuario_salida,
+                                "obs": obs_salida_vol
+                            }
+                        )
+                except Exception:
+                    st.error(
+                        "No fue posible registrar la salida voluntaria. "
+                        "Ejecute primero el SQL de creación de la tabla "
+                        "salidas_voluntarias_albergue."
                     )
+                    st.stop()
 
                 registrar_auditoria(
                     "SALIDA_VOLUNTARIA",
@@ -7245,51 +7247,50 @@ def control_turno_v13():
     if not permisos.empty:
         docs_fuera = set(permisos["documento"].astype(str).str.strip())
 
-    # V16.39.8 - Una salida voluntaria afecta presencia física, no el estado del caso.
-    # Se toma el último movimiento operativo entre salida voluntaria e ingreso/reingreso.
+    # V16.39.9 - Presencia física según última salida voluntaria
+    # versus último ingreso/reingreso.
     try:
-        salidas_voluntarias = pd.read_sql(
+        estado_salida_vol = pd.read_sql(
             text("""
-                SELECT DISTINCT ON (TRIM(CAST(numero_identificacion AS TEXT)))
-                    TRIM(CAST(numero_identificacion AS TEXT)) AS documento,
-                    UPPER(TRIM(COALESCE(tipo_movimiento,''))) AS tipo_movimiento,
-                    COALESCE(observacion,'') AS observacion
-                FROM movimientos_habitante
+                WITH ultima_salida AS (
+                    SELECT
+                        TRIM(CAST(numero_identificacion AS TEXT)) AS documento,
+                        MAX(fecha_hora) AS fecha_salida_vol
+                    FROM salidas_voluntarias_albergue
+                    GROUP BY TRIM(CAST(numero_identificacion AS TEXT))
+                ),
+                ultimo_ingreso AS (
+                    SELECT
+                        TRIM(CAST(numero_identificacion AS TEXT)) AS documento,
+                        MAX(fecha_movimiento) AS fecha_ingreso
+                    FROM movimientos_habitante
+                    WHERE UPPER(TRIM(COALESCE(tipo_movimiento,''))) IN (
+                        'INGRESO', 'REINGRESO'
+                    )
+                    GROUP BY TRIM(CAST(numero_identificacion AS TEXT))
+                )
+                SELECT
+                    s.documento,
+                    s.fecha_salida_vol,
+                    i.fecha_ingreso
+                FROM ultima_salida s
+                LEFT JOIN ultimo_ingreso i
+                  ON i.documento=s.documento
                 WHERE
-                    UPPER(TRIM(COALESCE(tipo_movimiento,''))) IN (
-                        'SALIDA_VOLUNTARIA', 'INGRESO', 'REINGRESO'
-                    )
-                    OR (
-                        UPPER(TRIM(COALESCE(tipo_movimiento,'')))='ACTUALIZACION_USUARIO'
-                        AND UPPER(COALESCE(observacion,'')) LIKE '[SALIDA_VOLUNTARIA]%'
-                    )
-                ORDER BY TRIM(CAST(numero_identificacion AS TEXT)), fecha_movimiento DESC
+                    i.fecha_ingreso IS NULL
+                    OR s.fecha_salida_vol > i.fecha_ingreso
             """),
             engine
         )
-        if not salidas_voluntarias.empty:
-            # Reconocer tanto el valor nativo SALIDA_VOLUNTARIA
-            # como la versión compatible guardada en ACTUALIZACION_USUARIO
-            # con observación marcada.
-            mask_salida_vol = (
-                salidas_voluntarias["tipo_movimiento"].eq("SALIDA_VOLUNTARIA")
-                |
-                (
-                    salidas_voluntarias["tipo_movimiento"].eq("ACTUALIZACION_USUARIO")
-                    & salidas_voluntarias["observacion"]
-                        .fillna("")
-                        .astype(str)
-                        .str.upper()
-                        .str.startswith("[SALIDA_VOLUNTARIA]")
-                )
-            )
+
+        if not estado_salida_vol.empty:
             docs_salida_vol = set(
-                salidas_voluntarias.loc[
-                    mask_salida_vol,
-                    "documento"
-                ].astype(str).str.strip()
+                estado_salida_vol["documento"]
+                .astype(str)
+                .str.strip()
             )
             docs_fuera.update(docs_salida_vol)
+
     except Exception:
         pass
 
