@@ -591,7 +591,7 @@ def generar_historia_integral(documento, engine):
                 elements.append(table)
 
         # ============================================================
-        # V16.39 - HISTÓRICO PAI 2026 EN HISTORIA INTEGRAL
+        # V16.39.1 - HISTÓRICO PAI 2026 EN HISTORIA INTEGRAL
         # ============================================================
         try:
             hist_obj_pdf, hist_seg_pdf, hist_prof_pdf = (
@@ -9223,8 +9223,13 @@ def panel_profesional_v15(doc_forzado=None, incrustado=False):
         st.divider()
 
     # ------------------------------------------------------------
-    # Cargar personas asignadas o activas
+    # V16.39.1 - Cargar universo del Expediente PAI
     # ------------------------------------------------------------
+    # El expediente NO debe limitarse a personas ACTIVO.
+    # Incluye:
+    # 1) personas activas disponibles para iniciar/continuar PAI,
+    # 2) personas con objetivos asignados al profesional actual,
+    # 3) personas vinculadas históricamente al profesional en la migración 2026.
     if incrustado and doc_forzado is not None:
         personas = pd.read_sql(
             text("""
@@ -9260,33 +9265,90 @@ def panel_profesional_v15(doc_forzado=None, incrustado=False):
             )
             return
     else:
-        personas = pd.read_sql(
-            text("""
-                SELECT DISTINCT ON (
-                    TRIM(CAST(numero_identificacion AS TEXT))
-                )
-                    TRIM(CAST(numero_identificacion AS TEXT)) AS documento,
-                    nombres,
-                    apellidos,
-                    modalidad,
-                    estado_caso
-                FROM habitante_de_calle
-                WHERE UPPER(TRIM(COALESCE(estado_caso,'')))='ACTIVO'
-                ORDER BY
-                    TRIM(CAST(numero_identificacion AS TEXT)),
-                    CASE
-                        WHEN modalidad IS NOT NULL
-                         AND TRIM(CAST(modalidad AS TEXT))<>'' THEN 0
-                        ELSE 1
-                    END,
-                    nombres,
-                    apellidos
-            """),
-            engine
-        )
+        try:
+            personas = pd.read_sql(
+                text("""
+                    WITH docs_prof AS (
+                        SELECT DISTINCT
+                            TRIM(CAST(documento_usuario AS TEXT)) AS documento
+                        FROM pai_objetivos
+                        WHERE profesional_referente=:prof
+
+                        UNION
+
+                        SELECT DISTINCT
+                            TRIM(CAST(documento_usuario AS TEXT)) AS documento
+                        FROM pai_profesionales_vinculados
+                        WHERE profesional_id=:prof
+                    )
+                    SELECT DISTINCT ON (
+                        TRIM(CAST(h.numero_identificacion AS TEXT))
+                    )
+                        TRIM(CAST(h.numero_identificacion AS TEXT)) AS documento,
+                        h.nombres,
+                        h.apellidos,
+                        h.modalidad,
+                        h.estado_caso
+                    FROM habitante_de_calle h
+                    LEFT JOIN docs_prof d
+                      ON d.documento=TRIM(CAST(h.numero_identificacion AS TEXT))
+                    WHERE
+                        UPPER(TRIM(COALESCE(h.estado_caso,'')))='ACTIVO'
+                        OR d.documento IS NOT NULL
+                    ORDER BY
+                        TRIM(CAST(h.numero_identificacion AS TEXT)),
+                        CASE
+                            WHEN UPPER(TRIM(COALESCE(h.estado_caso,'')))='ACTIVO' THEN 0
+                            ELSE 1
+                        END,
+                        CASE
+                            WHEN h.modalidad IS NOT NULL
+                             AND TRIM(CAST(h.modalidad AS TEXT))<>'' THEN 0
+                            ELSE 1
+                        END
+                """),
+                engine,
+                params={"prof": prof_id}
+            )
+        except Exception:
+            # Compatibilidad defensiva si aún no existiera la tabla puente.
+            personas = pd.read_sql(
+                text("""
+                    SELECT DISTINCT ON (
+                        TRIM(CAST(h.numero_identificacion AS TEXT))
+                    )
+                        TRIM(CAST(h.numero_identificacion AS TEXT)) AS documento,
+                        h.nombres,
+                        h.apellidos,
+                        h.modalidad,
+                        h.estado_caso
+                    FROM habitante_de_calle h
+                    WHERE
+                        UPPER(TRIM(COALESCE(h.estado_caso,'')))='ACTIVO'
+                        OR TRIM(CAST(h.numero_identificacion AS TEXT)) IN (
+                            SELECT DISTINCT
+                                TRIM(CAST(documento_usuario AS TEXT))
+                            FROM pai_objetivos
+                            WHERE profesional_referente=:prof
+                        )
+                    ORDER BY
+                        TRIM(CAST(h.numero_identificacion AS TEXT)),
+                        CASE
+                            WHEN UPPER(TRIM(COALESCE(h.estado_caso,'')))='ACTIVO' THEN 0
+                            ELSE 1
+                        END,
+                        CASE
+                            WHEN h.modalidad IS NOT NULL
+                             AND TRIM(CAST(h.modalidad AS TEXT))<>'' THEN 0
+                            ELSE 1
+                        END
+                """),
+                engine,
+                params={"prof": prof_id}
+            )
 
         if personas.empty:
-            st.info("No hay personas activas disponibles.")
+            st.info("No hay personas disponibles para este expediente PAI.")
             return
 
     personas["nombre_completo"] = (
@@ -9295,34 +9357,89 @@ def panel_profesional_v15(doc_forzado=None, incrustado=False):
         + personas["apellidos"].fillna("").astype(str).str.strip()
     ).str.strip()
 
+    # Orden alfabético estable, ignorando diferencias de mayúsculas.
+    personas["_orden_nombre"] = (
+        personas["nombre_completo"]
+        .fillna("")
+        .astype(str)
+        .str.upper()
+        .str.strip()
+    )
+    personas = personas.sort_values(
+        ["_orden_nombre", "documento"],
+        kind="stable"
+    ).reset_index(drop=True)
+
     # Si venimos desde Gestión Profesional, conservar usuario pendiente.
     pendiente = st.session_state.pop("v15_usuario_pendiente", None)
 
-    docs = personas["documento"].astype(str).tolist()
-    default_index = 0
-    if doc_forzado is not None and str(doc_forzado) in docs:
-        default_index = docs.index(str(doc_forzado))
-    elif pendiente is not None and str(pendiente) in docs:
-        default_index = docs.index(str(pendiente))
-
     if not incrustado:
         st.markdown("## 👤 Expediente PAI")
+        st.caption(
+            "Puede consultar personas activas y también casos PAI históricos o inactivos "
+            "vinculados al profesional."
+        )
+
+        buscar_pai = st.text_input(
+            "🔎 Buscar por nombre o cédula",
+            placeholder="Ej.: Andrés Pérez o 1116443743",
+            key="v16_39_buscar_expediente_pai"
+        ).strip()
+
+        personas_filtradas = personas.copy()
+
+        if buscar_pai:
+            q = buscar_pai.upper()
+            mask_busqueda = (
+                personas_filtradas["nombre_completo"]
+                .fillna("")
+                .astype(str)
+                .str.upper()
+                .str.contains(q, regex=False)
+                |
+                personas_filtradas["documento"]
+                .fillna("")
+                .astype(str)
+                .str.contains(buscar_pai, regex=False)
+            )
+            personas_filtradas = personas_filtradas.loc[
+                mask_busqueda
+            ].copy()
+
+        if personas_filtradas.empty:
+            st.warning(
+                "No se encontraron personas con ese nombre o número de identificación."
+            )
+            return
+
+        docs = personas_filtradas["documento"].astype(str).tolist()
+
+        default_index = 0
+        if pendiente is not None and str(pendiente) in docs:
+            default_index = docs.index(str(pendiente))
+
         doc_sel = st.selectbox(
             "Seleccione la persona",
             docs,
             index=default_index,
             format_func=lambda d: (
-                f"{personas.loc[personas['documento'].astype(str)==str(d), 'nombre_completo'].iloc[0]}"
+                f"{personas_filtradas.loc[personas_filtradas['documento'].astype(str)==str(d), 'nombre_completo'].iloc[0]}"
                 f" · CC {d}"
+                f" · {str(personas_filtradas.loc[personas_filtradas['documento'].astype(str)==str(d), 'estado_caso'].iloc[0] or 'SIN ESTADO').upper()}"
             ),
             key="v16_2_usuario_unico"
         )
+
+        persona_sel = personas_filtradas.loc[
+            personas_filtradas["documento"].astype(str) == str(doc_sel)
+        ].iloc[0]
+
     else:
         doc_sel = str(doc_forzado).strip()
+        persona_sel = personas.loc[
+            personas["documento"].astype(str) == str(doc_sel)
+        ].iloc[0]
 
-    persona_sel = personas.loc[
-        personas["documento"].astype(str) == str(doc_sel)
-    ].iloc[0]
     nombre_usuario = str(persona_sel["nombre_completo"]).strip()
     modalidad_usuario = str(persona_sel.get("modalidad") or "").strip()
 
