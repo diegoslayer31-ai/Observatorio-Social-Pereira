@@ -5676,6 +5676,13 @@ def gestion_usuarios_movil():
             key=f"movil_obs_salida_vol_{documento}"
         )
 
+        # Foto temporal opcional para el reporte.
+        # Vive solo en session_state y no se almacena en BD/Storage.
+        _capturar_foto_temporal_movimiento_v1636(
+            documento,
+            "salida_voluntaria"
+        )
+
         confirmar_salida_vol = st.checkbox(
             "Confirmo que la persona salió voluntariamente del albergue",
             key=f"movil_conf_salida_vol_{documento}"
@@ -5695,7 +5702,7 @@ def gestion_usuarios_movil():
                 modalidad_salida = str(u.get("modalidad") or "").strip().upper() or None
                 usuario_salida = st.session_state.get("usuario_actual", "sistema")
 
-                # V16.39.9 - Guardar la salida voluntaria en tabla propia.
+                # V16.39.10 - Guardar la salida voluntaria en tabla propia.
                 # Así evitamos las restricciones de movimientos_habitante.
                 obs_salida_vol = motivo_salida_vol.strip()
 
@@ -5742,10 +5749,33 @@ def gestion_usuarios_movil():
                     observacion=obs_salida_vol[:500]
                 )
                 invalidar_cache_datos()
+
+                # Generar reporte operativo para WhatsApp / compartir con foto.
+                ahora_salida_vol = datetime.now()
+                reporte = _texto_whatsapp_movimiento(
+                    "SALIDA VOLUNTARIA",
+                    u.get("nombres"),
+                    u.get("apellidos"),
+                    documento,
+                    modalidad=modalidad_salida or "",
+                    fecha=ahora_salida_vol.date(),
+                    hora=ahora_salida_vol.time(),
+                    detalle=obs_salida_vol,
+                    responsable=usuario_salida
+                )
+                st.session_state[
+                    f"reporte_whatsapp_{documento}"
+                ] = reporte
+
                 st.success(
                     "✅ Salida voluntaria registrada. La persona conserva su estado de caso y no fue marcada como egresada."
                 )
-                st.rerun()
+
+        # Mostrar inmediatamente el reporte y, si existe, la foto temporal.
+        _mostrar_reporte_movimiento_v1636(
+            documento,
+            "salida_voluntaria"
+        )
 
     # --------------------------------------------------------
     # Salida de permiso
@@ -7247,7 +7277,7 @@ def control_turno_v13():
     if not permisos.empty:
         docs_fuera = set(permisos["documento"].astype(str).str.strip())
 
-    # V16.39.9 - Presencia física según última salida voluntaria
+    # V16.39.10 - Presencia física según última salida voluntaria
     # versus último ingreso/reingreso.
     try:
         estado_salida_vol = pd.read_sql(
