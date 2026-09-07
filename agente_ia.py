@@ -4032,6 +4032,76 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 
+# ============================================================
+# V16.41 - REGLAS INSTITUCIONALES DE POSIBLE REINGRESO
+# ============================================================
+CRITERIOS_REINGRESO_V1641 = {
+    "SALIDA VOLUNTARIA": ("dias", 1, "1 noche"),
+    "AGRESIÓN FÍSICA": ("dias", 3, "3 noches"),
+    "FUGA": ("dias", 1, "1 noche"),
+    "USO DE SPA": ("dias", 2, "2 noches"),
+    "PORTE DE SPA": ("dias", 1, "1 noche"),
+    "HURTO MENOR": ("dias", 3, "3 noches"),
+    "HURTO GRAVE": ("meses", 2, "2 meses"),
+    "VENTA DE SPA": ("dias", 3, "3 noches"),
+}
+
+def _fecha_posible_reingreso_v1641(fecha_salida, causal):
+    """Calcula la primera fecha institucional posible de reingreso."""
+    if fecha_salida is None:
+        fecha_salida = date.today()
+    if hasattr(fecha_salida, "date") and not isinstance(fecha_salida, date):
+        fecha_salida = fecha_salida.date()
+    regla = CRITERIOS_REINGRESO_V1641.get(str(causal or "").strip().upper())
+    if not regla:
+        return None
+    unidad, cantidad, _ = regla
+    if unidad == "meses":
+        return (pd.Timestamp(fecha_salida) + pd.DateOffset(months=cantidad)).date()
+    return fecha_salida + timedelta(days=cantidad)
+
+def _restriccion_reingreso_v1641(documento):
+    """Devuelve (fecha, causal) de la restricción vigente más reciente."""
+    doc = str(documento or "").strip()
+    candidatos = []
+    try:
+        df_sv = pd.read_sql(
+            text("""
+                SELECT fecha_hora
+                FROM salidas_voluntarias_albergue
+                WHERE TRIM(CAST(numero_identificacion AS TEXT)) = :doc
+                ORDER BY fecha_hora DESC
+                LIMIT 1
+            """), engine, params={"doc": doc}
+        )
+        if not df_sv.empty:
+            f = pd.to_datetime(df_sv.iloc[0]["fecha_hora"], errors="coerce")
+            if pd.notna(f):
+                candidatos.append((_fecha_posible_reingreso_v1641(f.date(), "SALIDA VOLUNTARIA"), "SALIDA VOLUNTARIA"))
+    except Exception:
+        pass
+    try:
+        df_med = pd.read_sql(
+            text("""
+                SELECT motivo, fecha_fin
+                FROM sanciones_usuarios
+                WHERE TRIM(CAST(numero_identificacion AS TEXT)) = :doc
+                  AND fecha_fin IS NOT NULL
+                ORDER BY creado_en DESC
+                LIMIT 1
+            """), engine, params={"doc": doc}
+        )
+        if not df_med.empty:
+            f = pd.to_datetime(df_med.iloc[0]["fecha_fin"], errors="coerce")
+            if pd.notna(f):
+                candidatos.append((f.date(), str(df_med.iloc[0]["motivo"] or "MEDIDA DISCIPLINARIA")))
+    except Exception:
+        pass
+    candidatos = [(f, c) for f, c in candidatos if f is not None]
+    if not candidatos:
+        return None, None
+    return max(candidatos, key=lambda x: x[0])
+
 def _texto_whatsapp_movimiento(
     tipo,
     nombres,
@@ -4041,7 +4111,8 @@ def _texto_whatsapp_movimiento(
     fecha=None,
     hora=None,
     detalle="",
-    responsable=""
+    responsable="",
+    fecha_posible_reingreso=None
 ):
     """Construye un reporte corto para compartir por WhatsApp."""
     fecha_txt = (
@@ -4069,6 +4140,13 @@ def _texto_whatsapp_movimiento(
         lineas.append(f"*HORA:* {hora_txt}")
     if detalle:
         lineas.append(f"*OBSERVACIÓN:* {str(detalle).strip()}")
+    if fecha_posible_reingreso:
+        fecha_reingreso_txt = (
+            fecha_posible_reingreso.strftime("%d/%m/%Y")
+            if hasattr(fecha_posible_reingreso, "strftime")
+            else str(fecha_posible_reingreso)
+        )
+        lineas.append(f"*POSIBLE REINGRESO:* {fecha_reingreso_txt}")
     if responsable:
         lineas.append(f"*REGISTRA:* {str(responsable).strip()}")
 
@@ -5637,6 +5715,19 @@ def gestion_usuarios_movil():
                     else "INGRESO"
                 )
 
+                fecha_restriccion, causal_restriccion = _restriccion_reingreso_v1641(documento)
+                if (
+                    tipo_mov == "REINGRESO"
+                    and fecha_restriccion is not None
+                    and date.today() < fecha_restriccion
+                ):
+                    st.error(
+                        "⛔ Reingreso no permitido todavía. "
+                        f"Causal: {causal_restriccion}. "
+                        f"Posible reingreso: {fecha_restriccion.strftime('%d/%m/%Y')}."
+                    )
+                    st.stop()
+
                 with engine.begin() as conn:
                     cols_h = pd.read_sql(
                         text("""
@@ -5818,7 +5909,10 @@ def gestion_usuarios_movil():
                 invalidar_cache_datos()
 
                 # Generar reporte operativo para WhatsApp / compartir con foto.
-                ahora_salida_vol = datetime.now()
+                ahora_salida_vol = ahora_colombia()
+                fecha_posible_reingreso = _fecha_posible_reingreso_v1641(
+                    ahora_salida_vol.date(), "SALIDA VOLUNTARIA"
+                )
                 reporte = _texto_whatsapp_movimiento(
                     "SALIDA VOLUNTARIA",
                     u.get("nombres"),
@@ -5828,7 +5922,8 @@ def gestion_usuarios_movil():
                     fecha=ahora_salida_vol.date(),
                     hora=ahora_salida_vol.time(),
                     detalle=obs_salida_vol,
-                    responsable=usuario_salida
+                    responsable=usuario_salida,
+                    fecha_posible_reingreso=fecha_posible_reingreso
                 )
                 st.session_state[
                     f"reporte_whatsapp_{documento}"
@@ -6213,14 +6308,23 @@ def gestion_usuarios_movil():
             value=date.today(),
             key=f"movil_inicio_medida_{documento}"
         )
-        fin = c2.date_input(
-            "Finalización / revisión",
-            value=date.today() + timedelta(days=3),
-            key=f"movil_fin_medida_{documento}"
+        causal_medida = c2.selectbox(
+            "Causal / criterio *",
+            [
+                "AGRESIÓN FÍSICA", "FUGA", "USO DE SPA", "PORTE DE SPA",
+                "HURTO MENOR", "HURTO GRAVE", "VENTA DE SPA"
+            ],
+            key=f"movil_causal_medida_{documento}"
+        )
+        fin = _fecha_posible_reingreso_v1641(inicio, causal_medida)
+        regla_txt = CRITERIOS_REINGRESO_V1641[causal_medida][2]
+        st.info(
+            f"📅 Posible reingreso: **{fin.strftime('%d/%m/%Y')}** "
+            f"({regla_txt})."
         )
 
         motivo = st.text_area(
-            "Motivo *",
+            "Detalle / observación del hecho *",
             key=f"movil_motivo_medida_{documento}"
         )
 
@@ -6272,7 +6376,7 @@ def gestion_usuarios_movil():
                         {
                             "doc": documento,
                             "tipo": tipo,
-                            "motivo": motivo.strip(),
+                            "motivo": causal_medida,
                             "inicio": inicio,
                             "fin": fin,
                             "obs": obs.strip(),
@@ -6315,7 +6419,7 @@ def gestion_usuarios_movil():
                             ),
                             "modalidad": u.get("modalidad"),
                             "usuario": usuario,
-                            "observacion": motivo.strip()
+                            "observacion": f"{causal_medida}: {motivo.strip()}"
                         }
                     )
 
@@ -6324,11 +6428,23 @@ def gestion_usuarios_movil():
                     documento=documento,
                     modulo="Gestión Móvil",
                     valor_nuevo=tipo,
-                    observacion=motivo.strip()[:500]
+                    observacion=f"{causal_medida}: {motivo.strip()}"[:500]
                 )
                 invalidar_cache_datos()
+
+                reporte = _texto_whatsapp_movimiento(
+                    f"{tipo} - {causal_medida}",
+                    u.get("nombres"), u.get("apellidos"), documento,
+                    modalidad=str(u.get("modalidad") or ""),
+                    fecha=inicio,
+                    detalle=motivo.strip(),
+                    responsable=usuario,
+                    fecha_posible_reingreso=fin
+                )
+                st.session_state[f"reporte_whatsapp_{documento}"] = reporte
                 st.success("✅ Medida registrada correctamente.")
-                st.rerun()
+
+        _mostrar_reporte_movimiento_v1636(documento, "sancion_expulsion")
 
     # --------------------------------------------------------
     # Profesional: egreso
