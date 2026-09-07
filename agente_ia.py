@@ -1223,35 +1223,45 @@ def gestion_usuarios():
                         }
                     )
 
-                    conn.execute(
-                        text("""
-                            INSERT INTO movimientos_habitante (
-                                numero_identificacion,
-                                tipo_movimiento,
-                                modalidad,
-                                usuario_registra,
-                                observacion
+                    # El cambio principal de estado no debe perderse si la
+                    # tabla histórica de movimientos rechaza un registro por
+                    # alguna restricción propia. El SAVEPOINT aísla solamente
+                    # el registro auxiliar y conserva el UPDATE principal.
+                    try:
+                        with conn.begin_nested():
+                            conn.execute(
+                                text("""
+                                    INSERT INTO movimientos_habitante (
+                                        numero_identificacion,
+                                        tipo_movimiento,
+                                        modalidad,
+                                        usuario_registra,
+                                        observacion
+                                    )
+                                    VALUES (
+                                        :doc,
+                                        'CAMBIO_ESTADO_MANUAL',
+                                        :modalidad,
+                                        :usuario,
+                                        :observacion
+                                    )
+                                """),
+                                {
+                                    "doc": documento,
+                                    "modalidad": nueva_modalidad,
+                                    "usuario": st.session_state.get(
+                                        "usuario_actual", "sistema"
+                                    ),
+                                    "observacion": (
+                                        f"Estado {estado_anterior} -> {nuevo_estado}; "
+                                        f"modalidad {modalidad_anterior} -> {nueva_modalidad}"
+                                    )
+                                }
                             )
-                            VALUES (
-                                :doc,
-                                'CAMBIO_ESTADO_MANUAL',
-                                :modalidad,
-                                :usuario,
-                                :observacion
-                            )
-                        """),
-                        {
-                            "doc": documento,
-                            "modalidad": nueva_modalidad,
-                            "usuario": st.session_state.get(
-                                "usuario_actual", "sistema"
-                            ),
-                            "observacion": (
-                                f"Estado {estado_anterior} -> {nuevo_estado}; "
-                                f"modalidad {modalidad_anterior} -> {nueva_modalidad}"
-                            )
-                        }
-                    )
+                    except Exception:
+                        # La trazabilidad principal continúa en auditoría.
+                        # No se revierte el cambio de estado del usuario.
+                        pass
 
                 registrar_auditoria(
                     "ACTUALIZAR_USUARIO",
@@ -5759,7 +5769,7 @@ def gestion_usuarios_movil():
                 modalidad_salida = str(u.get("modalidad") or "").strip().upper() or None
                 usuario_salida = st.session_state.get("usuario_actual", "sistema")
 
-                # V16.40.15-CORRIGE-CAMBIO-ESTADO - Guardar la salida voluntaria en tabla propia.
+                # V16.40.16-CAMBIO-ESTADO-ROBUSTO - Guardar la salida voluntaria en tabla propia.
                 # Así evitamos las restricciones de movimientos_habitante.
                 obs_salida_vol = motivo_salida_vol.strip()
 
@@ -7334,7 +7344,7 @@ def control_turno_v13():
     if not permisos.empty:
         docs_fuera = set(permisos["documento"].astype(str).str.strip())
 
-    # V16.40.15-CORRIGE-CAMBIO-ESTADO - Presencia física según última salida voluntaria
+    # V16.40.16-CAMBIO-ESTADO-ROBUSTO - Presencia física según última salida voluntaria
     # versus último ingreso/reingreso.
     try:
         estado_salida_vol = pd.read_sql(
