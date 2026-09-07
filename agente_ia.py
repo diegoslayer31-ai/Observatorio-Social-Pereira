@@ -5759,7 +5759,7 @@ def gestion_usuarios_movil():
                 modalidad_salida = str(u.get("modalidad") or "").strip().upper() or None
                 usuario_salida = st.session_state.get("usuario_actual", "sistema")
 
-                # V16.40.13-MAPA-PDF-MATPLOTLIB - Guardar la salida voluntaria en tabla propia.
+                # V16.40.14-MAPA-PDF-AZUL-INSTITUCIONAL - Guardar la salida voluntaria en tabla propia.
                 # Así evitamos las restricciones de movimientos_habitante.
                 obs_salida_vol = motivo_salida_vol.strip()
 
@@ -7334,7 +7334,7 @@ def control_turno_v13():
     if not permisos.empty:
         docs_fuera = set(permisos["documento"].astype(str).str.strip())
 
-    # V16.40.13-MAPA-PDF-MATPLOTLIB - Presencia física según última salida voluntaria
+    # V16.40.14-MAPA-PDF-AZUL-INSTITUCIONAL - Presencia física según última salida voluntaria
     # versus último ingreso/reingreso.
     try:
         estado_salida_vol = pd.read_sql(
@@ -14722,9 +14722,9 @@ def modulo_reportes_institucionales_v169():
 
                             coleccion = PatchCollection(
                                 parches,
-                                cmap=plt.get_cmap(),
+                                cmap=plt.get_cmap("Blues"),
                                 norm=norm,
-                                linewidth=0.7
+                                linewidth=0.85
                             )
                             coleccion.set_array(
                                 pd.Series(valores).astype(float).to_numpy()
@@ -14756,7 +14756,9 @@ def modulo_reportes_institucionales_v169():
                                     f"{nombre_corto}\n{item['cantidad']}",
                                     ha="center",
                                     va="center",
-                                    fontsize=6
+                                    fontsize=6.5,
+                                    color="#17365D",
+                                    fontweight="bold"
                                 )
 
                             barra = fig_pdf.colorbar(
