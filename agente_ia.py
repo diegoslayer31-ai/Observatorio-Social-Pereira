@@ -5759,7 +5759,7 @@ def gestion_usuarios_movil():
                 modalidad_salida = str(u.get("modalidad") or "").strip().upper() or None
                 usuario_salida = st.session_state.get("usuario_actual", "sistema")
 
-                # V16.40.10-MAPA-CAMPO-DPTO - Guardar la salida voluntaria en tabla propia.
+                # V16.40.12-MAPA-PDF-INSTITUCIONAL - Guardar la salida voluntaria en tabla propia.
                 # Así evitamos las restricciones de movimientos_habitante.
                 obs_salida_vol = motivo_salida_vol.strip()
 
@@ -7334,7 +7334,7 @@ def control_turno_v13():
     if not permisos.empty:
         docs_fuera = set(permisos["documento"].astype(str).str.strip())
 
-    # V16.40.10-MAPA-CAMPO-DPTO - Presencia física según última salida voluntaria
+    # V16.40.12-MAPA-PDF-INSTITUCIONAL - Presencia física según última salida voluntaria
     # versus último ingreso/reingreso.
     try:
         estado_salida_vol = pd.read_sql(
@@ -13648,20 +13648,98 @@ def modulo_reportes_institucionales_v169():
                                         "cantidad": "Personas",
                                         "porcentaje": "Porcentaje %"
                                     },
-                                    title="Procedencia geográfica por departamento"
+                                    title="Procedencia geográfica por departamento",
+                                    color_continuous_scale="Viridis"
                                 )
+
+                                # V16.40.11 - mejorar lectura del mapa:
+                                # bordes más visibles, mayor tamaño y etiquetas
+                                # para los departamentos con registros.
+                                fig_mapa.update_traces(
+                                    marker_line_color="white",
+                                    marker_line_width=1.4
+                                )
+
+                                _centros_depto_v164011 = {
+                                    "AMAZONAS": (-1.44, -71.57),
+                                    "ANTIOQUIA": (6.98, -75.57),
+                                    "ARAUCA": (7.08, -70.71),
+                                    "ATLÁNTICO": (10.99, -74.79),
+                                    "BOGOTÁ, D.C.": (4.71, -74.07),
+                                    "BOLÍVAR": (8.67, -74.03),
+                                    "BOYACÁ": (5.45, -73.36),
+                                    "CALDAS": (5.30, -75.25),
+                                    "CAQUETÁ": (0.87, -73.84),
+                                    "CASANARE": (5.76, -71.57),
+                                    "CAUCA": (2.71, -76.83),
+                                    "CESAR": (9.34, -73.65),
+                                    "CHOCÓ": (5.25, -76.83),
+                                    "CÓRDOBA": (8.40, -75.90),
+                                    "CUNDINAMARCA": (5.03, -74.03),
+                                    "GUAINÍA": (2.59, -68.52),
+                                    "GUAVIARE": (2.04, -72.33),
+                                    "HUILA": (2.54, -75.53),
+                                    "LA GUAJIRA": (11.35, -72.52),
+                                    "MAGDALENA": (10.41, -74.41),
+                                    "META": (3.27, -73.09),
+                                    "NARIÑO": (1.29, -77.36),
+                                    "NORTE DE SANTANDER": (7.95, -72.90),
+                                    "PUTUMAYO": (0.44, -75.53),
+                                    "QUINDÍO": (4.46, -75.67),
+                                    "RISARALDA": (5.32, -75.99),
+                                    "SANTANDER": (6.64, -73.65),
+                                    "SUCRE": (9.30, -75.40),
+                                    "TOLIMA": (4.09, -75.15),
+                                    "VALLE DEL CAUCA": (3.80, -76.64),
+                                    "VAUPÉS": (0.86, -70.81),
+                                    "VICHADA": (4.42, -69.29),
+                                }
+
+                                _etiquetas_mapa = []
+                                for _, _fila_mapa in mapa_df.iterrows():
+                                    _dep = str(_fila_mapa["departamento_mapa"]).strip().upper()
+                                    _centro = _centros_depto_v164011.get(_dep)
+                                    if _centro:
+                                        _etiquetas_mapa.append({
+                                            "dep": str(_fila_mapa["categoria"]),
+                                            "lat": _centro[0],
+                                            "lon": _centro[1],
+                                            "cantidad": int(_fila_mapa["cantidad"]),
+                                        })
+
+                                if _etiquetas_mapa:
+                                    _df_etiquetas = pd.DataFrame(_etiquetas_mapa)
+                                    fig_mapa.add_scattergeo(
+                                        lat=_df_etiquetas["lat"],
+                                        lon=_df_etiquetas["lon"],
+                                        text=(
+                                            _df_etiquetas["dep"]
+                                            + "<br>"
+                                            + _df_etiquetas["cantidad"].astype(str)
+                                        ),
+                                        mode="text",
+                                        textfont=dict(size=10),
+                                        hoverinfo="skip",
+                                        showlegend=False
+                                    )
+
                                 fig_mapa.update_geos(
                                     fitbounds="locations",
-                                    visible=False
+                                    visible=False,
+                                    bgcolor="rgba(0,0,0,0)"
                                 )
                                 fig_mapa.update_layout(
                                     margin=dict(l=0, r=0, t=55, b=0),
-                                    height=620
+                                    height=760,
+                                    coloraxis_colorbar=dict(
+                                        title="Personas",
+                                        thickness=16
+                                    )
                                 )
                                 st.plotly_chart(
                                     fig_mapa,
                                     use_container_width=True,
-                                    key="mapa_procedencia_v16409"
+                                    key="mapa_procedencia_v164011"
                                 )
                             else:
                                 st.warning(
@@ -14448,6 +14526,162 @@ def modulo_reportes_institucionales_v169():
                         )
                         return True
 
+
+                    def _agregar_mapa_procedencia_pdf(
+                        titulo_seccion,
+                        dataframe,
+                        columna,
+                        numero_seccion,
+                        top_n=15
+                    ):
+                        """Agrega al PDF institucional el mapa de procedencia y su tabla."""
+                        tabla_cat = _tabla_categoria(dataframe, columna, top_n)
+                        if tabla_cat.empty:
+                            return False
+
+                        contenido.append(PageBreak())
+                        contenido.append(
+                            Paragraph(
+                                f"{numero_seccion}. {_texto_pdf(titulo_seccion)}",
+                                estilo_h1
+                            )
+                        )
+                        contenido.append(
+                            Paragraph(
+                                "Distribución geográfica de la población según el "
+                                "departamento de procedencia registrado.",
+                                estilo_cuerpo
+                            )
+                        )
+                        contenido.append(Spacer(1, 6))
+
+                        alias_pdf = {
+                            "BOGOTA": "BOGOTÁ, D.C.",
+                            "BOGOTA D.C.": "BOGOTÁ, D.C.",
+                            "BOGOTA DC": "BOGOTÁ, D.C.",
+                            "VALLE": "VALLE DEL CAUCA",
+                            "NARINO": "NARIÑO",
+                            "CHOCO": "CHOCÓ",
+                            "CORDOBA": "CÓRDOBA",
+                            "BOLIVAR": "BOLÍVAR",
+                            "ATLANTICO": "ATLÁNTICO",
+                            "QUINDIO": "QUINDÍO",
+                            "CAQUETA": "CAQUETÁ",
+                            "GUAINIA": "GUAINÍA",
+                            "VAUPES": "VAUPÉS",
+                        }
+
+                        def _norm_dep_pdf(valor):
+                            import unicodedata
+                            txt = str(valor or "").strip().upper()
+                            sin = "".join(
+                                c for c in unicodedata.normalize("NFD", txt)
+                                if unicodedata.category(c) != "Mn"
+                            )
+                            return alias_pdf.get(sin, txt)
+
+                        mapa_pdf = tabla_cat.copy()
+                        mapa_pdf["departamento_mapa"] = mapa_pdf["categoria"].apply(
+                            _norm_dep_pdf
+                        )
+
+                        try:
+                            import requests
+                            geo_url = (
+                                "https://raw.githubusercontent.com/ytolosa/"
+                                "mapas-colombia/main/output/geojson/"
+                                "col_departamentos_inset_nacional.geojson"
+                            )
+                            rg = requests.get(geo_url, timeout=12)
+                            rg.raise_for_status()
+                            geo = rg.json()
+
+                            fig_pdf = px.choropleth(
+                                mapa_pdf,
+                                geojson=geo,
+                                locations="departamento_mapa",
+                                featureidkey="properties.dpto_nombre",
+                                color="cantidad",
+                                hover_name="categoria",
+                                labels={"cantidad": "Personas"},
+                                color_continuous_scale="Viridis"
+                            )
+                            fig_pdf.update_traces(
+                                marker_line_color="white",
+                                marker_line_width=1.2
+                            )
+                            fig_pdf.update_geos(
+                                fitbounds="locations",
+                                visible=False
+                            )
+                            fig_pdf.update_layout(
+                                title="Mapa geográfico de procedencia",
+                                width=1000,
+                                height=720,
+                                margin=dict(l=5, r=5, t=55, b=5)
+                            )
+
+                            tmp_map = tempfile.NamedTemporaryFile(
+                                delete=False, suffix=".png"
+                            )
+                            tmp_map.close()
+                            fig_pdf.write_image(
+                                tmp_map.name,
+                                width=1000,
+                                height=720,
+                                scale=1.5
+                            )
+                            contenido.append(
+                                Image(
+                                    tmp_map.name,
+                                    width=16.8 * cm,
+                                    height=12.1 * cm
+                                )
+                            )
+                            contenido.append(Spacer(1, 5))
+                        except Exception:
+                            # El informe no falla si temporalmente no hay acceso
+                            # al recurso cartográfico.
+                            contenido.append(
+                                Paragraph(
+                                    "No fue posible cargar la cartografía al momento "
+                                    "de generar el informe. Se conserva la distribución "
+                                    "estadística de procedencia.",
+                                    estilo_cuerpo
+                                )
+                            )
+
+                        contenido.append(
+                            Paragraph(
+                                _interpretacion_categoria(
+                                    dataframe,
+                                    columna,
+                                    titulo_seccion
+                                ),
+                                estilo_cuerpo
+                            )
+                        )
+
+                        datos = [["Departamento", "Cantidad", "%"]]
+                        for _, fila in tabla_cat.iterrows():
+                            datos.append([
+                                Paragraph(
+                                    _texto_pdf(fila["categoria"]),
+                                    estilo_cuerpo
+                                ),
+                                str(int(fila["cantidad"])),
+                                f'{float(fila["porcentaje"]):.1f}%'
+                            ])
+
+                        contenido.append(
+                            _tabla_pdf(
+                                datos,
+                                anchos=[11.3 * cm, 2.7 * cm, 2.5 * cm],
+                                fontsize=8
+                            )
+                        )
+                        return True
+
                     # ------------------------------------------------
                     # PORTADA
                     # ------------------------------------------------
@@ -14799,13 +15033,22 @@ def modulo_reportes_institucionales_v169():
 
                     for titulo_bloque, columna_bloque, top_bloque in bloques:
                         if columna_bloque:
-                            agregado = _agregar_barras_categoria(
-                                titulo_bloque,
-                                df_f,
-                                columna_bloque,
-                                seccion,
-                                top_bloque
-                            )
+                            if titulo_bloque == "Departamento de procedencia":
+                                agregado = _agregar_mapa_procedencia_pdf(
+                                    titulo_bloque,
+                                    df_f,
+                                    columna_bloque,
+                                    seccion,
+                                    15
+                                )
+                            else:
+                                agregado = _agregar_barras_categoria(
+                                    titulo_bloque,
+                                    df_f,
+                                    columna_bloque,
+                                    seccion,
+                                    top_bloque
+                                )
                             if agregado:
                                 seccion += 1
 
