@@ -591,7 +591,7 @@ def generar_historia_integral(documento, engine):
                 elements.append(table)
 
         # ============================================================
-        # V16.39.3 - HISTÓRICO PAI 2026 EN HISTORIA INTEGRAL
+        # V16.39.4 - HISTÓRICO PAI 2026 EN HISTORIA INTEGRAL
         # ============================================================
         try:
             hist_obj_pdf, hist_seg_pdf, hist_prof_pdf = (
@@ -10553,106 +10553,266 @@ def supervision_pai_v15():
         except Exception:
             pass
 
-    control = pd.read_sql(
-        text("""
-            SELECT
-                p.id,
-                p.documento_usuario,
-                p.porcentaje_avance,
-                p.estado,
-                p.fecha_meta,
-                p.fecha_ultimo_seguimiento,
-                p.profesional_referente,
-                pr.nombre AS profesional,
-                pr.rol
-            FROM pai_objetivos p
-            LEFT JOIN profesionales pr
-                ON pr.id=p.profesional_referente
-        """),
-        engine
-    )
+    # ============================================================
+    # V16.39.4 - SUPERVISIÓN PAI SIN MEZCLAR HISTÓRICO CON DESEMPEÑO
+    # ============================================================
 
-    if control.empty:
-        st.info("No existen objetivos PAI para supervisar.")
-        return
-
-    hoy = pd.Timestamp(date.today())
-    control["fecha_meta"] = pd.to_datetime(
-        control["fecha_meta"], errors="coerce"
-    )
-    control["fecha_ultimo_seguimiento"] = pd.to_datetime(
-        control["fecha_ultimo_seguimiento"], errors="coerce"
-    )
-    control["porcentaje_avance"] = pd.to_numeric(
-        control["porcentaje_avance"], errors="coerce"
-    ).fillna(0)
-    control["dias_meta"] = (
-        control["fecha_meta"].dt.normalize() - hoy
-    ).dt.days
-    control["dias_sin_seg"] = (
-        hoy - control["fecha_ultimo_seguimiento"].dt.normalize()
-    ).dt.days
-
-    control["cumplido"] = (
-        control["porcentaje_avance"].ge(100)
-        | control["estado"].fillna("").astype(str).str.upper().eq("CUMPLIDO")
-    )
-    control["vencido"] = (
-        ~control["cumplido"] & control["dias_meta"].lt(0)
-    )
-    control["proximo"] = (
-        ~control["cumplido"]
-        & control["dias_meta"].between(0, 7, inclusive="both")
-    )
-    control["sin_seguimiento"] = (
-        ~control["cumplido"]
-        & (
-            control["fecha_ultimo_seguimiento"].isna()
-            | control["dias_sin_seg"].gt(15)
+    # ------------------------------------------------------------
+    # 1. PAI ACTUAL: sí mide cumplimiento, vencimientos y seguimiento.
+    # ------------------------------------------------------------
+    try:
+        control = pd.read_sql(
+            text("""
+                SELECT
+                    p.id,
+                    TRIM(CAST(p.documento_usuario AS TEXT)) AS documento_usuario,
+                    p.porcentaje_avance,
+                    p.estado,
+                    p.fecha_meta,
+                    p.fecha_ultimo_seguimiento,
+                    p.profesional_referente,
+                    pr.nombre AS profesional,
+                    pr.rol
+                FROM pai_objetivos p
+                LEFT JOIN profesionales pr
+                    ON pr.id=p.profesional_referente
+                WHERE COALESCE(p.origen_registro,'ACTUAL') <> 'MIGRADO PAI 2026'
+            """),
+            engine
         )
-    )
-    control["profesional"] = control["profesional"].fillna("Sin asignar")
+    except Exception:
+        control = pd.DataFrame()
 
-    resumen = (
-        control.groupby("profesional", dropna=False)
-        .agg(
-            usuarios=("documento_usuario", "nunique"),
-            objetivos=("id", "count"),
-            cumplidos=("cumplido", "sum"),
-            vencidos=("vencido", "sum"),
-            proximos=("proximo", "sum"),
-            sin_seguimiento=("sin_seguimiento", "sum"),
-            avance_promedio=("porcentaje_avance", "mean")
+    resumen = pd.DataFrame()
+
+    if not control.empty:
+        hoy = pd.Timestamp(date.today())
+
+        control["fecha_meta"] = pd.to_datetime(
+            control["fecha_meta"], errors="coerce"
         )
-        .reset_index()
-    )
-    resumen["cumplimiento_%"] = (
-        resumen["cumplidos"] / resumen["objetivos"] * 100
-    ).round(1)
-    resumen["avance_promedio"] = resumen["avance_promedio"].round(1)
+        control["fecha_ultimo_seguimiento"] = pd.to_datetime(
+            control["fecha_ultimo_seguimiento"], errors="coerce"
+        )
+        control["porcentaje_avance"] = pd.to_numeric(
+            control["porcentaje_avance"], errors="coerce"
+        ).fillna(0)
 
-    st.markdown("### 📊 Comparativo por profesional")
-    st.dataframe(
-        resumen.sort_values(
-            ["vencidos", "sin_seguimiento"],
-            ascending=False
-        ),
-        use_container_width=True,
-        hide_index=True
+        control["dias_meta"] = (
+            control["fecha_meta"].dt.normalize() - hoy
+        ).dt.days
+
+        control["dias_sin_seg"] = (
+            hoy - control["fecha_ultimo_seguimiento"].dt.normalize()
+        ).dt.days
+
+        control["cumplido"] = (
+            control["porcentaje_avance"].ge(100)
+            | control["estado"].fillna("").astype(str).str.upper().eq("CUMPLIDO")
+        )
+
+        control["vencido"] = (
+            ~control["cumplido"]
+            & control["dias_meta"].lt(0)
+        )
+
+        control["proximo"] = (
+            ~control["cumplido"]
+            & control["dias_meta"].between(0, 7, inclusive="both")
+        )
+
+        control["sin_seguimiento"] = (
+            ~control["cumplido"]
+            & (
+                control["fecha_ultimo_seguimiento"].isna()
+                | control["dias_sin_seg"].gt(15)
+            )
+        )
+
+        control["profesional"] = (
+            control["profesional"]
+            .fillna("Sin asignar")
+        )
+
+        control["rol"] = (
+            control["rol"]
+            .fillna("Sin rol")
+        )
+
+        resumen = (
+            control.groupby(
+                ["profesional", "rol"],
+                dropna=False
+            )
+            .agg(
+                usuarios=("documento_usuario", "nunique"),
+                objetivos=("id", "count"),
+                cumplidos=("cumplido", "sum"),
+                vencidos=("vencido", "sum"),
+                proximos=("proximo", "sum"),
+                sin_seguimiento=("sin_seguimiento", "sum"),
+                avance_promedio=("porcentaje_avance", "mean")
+            )
+            .reset_index()
+        )
+
+        resumen["cumplimiento_%"] = (
+            resumen["cumplidos"]
+            / resumen["objetivos"]
+            * 100
+        ).round(1)
+
+        resumen["avance_promedio"] = (
+            resumen["avance_promedio"]
+            .round(1)
+        )
+
+    # ------------------------------------------------------------
+    # 2. HISTÓRICO 2026: solo participación/trazabilidad.
+    # ------------------------------------------------------------
+    try:
+        historico = pd.read_sql(
+            text("""
+                SELECT DISTINCT
+                    o.id AS id_objetivo,
+                    TRIM(CAST(o.documento_usuario AS TEXT)) AS documento_usuario,
+                    v.profesional_id,
+                    pr.nombre AS profesional,
+                    pr.rol
+                FROM pai_objetivos o
+                JOIN pai_profesionales_vinculados v
+                  ON v.id_objetivo=o.id
+                 AND v.profesional_id IS NOT NULL
+                 AND COALESCE(v.fuente,'')='MIGRADO PAI 2026'
+                LEFT JOIN profesionales pr
+                  ON pr.id=v.profesional_id
+                WHERE COALESCE(o.origen_registro,'')='MIGRADO PAI 2026'
+            """),
+            engine
+        )
+    except Exception:
+        historico = pd.DataFrame()
+
+    resumen_hist = pd.DataFrame()
+
+    if not historico.empty:
+        historico["profesional"] = (
+            historico["profesional"]
+            .fillna("Profesional histórico no identificado")
+        )
+
+        historico["rol"] = (
+            historico["rol"]
+            .fillna("Sin rol actual")
+        )
+
+        resumen_hist = (
+            historico.groupby(
+                ["profesional", "rol"],
+                dropna=False
+            )
+            .agg(
+                usuarios=("documento_usuario", "nunique"),
+                objetivos_historicos=("id_objetivo", "nunique")
+            )
+            .reset_index()
+            .sort_values(
+                ["objetivos_historicos", "usuarios", "profesional"],
+                ascending=[False, False, True]
+            )
+        )
+
+    # ------------------------------------------------------------
+    # PRESENTACIÓN
+    # ------------------------------------------------------------
+    st.markdown("### 📊 Comparativo por profesional · PAI actual")
+    st.caption(
+        "Este comparativo mide únicamente la gestión PAI vigente. "
+        "Los objetivos migrados del Excel PAI 2026 no se usan para calcular "
+        "cumplimiento, vencimientos, avance ni falta de seguimiento."
     )
 
-    csv = resumen.to_csv(index=False).encode("utf-8-sig")
-    st.download_button(
-        "⬇️ Descargar resumen PAI",
-        data=csv,
-        file_name=(
-            "supervision_pai_"
-            + datetime.now().strftime("%Y%m%d_%H%M")
-            + ".csv"
-        ),
-        mime="text/csv",
-        use_container_width=True
+    if resumen.empty:
+        st.info("No existen objetivos PAI actuales para supervisar.")
+    else:
+        resumen_mostrar = resumen.sort_values(
+            ["vencidos", "sin_seguimiento", "cumplimiento_%"],
+            ascending=[False, False, True]
+        )
+
+        st.dataframe(
+            resumen_mostrar.rename(columns={
+                "profesional": "Profesional",
+                "rol": "Rol",
+                "usuarios": "Usuarios actuales",
+                "objetivos": "Objetivos actuales",
+                "cumplidos": "Cumplidos",
+                "vencidos": "Vencidos",
+                "proximos": "Próximos",
+                "sin_seguimiento": "Sin seguimiento",
+                "avance_promedio": "Avance promedio",
+                "cumplimiento_%": "% cumplimiento"
+            }),
+            use_container_width=True,
+            hide_index=True
+        )
+
+        csv_actual = resumen_mostrar.to_csv(
+            index=False
+        ).encode("utf-8-sig")
+
+        st.download_button(
+            "⬇️ Descargar resumen PAI actual",
+            data=csv_actual,
+            file_name=(
+                "supervision_pai_actual_"
+                + datetime.now().strftime("%Y%m%d_%H%M")
+                + ".csv"
+            ),
+            mime="text/csv",
+            use_container_width=True
+        )
+
+    st.divider()
+
+    st.markdown("### 📚 Participación histórica por profesional · PAI 2026")
+    st.caption(
+        "Este cuadro muestra la participación recuperada del Excel histórico. "
+        "Una misma persona u objetivo puede estar vinculado a varios profesionales. "
+        "Es información de trazabilidad, no una medición de desempeño actual."
     )
+
+    if resumen_hist.empty:
+        st.info(
+            "No hay vínculos profesionales históricos PAI 2026 disponibles."
+        )
+    else:
+        st.dataframe(
+            resumen_hist.rename(columns={
+                "profesional": "Profesional",
+                "rol": "Rol actual",
+                "usuarios": "Personas atendidas",
+                "objetivos_historicos": "Objetivos históricos vinculados"
+            }),
+            use_container_width=True,
+            hide_index=True
+        )
+
+        csv_hist = resumen_hist.to_csv(
+            index=False
+        ).encode("utf-8-sig")
+
+        st.download_button(
+            "⬇️ Descargar participación histórica PAI 2026",
+            data=csv_hist,
+            file_name=(
+                "participacion_historica_pai_2026_"
+                + datetime.now().strftime("%Y%m%d_%H%M")
+                + ".csv"
+            ),
+            mime="text/csv",
+            use_container_width=True
+        )
 
 
 def dashboard_ejecutivo():
