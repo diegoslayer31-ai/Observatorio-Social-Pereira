@@ -591,7 +591,7 @@ def generar_historia_integral(documento, engine):
                 elements.append(table)
 
         # ============================================================
-        # V16.39.4 - HISTÓRICO PAI 2026 EN HISTORIA INTEGRAL
+        # V16.39.5 - HISTÓRICO PAI 2026 EN HISTORIA INTEGRAL
         # ============================================================
         try:
             hist_obj_pdf, hist_seg_pdf, hist_prof_pdf = (
@@ -10723,90 +10723,186 @@ def supervision_pai_v15():
         )
 
     # ------------------------------------------------------------
-    # PRESENTACIÓN
+    # PRESENTACIÓN UNIFICADA
     # ------------------------------------------------------------
-    st.markdown("### 📊 Comparativo por profesional · PAI actual")
+    st.markdown("### 📊 Supervisión PAI por profesional")
     st.caption(
-        "Este comparativo mide únicamente la gestión PAI vigente. "
-        "Los objetivos migrados del Excel PAI 2026 no se usan para calcular "
-        "cumplimiento, vencimientos, avance ni falta de seguimiento."
+        "Vista unificada de la gestión PAI. Se muestran en la misma fila "
+        "la gestión operativa vigente y la participación recuperada del PAI 2026. "
+        "Los indicadores de cumplimiento, vencimiento, avance y seguimiento "
+        "se calculan únicamente con objetivos operativos vigentes para evitar "
+        "lecturas erróneas."
     )
 
-    if resumen.empty:
-        st.info("No existen objetivos PAI actuales para supervisar.")
+    # Base con todos los profesionales que aparecen en cualquiera de las dos fuentes.
+    partes_prof = []
+
+    if not resumen.empty:
+        act = resumen.copy()
+        act = act.rename(columns={
+            "usuarios": "usuarios_actuales",
+            "objetivos": "objetivos_actuales"
+        })
+        partes_prof.append(
+            act[
+                [
+                    "profesional",
+                    "rol",
+                    "usuarios_actuales",
+                    "objetivos_actuales",
+                    "cumplidos",
+                    "vencidos",
+                    "proximos",
+                    "sin_seguimiento",
+                    "avance_promedio",
+                    "cumplimiento_%"
+                ]
+            ]
+        )
+
+    if not resumen_hist.empty:
+        hist = resumen_hist.copy()
+        hist = hist.rename(columns={
+            "usuarios": "personas_historicas",
+            "objetivos_historicos": "objetivos_historicos"
+        })
+        hist["rol_hist"] = hist["rol"]
+        partes_prof.append(
+            hist[
+                [
+                    "profesional",
+                    "rol_hist",
+                    "personas_historicas",
+                    "objetivos_historicos"
+                ]
+            ]
+        )
+
+    if not partes_prof:
+        st.info("No existen datos PAI para supervisar.")
     else:
-        resumen_mostrar = resumen.sort_values(
-            ["vencidos", "sin_seguimiento", "cumplimiento_%"],
+        # Construir una tabla única mediante outer join.
+        if not resumen.empty and not resumen_hist.empty:
+            act = partes_prof[0]
+            hist = partes_prof[1]
+            unificado = act.merge(
+                hist,
+                on="profesional",
+                how="outer"
+            )
+            unificado["Rol"] = (
+                unificado.get("rol")
+                .fillna(unificado.get("rol_hist"))
+            )
+        elif not resumen.empty:
+            unificado = partes_prof[0].copy()
+            unificado["Rol"] = unificado.get("rol")
+            unificado["personas_historicas"] = 0
+            unificado["objetivos_historicos"] = 0
+        else:
+            unificado = partes_prof[0].copy()
+            unificado["Rol"] = unificado.get("rol_hist")
+            unificado["usuarios_actuales"] = 0
+            unificado["objetivos_actuales"] = 0
+            unificado["cumplidos"] = 0
+            unificado["vencidos"] = 0
+            unificado["proximos"] = 0
+            unificado["sin_seguimiento"] = 0
+            unificado["avance_promedio"] = 0.0
+            unificado["cumplimiento_%"] = 0.0
+
+        # Completar faltantes numéricos.
+        for col in [
+            "usuarios_actuales",
+            "objetivos_actuales",
+            "cumplidos",
+            "vencidos",
+            "proximos",
+            "sin_seguimiento",
+            "avance_promedio",
+            "cumplimiento_%",
+            "personas_historicas",
+            "objetivos_historicos"
+        ]:
+            if col not in unificado.columns:
+                unificado[col] = 0
+            unificado[col] = pd.to_numeric(
+                unificado[col],
+                errors="coerce"
+            ).fillna(0)
+
+        # Indicadores integrales de cobertura, sin mezclar desempeño.
+        unificado["personas_total_referenciadas"] = (
+            unificado["usuarios_actuales"]
+            + unificado["personas_historicas"]
+        )
+        unificado["objetivos_total_referenciados"] = (
+            unificado["objetivos_actuales"]
+            + unificado["objetivos_historicos"]
+        )
+
+        tabla_unificada = unificado[
+            [
+                "profesional",
+                "Rol",
+                "personas_total_referenciadas",
+                "objetivos_total_referenciados",
+                "usuarios_actuales",
+                "objetivos_actuales",
+                "personas_historicas",
+                "objetivos_historicos",
+                "cumplidos",
+                "vencidos",
+                "proximos",
+                "sin_seguimiento",
+                "avance_promedio",
+                "cumplimiento_%"
+            ]
+        ].copy()
+
+        tabla_unificada = tabla_unificada.rename(columns={
+            "profesional": "Profesional",
+            "personas_total_referenciadas": "Personas vinculadas",
+            "objetivos_total_referenciados": "Objetivos vinculados",
+            "usuarios_actuales": "Personas con gestión vigente",
+            "objetivos_actuales": "Objetivos operativos vigentes",
+            "personas_historicas": "Personas PAI 2026",
+            "objetivos_historicos": "Objetivos PAI 2026",
+            "cumplidos": "Cumplidos",
+            "vencidos": "Vencidos",
+            "proximos": "Próximos",
+            "sin_seguimiento": "Sin seguimiento",
+            "avance_promedio": "Avance promedio",
+            "cumplimiento_%": "% cumplimiento"
+        })
+
+        tabla_unificada = tabla_unificada.sort_values(
+            ["Personas vinculadas", "Objetivos vinculados", "Profesional"],
             ascending=[False, False, True]
         )
 
         st.dataframe(
-            resumen_mostrar.rename(columns={
-                "profesional": "Profesional",
-                "rol": "Rol",
-                "usuarios": "Usuarios actuales",
-                "objetivos": "Objetivos actuales",
-                "cumplidos": "Cumplidos",
-                "vencidos": "Vencidos",
-                "proximos": "Próximos",
-                "sin_seguimiento": "Sin seguimiento",
-                "avance_promedio": "Avance promedio",
-                "cumplimiento_%": "% cumplimiento"
-            }),
+            tabla_unificada,
             use_container_width=True,
             hide_index=True
         )
 
-        csv_actual = resumen_mostrar.to_csv(
-            index=False
-        ).encode("utf-8-sig")
-
-        st.download_button(
-            "⬇️ Descargar resumen PAI actual",
-            data=csv_actual,
-            file_name=(
-                "supervision_pai_actual_"
-                + datetime.now().strftime("%Y%m%d_%H%M")
-                + ".csv"
-            ),
-            mime="text/csv",
-            use_container_width=True
-        )
-
-    st.divider()
-
-    st.markdown("### 📚 Participación histórica por profesional · PAI 2026")
-    st.caption(
-        "Este cuadro muestra la participación recuperada del Excel histórico. "
-        "Una misma persona u objetivo puede estar vinculado a varios profesionales. "
-        "Es información de trazabilidad, no una medición de desempeño actual."
-    )
-
-    if resumen_hist.empty:
         st.info(
-            "No hay vínculos profesionales históricos PAI 2026 disponibles."
-        )
-    else:
-        st.dataframe(
-            resumen_hist.rename(columns={
-                "profesional": "Profesional",
-                "rol": "Rol actual",
-                "usuarios": "Personas atendidas",
-                "objetivos_historicos": "Objetivos históricos vinculados"
-            }),
-            use_container_width=True,
-            hide_index=True
+            "📌 Lectura: **Personas vinculadas** y **Objetivos vinculados** reúnen "
+            "la trayectoria PAI disponible del profesional. Las columnas "
+            "**Cumplidos, Vencidos, Próximos, Sin seguimiento, Avance promedio y "
+            "% cumplimiento** se calculan solo con la gestión operativa vigente."
         )
 
-        csv_hist = resumen_hist.to_csv(
+        csv_unificado = tabla_unificada.to_csv(
             index=False
         ).encode("utf-8-sig")
 
         st.download_button(
-            "⬇️ Descargar participación histórica PAI 2026",
-            data=csv_hist,
+            "⬇️ Descargar supervisión PAI",
+            data=csv_unificado,
             file_name=(
-                "participacion_historica_pai_2026_"
+                "supervision_pai_unificada_"
                 + datetime.now().strftime("%Y%m%d_%H%M")
                 + ".csv"
             ),
