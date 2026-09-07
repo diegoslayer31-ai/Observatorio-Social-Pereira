@@ -1,4 +1,5 @@
 import datetime
+from zoneinfo import ZoneInfo
 import streamlit as st
 import streamlit.components.v1 as components
 import pandas as pd
@@ -238,6 +239,32 @@ def exigir_login_v12():
     st.stop()
 
 
+
+
+# ============================================================
+# HORA LOCAL COLOMBIA
+# ============================================================
+BOGOTA_TZ = ZoneInfo("America/Bogota")
+
+def ahora_colombia():
+    """Fecha/hora actual en zona horaria de Colombia (America/Bogota)."""
+    return datetime.now(BOGOTA_TZ)
+
+def formatear_hora_colombia(dt=None):
+    """Devuelve hora local de Colombia en formato 12 horas."""
+    dt = dt or ahora_colombia()
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=BOGOTA_TZ)
+    else:
+        dt = dt.astimezone(BOGOTA_TZ)
+    return dt.strftime("%I:%M %p").lstrip("0")
+
+def formatear_fecha_colombia(dt=None):
+    """Devuelve fecha local de Colombia dd/mm/YYYY."""
+    dt = dt or ahora_colombia()
+    if dt.tzinfo is not None:
+        dt = dt.astimezone(BOGOTA_TZ)
+    return dt.strftime("%d/%m/%Y")
 
 # ============================================================
 # CONFIGURACIÓN Y UTILIDADES CENTRALES
@@ -5702,7 +5729,7 @@ def gestion_usuarios_movil():
                 modalidad_salida = str(u.get("modalidad") or "").strip().upper() or None
                 usuario_salida = st.session_state.get("usuario_actual", "sistema")
 
-                # V16.39.10 - Guardar la salida voluntaria en tabla propia.
+                # V16.39.11 - Guardar la salida voluntaria en tabla propia.
                 # Así evitamos las restricciones de movimientos_habitante.
                 obs_salida_vol = motivo_salida_vol.strip()
 
@@ -7277,7 +7304,7 @@ def control_turno_v13():
     if not permisos.empty:
         docs_fuera = set(permisos["documento"].astype(str).str.strip())
 
-    # V16.39.10 - Presencia física según última salida voluntaria
+    # V16.39.11 - Presencia física según última salida voluntaria
     # versus último ingreso/reingreso.
     try:
         estado_salida_vol = pd.read_sql(
