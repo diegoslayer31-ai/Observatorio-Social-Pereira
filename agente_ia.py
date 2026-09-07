@@ -1234,7 +1234,7 @@ def gestion_usuarios():
                             )
                             VALUES (
                                 :doc,
-                                'ACTUALIZACION_USUARIO',
+                                'CAMBIO_ESTADO_MANUAL',
                                 :modalidad,
                                 :usuario,
                                 :observacion
@@ -5759,7 +5759,7 @@ def gestion_usuarios_movil():
                 modalidad_salida = str(u.get("modalidad") or "").strip().upper() or None
                 usuario_salida = st.session_state.get("usuario_actual", "sistema")
 
-                # V16.40.14-MAPA-PDF-AZUL-INSTITUCIONAL - Guardar la salida voluntaria en tabla propia.
+                # V16.40.15-CORRIGE-CAMBIO-ESTADO - Guardar la salida voluntaria en tabla propia.
                 # Así evitamos las restricciones de movimientos_habitante.
                 obs_salida_vol = motivo_salida_vol.strip()
 
@@ -7334,7 +7334,7 @@ def control_turno_v13():
     if not permisos.empty:
         docs_fuera = set(permisos["documento"].astype(str).str.strip())
 
-    # V16.40.14-MAPA-PDF-AZUL-INSTITUCIONAL - Presencia física según última salida voluntaria
+    # V16.40.15-CORRIGE-CAMBIO-ESTADO - Presencia física según última salida voluntaria
     # versus último ingreso/reingreso.
     try:
         estado_salida_vol = pd.read_sql(
