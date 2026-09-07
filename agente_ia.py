@@ -5759,7 +5759,7 @@ def gestion_usuarios_movil():
                 modalidad_salida = str(u.get("modalidad") or "").strip().upper() or None
                 usuario_salida = st.session_state.get("usuario_actual", "sistema")
 
-                # V16.40.12-MAPA-PDF-INSTITUCIONAL - Guardar la salida voluntaria en tabla propia.
+                # V16.40.13-MAPA-PDF-MATPLOTLIB - Guardar la salida voluntaria en tabla propia.
                 # Así evitamos las restricciones de movimientos_habitante.
                 obs_salida_vol = motivo_salida_vol.strip()
 
@@ -7334,7 +7334,7 @@ def control_turno_v13():
     if not permisos.empty:
         docs_fuera = set(permisos["documento"].astype(str).str.strip())
 
-    # V16.40.12-MAPA-PDF-INSTITUCIONAL - Presencia física según última salida voluntaria
+    # V16.40.13-MAPA-PDF-MATPLOTLIB - Presencia física según última salida voluntaria
     # versus último ingreso/reingreso.
     try:
         estado_salida_vol = pd.read_sql(
@@ -14586,7 +14586,16 @@ def modulo_reportes_institucionales_v169():
                         )
 
                         try:
+                            # V16.40.13 - El PDF usa Matplotlib directamente.
+                            # Evita depender de Kaleido/Chrome para convertir
+                            # un gráfico Plotly a PNG en Streamlit Cloud.
                             import requests
+                            import unicodedata
+                            import matplotlib.pyplot as plt
+                            from matplotlib.patches import Polygon as MplPolygon
+                            from matplotlib.collections import PatchCollection
+                            from matplotlib.colors import Normalize
+
                             geo_url = (
                                 "https://raw.githubusercontent.com/ytolosa/"
                                 "mapas-colombia/main/output/geojson/"
@@ -14596,52 +14605,194 @@ def modulo_reportes_institucionales_v169():
                             rg.raise_for_status()
                             geo = rg.json()
 
-                            fig_pdf = px.choropleth(
-                                mapa_pdf,
-                                geojson=geo,
-                                locations="departamento_mapa",
-                                featureidkey="properties.dpto_nombre",
-                                color="cantidad",
-                                hover_name="categoria",
-                                labels={"cantidad": "Personas"},
-                                color_continuous_scale="Viridis"
-                            )
-                            fig_pdf.update_traces(
-                                marker_line_color="white",
-                                marker_line_width=1.2
-                            )
-                            fig_pdf.update_geos(
-                                fitbounds="locations",
-                                visible=False
-                            )
-                            fig_pdf.update_layout(
-                                title="Mapa geográfico de procedencia",
-                                width=1000,
-                                height=720,
-                                margin=dict(l=5, r=5, t=55, b=5)
+                            def _clave_geo_pdf(valor):
+                                txt = str(valor or "").strip().upper()
+                                txt = "".join(
+                                    c for c in unicodedata.normalize("NFD", txt)
+                                    if unicodedata.category(c) != "Mn"
+                                )
+                                for ch in [".", ",", "-", "_"]:
+                                    txt = txt.replace(ch, " ")
+                                txt = " ".join(txt.split())
+
+                                alias = {
+                                    "BOGOTA": "BOGOTA D C",
+                                    "BOGOTA DC": "BOGOTA D C",
+                                    "BOGOTA D C": "BOGOTA D C",
+                                    "VALLE": "VALLE DEL CAUCA",
+                                    "SAN ANDRES": (
+                                        "ARCHIPIELAGO DE SAN ANDRES "
+                                        "PROVIDENCIA Y SANTA CATALINA"
+                                    ),
+                                    "SAN ANDRES Y PROVIDENCIA": (
+                                        "ARCHIPIELAGO DE SAN ANDRES "
+                                        "PROVIDENCIA Y SANTA CATALINA"
+                                    ),
+                                }
+                                return alias.get(txt, txt)
+
+                            cantidades_geo = {}
+                            etiquetas_geo = {}
+                            for _, fila_geo in mapa_pdf.iterrows():
+                                clave = _clave_geo_pdf(
+                                    fila_geo["departamento_mapa"]
+                                )
+                                cantidades_geo[clave] = int(
+                                    fila_geo["cantidad"]
+                                )
+                                etiquetas_geo[clave] = str(
+                                    fila_geo["categoria"]
+                                )
+
+                            parches = []
+                            valores = []
+                            centros = []
+
+                            for feature in geo.get("features", []):
+                                props = feature.get("properties", {}) or {}
+                                nombre_geo = props.get("dpto_nombre", "")
+                                clave_geo = _clave_geo_pdf(nombre_geo)
+                                cantidad_geo = cantidades_geo.get(
+                                    clave_geo, 0
+                                )
+
+                                geom = feature.get("geometry", {}) or {}
+                                tipo = geom.get("type")
+                                coords = geom.get("coordinates", [])
+
+                                poligonos = []
+                                if tipo == "Polygon":
+                                    poligonos = [coords]
+                                elif tipo == "MultiPolygon":
+                                    poligonos = coords
+
+                                puntos_centro = []
+
+                                for poligono in poligonos:
+                                    if not poligono:
+                                        continue
+                                    anillo = poligono[0]
+                                    if not anillo:
+                                        continue
+
+                                    xy = [
+                                        (float(p[0]), float(p[1]))
+                                        for p in anillo
+                                        if len(p) >= 2
+                                    ]
+                                    if len(xy) < 3:
+                                        continue
+
+                                    parches.append(
+                                        MplPolygon(
+                                            xy,
+                                            closed=True
+                                        )
+                                    )
+                                    valores.append(cantidad_geo)
+                                    puntos_centro.extend(xy)
+
+                                if puntos_centro and cantidad_geo > 0:
+                                    xs = [p[0] for p in puntos_centro]
+                                    ys = [p[1] for p in puntos_centro]
+                                    centros.append({
+                                        "x": sum(xs) / len(xs),
+                                        "y": sum(ys) / len(ys),
+                                        "cantidad": cantidad_geo,
+                                        "nombre": etiquetas_geo.get(
+                                            clave_geo,
+                                            str(nombre_geo).title()
+                                        )
+                                    })
+
+                            if not parches:
+                                raise RuntimeError(
+                                    "El GeoJSON no contiene polígonos utilizables."
+                                )
+
+                            fig_pdf, ax_pdf = plt.subplots(
+                                figsize=(7.2, 8.8)
                             )
 
+                            vmax = max(valores) if valores else 1
+                            norm = Normalize(
+                                vmin=0,
+                                vmax=max(vmax, 1)
+                            )
+
+                            coleccion = PatchCollection(
+                                parches,
+                                cmap=plt.get_cmap(),
+                                norm=norm,
+                                linewidth=0.7
+                            )
+                            coleccion.set_array(
+                                pd.Series(valores).astype(float).to_numpy()
+                            )
+                            ax_pdf.add_collection(coleccion)
+                            ax_pdf.autoscale_view()
+                            ax_pdf.set_aspect("equal", adjustable="box")
+                            ax_pdf.axis("off")
+                            ax_pdf.set_title(
+                                "Procedencia geográfica por departamento",
+                                fontsize=13,
+                                pad=10
+                            )
+
+                            # Etiquetas de los principales departamentos
+                            # para que el mapa sea legible en el PDF.
+                            centros = sorted(
+                                centros,
+                                key=lambda x: x["cantidad"],
+                                reverse=True
+                            )
+                            for item in centros[:10]:
+                                nombre_corto = item["nombre"]
+                                if len(nombre_corto) > 18:
+                                    nombre_corto = nombre_corto[:18]
+                                ax_pdf.text(
+                                    item["x"],
+                                    item["y"],
+                                    f"{nombre_corto}\n{item['cantidad']}",
+                                    ha="center",
+                                    va="center",
+                                    fontsize=6
+                                )
+
+                            barra = fig_pdf.colorbar(
+                                coleccion,
+                                ax=ax_pdf,
+                                fraction=0.035,
+                                pad=0.02
+                            )
+                            barra.set_label("Personas", fontsize=8)
+                            barra.ax.tick_params(labelsize=7)
+
                             tmp_map = tempfile.NamedTemporaryFile(
-                                delete=False, suffix=".png"
+                                delete=False,
+                                suffix=".png"
                             )
                             tmp_map.close()
-                            fig_pdf.write_image(
+
+                            fig_pdf.savefig(
                                 tmp_map.name,
-                                width=1000,
-                                height=720,
-                                scale=1.5
+                                dpi=180,
+                                bbox_inches="tight"
                             )
+                            plt.close(fig_pdf)
+
+                            temporales.append(tmp_map.name)
+
                             contenido.append(
                                 Image(
                                     tmp_map.name,
-                                    width=16.8 * cm,
-                                    height=12.1 * cm
+                                    width=15.8 * cm,
+                                    height=12.8 * cm
                                 )
                             )
                             contenido.append(Spacer(1, 5))
-                        except Exception:
-                            # El informe no falla si temporalmente no hay acceso
-                            # al recurso cartográfico.
+
+                        except Exception as e:
                             contenido.append(
                                 Paragraph(
                                     "No fue posible cargar la cartografía al momento "
