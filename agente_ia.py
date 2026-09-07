@@ -4227,34 +4227,57 @@ def _compartir_foto_texto_nativo_v1635(foto_bytes, texto, key="share_foto_v1635"
 
 def _capturar_foto_temporal_movimiento_v1636(documento, evento):
     """
-    Captura una foto para un reporte operativo.
-    La imagen vive solo en session_state de la sesión actual.
-    No se guarda en BD ni Storage.
+    Foto temporal para reportes operativos.
+    Permite cámara o selección/subida desde el dispositivo.
+    La imagen vive solo en session_state y NO se guarda en BD ni Storage.
     """
     clave = f"foto_temp_mov_{evento}_{documento}"
+
+    st.caption(
+        "📷 Puede tomar la foto con la cámara o, si el navegador no permite "
+        "acceder a ella, seleccionar/subir una foto desde el dispositivo. "
+        "La imagen es temporal y no se guarda en el sistema."
+    )
 
     foto = st.camera_input(
         "📷 Tomar foto para el reporte",
         key=f"cam_{evento}_{documento}",
-        help="La fotografía se usa solo para compartir el reporte y no se almacena en la base de datos."
+        help="Si la cámara no está disponible, use la opción de subir/seleccionar foto que aparece debajo."
+    )
+
+    archivo_foto = st.file_uploader(
+        "🖼️ Subir / seleccionar foto desde el dispositivo",
+        type=["jpg", "jpeg", "png", "webp"],
+        key=f"upload_foto_{evento}_{documento}",
+        help="Alternativa para celulares o navegadores que bloquean la cámara."
     )
 
     if foto is not None:
         try:
             st.session_state[clave] = foto.getvalue()
+            st.session_state[f"{clave}_origen"] = "cámara"
+        except Exception:
+            pass
+    elif archivo_foto is not None:
+        try:
+            st.session_state[clave] = archivo_foto.getvalue()
+            st.session_state[f"{clave}_origen"] = "archivo/dispositivo"
         except Exception:
             pass
 
     foto_bytes = st.session_state.get(clave)
 
     if foto_bytes:
-        st.caption("✅ Foto temporal lista para compartir. No se guardará en el sistema.")
+        origen = st.session_state.get(f"{clave}_origen", "temporal")
+        st.success(f"✅ Foto temporal lista ({origen}).")
+        st.caption("No se guardará en la base de datos ni en Supabase.")
         if st.button(
-            "🗑️ Descartar foto",
+            "🗑️ Descartar foto temporal",
             key=f"descartar_{evento}_{documento}",
             use_container_width=True
         ):
             st.session_state.pop(clave, None)
+            st.session_state.pop(f"{clave}_origen", None)
             st.rerun()
 
     return st.session_state.get(clave)
@@ -5160,10 +5183,17 @@ def gestion_usuarios_movil():
                 "Opcional. La fotografía se usa únicamente para compartir el reporte; "
                 "no se guarda en la base de datos ni en Supabase."
             )
-            foto_ingreso = st.camera_input(
-                "Tomar fotografía",
+            foto_ingreso_camara = st.camera_input(
+                "📷 Tomar fotografía",
                 key="foto_nuevo_ingreso_v1635"
             )
+            foto_ingreso_archivo = st.file_uploader(
+                "🖼️ O subir / seleccionar foto desde el dispositivo",
+                type=["jpg", "jpeg", "png", "webp"],
+                key="foto_nuevo_ingreso_upload_v16312",
+                help="Úselo si el navegador no permite abrir la cámara."
+            )
+            foto_ingreso = foto_ingreso_camara or foto_ingreso_archivo
 
             confirmar = st.checkbox(
                 "Confirmo que la información fue verificada con el usuario."
@@ -5729,7 +5759,7 @@ def gestion_usuarios_movil():
                 modalidad_salida = str(u.get("modalidad") or "").strip().upper() or None
                 usuario_salida = st.session_state.get("usuario_actual", "sistema")
 
-                # V16.39.11 - Guardar la salida voluntaria en tabla propia.
+                # V16.39.12 - Guardar la salida voluntaria en tabla propia.
                 # Así evitamos las restricciones de movimientos_habitante.
                 obs_salida_vol = motivo_salida_vol.strip()
 
@@ -7304,7 +7334,7 @@ def control_turno_v13():
     if not permisos.empty:
         docs_fuera = set(permisos["documento"].astype(str).str.strip())
 
-    # V16.39.11 - Presencia física según última salida voluntaria
+    # V16.39.12 - Presencia física según última salida voluntaria
     # versus último ingreso/reingreso.
     try:
         estado_salida_vol = pd.read_sql(
