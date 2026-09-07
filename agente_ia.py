@@ -5759,7 +5759,7 @@ def gestion_usuarios_movil():
                 modalidad_salida = str(u.get("modalidad") or "").strip().upper() or None
                 usuario_salida = st.session_state.get("usuario_actual", "sistema")
 
-                # V16.40.8-RECOVERY - Guardar la salida voluntaria en tabla propia.
+                # V16.40.9-MAPA-SEGURO - Guardar la salida voluntaria en tabla propia.
                 # Así evitamos las restricciones de movimientos_habitante.
                 obs_salida_vol = motivo_salida_vol.strip()
 
@@ -7334,7 +7334,7 @@ def control_turno_v13():
     if not permisos.empty:
         docs_fuera = set(permisos["documento"].astype(str).str.strip())
 
-    # V16.40.8-RECOVERY - Presencia física según última salida voluntaria
+    # V16.40.9-MAPA-SEGURO - Presencia física según última salida voluntaria
     # versus último ingreso/reingreso.
     try:
         estado_salida_vol = pd.read_sql(
@@ -13547,29 +13547,149 @@ def modulo_reportes_institucionales_v169():
             (col_orientacion, "Orientación sexual / variable registrada")
         ]
 
-        for pesta, (columna, titulo) in zip(analisis_tabs, configuracion):
+        for idx_pesta, (pesta, (columna, titulo)) in enumerate(
+            zip(analisis_tabs, configuracion)
+        ):
             with pesta:
                 tabla_cat = _tabla_categoria(df_f, columna, 15)
 
                 if tabla_cat.empty:
                     st.info(f"No hay información disponible para {titulo.lower()}.")
                 else:
-                    fig_cat = px.bar(
-                        tabla_cat.sort_values("cantidad"),
-                        x="cantidad",
-                        y="categoria",
-                        orientation="h",
-                        text="cantidad",
-                        title=titulo
-                    )
-                    fig_cat.update_layout(
-                        xaxis_title="Personas",
-                        yaxis_title=""
-                    )
-                    st.plotly_chart(
-                        fig_cat,
-                        use_container_width=True
-                    )
+                    # V16.40.9: Procedencia se representa geográficamente.
+                    # No altera el router ni los demás módulos.
+                    if idx_pesta == 3:
+                        st.markdown("#### 🗺️ Mapa geográfico de procedencia")
+                        st.caption(
+                            "La intensidad representa la cantidad de personas por "
+                            "departamento. Pase el cursor sobre cada departamento para "
+                            "ver cantidad y porcentaje."
+                        )
+
+                        # Normalización de nombres de la base al catálogo territorial.
+                        _alias_depto_v16409 = {
+                            "BOGOTA": "BOGOTÁ, D.C.",
+                            "BOGOTA D.C.": "BOGOTÁ, D.C.",
+                            "BOGOTA DC": "BOGOTÁ, D.C.",
+                            "VALLE": "VALLE DEL CAUCA",
+                            "NARINO": "NARIÑO",
+                            "CHOCO": "CHOCÓ",
+                            "CORDOBA": "CÓRDOBA",
+                            "BOLIVAR": "BOLÍVAR",
+                            "ATLANTICO": "ATLÁNTICO",
+                            "QUINDIO": "QUINDÍO",
+                            "CAQUETA": "CAQUETÁ",
+                            "GUAINIA": "GUAINÍA",
+                            "VAUPES": "VAUPÉS",
+                            "SAN ANDRES": "ARCHIPIÉLAGO DE SAN ANDRÉS, PROVIDENCIA Y SANTA CATALINA",
+                            "SAN ANDRES Y PROVIDENCIA": "ARCHIPIÉLAGO DE SAN ANDRÉS, PROVIDENCIA Y SANTA CATALINA",
+                        }
+
+                        def _normalizar_depto_mapa_v16409(valor):
+                            import unicodedata
+                            txt = str(valor or "").strip().upper()
+                            txt_sin = "".join(
+                                c for c in unicodedata.normalize("NFD", txt)
+                                if unicodedata.category(c) != "Mn"
+                            )
+                            return _alias_depto_v16409.get(txt_sin, txt)
+
+                        mapa_df = tabla_cat.copy()
+                        mapa_df["departamento_mapa"] = mapa_df["categoria"].apply(
+                            _normalizar_depto_mapa_v16409
+                        )
+
+                        # GeoJSON liviano de departamentos, derivado del MGN 2025 DANE.
+                        _geojson_url_v16409 = (
+                            "https://raw.githubusercontent.com/ytolosa/mapas-colombia/"
+                            "main/output/geojson/"
+                            "col_departamentos_inset_nacional.geojson"
+                        )
+
+                        try:
+                            import requests
+                            _r_geo = requests.get(_geojson_url_v16409, timeout=12)
+                            _r_geo.raise_for_status()
+                            _geo_col = _r_geo.json()
+
+                            # Detecta automáticamente la propiedad que contiene
+                            # el nombre del departamento en el GeoJSON.
+                            _props = (
+                                _geo_col.get("features", [{}])[0]
+                                .get("properties", {})
+                            )
+                            _candidatos_prop = [
+                                "DPTO_CNMBR", "DPTO_CNMBRE", "dpto_cnmbr",
+                                "dpto_cnmbre", "NOMBRE_DPT", "NOM_DPTO",
+                                "departamento", "nombre", "name", "NAME_1"
+                            ]
+                            _prop_nombre = next(
+                                (p for p in _candidatos_prop if p in _props),
+                                None
+                            )
+
+                            if _prop_nombre:
+                                fig_mapa = px.choropleth(
+                                    mapa_df,
+                                    geojson=_geo_col,
+                                    locations="departamento_mapa",
+                                    featureidkey=f"properties.{_prop_nombre}",
+                                    color="cantidad",
+                                    hover_name="categoria",
+                                    hover_data={
+                                        "cantidad": True,
+                                        "porcentaje": ":.1f",
+                                        "departamento_mapa": False
+                                    },
+                                    labels={
+                                        "cantidad": "Personas",
+                                        "porcentaje": "Porcentaje %"
+                                    },
+                                    title="Procedencia geográfica por departamento"
+                                )
+                                fig_mapa.update_geos(
+                                    fitbounds="locations",
+                                    visible=False
+                                )
+                                fig_mapa.update_layout(
+                                    margin=dict(l=0, r=0, t=55, b=0),
+                                    height=620
+                                )
+                                st.plotly_chart(
+                                    fig_mapa,
+                                    use_container_width=True,
+                                    key="mapa_procedencia_v16409"
+                                )
+                            else:
+                                st.warning(
+                                    "El mapa territorial no pudo identificar el "
+                                    "campo de nombre del departamento."
+                                )
+                        except Exception:
+                            st.info(
+                                "El mapa geográfico no pudo cargarse en este momento. "
+                                "La tabla de procedencia continúa disponible abajo."
+                            )
+
+                        st.markdown("#### 📊 Distribución por departamento")
+
+                    else:
+                        fig_cat = px.bar(
+                            tabla_cat.sort_values("cantidad"),
+                            x="cantidad",
+                            y="categoria",
+                            orientation="h",
+                            text="cantidad",
+                            title=titulo
+                        )
+                        fig_cat.update_layout(
+                            xaxis_title="Personas",
+                            yaxis_title=""
+                        )
+                        st.plotly_chart(
+                            fig_cat,
+                            use_container_width=True
+                        )
 
                     tabla_mostrar = tabla_cat.rename(columns={
                         "categoria": titulo,
