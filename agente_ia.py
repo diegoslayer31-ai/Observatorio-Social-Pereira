@@ -384,23 +384,161 @@ def generar_identificador_indocumentado_v1619():
     raise RuntimeError("No fue posible generar un identificador interno único.")
 
 def validar_documento_no_duplicado(numero_documento):
-    """Comprueba si ya existe una identificación en habitante_de_calle."""
+    """
+    V16.46 - Protección contra duplicados por documento.
+    Compara el documento normalizado, ignorando puntos, espacios, guiones
+    y diferencias de mayúsculas/minúsculas.
+    """
     doc = limpiar_documento(numero_documento)
     if not doc:
         return False, "El número de identificación es obligatorio."
 
     consulta = pd.read_sql(
         text("""
-            SELECT COUNT(*) AS total
+            SELECT
+                nombres,
+                apellidos,
+                numero_identificacion
             FROM habitante_de_calle
-            WHERE TRIM(numero_identificacion::TEXT) = :doc
+            WHERE REGEXP_REPLACE(
+                    UPPER(TRIM(CAST(numero_identificacion AS TEXT))),
+                    '[^A-Z0-9]',
+                    '',
+                    'g'
+                  )
+                =
+                  REGEXP_REPLACE(
+                    UPPER(TRIM(CAST(:doc AS TEXT))),
+                    '[^A-Z0-9]',
+                    '',
+                    'g'
+                  )
+            LIMIT 1
         """),
         engine,
         params={"doc": doc},
     )
-    existe = int(consulta.iloc[0]["total"] or 0) > 0
-    if existe:
-        return False, "Ya existe una persona registrada con esta identificación."
+
+    if not consulta.empty:
+        fila = consulta.iloc[0]
+        nombre_existente = (
+            f"{str(fila.get('nombres') or '').strip()} "
+            f"{str(fila.get('apellidos') or '').strip()}"
+        ).strip()
+        doc_existente = str(fila.get("numero_identificacion") or "").strip()
+
+        return (
+            False,
+            "⛔ No se puede crear otro registro con este documento. "
+            f"Ya existe: {nombre_existente} - {doc_existente}. "
+            "Busque a la persona existente y registre un REINGRESO si corresponde."
+        )
+
+    return True, "OK"
+
+
+def validar_posible_persona_duplicada_v1646(
+    nombres,
+    apellidos,
+    fecha_nacimiento=None,
+    documento_nuevo=None
+):
+    """
+    Previene duplicados probables cuando por error se digita otra cédula.
+    Se considera coincidencia fuerte: mismos nombres + apellidos y,
+    cuando existe el dato, misma fecha de nacimiento.
+    """
+    nom = normalizar_texto_ingreso_v16193(nombres)
+    ape = normalizar_texto_ingreso_v16193(apellidos)
+    doc = limpiar_documento(documento_nuevo)
+
+    if not nom or not ape:
+        return True, "OK"
+
+    try:
+        columnas = pd.read_sql(
+            text("""
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_schema='public'
+                  AND table_name='habitante_de_calle'
+            """),
+            engine
+        )["column_name"].astype(str).tolist()
+
+        col_fecha = None
+        for candidata in [
+            "fecha_nacimiento",
+            "fecha_de_nacimiento_dd_mm_aa"
+        ]:
+            if candidata in columnas:
+                col_fecha = candidata
+                break
+
+        if col_fecha and fecha_nacimiento is not None:
+            consulta = pd.read_sql(
+                text(f"""
+                    SELECT
+                        nombres,
+                        apellidos,
+                        numero_identificacion,
+                        "{col_fecha}" AS fecha_nacimiento
+                    FROM habitante_de_calle
+                    WHERE UPPER(TRIM(COALESCE(nombres,''))) = :nom
+                      AND UPPER(TRIM(COALESCE(apellidos,''))) = :ape
+                      AND CAST("{col_fecha}" AS DATE) = :fecha
+                    LIMIT 1
+                """),
+                engine,
+                params={
+                    "nom": nom,
+                    "ape": ape,
+                    "fecha": fecha_nacimiento
+                }
+            )
+        else:
+            consulta = pd.read_sql(
+                text("""
+                    SELECT
+                        nombres,
+                        apellidos,
+                        numero_identificacion
+                    FROM habitante_de_calle
+                    WHERE UPPER(TRIM(COALESCE(nombres,''))) = :nom
+                      AND UPPER(TRIM(COALESCE(apellidos,''))) = :ape
+                    LIMIT 1
+                """),
+                engine,
+                params={"nom": nom, "ape": ape}
+            )
+
+        if not consulta.empty:
+            fila = consulta.iloc[0]
+            doc_existente = str(
+                fila.get("numero_identificacion") or ""
+            ).strip()
+
+            # Si es exactamente el mismo documento ya lo cubrió la validación
+            # anterior. Aquí detectamos principalmente "misma persona, otra cédula".
+            if limpiar_documento(doc_existente) != doc:
+                return (
+                    False,
+                    "⚠️ Posible persona duplicada. Ya existe un registro con "
+                    f"el mismo nombre"
+                    + (
+                        " y fecha de nacimiento"
+                        if col_fecha and fecha_nacimiento is not None
+                        else ""
+                    )
+                    + f": {nom} {ape} - documento {doc_existente}. "
+                    "Revise primero el usuario existente antes de crear uno nuevo."
+                )
+
+    except Exception:
+        # Esta verificación es complementaria; la protección principal
+        # por documento sigue activa.
+        pass
+
     return True, "OK"
 
 
@@ -2192,6 +2330,14 @@ def gestion_usuarios():
                 st.error("Debe ingresar el número de identificación.")
             else:
                 valido, mensaje = validar_documento_no_duplicado(doc_n)
+
+                if valido and not sin_documento_n:
+                    valido, mensaje = validar_posible_persona_duplicada_v1646(
+                        nombres_n,
+                        apellidos_n,
+                        fecha_nac_n,
+                        doc_n
+                    )
 
                 if not valido:
                     st.error(mensaje)
@@ -4033,7 +4179,7 @@ st.markdown("""
 
 
 # ============================================================
-# V16.45 - REGLAS INSTITUCIONALES DE POSIBLE REINGRESO
+# V16.46 - REGLAS INSTITUCIONALES DE POSIBLE REINGRESO
 # ============================================================
 CRITERIOS_REINGRESO_V1641 = {
     "SALIDA VOLUNTARIA": ("dias", 1, "1 noche"),
@@ -5398,6 +5544,14 @@ def gestion_usuarios_movil():
             else:
                 valido, mensaje = validar_documento_no_duplicado(doc)
 
+                if valido and not sin_documento:
+                    valido, mensaje = validar_posible_persona_duplicada_v1646(
+                        nombres,
+                        apellidos,
+                        fecha_nacimiento,
+                        doc
+                    )
+
                 if not valido:
                     st.error(mensaje)
                 else:
@@ -5791,7 +5945,7 @@ def gestion_usuarios_movil():
             else:
                 estado_anterior = str(u.get("estado_caso") or "").upper()
 
-                # V16.45 - Un usuario existente que salió y vuelve NO es
+                # V16.46 - Un usuario existente que salió y vuelve NO es
                 # "ingreso nuevo". Se clasifica por su historial operativo.
                 tipo_mov = (
                     "REINGRESO"
@@ -11636,7 +11790,7 @@ def dashboard_ejecutivo():
         )
 
     # ========================================================
-    # V16.45 - CLASIFICACIÓN HISTÓRICA DE INGRESOS / REINGRESOS
+    # V16.46 - CLASIFICACIÓN HISTÓRICA DE INGRESOS / REINGRESOS
     # ========================================================
     # Regla:
     # - Primera llegada histórica de una cédula = INGRESO NUEVO.
@@ -23440,6 +23594,13 @@ with tab5:
             # 🔥 INSERT CORREGIDO
             # =========================
             if guardar:
+
+                valido_legacy, mensaje_legacy = validar_documento_no_duplicado(
+                    numero_id
+                )
+                if not valido_legacy:
+                    st.error(mensaje_legacy)
+                    st.stop()
 
                 sql = text("""
                     INSERT INTO habitante_de_calle
