@@ -385,7 +385,7 @@ def generar_identificador_indocumentado_v1619():
 
 def validar_documento_no_duplicado(numero_documento):
     """
-    V16.46 - Protección contra duplicados por documento.
+    V16.47 - Protección contra duplicados por documento.
     Compara el documento normalizado, ignorando puntos, espacios, guiones
     y diferencias de mayúsculas/minúsculas.
     """
@@ -947,6 +947,115 @@ def generar_historia_integral(documento, engine):
     return buffer
 
 
+
+def _panel_medidas_activas_v1647(clave="medidas_activas"):
+    """
+    Panel común para Coordinación/Manager e Inspiradores.
+    Muestra quién tiene una medida vigente y la fecha posible de reingreso.
+    """
+    try:
+        df_medidas = pd.read_sql(
+            text("""
+                SELECT
+                    s.numero_identificacion,
+                    COALESCE(h.nombres, '') AS nombres,
+                    COALESCE(h.apellidos, '') AS apellidos,
+                    COALESCE(h.modalidad, '') AS modalidad,
+                    s.tipo_medida,
+                    s.motivo,
+                    s.fecha_inicio,
+                    s.fecha_fin,
+                    s.estado_medida,
+                    s.observacion,
+                    s.usuario_registra
+                FROM sanciones_usuarios s
+                LEFT JOIN habitante_de_calle h
+                  ON TRIM(CAST(h.numero_identificacion AS TEXT))
+                   = TRIM(CAST(s.numero_identificacion AS TEXT))
+                WHERE UPPER(TRIM(COALESCE(s.estado_medida,''))) = 'ACTIVA'
+                ORDER BY s.fecha_fin NULLS LAST, s.fecha_inicio DESC
+            """),
+            engine
+        )
+    except Exception:
+        df_medidas = pd.DataFrame()
+
+    if df_medidas.empty:
+        st.success("✅ No hay medidas activas registradas.")
+        return
+
+    hoy = ahora_colombia().date()
+
+    df_medidas["fecha_inicio"] = pd.to_datetime(
+        df_medidas["fecha_inicio"], errors="coerce"
+    )
+    df_medidas["fecha_fin"] = pd.to_datetime(
+        df_medidas["fecha_fin"], errors="coerce"
+    )
+
+    df_medidas["Nombre completo"] = (
+        df_medidas["nombres"].fillna("").astype(str).str.strip()
+        + " "
+        + df_medidas["apellidos"].fillna("").astype(str).str.strip()
+    ).str.strip()
+
+    def _estado_medida_visual(f):
+        if pd.isna(f):
+            return "🔴 VIGENTE"
+        fecha = f.date()
+        if fecha <= hoy:
+            return "🟢 PUEDE REINGRESAR"
+        dias = (fecha - hoy).days
+        return f"🔴 VIGENTE · {dias} día(s)"
+
+    df_medidas["Estado"] = df_medidas["fecha_fin"].apply(
+        _estado_medida_visual
+    )
+
+    df_medidas["Fecha salida"] = df_medidas["fecha_inicio"].apply(
+        lambda x: x.strftime("%d/%m/%Y") if pd.notna(x) else "—"
+    )
+    df_medidas["Posible reingreso"] = df_medidas["fecha_fin"].apply(
+        lambda x: x.strftime("%d/%m/%Y") if pd.notna(x) else "—"
+    )
+
+    mostrar = df_medidas[
+        [
+            "Nombre completo",
+            "numero_identificacion",
+            "modalidad",
+            "tipo_medida",
+            "motivo",
+            "Fecha salida",
+            "Posible reingreso",
+            "Estado"
+        ]
+    ].rename(
+        columns={
+            "numero_identificacion": "Documento",
+            "modalidad": "Modalidad",
+            "tipo_medida": "Tipo de medida",
+            "motivo": "Causal / motivo"
+        }
+    )
+
+    st.dataframe(
+        mostrar,
+        use_container_width=True,
+        hide_index=True
+    )
+
+    pendientes_cierre = int(
+        df_medidas["Estado"].eq("🟢 PUEDE REINGRESAR").sum()
+    )
+    if pendientes_cierre:
+        st.warning(
+            f"⚠️ Hay {pendientes_cierre} medida(s) cuya fecha de posible "
+            "reingreso ya llegó. Conviene cerrarlas/levantarlas para que "
+            "dejen de figurar como activas."
+        )
+
+
 def gestion_usuarios():
 
     st.title("👥 Gestión Integral de Usuarios")
@@ -1173,6 +1282,9 @@ def gestion_usuarios():
     m3.metric("🏙️ Urbano", urbano_gestion)
     m4.metric("🌱 Granja", granja_gestion)
     m5.metric("⛔ Medidas activas", sanciones_activas)
+
+    with st.expander("⛔ Ver seguimiento de medidas activas", expanded=False):
+        _panel_medidas_activas_v1647("gestion_integral")
 
     st.divider()
 
@@ -4179,7 +4291,7 @@ st.markdown("""
 
 
 # ============================================================
-# V16.46 - REGLAS INSTITUCIONALES DE POSIBLE REINGRESO
+# V16.47 - REGLAS INSTITUCIONALES DE POSIBLE REINGRESO
 # ============================================================
 CRITERIOS_REINGRESO_V1641 = {
     "SALIDA VOLUNTARIA": ("dias", 1, "1 noche"),
@@ -5314,6 +5426,17 @@ def gestion_usuarios_movil():
         f"👤 {nombre_login} · Perfil: {rol_visible.title()}"
     )
 
+    # V16.47 - Los inspiradores también necesitan ver quién tiene
+    # una medida vigente antes de intentar un ingreso/reingreso.
+    if rol_visible in ["INSPIRADOR", "COORDINACION", "MANAGER"]:
+        with st.expander(
+            "⛔ Seguimiento de medidas activas",
+            expanded=False
+        ):
+            _panel_medidas_activas_v1647(
+                f"gestion_movil_{rol_visible.lower()}"
+            )
+
     # V14.1: primero Gestión de usuarios.
     if rol_visible == "INSPIRADOR":
         st.markdown("### 👤 Gestión de usuarios")
@@ -5945,7 +6068,7 @@ def gestion_usuarios_movil():
             else:
                 estado_anterior = str(u.get("estado_caso") or "").upper()
 
-                # V16.46 - Un usuario existente que salió y vuelve NO es
+                # V16.47 - Un usuario existente que salió y vuelve NO es
                 # "ingreso nuevo". Se clasifica por su historial operativo.
                 tipo_mov = (
                     "REINGRESO"
@@ -11782,6 +11905,9 @@ def dashboard_ejecutivo():
     c5.metric("🏆 Egresos", egresos_coord)
     c6.metric("⛔ Medidas activas", medidas_activas_coord)
 
+    with st.expander("⛔ Seguimiento de medidas activas", expanded=False):
+        _panel_medidas_activas_v1647("dashboard_coordinacion")
+
     if urbano_coord >= 100:
         st.error("🚨 Urbano alcanzó o superó la capacidad de 100 cupos.")
     elif urbano_coord >= 90:
@@ -11790,7 +11916,7 @@ def dashboard_ejecutivo():
         )
 
     # ========================================================
-    # V16.46 - CLASIFICACIÓN HISTÓRICA DE INGRESOS / REINGRESOS
+    # V16.47 - CLASIFICACIÓN HISTÓRICA DE INGRESOS / REINGRESOS
     # ========================================================
     # Regla:
     # - Primera llegada histórica de una cédula = INGRESO NUEVO.
