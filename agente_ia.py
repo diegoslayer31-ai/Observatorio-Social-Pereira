@@ -385,7 +385,7 @@ def generar_identificador_indocumentado_v1619():
 
 def validar_documento_no_duplicado(numero_documento):
     """
-    V16.54 - Protección contra duplicados por documento.
+    V16.56 - Protección contra duplicados por documento.
     Compara el documento normalizado, ignorando puntos, espacios, guiones
     y diferencias de mayúsculas/minúsculas.
     """
@@ -984,6 +984,19 @@ def _panel_medidas_activas_v1647(clave="medidas_activas"):
         st.success("✅ No hay medidas activas registradas.")
         return
 
+    # V16.56: no inflar el tablero por duplicados históricos exactos.
+    df_medidas = df_medidas.drop_duplicates(
+        subset=[
+            "numero_identificacion",
+            "tipo_medida",
+            "motivo",
+            "fecha_inicio",
+            "fecha_fin",
+            "estado_medida"
+        ],
+        keep="first"
+    )
+
     hoy = ahora_colombia().date()
 
     df_medidas["fecha_inicio"] = pd.to_datetime(
@@ -1015,7 +1028,7 @@ def _panel_medidas_activas_v1647(clave="medidas_activas"):
     df_medidas["Fecha salida"] = df_medidas["fecha_inicio"].apply(
         lambda x: x.strftime("%d/%m/%Y") if pd.notna(x) else "—"
     )
-    df_medidas["Posible reingreso"] = df_medidas["fecha_fin"].apply(
+    df_medidas["Puede solicitar reingreso desde"] = df_medidas["fecha_fin"].apply(
         lambda x: x.strftime("%d/%m/%Y") if pd.notna(x) else "—"
     )
 
@@ -1027,7 +1040,7 @@ def _panel_medidas_activas_v1647(clave="medidas_activas"):
             "tipo_medida",
             "motivo",
             "Fecha salida",
-            "Posible reingreso",
+            "Puede solicitar reingreso desde",
             "Estado"
         ]
     ].rename(
@@ -1265,8 +1278,16 @@ def gestion_usuarios():
             pd.read_sql(
                 text("""
                     SELECT COUNT(*) AS total
-                    FROM sanciones_usuarios
-                    WHERE UPPER(TRIM(COALESCE(estado_medida,''))) = 'ACTIVA'
+                    FROM (
+                        SELECT DISTINCT
+                            TRIM(CAST(numero_identificacion AS TEXT)),
+                            UPPER(TRIM(COALESCE(tipo_medida,''))),
+                            UPPER(TRIM(COALESCE(motivo,''))),
+                            fecha_inicio,
+                            fecha_fin
+                        FROM sanciones_usuarios
+                        WHERE UPPER(TRIM(COALESCE(estado_medida,''))) = 'ACTIVA'
+                    ) medidas_unicas
                 """),
                 engine
             ).iloc[0]["total"] or 0
@@ -3654,7 +3675,7 @@ def gestion_usuarios():
         persona_car = df_gestion.loc[indice_car]
         doc_car = str(persona_car["numero_identificacion"]).strip()
 
-        # V16.54 - La ficha individual usa EXACTAMENTE el mismo cálculo
+        # V16.56 - La ficha individual usa EXACTAMENTE el mismo cálculo
         # que el listado general de seguimiento.
         completos_car, pendientes_car, total_car, pct_car = (
             _estado_completitud_car_v16195(persona_car)
@@ -4284,17 +4305,20 @@ st.markdown("""
 
 
 # ============================================================
-# V16.54 - REGLAS INSTITUCIONALES DE POSIBLE REINGRESO
+# V16.56 - REGLAS INSTITUCIONALES DE POSIBLE REINGRESO
 # ============================================================
 CRITERIOS_REINGRESO_V1641 = {
-    "SALIDA VOLUNTARIA": ("dias", 1, "1 noche"),
-    "AGRESIÓN FÍSICA": ("dias", 3, "3 noches"),
-    "FUGA": ("dias", 1, "1 noche"),
-    "USO DE SPA": ("dias", 2, "2 noches"),
-    "PORTE DE SPA": ("dias", 1, "1 noche"),
-    "HURTO MENOR": ("dias", 3, "3 noches"),
-    "HURTO GRAVE": ("meses", 2, "2 meses"),
-    "VENTA DE SPA": ("dias", 3, "3 noches"),
+    # V16.56: la sanción empieza a contarse desde el DÍA SIGUIENTE
+    # a la salida. La fecha calculada es el primer día en que puede
+    # VOLVER A SOLICITAR CUPO, no una garantía automática de reingreso.
+    "SALIDA VOLUNTARIA": ("dias", 1, "1 día completo de sanción"),
+    "AGRESIÓN FÍSICA": ("dias", 3, "3 días completos de sanción"),
+    "FUGA": ("dias", 1, "1 día completo de sanción"),
+    "USO DE SPA": ("dias", 2, "2 días completos de sanción"),
+    "PORTE DE SPA": ("dias", 1, "1 día completo de sanción"),
+    "HURTO MENOR": ("dias", 3, "3 días completos de sanción"),
+    "HURTO GRAVE": ("meses", 2, "2 meses completos de sanción"),
+    "VENTA DE SPA": ("dias", 3, "3 días completos de sanción"),
 }
 
 def _fecha_posible_reingreso_v1641(fecha_salida, causal):
@@ -4307,9 +4331,15 @@ def _fecha_posible_reingreso_v1641(fecha_salida, causal):
     if not regla:
         return None
     unidad, cantidad, _ = regla
+    # La sanción comienza el día siguiente a la salida.
+    # Ej.: sale 08/09 y tiene 1 día de sanción -> sanción 09/09 ->
+    # puede solicitar cupo desde 10/09.
     if unidad == "meses":
-        return (pd.Timestamp(fecha_salida) + pd.DateOffset(months=cantidad)).date()
-    return fecha_salida + timedelta(days=cantidad)
+        inicio_sancion = pd.Timestamp(fecha_salida) + pd.Timedelta(days=1)
+        fin_sancion = inicio_sancion + pd.DateOffset(months=cantidad)
+        return fin_sancion.date()
+
+    return fecha_salida + timedelta(days=cantidad + 1)
 
 
 def _es_reingreso_operativo_v1642(documento, estado_anterior=""):
@@ -4478,7 +4508,7 @@ def _texto_whatsapp_movimiento(
             if hasattr(fecha_posible_reingreso, "strftime")
             else str(fecha_posible_reingreso)
         )
-        lineas.append(f"*POSIBLE REINGRESO:* {fecha_reingreso_txt}")
+        lineas.append(f"*PUEDE SOLICITAR REINGRESO DESDE:* {fecha_reingreso_txt}")
     if responsable:
         lineas.append(f"*REGISTRA:* {str(responsable).strip()}")
 
@@ -5380,6 +5410,55 @@ def panel_inspirador_simple_v14():
             "v14_whatsapp_operativo"
         )
 
+
+def _medida_activa_duplicada_v1655(
+    documento,
+    tipo_medida,
+    causal,
+    fecha_inicio,
+    fecha_fin
+):
+    """Devuelve la medida activa idéntica ya existente, si la hay."""
+    try:
+        df = pd.read_sql(
+            text("""
+                SELECT
+                    id,
+                    numero_identificacion,
+                    tipo_medida,
+                    motivo,
+                    fecha_inicio,
+                    fecha_fin,
+                    estado_medida,
+                    usuario_registra,
+                    observacion
+                FROM sanciones_usuarios
+                WHERE TRIM(CAST(numero_identificacion AS TEXT)) = :doc
+                  AND UPPER(TRIM(COALESCE(tipo_medida,''))) = :tipo
+                  AND UPPER(TRIM(COALESCE(motivo,''))) = :causal
+                  AND fecha_inicio = :inicio
+                  AND fecha_fin = :fin
+                  AND UPPER(TRIM(COALESCE(estado_medida,''))) = 'ACTIVA'
+                ORDER BY id
+                LIMIT 1
+            """),
+            engine,
+            params={
+                "doc": str(documento or "").strip(),
+                "tipo": str(tipo_medida or "").strip().upper(),
+                "causal": str(causal or "").strip().upper(),
+                "inicio": fecha_inicio,
+                "fin": fecha_fin,
+            }
+        )
+    except Exception:
+        return None
+
+    if df.empty:
+        return None
+    return df.iloc[0].to_dict()
+
+
 def gestion_usuarios_movil():
 
     st.title("📱 Gestión Móvil")
@@ -5419,7 +5498,7 @@ def gestion_usuarios_movil():
         f"👤 {nombre_login} · Perfil: {rol_visible.title()}"
     )
 
-    # V16.54 - Los inspiradores también necesitan ver quién tiene
+    # V16.56 - Los inspiradores también necesitan ver quién tiene
     # una medida vigente antes de intentar un ingreso/reingreso.
     if rol_visible in ["INSPIRADOR", "COORDINACION", "MANAGER"]:
         with st.expander(
@@ -6061,7 +6140,7 @@ def gestion_usuarios_movil():
             else:
                 estado_anterior = str(u.get("estado_caso") or "").upper()
 
-                # V16.54 - Un usuario existente que salió y vuelve NO es
+                # V16.56 - Un usuario existente que salió y vuelve NO es
                 # "ingreso nuevo". Se clasifica por su historial operativo.
                 tipo_mov = (
                     "REINGRESO"
@@ -6081,7 +6160,7 @@ def gestion_usuarios_movil():
                     st.error(
                         "⛔ Reingreso no permitido todavía. "
                         f"Causal: {causal_restriccion}. "
-                        f"Posible reingreso: {fecha_restriccion.strftime('%d/%m/%Y')}."
+                        f"Puede solicitar reingreso desde: {fecha_restriccion.strftime('%d/%m/%Y')}."
                     )
                     st.stop()
 
@@ -6733,7 +6812,7 @@ def gestion_usuarios_movil():
         fin = _fecha_posible_reingreso_v1641(inicio, causal_medida)
         regla_txt = CRITERIOS_REINGRESO_V1641[causal_medida][2]
         st.info(
-            f"📅 Posible reingreso: **{fin.strftime('%d/%m/%Y')}** "
+            f"📅 Puede solicitar reingreso desde: **{fin.strftime('%d/%m/%Y')}** "
             f"({regla_txt})."
         )
 
@@ -6765,98 +6844,122 @@ def gestion_usuarios_movil():
             elif fin < inicio:
                 st.error("La fecha final no puede ser anterior al inicio.")
             else:
-                usuario = st.session_state.get(
-                    "usuario_actual", "inspirador"
+                medida_existente = _medida_activa_duplicada_v1655(
+                    documento,
+                    tipo,
+                    causal_medida,
+                    inicio,
+                    fin
                 )
 
-                with engine.begin() as conn:
-                    conn.execute(
-                        text("""
-                            INSERT INTO sanciones_usuarios (
-                                numero_identificacion,
-                                tipo_medida,
-                                motivo,
-                                fecha_inicio,
-                                fecha_fin,
-                                estado_medida,
-                                observacion,
-                                usuario_registra
-                            )
-                            VALUES (
-                                :doc, :tipo, :motivo, :inicio, :fin,
-                                'ACTIVA', :obs, :usuario
-                            )
-                        """),
-                        {
-                            "doc": documento,
-                            "tipo": tipo,
-                            "motivo": causal_medida,
-                            "inicio": inicio,
-                            "fin": fin,
-                            "obs": obs.strip(),
-                            "usuario": usuario
-                        }
+                if medida_existente:
+                    registrado_por = str(
+                        medida_existente.get("usuario_registra")
+                        or "otro funcionario"
+                    )
+                    st.error(
+                        "⛔ Esta medida YA está registrada y continúa ACTIVA. "
+                        "No se creó un segundo registro. "
+                        f"Registro existente por: {registrado_por}."
+                    )
+                    st.info(
+                        f"{tipo} · {causal_medida} · "
+                        f"{inicio.strftime('%d/%m/%Y')} → "
+                        f"{fin.strftime('%d/%m/%Y')}"
+                    )
+                else:
+                    usuario = st.session_state.get(
+                        "usuario_actual", "inspirador"
                     )
 
-                    conn.execute(
-                        text("""
-                            UPDATE habitante_de_calle
-                            SET estado_caso='INACTIVO',
-                                modalidad=NULL
-                            WHERE TRIM(
-                                CAST(numero_identificacion AS TEXT)
-                            )=:doc
-                        """),
-                        {"doc": documento}
+                    with engine.begin() as conn:
+                        conn.execute(
+                            text("""
+                                INSERT INTO sanciones_usuarios (
+                                    numero_identificacion,
+                                    tipo_medida,
+                                    motivo,
+                                    fecha_inicio,
+                                    fecha_fin,
+                                    estado_medida,
+                                    observacion,
+                                    usuario_registra
+                                )
+                                VALUES (
+                                    :doc, :tipo, :motivo, :inicio, :fin,
+                                    'ACTIVA', :obs, :usuario
+                                )
+                            """),
+                            {
+                                "doc": documento,
+                                "tipo": tipo,
+                                "motivo": causal_medida,
+                                "inicio": inicio,
+                                "fin": fin,
+                                "obs": obs.strip(),
+                                "usuario": usuario
+                            }
+                        )
+
+                        conn.execute(
+                            text("""
+                                UPDATE habitante_de_calle
+                                SET estado_caso='INACTIVO',
+                                    modalidad=NULL
+                                WHERE TRIM(
+                                    CAST(numero_identificacion AS TEXT)
+                                )=:doc
+                            """),
+                            {"doc": documento}
+                        )
+
+                        conn.execute(
+                            text("""
+                                INSERT INTO movimientos_habitante (
+                                    numero_identificacion,
+                                    tipo_movimiento,
+                                    modalidad,
+                                    usuario_registra,
+                                    observacion
+                                )
+                                VALUES (
+                                    :doc, :tipo_mov, :modalidad,
+                                    :usuario, :observacion
+                                )
+                            """),
+                            {
+                                "doc": documento,
+                                "tipo_mov": (
+                                    "SUSPENSION"
+                                    if tipo == "SUSPENSIÓN"
+                                    else "EXPULSION"
+                                ),
+                                "modalidad": u.get("modalidad"),
+                                "usuario": usuario,
+                                "observacion": f"{causal_medida}: {motivo.strip()}"
+                            }
+                        )
+
+                    registrar_auditoria(
+                        "REGISTRAR_MEDIDA_DISCIPLINARIA",
+                        documento=documento,
+                        modulo="Gestión Móvil",
+                        valor_nuevo=tipo,
+                        observacion=f"{causal_medida}: {motivo.strip()}"[:500]
                     )
+                    invalidar_cache_datos()
 
-                    conn.execute(
-                        text("""
-                            INSERT INTO movimientos_habitante (
-                                numero_identificacion,
-                                tipo_movimiento,
-                                modalidad,
-                                usuario_registra,
-                                observacion
-                            )
-                            VALUES (
-                                :doc, :tipo_mov, :modalidad,
-                                :usuario, :observacion
-                            )
-                        """),
-                        {
-                            "doc": documento,
-                            "tipo_mov": (
-                                "SUSPENSION"
-                                if tipo == "SUSPENSIÓN"
-                                else "EXPULSION"
-                            ),
-                            "modalidad": u.get("modalidad"),
-                            "usuario": usuario,
-                            "observacion": f"{causal_medida}: {motivo.strip()}"
-                        }
+                    reporte = _texto_whatsapp_movimiento(
+                        f"{tipo} - {causal_medida}",
+                        u.get("nombres"), u.get("apellidos"), documento,
+                        modalidad=str(u.get("modalidad") or ""),
+                        fecha=inicio,
+                        detalle=motivo.strip(),
+                        responsable=usuario,
+                        fecha_posible_reingreso=fin
                     )
-
-                registrar_auditoria(
-                    "REGISTRAR_MEDIDA_DISCIPLINARIA",
-                    documento=documento,
-                    modulo="Gestión Móvil",
-                    valor_nuevo=tipo,
-                    observacion=f"{causal_medida}: {motivo.strip()}"[:500]
-                )
-                invalidar_cache_datos()
-
-                reporte = _texto_whatsapp_movimiento(
-                    f"{tipo} - {causal_medida}",
-                    u.get("nombres"), u.get("apellidos"), documento,
-                    modalidad=str(u.get("modalidad") or ""),
-                    fecha=inicio,
-                    detalle=motivo.strip(),
-                    responsable=usuario,
-                    fecha_posible_reingreso=fin
-                )
-                st.session_state[f"reporte_whatsapp_{documento}"] = reporte
-                st.success("✅ Medida registrada correctamente.")
+                    st.session_state[f"reporte_whatsapp_{documento}"] = reporte
+                    st.success("✅ Medida registrada correctamente.")
 
         _mostrar_reporte_movimiento_v1636(documento, "sancion_expulsion")
 
@@ -11936,8 +12039,16 @@ def dashboard_ejecutivo():
                 SELECT
                     tipo_medida,
                     COUNT(*) AS total
-                FROM sanciones_usuarios
-                WHERE UPPER(TRIM(COALESCE(estado_medida,''))) = 'ACTIVA'
+                FROM (
+                    SELECT DISTINCT
+                        TRIM(CAST(numero_identificacion AS TEXT)) AS documento,
+                        UPPER(TRIM(COALESCE(tipo_medida,''))) AS tipo_medida,
+                        UPPER(TRIM(COALESCE(motivo,''))) AS motivo,
+                        fecha_inicio,
+                        fecha_fin
+                    FROM sanciones_usuarios
+                    WHERE UPPER(TRIM(COALESCE(estado_medida,''))) = 'ACTIVA'
+                ) medidas_unicas
                 GROUP BY tipo_medida
             """),
             engine
@@ -11966,7 +12077,7 @@ def dashboard_ejecutivo():
         )
 
     # ========================================================
-    # V16.54 - CLASIFICACIÓN HISTÓRICA DE INGRESOS / REINGRESOS
+    # V16.56 - CLASIFICACIÓN HISTÓRICA DE INGRESOS / REINGRESOS
     # ========================================================
     # Regla:
     # - Primera llegada histórica de una cédula = INGRESO NUEVO.
@@ -12020,7 +12131,7 @@ def dashboard_ejecutivo():
         df_llegadas_hist = pd.DataFrame()
 
     if not df_llegadas_hist.empty:
-        # V16.54 - fecha_movimiento ya llega desde la consulta con la
+        # V16.56 - fecha_movimiento ya llega desde la consulta con la
         # fecha/hora operativa correcta. No se vuelve a convertir de UTC
         # para evitar desplazar un día hacia atrás.
         df_llegadas_hist["fecha_movimiento"] = pd.to_datetime(
@@ -20158,7 +20269,7 @@ def modulo_auditoria_sesiones_v1634():
         st.error("La fecha inicial no puede ser posterior a la final.")
         return
 
-    # V16.54 - Los filtros se interpretan como días de Colombia.
+    # V16.56 - Los filtros se interpretan como días de Colombia.
     # La base conserva TIMESTAMPTZ; se consulta usando los límites equivalentes en UTC.
     desde_utc = pd.Timestamp(desde, tz="America/Bogota").tz_convert("UTC").to_pydatetime()
     hasta_utc = (
@@ -20214,7 +20325,7 @@ def modulo_auditoria_sesiones_v1634():
     except Exception:
         auditoria = pd.DataFrame()
 
-    # V16.54 - fecha_hora se guarda con zona horaria en PostgreSQL.
+    # V16.56 - fecha_hora se guarda con zona horaria en PostgreSQL.
     # Para visualización se convierte expresamente a America/Bogota.
     if not auditoria.empty:
         auditoria["fecha_hora"] = (
