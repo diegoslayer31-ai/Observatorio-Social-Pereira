@@ -4033,7 +4033,7 @@ st.markdown("""
 
 
 # ============================================================
-# V16.44 - REGLAS INSTITUCIONALES DE POSIBLE REINGRESO
+# V16.45 - REGLAS INSTITUCIONALES DE POSIBLE REINGRESO
 # ============================================================
 CRITERIOS_REINGRESO_V1641 = {
     "SALIDA VOLUNTARIA": ("dias", 1, "1 noche"),
@@ -5791,7 +5791,7 @@ def gestion_usuarios_movil():
             else:
                 estado_anterior = str(u.get("estado_caso") or "").upper()
 
-                # V16.44 - Un usuario existente que salió y vuelve NO es
+                # V16.45 - Un usuario existente que salió y vuelve NO es
                 # "ingreso nuevo". Se clasifica por su historial operativo.
                 tipo_mov = (
                     "REINGRESO"
@@ -11636,170 +11636,222 @@ def dashboard_ejecutivo():
         )
 
     # ========================================================
+    # V16.45 - CLASIFICACIÓN HISTÓRICA DE INGRESOS / REINGRESOS
+    # ========================================================
+    # Regla:
+    # - Primera llegada histórica de una cédula = INGRESO NUEVO.
+    # - Cualquier llegada posterior de esa misma cédula = REINGRESO.
+    # - Si el movimiento ya fue registrado expresamente como REINGRESO,
+    #   se respeta esa clasificación.
+    # - Duplicados exactos de una misma persona/fecha/hora/modalidad
+    #   se consolidan para no inflar los indicadores.
+    try:
+        df_llegadas_hist = pd.read_sql(
+            text("""
+                WITH llegadas_base AS (
+                    SELECT DISTINCT
+                        m.fecha_movimiento,
+                        TRIM(CAST(m.numero_identificacion AS TEXT)) AS documento,
+                        UPPER(TRIM(COALESCE(m.modalidad,''))) AS modalidad,
+                        UPPER(TRIM(COALESCE(m.tipo_movimiento,''))) AS tipo_original
+                    FROM movimientos_habitante m
+                    WHERE UPPER(TRIM(COALESCE(m.tipo_movimiento,'')))
+                          IN ('INGRESO','REINGRESO')
+                      AND TRIM(CAST(m.numero_identificacion AS TEXT)) <> ''
+                ),
+                ordenadas AS (
+                    SELECT
+                        fecha_movimiento,
+                        documento,
+                        modalidad,
+                        tipo_original,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY documento
+                            ORDER BY fecha_movimiento ASC, tipo_original ASC
+                        ) AS nro_llegada
+                    FROM llegadas_base
+                )
+                SELECT
+                    o.fecha_movimiento,
+                    o.documento,
+                    o.modalidad,
+                    o.tipo_original,
+                    o.nro_llegada,
+                    COALESCE(h.nombres, '') AS nombres,
+                    COALESCE(h.apellidos, '') AS apellidos
+                FROM ordenadas o
+                LEFT JOIN habitante_de_calle h
+                  ON TRIM(CAST(h.numero_identificacion AS TEXT)) = o.documento
+                ORDER BY o.fecha_movimiento DESC
+            """),
+            engine
+        )
+    except Exception:
+        df_llegadas_hist = pd.DataFrame()
+
+    if not df_llegadas_hist.empty:
+        df_llegadas_hist["fecha_movimiento"] = pd.to_datetime(
+            df_llegadas_hist["fecha_movimiento"],
+            errors="coerce"
+        )
+        df_llegadas_hist = df_llegadas_hist.dropna(
+            subset=["fecha_movimiento"]
+        )
+
+        df_llegadas_hist["fecha_dia"] = (
+            df_llegadas_hist["fecha_movimiento"].dt.date
+        )
+
+        # Primera llegada = nuevo, salvo que históricamente ya esté marcada
+        # como REINGRESO. Todas las siguientes = REINGRESO.
+        df_llegadas_hist["clasificacion"] = "INGRESO NUEVO"
+        df_llegadas_hist.loc[
+            (df_llegadas_hist["nro_llegada"] > 1)
+            | (df_llegadas_hist["tipo_original"] == "REINGRESO"),
+            "clasificacion"
+        ] = "REINGRESO"
+
+        # Para el seguimiento diario se muestra una sola fila por persona/día.
+        # Si por error existen dos movimientos iguales o repetidos el mismo día,
+        # no se duplica la persona en el indicador.
+        df_llegadas_hist = (
+            df_llegadas_hist
+            .sort_values("fecha_movimiento")
+            .drop_duplicates(
+                subset=["documento", "fecha_dia", "clasificacion"],
+                keep="first"
+            )
+        )
+
+    # ========================================================
     # SEGUIMIENTO DIARIO DE REINGRESOS
     # ========================================================
     with st.expander("🔁 Seguimiento de reingresos por día", expanded=False):
-        try:
-            df_reingresos_seg = pd.read_sql(
-                text("""
-                    SELECT
-                        m.fecha_movimiento,
-                        m.numero_identificacion,
-                        m.modalidad,
-                        COALESCE(h.nombres, '') AS nombres,
-                        COALESCE(h.apellidos, '') AS apellidos
-                    FROM movimientos_habitante m
-                    LEFT JOIN habitante_de_calle h
-                      ON TRIM(CAST(h.numero_identificacion AS TEXT))
-                       = TRIM(CAST(m.numero_identificacion AS TEXT))
-                    WHERE UPPER(TRIM(COALESCE(m.tipo_movimiento,''))) = 'REINGRESO'
-                    ORDER BY m.fecha_movimiento DESC
-                """),
-                engine
-            )
-        except Exception:
-            df_reingresos_seg = pd.DataFrame()
-
-        if df_reingresos_seg.empty:
-            st.info("Aún no hay reingresos registrados.")
+        if df_llegadas_hist.empty:
+            st.info("Aún no hay movimientos de ingreso/reingreso registrados.")
         else:
-            df_reingresos_seg["fecha_movimiento"] = pd.to_datetime(
-                df_reingresos_seg["fecha_movimiento"],
-                errors="coerce"
-            )
-            df_reingresos_seg = df_reingresos_seg.dropna(
-                subset=["fecha_movimiento"]
-            )
-            df_reingresos_seg["fecha_dia"] = (
-                df_reingresos_seg["fecha_movimiento"].dt.date
-            )
-
-            dias_disponibles = sorted(
-                df_reingresos_seg["fecha_dia"].dropna().unique().tolist(),
-                reverse=True
-            )
-
-            dia_reingreso = st.selectbox(
-                "Seleccionar día",
-                options=dias_disponibles,
-                format_func=lambda d: pd.Timestamp(d).strftime("%d/%m/%Y"),
-                key="seguimiento_reingresos_dia_v1643"
-            )
-
-            df_dia = df_reingresos_seg[
-                df_reingresos_seg["fecha_dia"] == dia_reingreso
+            df_reingresos_seg = df_llegadas_hist[
+                df_llegadas_hist["clasificacion"] == "REINGRESO"
             ].copy()
 
-            st.metric(
-                "🔁 Reingresos del día",
-                int(len(df_dia))
-            )
+            if df_reingresos_seg.empty:
+                st.info("Aún no hay reingresos registrados.")
+            else:
+                dias_disponibles = sorted(
+                    df_reingresos_seg["fecha_dia"]
+                    .dropna()
+                    .unique()
+                    .tolist(),
+                    reverse=True
+                )
 
-            df_dia["Usuario"] = (
-                df_dia["nombres"].fillna("").astype(str).str.strip()
-                + " "
-                + df_dia["apellidos"].fillna("").astype(str).str.strip()
-            ).str.strip()
+                dia_reingreso = st.selectbox(
+                    "Seleccionar día",
+                    options=dias_disponibles,
+                    format_func=lambda d: pd.Timestamp(d).strftime("%d/%m/%Y"),
+                    key="seguimiento_reingresos_dia_v1645"
+                )
 
-            df_dia["Hora"] = df_dia["fecha_movimiento"].dt.strftime("%I:%M %p")
+                df_dia = df_reingresos_seg[
+                    df_reingresos_seg["fecha_dia"] == dia_reingreso
+                ].copy()
 
-            st.dataframe(
-                df_dia[
-                    ["Hora", "Usuario", "numero_identificacion", "modalidad"]
-                ].rename(
-                    columns={
-                        "numero_identificacion": "Documento",
-                        "modalidad": "Modalidad"
-                    }
-                ),
-                use_container_width=True,
-                hide_index=True
-            )
+                st.metric(
+                    "🔁 Personas que reingresaron ese día",
+                    int(df_dia["documento"].nunique())
+                )
 
+                df_dia["Usuario"] = (
+                    df_dia["nombres"].fillna("").astype(str).str.strip()
+                    + " "
+                    + df_dia["apellidos"].fillna("").astype(str).str.strip()
+                ).str.strip()
+
+                df_dia["Hora"] = (
+                    df_dia["fecha_movimiento"]
+                    .dt.strftime("%I:%M %p")
+                )
+
+                st.dataframe(
+                    df_dia[
+                        ["Hora", "Usuario", "documento", "modalidad"]
+                    ].rename(
+                        columns={
+                            "documento": "Documento",
+                            "modalidad": "Modalidad"
+                        }
+                    ),
+                    use_container_width=True,
+                    hide_index=True
+                )
 
     # ========================================================
     # SEGUIMIENTO DIARIO DE INGRESOS NUEVOS
     # ========================================================
     with st.expander("🆕 Seguimiento de ingresos nuevos por día", expanded=False):
-        try:
-            df_ingresos_nuevos = pd.read_sql(
-                text("""
-                    SELECT
-                        m.fecha_movimiento,
-                        m.numero_identificacion,
-                        m.modalidad,
-                        COALESCE(h.nombres, '') AS nombres,
-                        COALESCE(h.apellidos, '') AS apellidos
-                    FROM movimientos_habitante m
-                    LEFT JOIN habitante_de_calle h
-                      ON TRIM(CAST(h.numero_identificacion AS TEXT))
-                       = TRIM(CAST(m.numero_identificacion AS TEXT))
-                    WHERE UPPER(TRIM(COALESCE(m.tipo_movimiento,''))) = 'INGRESO'
-                    ORDER BY m.fecha_movimiento DESC
-                """),
-                engine
-            )
-        except Exception:
-            df_ingresos_nuevos = pd.DataFrame()
-
-        if df_ingresos_nuevos.empty:
-            st.info("Aún no hay ingresos nuevos registrados.")
+        if df_llegadas_hist.empty:
+            st.info("Aún no hay movimientos de ingreso/reingreso registrados.")
         else:
-            df_ingresos_nuevos["fecha_movimiento"] = pd.to_datetime(
-                df_ingresos_nuevos["fecha_movimiento"],
-                errors="coerce"
-            )
-            df_ingresos_nuevos = df_ingresos_nuevos.dropna(
-                subset=["fecha_movimiento"]
-            )
-            df_ingresos_nuevos["fecha_dia"] = (
-                df_ingresos_nuevos["fecha_movimiento"].dt.date
-            )
-
-            dias_ingreso_disponibles = sorted(
-                df_ingresos_nuevos["fecha_dia"].dropna().unique().tolist(),
-                reverse=True
-            )
-
-            dia_ingreso_nuevo = st.selectbox(
-                "Seleccionar día",
-                options=dias_ingreso_disponibles,
-                format_func=lambda d: pd.Timestamp(d).strftime("%d/%m/%Y"),
-                key="seguimiento_ingresos_nuevos_dia_v1644"
-            )
-
-            df_ingreso_dia = df_ingresos_nuevos[
-                df_ingresos_nuevos["fecha_dia"] == dia_ingreso_nuevo
+            df_ingresos_nuevos = df_llegadas_hist[
+                df_llegadas_hist["clasificacion"] == "INGRESO NUEVO"
             ].copy()
 
-            st.metric(
-                "🆕 Ingresos nuevos del día",
-                int(len(df_ingreso_dia))
-            )
+            if df_ingresos_nuevos.empty:
+                st.info("Aún no hay ingresos nuevos registrados.")
+            else:
+                dias_ingreso_disponibles = sorted(
+                    df_ingresos_nuevos["fecha_dia"]
+                    .dropna()
+                    .unique()
+                    .tolist(),
+                    reverse=True
+                )
 
-            df_ingreso_dia["Usuario"] = (
-                df_ingreso_dia["nombres"].fillna("").astype(str).str.strip()
-                + " "
-                + df_ingreso_dia["apellidos"].fillna("").astype(str).str.strip()
-            ).str.strip()
+                dia_ingreso_nuevo = st.selectbox(
+                    "Seleccionar día",
+                    options=dias_ingreso_disponibles,
+                    format_func=lambda d: pd.Timestamp(d).strftime("%d/%m/%Y"),
+                    key="seguimiento_ingresos_nuevos_dia_v1645"
+                )
 
-            df_ingreso_dia["Hora"] = (
-                df_ingreso_dia["fecha_movimiento"]
-                .dt.strftime("%I:%M %p")
-            )
+                df_ingreso_dia = df_ingresos_nuevos[
+                    df_ingresos_nuevos["fecha_dia"] == dia_ingreso_nuevo
+                ].copy()
 
-            st.dataframe(
-                df_ingreso_dia[
-                    ["Hora", "Usuario", "numero_identificacion", "modalidad"]
-                ].rename(
-                    columns={
-                        "numero_identificacion": "Documento",
-                        "modalidad": "Modalidad"
-                    }
-                ),
-                use_container_width=True,
-                hide_index=True
-            )
+                st.metric(
+                    "🆕 Personas con primer ingreso ese día",
+                    int(df_ingreso_dia["documento"].nunique())
+                )
+
+                df_ingreso_dia["Usuario"] = (
+                    df_ingreso_dia["nombres"].fillna("").astype(str).str.strip()
+                    + " "
+                    + df_ingreso_dia["apellidos"].fillna("").astype(str).str.strip()
+                ).str.strip()
+
+                df_ingreso_dia["Hora"] = (
+                    df_ingreso_dia["fecha_movimiento"]
+                    .dt.strftime("%I:%M %p")
+                )
+
+                st.dataframe(
+                    df_ingreso_dia[
+                        ["Hora", "Usuario", "documento", "modalidad"]
+                    ].rename(
+                        columns={
+                            "documento": "Documento",
+                            "modalidad": "Modalidad"
+                        }
+                    ),
+                    use_container_width=True,
+                    hide_index=True
+                )
+
+        st.caption(
+            "Ingreso nuevo = primera llegada histórica de la cédula. "
+            "Reingreso = cualquier llegada posterior. "
+            "Los duplicados del mismo usuario en un mismo día no se cuentan dos veces."
+        )
 
     st.divider()
 
