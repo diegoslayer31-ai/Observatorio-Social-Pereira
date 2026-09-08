@@ -385,7 +385,7 @@ def generar_identificador_indocumentado_v1619():
 
 def validar_documento_no_duplicado(numero_documento):
     """
-    V16.47 - Protección contra duplicados por documento.
+    V16.48 - Protección contra duplicados por documento.
     Compara el documento normalizado, ignorando puntos, espacios, guiones
     y diferencias de mayúsculas/minúsculas.
     """
@@ -4291,7 +4291,7 @@ st.markdown("""
 
 
 # ============================================================
-# V16.47 - REGLAS INSTITUCIONALES DE POSIBLE REINGRESO
+# V16.48 - REGLAS INSTITUCIONALES DE POSIBLE REINGRESO
 # ============================================================
 CRITERIOS_REINGRESO_V1641 = {
     "SALIDA VOLUNTARIA": ("dias", 1, "1 noche"),
@@ -5426,7 +5426,7 @@ def gestion_usuarios_movil():
         f"👤 {nombre_login} · Perfil: {rol_visible.title()}"
     )
 
-    # V16.47 - Los inspiradores también necesitan ver quién tiene
+    # V16.48 - Los inspiradores también necesitan ver quién tiene
     # una medida vigente antes de intentar un ingreso/reingreso.
     if rol_visible in ["INSPIRADOR", "COORDINACION", "MANAGER"]:
         with st.expander(
@@ -6068,7 +6068,7 @@ def gestion_usuarios_movil():
             else:
                 estado_anterior = str(u.get("estado_caso") or "").upper()
 
-                # V16.47 - Un usuario existente que salió y vuelve NO es
+                # V16.48 - Un usuario existente que salió y vuelve NO es
                 # "ingreso nuevo". Se clasifica por su historial operativo.
                 tipo_mov = (
                     "REINGRESO"
@@ -11916,7 +11916,7 @@ def dashboard_ejecutivo():
         )
 
     # ========================================================
-    # V16.47 - CLASIFICACIÓN HISTÓRICA DE INGRESOS / REINGRESOS
+    # V16.48 - CLASIFICACIÓN HISTÓRICA DE INGRESOS / REINGRESOS
     # ========================================================
     # Regla:
     # - Primera llegada histórica de una cédula = INGRESO NUEVO.
@@ -17299,6 +17299,29 @@ def caracterizacion_habitabilidad_v1611():
             value=str(_v("otra_causa_permanencia", ""))
         )
 
+        st.markdown("#### 📍 Trayectoria territorial")
+
+        t1, t2 = st.columns(2)
+        municipio_origen = t1.text_input(
+            "Municipio de origen",
+            value=str(_v("municipio_origen", "")),
+            placeholder="Ej.: PEREIRA, DOSQUEBRADAS, ARMENIA..."
+        )
+        municipio_pernocta_calle = t2.text_input(
+            "Municipio donde pernoctaba en situación de calle",
+            value=str(_v("municipio_pernocta_calle", "")),
+            placeholder="Ej.: PEREIRA"
+        )
+        barrio_pernocta_calle = st.text_input(
+            "Barrio / sector donde pernoctaba en situación de calle",
+            value=str(_v("barrio_pernocta_calle", "")),
+            placeholder="Ej.: CENTRO, PARQUE LA LIBERTAD, PUENTES DE LA 12..."
+        )
+        st.caption(
+            "Estos campos describen la trayectoria territorial previa al ingreso "
+            "y no reemplazan la dirección o barrio de residencia actual."
+        )
+
         opciones_relacion = ["", "Antes de llegar a calle", "Después de llegar a calle", "No aplica / no consume", "No se puede establecer"]
         relacion_consumo_calle = st.selectbox(
             "Relación temporal entre consumo de SPA y vida en calle",
@@ -17941,6 +17964,9 @@ def caracterizacion_habitabilidad_v1611():
             "otra_causa_inicio": otro_inicio.strip() or None,
             "causa_permanencia_calle": causa_permanencia or None,
             "otra_causa_permanencia": otra_permanencia.strip() or None,
+            "municipio_origen": normalizar_texto_ingreso_v16193(municipio_origen) or None,
+            "municipio_pernocta_calle": normalizar_texto_ingreso_v16193(municipio_pernocta_calle) or None,
+            "barrio_pernocta_calle": normalizar_texto_ingreso_v16193(barrio_pernocta_calle) or None,
             "relacion_consumo_calle": relacion_consumo_calle or None,
             "consume_spa_actualmente": consume_actualmente or None,
             "sustancia_principal": sustancia_principal or None,
@@ -18013,6 +18039,9 @@ def caracterizacion_habitabilidad_v1611():
                             otra_causa_inicio,
                             causa_permanencia_calle,
                             otra_causa_permanencia,
+                            municipio_origen,
+                            municipio_pernocta_calle,
+                            barrio_pernocta_calle,
                             relacion_consumo_calle,
                             consume_spa_actualmente,
                             sustancia_principal,
@@ -18081,6 +18110,9 @@ def caracterizacion_habitabilidad_v1611():
                             :otra_causa_inicio,
                             :causa_permanencia_calle,
                             :otra_causa_permanencia,
+                            :municipio_origen,
+                            :municipio_pernocta_calle,
+                            :barrio_pernocta_calle,
                             :relacion_consumo_calle,
                             :consume_spa_actualmente,
                             :sustancia_principal,
@@ -18149,6 +18181,9 @@ def caracterizacion_habitabilidad_v1611():
                             otra_causa_inicio = EXCLUDED.otra_causa_inicio,
                             causa_permanencia_calle = EXCLUDED.causa_permanencia_calle,
                             otra_causa_permanencia = EXCLUDED.otra_causa_permanencia,
+                            municipio_origen = EXCLUDED.municipio_origen,
+                            municipio_pernocta_calle = EXCLUDED.municipio_pernocta_calle,
+                            barrio_pernocta_calle = EXCLUDED.barrio_pernocta_calle,
                             relacion_consumo_calle = EXCLUDED.relacion_consumo_calle,
                             consume_spa_actualmente = EXCLUDED.consume_spa_actualmente,
                             sustancia_principal = EXCLUDED.sustancia_principal,
@@ -20054,6 +20089,14 @@ def modulo_auditoria_sesiones_v1634():
         st.error("La fecha inicial no puede ser posterior a la final.")
         return
 
+    # V16.48 - Los filtros se interpretan como días de Colombia.
+    # La base conserva TIMESTAMPTZ; se consulta usando los límites equivalentes en UTC.
+    desde_utc = pd.Timestamp(desde, tz="America/Bogota").tz_convert("UTC").to_pydatetime()
+    hasta_utc = (
+        pd.Timestamp(hasta, tz="America/Bogota")
+        + pd.Timedelta(days=1)
+    ).tz_convert("UTC").to_pydatetime()
+
     try:
         sesiones = pd.read_sql(
             text("""
@@ -20067,12 +20110,12 @@ def modulo_auditoria_sesiones_v1634():
                     fin_sesion,
                     estado_sesion
                 FROM sesiones_sistema
-                WHERE inicio_sesion >= CAST(:desde AS DATE)
-                  AND inicio_sesion < CAST(:hasta AS DATE) + INTERVAL '1 day'
+                WHERE inicio_sesion >= :desde_utc
+                  AND inicio_sesion < :hasta_utc
                 ORDER BY inicio_sesion DESC
             """),
             engine,
-            params={"desde": str(desde), "hasta": str(hasta)}
+            params={"desde_utc": desde_utc, "hasta_utc": hasta_utc}
         )
     except Exception as e:
         st.error(f"No fue posible consultar las sesiones: {e}")
@@ -20092,18 +20135,26 @@ def modulo_auditoria_sesiones_v1634():
                     valor_nuevo,
                     observacion
                 FROM auditoria_sistema
-                WHERE fecha_hora >= CAST(:desde AS DATE)
-                  AND fecha_hora < CAST(:hasta AS DATE) + INTERVAL '1 day'
+                WHERE fecha_hora >= :desde_utc
+                  AND fecha_hora < :hasta_utc
                 ORDER BY fecha_hora DESC
             """),
             engine,
-            params={"desde": str(desde), "hasta": str(hasta)}
+            params={"desde_utc": desde_utc, "hasta_utc": hasta_utc}
         )
     except Exception:
         auditoria = pd.DataFrame()
 
+    # V16.48 - fecha_hora se guarda con zona horaria en PostgreSQL.
+    # Para visualización se convierte expresamente a America/Bogota.
+    if not auditoria.empty:
+        auditoria["fecha_hora"] = (
+            pd.to_datetime(auditoria["fecha_hora"], errors="coerce", utc=True)
+            .dt.tz_convert("America/Bogota")
+        )
+
     if not sesiones.empty:
-        # V16.34.1 - Normalizar TODAS las fechas a UTC.
+        # V16.34.1 - Normalizar TODAS las fechas a UTC para cálculos.
         # PostgreSQL TIMESTAMPTZ puede llegar mezclando objetos timezone-aware
         # y valores interpretados como naive según el driver/pandas.
         # Convertir explícitamente con utc=True evita restas incompatibles.
@@ -20139,6 +20190,12 @@ def modulo_auditoria_sesiones_v1634():
     else:
         sesiones["duracion_minutos"] = pd.Series(dtype=float)
         sesiones["actividad_reciente"] = pd.Series(dtype=bool)
+
+    if not sesiones.empty:
+        for c in ["inicio_sesion", "ultima_actividad", "fin_sesion"]:
+            sesiones[f"{c}_colombia"] = (
+                sesiones[c].dt.tz_convert("America/Bogota")
+            )
 
     sesiones_total = len(sesiones)
     usuarios_total = (
@@ -20192,14 +20249,24 @@ def modulo_auditoria_sesiones_v1634():
                 axis=1
             )
 
+            vista_s["Inicio (Colombia)"] = vista_s["inicio_sesion_colombia"].apply(
+                lambda x: x.strftime("%d/%m/%Y %I:%M:%S %p") if pd.notna(x) else "—"
+            )
+            vista_s["Última actividad (Colombia)"] = vista_s["ultima_actividad_colombia"].apply(
+                lambda x: x.strftime("%d/%m/%Y %I:%M:%S %p") if pd.notna(x) else "—"
+            )
+            vista_s["Fin (Colombia)"] = vista_s["fin_sesion_colombia"].apply(
+                lambda x: x.strftime("%d/%m/%Y %I:%M:%S %p") if pd.notna(x) else "—"
+            )
+
             st.dataframe(
                 vista_s[[
                     "nombre_usuario",
                     "cedula_usuario",
                     "rol_usuario",
-                    "inicio_sesion",
-                    "ultima_actividad",
-                    "fin_sesion",
+                    "Inicio (Colombia)",
+                    "Última actividad (Colombia)",
+                    "Fin (Colombia)",
                     "duración",
                     "estado"
                 ]],
@@ -20255,8 +20322,24 @@ def modulo_auditoria_sesiones_v1634():
                     vista_a["modulo"] == filtro_modulo
                 ]
 
+            vista_a = vista_a.copy()
+            vista_a["Fecha y hora (Colombia)"] = vista_a["fecha_hora"].apply(
+                lambda x: x.strftime("%d/%m/%Y %I:%M:%S %p") if pd.notna(x) else "—"
+            )
+            columnas_auditoria = [
+                "id",
+                "Fecha y hora (Colombia)",
+                "usuario",
+                "modulo",
+                "accion",
+                "numero_identificacion",
+                "valor_anterior",
+                "valor_nuevo",
+                "observacion"
+            ]
+
             st.dataframe(
-                vista_a,
+                vista_a[columnas_auditoria],
                 use_container_width=True,
                 hide_index=True
             )
@@ -20324,6 +20407,14 @@ def modulo_auditoria_sesiones_v1634():
                 )
             )
 
+            resumen["Última actividad (Colombia)"] = resumen["ultima_actividad"].apply(
+                lambda x: (
+                    x.tz_convert("America/Bogota").strftime("%d/%m/%Y %I:%M:%S %p")
+                    if pd.notna(x) and getattr(x, "tzinfo", None) is not None
+                    else "—"
+                )
+            )
+
             st.dataframe(
                 resumen[[
                     "nombre_usuario",
@@ -20332,7 +20423,7 @@ def modulo_auditoria_sesiones_v1634():
                     "sesiones",
                     "tiempo_estimado",
                     "acciones",
-                    "ultima_actividad"
+                    "Última actividad (Colombia)"
                 ]].sort_values(
                     ["acciones", "sesiones"],
                     ascending=False
