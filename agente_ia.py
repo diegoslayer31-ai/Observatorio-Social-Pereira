@@ -3432,23 +3432,32 @@ def gestion_usuarios():
         ]
 
         def _estado_completitud_car_v16195(fila):
+            """
+            Fuente única de verdad para la completitud de caracterización.
+            Esta misma función se usa tanto en el listado general como en la
+            ficha individual, evitando porcentajes distintos para una persona.
+            """
             completos = 0
             pendientes = []
             total = 0
+            valores_vacios = {"", "nan", "none", "null"}
+
             for etiqueta, col in campos_control:
                 if not col or col not in fila.index:
                     continue
+
                 total += 1
                 valor = fila.get(col)
                 tiene = (
                     pd.notna(valor)
-                    and str(valor).strip().lower()
-                    not in ("", "nan", "none", "null")
+                    and str(valor).strip().lower() not in valores_vacios
                 )
+
                 if tiene:
                     completos += 1
                 else:
                     pendientes.append(etiqueta)
+
             pct = round((completos / total * 100), 1) if total else 0
             return completos, pendientes, total, pct
 
@@ -3645,27 +3654,11 @@ def gestion_usuarios():
         persona_car = df_gestion.loc[indice_car]
         doc_car = str(persona_car["numero_identificacion"]).strip()
 
-        pendientes_car = []
-        completos_car = 0
-        total_car = 0
-
-        for etiqueta, col in campos_control:
-            if not col or col not in persona_car.index:
-                continue
-            total_car += 1
-            v = persona_car.get(col)
-            tiene = (
-                pd.notna(v)
-                and str(v).strip().lower() not in ("", "nan", "none")
-            )
-            if tiene:
-                completos_car += 1
-            else:
-                pendientes_car.append(etiqueta)
-
-        pct_car = round(
-            completos_car / total_car * 100, 1
-        ) if total_car else 0
+        # V16.51 - La ficha individual usa EXACTAMENTE el mismo cálculo
+        # que el listado general de seguimiento.
+        completos_car, pendientes_car, total_car, pct_car = (
+            _estado_completitud_car_v16195(persona_car)
+        )
 
         cc1, cc2, cc3 = st.columns(3)
         cc1.metric("🧾 Completitud", f"{pct_car:.0f}%")
