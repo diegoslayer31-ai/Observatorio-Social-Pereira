@@ -385,7 +385,7 @@ def generar_identificador_indocumentado_v1619():
 
 def validar_documento_no_duplicado(numero_documento):
     """
-    V16.48 - Protección contra duplicados por documento.
+    V16.49 - Protección contra duplicados por documento.
     Compara el documento normalizado, ignorando puntos, espacios, guiones
     y diferencias de mayúsculas/minúsculas.
     """
@@ -4291,7 +4291,7 @@ st.markdown("""
 
 
 # ============================================================
-# V16.48 - REGLAS INSTITUCIONALES DE POSIBLE REINGRESO
+# V16.49 - REGLAS INSTITUCIONALES DE POSIBLE REINGRESO
 # ============================================================
 CRITERIOS_REINGRESO_V1641 = {
     "SALIDA VOLUNTARIA": ("dias", 1, "1 noche"),
@@ -5426,7 +5426,7 @@ def gestion_usuarios_movil():
         f"👤 {nombre_login} · Perfil: {rol_visible.title()}"
     )
 
-    # V16.48 - Los inspiradores también necesitan ver quién tiene
+    # V16.49 - Los inspiradores también necesitan ver quién tiene
     # una medida vigente antes de intentar un ingreso/reingreso.
     if rol_visible in ["INSPIRADOR", "COORDINACION", "MANAGER"]:
         with st.expander(
@@ -6068,7 +6068,7 @@ def gestion_usuarios_movil():
             else:
                 estado_anterior = str(u.get("estado_caso") or "").upper()
 
-                # V16.48 - Un usuario existente que salió y vuelve NO es
+                # V16.49 - Un usuario existente que salió y vuelve NO es
                 # "ingreso nuevo". Se clasifica por su historial operativo.
                 tipo_mov = (
                     "REINGRESO"
@@ -11916,7 +11916,7 @@ def dashboard_ejecutivo():
         )
 
     # ========================================================
-    # V16.48 - CLASIFICACIÓN HISTÓRICA DE INGRESOS / REINGRESOS
+    # V16.49 - CLASIFICACIÓN HISTÓRICA DE INGRESOS / REINGRESOS
     # ========================================================
     # Regla:
     # - Primera llegada histórica de una cédula = INGRESO NUEVO.
@@ -11970,16 +11970,25 @@ def dashboard_ejecutivo():
         df_llegadas_hist = pd.DataFrame()
 
     if not df_llegadas_hist.empty:
-        df_llegadas_hist["fecha_movimiento"] = pd.to_datetime(
+        # V16.49 - movimientos_habitante llega desde Supabase en UTC.
+        # Para el seguimiento diario, la fecha y la hora deben corresponder
+        # al día REAL en Colombia (America/Bogota), no al día UTC.
+        df_llegadas_hist["fecha_movimiento_utc"] = pd.to_datetime(
             df_llegadas_hist["fecha_movimiento"],
-            errors="coerce"
+            errors="coerce",
+            utc=True
         )
         df_llegadas_hist = df_llegadas_hist.dropna(
-            subset=["fecha_movimiento"]
+            subset=["fecha_movimiento_utc"]
+        )
+
+        df_llegadas_hist["fecha_movimiento_colombia"] = (
+            df_llegadas_hist["fecha_movimiento_utc"]
+            .dt.tz_convert("America/Bogota")
         )
 
         df_llegadas_hist["fecha_dia"] = (
-            df_llegadas_hist["fecha_movimiento"].dt.date
+            df_llegadas_hist["fecha_movimiento_colombia"].dt.date
         )
 
         # Primera llegada = nuevo, salvo que históricamente ya esté marcada
@@ -11996,7 +12005,7 @@ def dashboard_ejecutivo():
         # no se duplica la persona en el indicador.
         df_llegadas_hist = (
             df_llegadas_hist
-            .sort_values("fecha_movimiento")
+            .sort_values("fecha_movimiento_utc")
             .drop_duplicates(
                 subset=["documento", "fecha_dia", "clasificacion"],
                 keep="first"
@@ -12029,7 +12038,7 @@ def dashboard_ejecutivo():
                     "Seleccionar día",
                     options=dias_disponibles,
                     format_func=lambda d: pd.Timestamp(d).strftime("%d/%m/%Y"),
-                    key="seguimiento_reingresos_dia_v1645"
+                    key="seguimiento_reingresos_dia_v1649"
                 )
 
                 df_dia = df_reingresos_seg[
@@ -12048,7 +12057,7 @@ def dashboard_ejecutivo():
                 ).str.strip()
 
                 df_dia["Hora"] = (
-                    df_dia["fecha_movimiento"]
+                    df_dia["fecha_movimiento_colombia"]
                     .dt.strftime("%I:%M %p")
                 )
 
@@ -12091,7 +12100,7 @@ def dashboard_ejecutivo():
                     "Seleccionar día",
                     options=dias_ingreso_disponibles,
                     format_func=lambda d: pd.Timestamp(d).strftime("%d/%m/%Y"),
-                    key="seguimiento_ingresos_nuevos_dia_v1645"
+                    key="seguimiento_ingresos_nuevos_dia_v1649"
                 )
 
                 df_ingreso_dia = df_ingresos_nuevos[
@@ -12110,7 +12119,7 @@ def dashboard_ejecutivo():
                 ).str.strip()
 
                 df_ingreso_dia["Hora"] = (
-                    df_ingreso_dia["fecha_movimiento"]
+                    df_ingreso_dia["fecha_movimiento_colombia"]
                     .dt.strftime("%I:%M %p")
                 )
 
@@ -20089,7 +20098,7 @@ def modulo_auditoria_sesiones_v1634():
         st.error("La fecha inicial no puede ser posterior a la final.")
         return
 
-    # V16.48 - Los filtros se interpretan como días de Colombia.
+    # V16.49 - Los filtros se interpretan como días de Colombia.
     # La base conserva TIMESTAMPTZ; se consulta usando los límites equivalentes en UTC.
     desde_utc = pd.Timestamp(desde, tz="America/Bogota").tz_convert("UTC").to_pydatetime()
     hasta_utc = (
@@ -20145,7 +20154,7 @@ def modulo_auditoria_sesiones_v1634():
     except Exception:
         auditoria = pd.DataFrame()
 
-    # V16.48 - fecha_hora se guarda con zona horaria en PostgreSQL.
+    # V16.49 - fecha_hora se guarda con zona horaria en PostgreSQL.
     # Para visualización se convierte expresamente a America/Bogota.
     if not auditoria.empty:
         auditoria["fecha_hora"] = (
