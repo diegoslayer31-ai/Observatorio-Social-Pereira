@@ -4033,7 +4033,7 @@ st.markdown("""
 
 
 # ============================================================
-# V16.41 - REGLAS INSTITUCIONALES DE POSIBLE REINGRESO
+# V16.43 - REGLAS INSTITUCIONALES DE POSIBLE REINGRESO
 # ============================================================
 CRITERIOS_REINGRESO_V1641 = {
     "SALIDA VOLUNTARIA": ("dias", 1, "1 noche"),
@@ -4059,6 +4059,87 @@ def _fecha_posible_reingreso_v1641(fecha_salida, causal):
     if unidad == "meses":
         return (pd.Timestamp(fecha_salida) + pd.DateOffset(months=cantidad)).date()
     return fecha_salida + timedelta(days=cantidad)
+
+
+def _es_reingreso_operativo_v1642(documento, estado_anterior=""):
+    """
+    Determina si una llegada de un usuario EXISTENTE debe registrarse como REINGRESO.
+
+    Regla:
+    - EGRESADO o INACTIVO => REINGRESO.
+    - Si existe una salida voluntaria posterior al último INGRESO/REINGRESO => REINGRESO.
+    - Si existe una SUSPENSIÓN/EXPULSIÓN posterior al último INGRESO/REINGRESO => REINGRESO.
+    - En caso contrario, no fuerza reingreso.
+    """
+    doc = str(documento or "").strip()
+    estado = str(estado_anterior or "").strip().upper()
+
+    if estado in {"EGRESADO", "INACTIVO"}:
+        return True
+
+    try:
+        ultimo_ingreso = pd.read_sql(
+            text("""
+                SELECT MAX(fecha_movimiento) AS fecha
+                FROM movimientos_habitante
+                WHERE TRIM(CAST(numero_identificacion AS TEXT)) = :doc
+                  AND UPPER(TRIM(COALESCE(tipo_movimiento,'')))
+                      IN ('INGRESO','REINGRESO')
+            """),
+            engine,
+            params={"doc": doc}
+        ).iloc[0]["fecha"]
+    except Exception:
+        ultimo_ingreso = None
+
+    try:
+        ultima_salida_vol = pd.read_sql(
+            text("""
+                SELECT MAX(fecha_hora) AS fecha
+                FROM salidas_voluntarias_albergue
+                WHERE TRIM(CAST(numero_identificacion AS TEXT)) = :doc
+            """),
+            engine,
+            params={"doc": doc}
+        ).iloc[0]["fecha"]
+    except Exception:
+        ultima_salida_vol = None
+
+    try:
+        ultima_medida = pd.read_sql(
+            text("""
+                SELECT MAX(fecha_movimiento) AS fecha
+                FROM movimientos_habitante
+                WHERE TRIM(CAST(numero_identificacion AS TEXT)) = :doc
+                  AND UPPER(TRIM(COALESCE(tipo_movimiento,'')))
+                      IN ('SUSPENSION','SUSPENSIÓN','EXPULSION','EXPULSIÓN','EGRESO')
+            """),
+            engine,
+            params={"doc": doc}
+        ).iloc[0]["fecha"]
+    except Exception:
+        ultima_medida = None
+
+    ingreso_dt = pd.to_datetime(ultimo_ingreso, errors="coerce")
+    salida_vol_dt = pd.to_datetime(ultima_salida_vol, errors="coerce")
+    medida_dt = pd.to_datetime(ultima_medida, errors="coerce")
+
+    salidas = [
+        f for f in [salida_vol_dt, medida_dt]
+        if pd.notna(f)
+    ]
+    if not salidas:
+        return False
+
+    ultima_salida = max(salidas)
+
+    # Si no hay ingreso histórico pero sí hay una salida previa documentada,
+    # la siguiente llegada también es un reingreso.
+    if pd.isna(ingreso_dt):
+        return True
+
+    return ultima_salida > ingreso_dt
+
 
 def _restriccion_reingreso_v1641(documento):
     """Devuelve (fecha, causal) de la restricción vigente más reciente."""
@@ -4220,7 +4301,7 @@ def _texto_whatsapp_ingreso_completo_v1637(tipo_mov, u, documento, modalidad, ob
     ciudad_origen = val("ciudad_origen", "municipio_procedencia", "departamento_procedencia", "departamento_de_procedencia")
     documento_fisico = val("documento_fisico")
     pacto = val("acepta_pacto_convivencia", "pacto_convivencia", "acepta_pacto", default="POR VERIFICAR")
-    tipo_txt = "reingresó" if str(tipo_mov).upper() == "REINGRESO" else "nuevo"
+    tipo_txt = "reingreso" if str(tipo_mov).upper() == "REINGRESO" else "nuevo"
     obs = str(observacion or "").strip() or "NO REGISTRA"
 
     return "\n".join([
@@ -5709,9 +5790,15 @@ def gestion_usuarios_movil():
                 st.error("Confirme el registro antes de guardar.")
             else:
                 estado_anterior = str(u.get("estado_caso") or "").upper()
+
+                # V16.43 - Un usuario existente que salió y vuelve NO es
+                # "ingreso nuevo". Se clasifica por su historial operativo.
                 tipo_mov = (
                     "REINGRESO"
-                    if estado_anterior in ["EGRESADO", "INACTIVO"]
+                    if _es_reingreso_operativo_v1642(
+                        documento,
+                        estado_anterior
+                    )
                     else "INGRESO"
                 )
 
@@ -11330,33 +11417,6 @@ def dashboard_ejecutivo():
     except Exception:
         egresos_coord = 0
 
-    try:
-        mov_30 = pd.read_sql(
-            text("""
-                SELECT
-                    tipo_movimiento,
-                    COUNT(*) AS total
-                FROM movimientos_habitante
-                WHERE fecha_movimiento >= CURRENT_DATE - INTERVAL '30 days'
-                GROUP BY tipo_movimiento
-            """),
-            engine
-        )
-    except Exception:
-        mov_30 = pd.DataFrame(columns=["tipo_movimiento", "total"])
-
-    reingresos_30 = 0
-    if not mov_30.empty:
-        reingresos_30 = int(
-            mov_30.loc[
-                mov_30["tipo_movimiento"]
-                .astype(str)
-                .str.upper()
-                .str.contains("REINGRESO", na=False),
-                "total"
-            ].sum()
-        )
-
     # ========================================================
     # CONTROL PAI GLOBAL
     # ========================================================
@@ -11560,14 +11620,13 @@ def dashboard_ejecutivo():
         medidas_coord = pd.DataFrame()
         medidas_activas_coord = 0
 
-    c1, c2, c3, c4, c5, c6, c7 = st.columns(7)
+    c1, c2, c3, c4, c5, c6 = st.columns(6)
     c1.metric("👥 Población", total_coord)
     c2.metric("🟢 Activos", activos_coord)
     c3.metric("🏙️ Urbano", f"{urbano_coord}/100")
     c4.metric("🌱 Granja", granja_coord)
     c5.metric("🏆 Egresos", egresos_coord)
-    c6.metric("🔁 Reingresos 30d", reingresos_30)
-    c7.metric("⛔ Medidas activas", medidas_activas_coord)
+    c6.metric("⛔ Medidas activas", medidas_activas_coord)
 
     if urbano_coord >= 100:
         st.error("🚨 Urbano alcanzó o superó la capacidad de 100 cupos.")
@@ -11575,6 +11634,87 @@ def dashboard_ejecutivo():
         st.warning(
             f"⚠️ Urbano está en {urbano_coord}% de su capacidad."
         )
+
+    # ========================================================
+    # SEGUIMIENTO DIARIO DE REINGRESOS
+    # ========================================================
+    with st.expander("🔁 Seguimiento de reingresos por día", expanded=False):
+        try:
+            df_reingresos_seg = pd.read_sql(
+                text("""
+                    SELECT
+                        m.fecha_movimiento,
+                        m.numero_identificacion,
+                        m.modalidad,
+                        COALESCE(h.nombres, '') AS nombres,
+                        COALESCE(h.apellidos, '') AS apellidos
+                    FROM movimientos_habitante m
+                    LEFT JOIN habitante_de_calle h
+                      ON TRIM(CAST(h.numero_identificacion AS TEXT))
+                       = TRIM(CAST(m.numero_identificacion AS TEXT))
+                    WHERE UPPER(TRIM(COALESCE(m.tipo_movimiento,''))) = 'REINGRESO'
+                    ORDER BY m.fecha_movimiento DESC
+                """),
+                engine
+            )
+        except Exception:
+            df_reingresos_seg = pd.DataFrame()
+
+        if df_reingresos_seg.empty:
+            st.info("Aún no hay reingresos registrados.")
+        else:
+            df_reingresos_seg["fecha_movimiento"] = pd.to_datetime(
+                df_reingresos_seg["fecha_movimiento"],
+                errors="coerce"
+            )
+            df_reingresos_seg = df_reingresos_seg.dropna(
+                subset=["fecha_movimiento"]
+            )
+            df_reingresos_seg["fecha_dia"] = (
+                df_reingresos_seg["fecha_movimiento"].dt.date
+            )
+
+            dias_disponibles = sorted(
+                df_reingresos_seg["fecha_dia"].dropna().unique().tolist(),
+                reverse=True
+            )
+
+            dia_reingreso = st.selectbox(
+                "Seleccionar día",
+                options=dias_disponibles,
+                format_func=lambda d: pd.Timestamp(d).strftime("%d/%m/%Y"),
+                key="seguimiento_reingresos_dia_v1643"
+            )
+
+            df_dia = df_reingresos_seg[
+                df_reingresos_seg["fecha_dia"] == dia_reingreso
+            ].copy()
+
+            st.metric(
+                "🔁 Reingresos del día",
+                int(len(df_dia))
+            )
+
+            df_dia["Usuario"] = (
+                df_dia["nombres"].fillna("").astype(str).str.strip()
+                + " "
+                + df_dia["apellidos"].fillna("").astype(str).str.strip()
+            ).str.strip()
+
+            df_dia["Hora"] = df_dia["fecha_movimiento"].dt.strftime("%I:%M %p")
+
+            st.dataframe(
+                df_dia[
+                    ["Hora", "Usuario", "numero_identificacion", "modalidad"]
+                ].rename(
+                    columns={
+                        "numero_identificacion": "Documento",
+                        "modalidad": "Modalidad"
+                    }
+                ),
+                use_container_width=True,
+                hide_index=True
+            )
 
     st.divider()
 
