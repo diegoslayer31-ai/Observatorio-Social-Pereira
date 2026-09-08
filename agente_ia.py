@@ -385,7 +385,7 @@ def generar_identificador_indocumentado_v1619():
 
 def validar_documento_no_duplicado(numero_documento):
     """
-    V16.52 - Protección contra duplicados por documento.
+    V16.53 - Protección contra duplicados por documento.
     Compara el documento normalizado, ignorando puntos, espacios, guiones
     y diferencias de mayúsculas/minúsculas.
     """
@@ -3432,23 +3432,32 @@ def gestion_usuarios():
         ]
 
         def _estado_completitud_car_v16195(fila):
+            """
+            Fuente única de verdad para la completitud de caracterización.
+            Esta misma función se usa tanto en el listado general como en la
+            ficha individual, evitando porcentajes distintos para una persona.
+            """
             completos = 0
             pendientes = []
             total = 0
+            valores_vacios = {"", "nan", "none", "null"}
+
             for etiqueta, col in campos_control:
                 if not col or col not in fila.index:
                     continue
+
                 total += 1
                 valor = fila.get(col)
                 tiene = (
                     pd.notna(valor)
-                    and str(valor).strip().lower()
-                    not in ("", "nan", "none", "null")
+                    and str(valor).strip().lower() not in valores_vacios
                 )
+
                 if tiene:
                     completos += 1
                 else:
                     pendientes.append(etiqueta)
+
             pct = round((completos / total * 100), 1) if total else 0
             return completos, pendientes, total, pct
 
@@ -3645,27 +3654,11 @@ def gestion_usuarios():
         persona_car = df_gestion.loc[indice_car]
         doc_car = str(persona_car["numero_identificacion"]).strip()
 
-        pendientes_car = []
-        completos_car = 0
-        total_car = 0
-
-        for etiqueta, col in campos_control:
-            if not col or col not in persona_car.index:
-                continue
-            total_car += 1
-            v = persona_car.get(col)
-            tiene = (
-                pd.notna(v)
-                and str(v).strip().lower() not in ("", "nan", "none")
-            )
-            if tiene:
-                completos_car += 1
-            else:
-                pendientes_car.append(etiqueta)
-
-        pct_car = round(
-            completos_car / total_car * 100, 1
-        ) if total_car else 0
+        # V16.53 - La ficha individual usa EXACTAMENTE el mismo cálculo
+        # que el listado general de seguimiento.
+        completos_car, pendientes_car, total_car, pct_car = (
+            _estado_completitud_car_v16195(persona_car)
+        )
 
         cc1, cc2, cc3 = st.columns(3)
         cc1.metric("🧾 Completitud", f"{pct_car:.0f}%")
@@ -4291,7 +4284,7 @@ st.markdown("""
 
 
 # ============================================================
-# V16.52 - REGLAS INSTITUCIONALES DE POSIBLE REINGRESO
+# V16.53 - REGLAS INSTITUCIONALES DE POSIBLE REINGRESO
 # ============================================================
 CRITERIOS_REINGRESO_V1641 = {
     "SALIDA VOLUNTARIA": ("dias", 1, "1 noche"),
@@ -5146,8 +5139,6 @@ def registrar_egreso_profesional_v12(u, documento):
 def panel_inspirador_simple_v14():
     """Panel operativo simple integrado a Gestión Móvil."""
     responsable = st.session_state.get("usuario_actual", "inspirador")
-    # Hora operativa local de Colombia. Las fechas/horas de permiso se guardan
-    # como valores locales sin zona, por eso comparamos contra Colombia sin tzinfo.
     ahora = ahora_colombia().replace(tzinfo=None)
 
     # Permisos actualmente abiertos
@@ -5428,7 +5419,7 @@ def gestion_usuarios_movil():
         f"👤 {nombre_login} · Perfil: {rol_visible.title()}"
     )
 
-    # V16.52 - Los inspiradores también necesitan ver quién tiene
+    # V16.53 - Los inspiradores también necesitan ver quién tiene
     # una medida vigente antes de intentar un ingreso/reingreso.
     if rol_visible in ["INSPIRADOR", "COORDINACION", "MANAGER"]:
         with st.expander(
@@ -6070,7 +6061,7 @@ def gestion_usuarios_movil():
             else:
                 estado_anterior = str(u.get("estado_caso") or "").upper()
 
-                # V16.52 - Un usuario existente que salió y vuelve NO es
+                # V16.53 - Un usuario existente que salió y vuelve NO es
                 # "ingreso nuevo". Se clasifica por su historial operativo.
                 tipo_mov = (
                     "REINGRESO"
@@ -6339,24 +6330,69 @@ def gestion_usuarios_movil():
             c1, c2 = st.columns(2)
             fecha_salida = c1.date_input(
                 "Fecha de salida",
-                value=date.today(),
+                value=ahora_colombia().date(),
                 key=f"perm_fecha_salida_{documento}"
             )
             hora_salida = c2.time_input(
                 "Hora de salida",
+                value=ahora_colombia().time().replace(second=0, microsecond=0),
                 key=f"perm_hora_salida_{documento}"
             )
 
-            c3, c4 = st.columns(2)
-            fecha_regreso_est = c3.date_input(
-                "Fecha estimada de regreso",
-                value=date.today(),
-                key=f"perm_fecha_reg_est_{documento}"
-            )
-            hora_regreso_est = c4.time_input(
-                "Hora estimada de regreso",
-                key=f"perm_hora_reg_est_{documento}"
-            )
+            modalidad_permiso = str(u.get("modalidad") or "").strip().upper()
+
+            if modalidad_permiso == "GRANJA":
+                st.markdown("##### 🌱 Duración del permiso de Granja")
+                duracion_permiso_granja = st.selectbox(
+                    "Duración autorizada",
+                    [
+                        "1 DÍA",
+                        "2 DÍAS",
+                        "3 DÍAS",
+                        "FECHA PERSONALIZADA"
+                    ],
+                    index=2,
+                    key=f"perm_duracion_granja_{documento}"
+                )
+
+                if duracion_permiso_granja == "1 DÍA":
+                    fecha_regreso_est = fecha_salida + timedelta(days=1)
+                elif duracion_permiso_granja == "2 DÍAS":
+                    fecha_regreso_est = fecha_salida + timedelta(days=2)
+                elif duracion_permiso_granja == "3 DÍAS":
+                    fecha_regreso_est = fecha_salida + timedelta(days=3)
+                else:
+                    fecha_regreso_est = st.date_input(
+                        "Fecha estimada de regreso",
+                        value=fecha_salida + timedelta(days=3),
+                        min_value=fecha_salida,
+                        key=f"perm_fecha_reg_est_personalizada_{documento}"
+                    )
+
+                st.info(
+                    "📅 Regreso estimado: "
+                    f"**{fecha_regreso_est.strftime('%d/%m/%Y')}**"
+                )
+
+                hora_regreso_est = st.time_input(
+                    "Hora estimada de regreso",
+                    value=datetime.strptime("12:00", "%H:%M").time(),
+                    key=f"perm_hora_reg_est_{documento}"
+                )
+
+            else:
+                # URBANO: permiso diario, regreso el mismo día.
+                fecha_regreso_est = fecha_salida
+                c3, c4 = st.columns(2)
+                c3.info(
+                    "🏙️ Permiso diario · regreso el mismo día: "
+                    f"**{fecha_regreso_est.strftime('%d/%m/%Y')}**"
+                )
+                hora_regreso_est = c4.time_input(
+                    "Hora estimada de regreso",
+                    value=datetime.strptime("12:00", "%H:%M").time(),
+                    key=f"perm_hora_reg_est_{documento}"
+                )
 
             motivo_permiso = st.text_area(
                 "Motivo del permiso *",
@@ -6394,6 +6430,8 @@ def gestion_usuarios_movil():
             ):
                 if not motivo_permiso.strip():
                     st.error("Debe registrar el motivo del permiso.")
+                elif fecha_regreso_est < fecha_salida:
+                    st.error("La fecha estimada de regreso no puede ser anterior a la fecha de salida.")
                 elif not conf_permiso:
                     st.error("Debe confirmar la salida.")
                 else:
@@ -6437,7 +6475,14 @@ def gestion_usuarios_movil():
                                 "autoriza": autoriza.strip(),
                                 "fecha_regreso_est": fecha_regreso_est,
                                 "hora_regreso_est": hora_regreso_est,
-                                "observacion": observacion_permiso.strip(),
+                                "observacion": (
+                                    (
+                                        f"{observacion_permiso.strip()} | "
+                                        f"Permiso Granja hasta {fecha_regreso_est.strftime('%d/%m/%Y')}"
+                                    ).strip(" |")
+                                    if modalidad_permiso == "GRANJA"
+                                    else observacion_permiso.strip()
+                                ),
                                 "usuario": usuario_registra
                             }
                         )
@@ -7764,8 +7809,6 @@ def control_turno_v13():
         "ni una salida voluntaria posterior a su último ingreso/reingreso."
     )
 
-    # Hora operativa local de Colombia. Las fechas/horas de permiso se guardan
-    # como valores locales sin zona, por eso comparamos contra Colombia sin tzinfo.
     ahora = ahora_colombia().replace(tzinfo=None)
     responsable = st.session_state.get("usuario_actual", "sistema")
 
@@ -11920,7 +11963,7 @@ def dashboard_ejecutivo():
         )
 
     # ========================================================
-    # V16.52 - CLASIFICACIÓN HISTÓRICA DE INGRESOS / REINGRESOS
+    # V16.53 - CLASIFICACIÓN HISTÓRICA DE INGRESOS / REINGRESOS
     # ========================================================
     # Regla:
     # - Primera llegada histórica de una cédula = INGRESO NUEVO.
@@ -11974,7 +12017,7 @@ def dashboard_ejecutivo():
         df_llegadas_hist = pd.DataFrame()
 
     if not df_llegadas_hist.empty:
-        # V16.52 - fecha_movimiento ya llega desde la consulta con la
+        # V16.53 - fecha_movimiento ya llega desde la consulta con la
         # fecha/hora operativa correcta. No se vuelve a convertir de UTC
         # para evitar desplazar un día hacia atrás.
         df_llegadas_hist["fecha_movimiento"] = pd.to_datetime(
@@ -20112,7 +20155,7 @@ def modulo_auditoria_sesiones_v1634():
         st.error("La fecha inicial no puede ser posterior a la final.")
         return
 
-    # V16.52 - Los filtros se interpretan como días de Colombia.
+    # V16.53 - Los filtros se interpretan como días de Colombia.
     # La base conserva TIMESTAMPTZ; se consulta usando los límites equivalentes en UTC.
     desde_utc = pd.Timestamp(desde, tz="America/Bogota").tz_convert("UTC").to_pydatetime()
     hasta_utc = (
@@ -20168,7 +20211,7 @@ def modulo_auditoria_sesiones_v1634():
     except Exception:
         auditoria = pd.DataFrame()
 
-    # V16.52 - fecha_hora se guarda con zona horaria en PostgreSQL.
+    # V16.53 - fecha_hora se guarda con zona horaria en PostgreSQL.
     # Para visualización se convierte expresamente a America/Bogota.
     if not auditoria.empty:
         auditoria["fecha_hora"] = (
