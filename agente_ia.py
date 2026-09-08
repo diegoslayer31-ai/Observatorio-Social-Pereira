@@ -4033,7 +4033,7 @@ st.markdown("""
 
 
 # ============================================================
-# V16.43 - REGLAS INSTITUCIONALES DE POSIBLE REINGRESO
+# V16.44 - REGLAS INSTITUCIONALES DE POSIBLE REINGRESO
 # ============================================================
 CRITERIOS_REINGRESO_V1641 = {
     "SALIDA VOLUNTARIA": ("dias", 1, "1 noche"),
@@ -5791,7 +5791,7 @@ def gestion_usuarios_movil():
             else:
                 estado_anterior = str(u.get("estado_caso") or "").upper()
 
-                # V16.43 - Un usuario existente que salió y vuelve NO es
+                # V16.44 - Un usuario existente que salió y vuelve NO es
                 # "ingreso nuevo". Se clasifica por su historial operativo.
                 tipo_mov = (
                     "REINGRESO"
@@ -11705,6 +11705,91 @@ def dashboard_ejecutivo():
 
             st.dataframe(
                 df_dia[
+                    ["Hora", "Usuario", "numero_identificacion", "modalidad"]
+                ].rename(
+                    columns={
+                        "numero_identificacion": "Documento",
+                        "modalidad": "Modalidad"
+                    }
+                ),
+                use_container_width=True,
+                hide_index=True
+            )
+
+
+    # ========================================================
+    # SEGUIMIENTO DIARIO DE INGRESOS NUEVOS
+    # ========================================================
+    with st.expander("🆕 Seguimiento de ingresos nuevos por día", expanded=False):
+        try:
+            df_ingresos_nuevos = pd.read_sql(
+                text("""
+                    SELECT
+                        m.fecha_movimiento,
+                        m.numero_identificacion,
+                        m.modalidad,
+                        COALESCE(h.nombres, '') AS nombres,
+                        COALESCE(h.apellidos, '') AS apellidos
+                    FROM movimientos_habitante m
+                    LEFT JOIN habitante_de_calle h
+                      ON TRIM(CAST(h.numero_identificacion AS TEXT))
+                       = TRIM(CAST(m.numero_identificacion AS TEXT))
+                    WHERE UPPER(TRIM(COALESCE(m.tipo_movimiento,''))) = 'INGRESO'
+                    ORDER BY m.fecha_movimiento DESC
+                """),
+                engine
+            )
+        except Exception:
+            df_ingresos_nuevos = pd.DataFrame()
+
+        if df_ingresos_nuevos.empty:
+            st.info("Aún no hay ingresos nuevos registrados.")
+        else:
+            df_ingresos_nuevos["fecha_movimiento"] = pd.to_datetime(
+                df_ingresos_nuevos["fecha_movimiento"],
+                errors="coerce"
+            )
+            df_ingresos_nuevos = df_ingresos_nuevos.dropna(
+                subset=["fecha_movimiento"]
+            )
+            df_ingresos_nuevos["fecha_dia"] = (
+                df_ingresos_nuevos["fecha_movimiento"].dt.date
+            )
+
+            dias_ingreso_disponibles = sorted(
+                df_ingresos_nuevos["fecha_dia"].dropna().unique().tolist(),
+                reverse=True
+            )
+
+            dia_ingreso_nuevo = st.selectbox(
+                "Seleccionar día",
+                options=dias_ingreso_disponibles,
+                format_func=lambda d: pd.Timestamp(d).strftime("%d/%m/%Y"),
+                key="seguimiento_ingresos_nuevos_dia_v1644"
+            )
+
+            df_ingreso_dia = df_ingresos_nuevos[
+                df_ingresos_nuevos["fecha_dia"] == dia_ingreso_nuevo
+            ].copy()
+
+            st.metric(
+                "🆕 Ingresos nuevos del día",
+                int(len(df_ingreso_dia))
+            )
+
+            df_ingreso_dia["Usuario"] = (
+                df_ingreso_dia["nombres"].fillna("").astype(str).str.strip()
+                + " "
+                + df_ingreso_dia["apellidos"].fillna("").astype(str).str.strip()
+            ).str.strip()
+
+            df_ingreso_dia["Hora"] = (
+                df_ingreso_dia["fecha_movimiento"]
+                .dt.strftime("%I:%M %p")
+            )
+
+            st.dataframe(
+                df_ingreso_dia[
                     ["Hora", "Usuario", "numero_identificacion", "modalidad"]
                 ].rename(
                     columns={
