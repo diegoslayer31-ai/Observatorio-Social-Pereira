@@ -385,7 +385,7 @@ def generar_identificador_indocumentado_v1619():
 
 def validar_documento_no_duplicado(numero_documento):
     """
-    V16.66 - Protección contra duplicados por documento.
+    V16.67 - Protección contra duplicados por documento.
     Compara el documento normalizado, ignorando puntos, espacios, guiones
     y diferencias de mayúsculas/minúsculas.
     """
@@ -984,7 +984,7 @@ def _panel_medidas_activas_v1647(clave="medidas_activas"):
         st.success("✅ No hay medidas activas registradas.")
         return
 
-    # V16.66: no inflar el tablero por duplicados históricos exactos.
+    # V16.67: no inflar el tablero por duplicados históricos exactos.
     df_medidas = df_medidas.drop_duplicates(
         subset=[
             "numero_identificacion",
@@ -3675,7 +3675,7 @@ def gestion_usuarios():
         persona_car = df_gestion.loc[indice_car]
         doc_car = str(persona_car["numero_identificacion"]).strip()
 
-        # V16.66 - La ficha individual usa EXACTAMENTE el mismo cálculo
+        # V16.67 - La ficha individual usa EXACTAMENTE el mismo cálculo
         # que el listado general de seguimiento.
         completos_car, pendientes_car, total_car, pct_car = (
             _estado_completitud_car_v16195(persona_car)
@@ -4305,10 +4305,10 @@ st.markdown("""
 
 
 # ============================================================
-# V16.66 - REGLAS INSTITUCIONALES DE POSIBLE REINGRESO
+# V16.67 - REGLAS INSTITUCIONALES DE POSIBLE REINGRESO
 # ============================================================
 CRITERIOS_REINGRESO_V1641 = {
-    # V16.66: la sanción empieza a contarse desde el DÍA SIGUIENTE
+    # V16.67: la sanción empieza a contarse desde el DÍA SIGUIENTE
     # a la salida. La fecha calculada es el primer día en que puede
     # VOLVER A SOLICITAR CUPO, no una garantía automática de reingreso.
     "SALIDA VOLUNTARIA": ("dias", 1, "1 día completo de sanción"),
@@ -4342,23 +4342,24 @@ def _fecha_posible_reingreso_v1641(fecha_salida, causal):
     return fecha_salida + timedelta(days=cantidad + 1)
 
 
-def _es_reingreso_operativo_v1662(documento, estado_anterior=""):
+def _es_reingreso_operativo_v1667(documento, estado_anterior=""):
     """
-    Regla institucional definitiva:
-    - Si la cédula ya tuvo AL MENOS una llegada histórica
-      (INGRESO o REINGRESO), la nueva llegada es REINGRESO.
-    - Solo es INGRESO NUEVO cuando nunca existe una llegada histórica.
-    - El estado actual y la modalidad NO determinan esta clasificación.
+    Regla institucional definitiva V16.67:
+    - Si la cédula YA EXISTE en habitante_de_calle, la llegada es REINGRESO.
+    - Solo puede ser INGRESO NUEVO cuando la persona NO existía previamente
+      en la base maestra y fue creada desde el flujo 'Nuevo usuario'.
+    - El estado actual, modalidad o ausencia de movimientos históricos
+      NO convierten a una persona existente en ingreso nuevo.
     """
     doc = str(documento or "").strip()
     if not doc:
         return False
 
     try:
-        df_hist = pd.read_sql(
+        df_existe = pd.read_sql(
             text("""
                 SELECT COUNT(*) AS total
-                FROM movimientos_habitante
+                FROM habitante_de_calle
                 WHERE REGEXP_REPLACE(
                         UPPER(TRIM(CAST(numero_identificacion AS TEXT))),
                         '[^A-Z0-9]', '', 'g'
@@ -4368,61 +4369,14 @@ def _es_reingreso_operativo_v1662(documento, estado_anterior=""):
                         UPPER(TRIM(CAST(:doc AS TEXT))),
                         '[^A-Z0-9]', '', 'g'
                       )
-                  AND UPPER(TRIM(COALESCE(tipo_movimiento,'')))
-                      IN ('INGRESO','REINGRESO')
             """),
             engine,
             params={"doc": doc}
         )
-        total = int(df_hist.iloc[0]["total"] or 0)
-        if total > 0:
-            return True
+        total = int(df_existe.iloc[0]["total"] or 0)
+        return total > 0
     except Exception:
-        pass
-
-    # Respaldo histórico: si la persona ya existe y tiene evidencia
-    # de una salida/medida previa, también debe tratarse como reingreso.
-    try:
-        df_salidas = pd.read_sql(
-            text("""
-                SELECT
-                    (
-                        SELECT COUNT(*)
-                        FROM salidas_voluntarias_albergue
-                        WHERE REGEXP_REPLACE(
-                                UPPER(TRIM(CAST(numero_identificacion AS TEXT))),
-                                '[^A-Z0-9]', '', 'g'
-                              )
-                            =
-                              REGEXP_REPLACE(
-                                UPPER(TRIM(CAST(:doc AS TEXT))),
-                                '[^A-Z0-9]', '', 'g'
-                              )
-                    )
-                    +
-                    (
-                        SELECT COUNT(*)
-                        FROM sanciones_usuarios
-                        WHERE REGEXP_REPLACE(
-                                UPPER(TRIM(CAST(numero_identificacion AS TEXT))),
-                                '[^A-Z0-9]', '', 'g'
-                              )
-                            =
-                              REGEXP_REPLACE(
-                                UPPER(TRIM(CAST(:doc AS TEXT))),
-                                '[^A-Z0-9]', '', 'g'
-                              )
-                    ) AS total
-            """),
-            engine,
-            params={"doc": doc}
-        )
-        if int(df_salidas.iloc[0]["total"] or 0) > 0:
-            return True
-    except Exception:
-        pass
-
-    return False
+        return False
 
 def _restriccion_reingreso_v1641(documento):
     """Devuelve (fecha, causal) de la restricción vigente más reciente."""
@@ -5549,7 +5503,7 @@ def gestion_usuarios_movil():
         f"👤 {nombre_login} · Perfil: {rol_visible.title()}"
     )
 
-    # V16.66 - Los inspiradores también necesitan ver quién tiene
+    # V16.67 - Los inspiradores también necesitan ver quién tiene
     # una medida vigente antes de intentar un ingreso/reingreso.
     if rol_visible in ["INSPIRADOR", "COORDINACION", "MANAGER"]:
         with st.expander(
@@ -6101,7 +6055,7 @@ def gestion_usuarios_movil():
         )
         if not permiso_actual.empty:
             # Si existe una FUGA activa, el estado operativo prevalente ya no es
-            # "fuera con permiso". El permiso debe estar cerrado por la lógica V16.66.
+            # "fuera con permiso". El permiso debe estar cerrado por la lógica V16.67.
             tiene_fuga_activa = False
             try:
                 if not medida_activa.empty:
@@ -6190,18 +6144,13 @@ def gestion_usuarios_movil():
             "ingreso_reingreso"
         )
 
-        tipo_previsto = (
-            "REINGRESO"
-            if _es_reingreso_operativo_v1662(
-                documento,
-                str(u.get("estado_caso") or "")
-            )
-            else "INGRESO NUEVO"
+        # V16.67 - Al estar en el flujo de usuario existente,
+        # toda nueva llegada se registra como REINGRESO.
+        tipo_previsto = "REINGRESO"
+        st.info(
+            "🔁 Esta cédula ya existe en la base maestra habitante_de_calle: "
+            "se registrará como REINGRESO."
         )
-        if tipo_previsto == "REINGRESO":
-            st.info("🔁 Esta cédula ya tiene historia previa: se registrará como REINGRESO.")
-        else:
-            st.info("🆕 No se encontró una llegada histórica: se registrará como INGRESO NUEVO.")
 
         confirmar = st.checkbox(
             "Confirmo el ingreso/reingreso",
@@ -6219,16 +6168,11 @@ def gestion_usuarios_movil():
             else:
                 estado_anterior = str(u.get("estado_caso") or "").upper()
 
-                # V16.66 - Un usuario existente que salió y vuelve NO es
+                # V16.67 - Un usuario existente que salió y vuelve NO es
                 # "ingreso nuevo". Se clasifica por su historial operativo.
-                tipo_mov = (
-                    "REINGRESO"
-                    if _es_reingreso_operativo_v1662(
-                        documento,
-                        estado_anterior
-                    )
-                    else "INGRESO"
-                )
+                # V16.67 - Este flujo parte de "Buscar usuario existente".
+                # Por definición, si ya está en habitante_de_calle, es REINGRESO.
+                tipo_mov = "REINGRESO"
 
                 fecha_restriccion, causal_restriccion = _restriccion_reingreso_v1641(documento)
                 if (
@@ -6406,7 +6350,7 @@ def gestion_usuarios_movil():
                             }
                         )
 
-                        # V16.66 - Una salida voluntaria significa que la persona
+                        # V16.67 - Una salida voluntaria significa que la persona
                         # ya NO ocupa cupo ni debe contarse como ACTIVA.
                         # Se conserva el expediente; solo cambia su situación operativa.
                         conn.execute(
@@ -7009,7 +6953,7 @@ def gestion_usuarios_movil():
                             }
                         )
 
-                        # V16.66 - Si la causal es FUGA, el permiso abierto deja
+                        # V16.67 - Si la causal es FUGA, el permiso abierto deja
                         # de tener sentido operativo. Se cierra como NO REGRESÓ,
                         # sin registrar un regreso ficticio.
                         if causal_medida == "FUGA":
@@ -8090,7 +8034,7 @@ def control_turno_v13():
             .str.strip()
         )
 
-    # V16.66 - Base maestra completa para resolver permisos.
+    # V16.67 - Base maestra completa para resolver permisos.
     try:
         personas_maestro = pd.read_sql(
             text("""
@@ -8267,7 +8211,7 @@ def control_turno_v13():
     # --------------------------------------------------------
     # Movimientos del día
     # --------------------------------------------------------
-    # V16.66 - "HOY" se define con la fecha local de Colombia.
+    # V16.67 - "HOY" se define con la fecha local de Colombia.
     # No se usa CURRENT_DATE de PostgreSQL porque en Streamlit Cloud
     # la sesión puede estar en UTC y cambiar de día cinco horas antes.
     hoy_colombia = ahora_colombia().date()
@@ -8440,7 +8384,7 @@ def control_turno_v13():
         else pd.DataFrame(columns=["modalidad", "otras_ausencias"])
     )
 
-    # V16.66 - "Con permiso" debe contar EXCLUSIVAMENTE permisos ABIERTOS.
+    # V16.67 - "Con permiso" debe contar EXCLUSIVAMENTE permisos ABIERTOS.
     # Antes se usaba `fuera`, que también incluye salidas voluntarias y otras
     # ausencias operativas; por eso el total podía mostrar, por ejemplo,
     # 6 en URBANO aunque no existieran 6 permisos abiertos visibles.
@@ -10078,7 +10022,7 @@ def panel_profesional_v15(doc_forzado=None, incrustado=False):
     prof_nombre = None
 
     if rol_actual == "PROFESIONAL":
-        # V16.66 - Todo funcionario con rol PROFESIONAL debe tener acceso completo al PAI.
+        # V16.67 - Todo funcionario con rol PROFESIONAL debe tener acceso completo al PAI.
         # Ya no se bloquea por el campo acceso_pai ni por falta de vinculación manual.
         # Si falta el vínculo, se intenta resolver automáticamente por nombre;
         # si tampoco existe el registro profesional, se crea y se vincula.
@@ -12481,7 +12425,7 @@ def dashboard_ejecutivo():
         )
 
     # ========================================================
-    # V16.66 - CLASIFICACIÓN HISTÓRICA DE INGRESOS / REINGRESOS
+    # V16.67 - CLASIFICACIÓN HISTÓRICA DE INGRESOS / REINGRESOS
     # ========================================================
     # Regla:
     # - Primera llegada histórica de una cédula = INGRESO NUEVO.
@@ -12535,7 +12479,7 @@ def dashboard_ejecutivo():
         df_llegadas_hist = pd.DataFrame()
 
     if not df_llegadas_hist.empty:
-        # V16.66 - fecha_movimiento ya llega desde la consulta con la
+        # V16.67 - fecha_movimiento ya llega desde la consulta con la
         # fecha/hora operativa correcta. No se vuelve a convertir de UTC
         # para evitar desplazar un día hacia atrás.
         df_llegadas_hist["fecha_movimiento"] = pd.to_datetime(
@@ -13585,7 +13529,7 @@ with st.sidebar:
 
     elif rol_menu == "PROFESIONAL":
 
-        # V16.66 - Los profesionales tienen acceso directo al módulo PAI completo.
+        # V16.67 - Los profesionales tienen acceso directo al módulo PAI completo.
         if st.button(
             "🩺 Mi Panel Profesional",
             use_container_width=True,
@@ -13615,7 +13559,7 @@ with st.sidebar:
             st.session_state.page = "historia_integral_v12"
             st.rerun()
 
-        # V16.66 - El informe mensual también es parte del acceso profesional.
+        # V16.67 - El informe mensual también es parte del acceso profesional.
         # No depende de una variable antigua de acceso_pai_menu.
         if st.button(
             "📄 Mi Informe Mensual",
@@ -20651,7 +20595,7 @@ def modulo_auditoria_sesiones_v1634():
         st.error("La fecha inicial no puede ser posterior a la final.")
         return
 
-    # V16.66 - Los filtros se interpretan como días de Colombia.
+    # V16.67 - Los filtros se interpretan como días de Colombia.
     # La base conserva TIMESTAMPTZ; se consulta usando los límites equivalentes en UTC.
     desde_utc = pd.Timestamp(desde, tz="America/Bogota").tz_convert("UTC").to_pydatetime()
     hasta_utc = (
@@ -20707,7 +20651,7 @@ def modulo_auditoria_sesiones_v1634():
     except Exception:
         auditoria = pd.DataFrame()
 
-    # V16.66 - fecha_hora se guarda con zona horaria en PostgreSQL.
+    # V16.67 - fecha_hora se guarda con zona horaria en PostgreSQL.
     # Para visualización se convierte expresamente a America/Bogota.
     if not auditoria.empty:
         auditoria["fecha_hora"] = (
