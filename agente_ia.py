@@ -385,7 +385,7 @@ def generar_identificador_indocumentado_v1619():
 
 def validar_documento_no_duplicado(numero_documento):
     """
-    V16.67 - Protección contra duplicados por documento.
+    V16.68 - Protección contra duplicados por documento.
     Compara el documento normalizado, ignorando puntos, espacios, guiones
     y diferencias de mayúsculas/minúsculas.
     """
@@ -984,7 +984,7 @@ def _panel_medidas_activas_v1647(clave="medidas_activas"):
         st.success("✅ No hay medidas activas registradas.")
         return
 
-    # V16.67: no inflar el tablero por duplicados históricos exactos.
+    # V16.68: no inflar el tablero por duplicados históricos exactos.
     df_medidas = df_medidas.drop_duplicates(
         subset=[
             "numero_identificacion",
@@ -3675,7 +3675,7 @@ def gestion_usuarios():
         persona_car = df_gestion.loc[indice_car]
         doc_car = str(persona_car["numero_identificacion"]).strip()
 
-        # V16.67 - La ficha individual usa EXACTAMENTE el mismo cálculo
+        # V16.68 - La ficha individual usa EXACTAMENTE el mismo cálculo
         # que el listado general de seguimiento.
         completos_car, pendientes_car, total_car, pct_car = (
             _estado_completitud_car_v16195(persona_car)
@@ -4305,10 +4305,10 @@ st.markdown("""
 
 
 # ============================================================
-# V16.67 - REGLAS INSTITUCIONALES DE POSIBLE REINGRESO
+# V16.68 - REGLAS INSTITUCIONALES DE POSIBLE REINGRESO
 # ============================================================
 CRITERIOS_REINGRESO_V1641 = {
-    # V16.67: la sanción empieza a contarse desde el DÍA SIGUIENTE
+    # V16.68: la sanción empieza a contarse desde el DÍA SIGUIENTE
     # a la salida. La fecha calculada es el primer día en que puede
     # VOLVER A SOLICITAR CUPO, no una garantía automática de reingreso.
     "SALIDA VOLUNTARIA": ("dias", 1, "1 día completo de sanción"),
@@ -4344,7 +4344,7 @@ def _fecha_posible_reingreso_v1641(fecha_salida, causal):
 
 def _es_reingreso_operativo_v1667(documento, estado_anterior=""):
     """
-    Regla institucional definitiva V16.67:
+    Regla institucional definitiva V16.68:
     - Si la cédula YA EXISTE en habitante_de_calle, la llegada es REINGRESO.
     - Solo puede ser INGRESO NUEVO cuando la persona NO existía previamente
       en la base maestra y fue creada desde el flujo 'Nuevo usuario'.
@@ -5503,7 +5503,7 @@ def gestion_usuarios_movil():
         f"👤 {nombre_login} · Perfil: {rol_visible.title()}"
     )
 
-    # V16.67 - Los inspiradores también necesitan ver quién tiene
+    # V16.68 - Los inspiradores también necesitan ver quién tiene
     # una medida vigente antes de intentar un ingreso/reingreso.
     if rol_visible in ["INSPIRADOR", "COORDINACION", "MANAGER"]:
         with st.expander(
@@ -6055,7 +6055,7 @@ def gestion_usuarios_movil():
         )
         if not permiso_actual.empty:
             # Si existe una FUGA activa, el estado operativo prevalente ya no es
-            # "fuera con permiso". El permiso debe estar cerrado por la lógica V16.67.
+            # "fuera con permiso". El permiso debe estar cerrado por la lógica V16.68.
             tiene_fuga_activa = False
             try:
                 if not medida_activa.empty:
@@ -6144,7 +6144,7 @@ def gestion_usuarios_movil():
             "ingreso_reingreso"
         )
 
-        # V16.67 - Al estar en el flujo de usuario existente,
+        # V16.68 - Al estar en el flujo de usuario existente,
         # toda nueva llegada se registra como REINGRESO.
         tipo_previsto = "REINGRESO"
         st.info(
@@ -6168,9 +6168,9 @@ def gestion_usuarios_movil():
             else:
                 estado_anterior = str(u.get("estado_caso") or "").upper()
 
-                # V16.67 - Un usuario existente que salió y vuelve NO es
+                # V16.68 - Un usuario existente que salió y vuelve NO es
                 # "ingreso nuevo". Se clasifica por su historial operativo.
-                # V16.67 - Este flujo parte de "Buscar usuario existente".
+                # V16.68 - Este flujo parte de "Buscar usuario existente".
                 # Por definición, si ya está en habitante_de_calle, es REINGRESO.
                 tipo_mov = "REINGRESO"
 
@@ -6350,7 +6350,7 @@ def gestion_usuarios_movil():
                             }
                         )
 
-                        # V16.67 - Una salida voluntaria significa que la persona
+                        # V16.68 - Una salida voluntaria significa que la persona
                         # ya NO ocupa cupo ni debe contarse como ACTIVA.
                         # Se conserva el expediente; solo cambia su situación operativa.
                         conn.execute(
@@ -6953,7 +6953,7 @@ def gestion_usuarios_movil():
                             }
                         )
 
-                        # V16.67 - Si la causal es FUGA, el permiso abierto deja
+                        # V16.68 - Si la causal es FUGA, el permiso abierto deja
                         # de tener sentido operativo. Se cierra como NO REGRESÓ,
                         # sin registrar un regreso ficticio.
                         if causal_medida == "FUGA":
@@ -8034,7 +8034,7 @@ def control_turno_v13():
             .str.strip()
         )
 
-    # V16.67 - Base maestra completa para resolver permisos.
+    # V16.68 - Base maestra completa para resolver permisos.
     try:
         personas_maestro = pd.read_sql(
             text("""
@@ -8211,7 +8211,7 @@ def control_turno_v13():
     # --------------------------------------------------------
     # Movimientos del día
     # --------------------------------------------------------
-    # V16.67 - "HOY" se define con la fecha local de Colombia.
+    # V16.68 - "HOY" se define con la fecha local de Colombia.
     # No se usa CURRENT_DATE de PostgreSQL porque en Streamlit Cloud
     # la sesión puede estar en UTC y cambiar de día cinco horas antes.
     hoy_colombia = ahora_colombia().date()
@@ -8384,7 +8384,7 @@ def control_turno_v13():
         else pd.DataFrame(columns=["modalidad", "otras_ausencias"])
     )
 
-    # V16.67 - "Con permiso" debe contar EXCLUSIVAMENTE permisos ABIERTOS.
+    # V16.68 - "Con permiso" debe contar EXCLUSIVAMENTE permisos ABIERTOS.
     # Antes se usaba `fuera`, que también incluye salidas voluntarias y otras
     # ausencias operativas; por eso el total podía mostrar, por ejemplo,
     # 6 en URBANO aunque no existieran 6 permisos abiertos visibles.
@@ -10022,7 +10022,7 @@ def panel_profesional_v15(doc_forzado=None, incrustado=False):
     prof_nombre = None
 
     if rol_actual == "PROFESIONAL":
-        # V16.67 - Todo funcionario con rol PROFESIONAL debe tener acceso completo al PAI.
+        # V16.68 - Todo funcionario con rol PROFESIONAL debe tener acceso completo al PAI.
         # Ya no se bloquea por el campo acceso_pai ni por falta de vinculación manual.
         # Si falta el vínculo, se intenta resolver automáticamente por nombre;
         # si tampoco existe el registro profesional, se crea y se vincula.
@@ -12425,10 +12425,10 @@ def dashboard_ejecutivo():
         )
 
     # ========================================================
-    # V16.67 - CLASIFICACIÓN HISTÓRICA DE INGRESOS / REINGRESOS
+    # V16.68 - CLASIFICACIÓN HISTÓRICA CORREGIDA DE INGRESOS / REINGRESOS
     # ========================================================
     # Regla:
-    # - Primera llegada histórica de una cédula = INGRESO NUEVO.
+    # - Solo es INGRESO NUEVO si no existe evidencia previa en la base maestra.
     # - Cualquier llegada posterior de esa misma cédula = REINGRESO.
     # - Si el movimiento ya fue registrado expresamente como REINGRESO,
     #   se respeta esa clasificación.
@@ -12478,8 +12478,81 @@ def dashboard_ejecutivo():
     except Exception:
         df_llegadas_hist = pd.DataFrame()
 
+    # V16.68 - Recuperar evidencia histórica de la base maestra.
+    # Esto permite corregir en los reportes movimientos que antiguamente
+    # quedaron como INGRESO aunque la persona ya existía desde meses antes.
+    historial_maestro = pd.DataFrame()
+    try:
+        cols_hist = pd.read_sql(
+            text("""
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_schema='public'
+                  AND table_name='habitante_de_calle'
+            """),
+            engine
+        )["column_name"].astype(str).tolist()
+
+        candidatas_fecha = [
+            c for c in [
+                "fecha_atencion",
+                "fecha_ingreso_albergue",
+                "fecha_ultimo_ingreso"
+            ]
+            if c in cols_hist
+        ]
+
+        select_fechas = ", ".join(
+            [f'"{c}"' for c in candidatas_fecha]
+        )
+
+        sql_hist = """
+            SELECT
+                TRIM(CAST(numero_identificacion AS TEXT)) AS documento
+        """
+        if select_fechas:
+            sql_hist += ", " + select_fechas
+        sql_hist += " FROM habitante_de_calle"
+
+        historial_maestro = pd.read_sql(text(sql_hist), engine)
+
+        if not historial_maestro.empty:
+            historial_maestro["documento"] = (
+                historial_maestro["documento"]
+                .fillna("")
+                .astype(str)
+                .str.strip()
+            )
+
+            # Tomar la fecha histórica más antigua disponible de cada registro.
+            fechas_convertidas = []
+            for c in candidatas_fecha:
+                s = historial_maestro[c]
+                # Intentar primero formato normal; luego día/mes/año.
+                f1 = pd.to_datetime(s, errors="coerce", dayfirst=True)
+                fechas_convertidas.append(f1.rename(c))
+
+            if fechas_convertidas:
+                fechas_df = pd.concat(fechas_convertidas, axis=1)
+                historial_maestro["fecha_hist_base"] = fechas_df.min(axis=1)
+            else:
+                historial_maestro["fecha_hist_base"] = pd.NaT
+
+            historial_maestro = (
+                historial_maestro[
+                    ["documento", "fecha_hist_base"]
+                ]
+                .sort_values("fecha_hist_base")
+                .drop_duplicates("documento", keep="first")
+            )
+
+    except Exception:
+        historial_maestro = pd.DataFrame(
+            columns=["documento", "fecha_hist_base"]
+        )
+
     if not df_llegadas_hist.empty:
-        # V16.67 - fecha_movimiento ya llega desde la consulta con la
+        # V16.68 - fecha_movimiento ya llega desde la consulta con la
         # fecha/hora operativa correcta. No se vuelve a convertir de UTC
         # para evitar desplazar un día hacia atrás.
         df_llegadas_hist["fecha_movimiento"] = pd.to_datetime(
@@ -12494,14 +12567,51 @@ def dashboard_ejecutivo():
             df_llegadas_hist["fecha_movimiento"].dt.date
         )
 
-        # Primera llegada = nuevo, salvo que históricamente ya esté marcada
-        # como REINGRESO. Todas las siguientes = REINGRESO.
+        # V16.68 - Clasificación corregida para población histórica migrada.
+        # Un movimiento antiguo marcado como INGRESO se reclasifica como REINGRESO
+        # si la base maestra demuestra que la persona ya estaba registrada antes
+        # de la fecha de ese movimiento.
+        if not historial_maestro.empty:
+            df_llegadas_hist = df_llegadas_hist.merge(
+                historial_maestro,
+                on="documento",
+                how="left"
+            )
+        else:
+            df_llegadas_hist["fecha_hist_base"] = pd.NaT
+
+        fecha_mov_dia = df_llegadas_hist["fecha_movimiento"].dt.normalize()
+        fecha_hist_dia = pd.to_datetime(
+            df_llegadas_hist["fecha_hist_base"],
+            errors="coerce"
+        ).dt.normalize()
+
+        preexistia_en_base = (
+            fecha_hist_dia.notna()
+            & (fecha_hist_dia < fecha_mov_dia)
+        )
+
         df_llegadas_hist["clasificacion"] = "INGRESO NUEVO"
         df_llegadas_hist.loc[
             (df_llegadas_hist["nro_llegada"] > 1)
-            | (df_llegadas_hist["tipo_original"] == "REINGRESO"),
+            | (df_llegadas_hist["tipo_original"] == "REINGRESO")
+            | preexistia_en_base,
             "clasificacion"
         ] = "REINGRESO"
+
+        df_llegadas_hist["motivo_clasificacion"] = "Primera llegada registrada"
+        df_llegadas_hist.loc[
+            preexistia_en_base,
+            "motivo_clasificacion"
+        ] = "Ya existía previamente en habitante_de_calle"
+        df_llegadas_hist.loc[
+            df_llegadas_hist["tipo_original"] == "REINGRESO",
+            "motivo_clasificacion"
+        ] = "Movimiento registrado como REINGRESO"
+        df_llegadas_hist.loc[
+            df_llegadas_hist["nro_llegada"] > 1,
+            "motivo_clasificacion"
+        ] = "Tiene una llegada anterior en movimientos_habitante"
 
         # Para el seguimiento diario se muestra una sola fila por persona/día.
         # Si por error existen dos movimientos iguales o repetidos el mismo día,
@@ -12574,11 +12684,12 @@ def dashboard_ejecutivo():
 
                 st.dataframe(
                     df_dia[
-                        ["Hora", "Usuario", "documento", "modalidad"]
+                        ["Hora", "Usuario", "documento", "modalidad", "motivo_clasificacion"]
                     ].rename(
                         columns={
                             "documento": "Documento",
-                            "modalidad": "Modalidad"
+                            "modalidad": "Modalidad",
+                            "motivo_clasificacion": "Clasificación"
                         }
                     ),
                     use_container_width=True,
@@ -12644,11 +12755,12 @@ def dashboard_ejecutivo():
 
                 st.dataframe(
                     df_ingreso_dia[
-                        ["Hora", "Usuario", "documento", "modalidad"]
+                        ["Hora", "Usuario", "documento", "modalidad", "motivo_clasificacion"]
                     ].rename(
                         columns={
                             "documento": "Documento",
-                            "modalidad": "Modalidad"
+                            "modalidad": "Modalidad",
+                            "motivo_clasificacion": "Clasificación"
                         }
                     ),
                     use_container_width=True,
@@ -13529,7 +13641,7 @@ with st.sidebar:
 
     elif rol_menu == "PROFESIONAL":
 
-        # V16.67 - Los profesionales tienen acceso directo al módulo PAI completo.
+        # V16.68 - Los profesionales tienen acceso directo al módulo PAI completo.
         if st.button(
             "🩺 Mi Panel Profesional",
             use_container_width=True,
@@ -13559,7 +13671,7 @@ with st.sidebar:
             st.session_state.page = "historia_integral_v12"
             st.rerun()
 
-        # V16.67 - El informe mensual también es parte del acceso profesional.
+        # V16.68 - El informe mensual también es parte del acceso profesional.
         # No depende de una variable antigua de acceso_pai_menu.
         if st.button(
             "📄 Mi Informe Mensual",
@@ -20595,7 +20707,7 @@ def modulo_auditoria_sesiones_v1634():
         st.error("La fecha inicial no puede ser posterior a la final.")
         return
 
-    # V16.67 - Los filtros se interpretan como días de Colombia.
+    # V16.68 - Los filtros se interpretan como días de Colombia.
     # La base conserva TIMESTAMPTZ; se consulta usando los límites equivalentes en UTC.
     desde_utc = pd.Timestamp(desde, tz="America/Bogota").tz_convert("UTC").to_pydatetime()
     hasta_utc = (
@@ -20651,7 +20763,7 @@ def modulo_auditoria_sesiones_v1634():
     except Exception:
         auditoria = pd.DataFrame()
 
-    # V16.67 - fecha_hora se guarda con zona horaria en PostgreSQL.
+    # V16.68 - fecha_hora se guarda con zona horaria en PostgreSQL.
     # Para visualización se convierte expresamente a America/Bogota.
     if not auditoria.empty:
         auditoria["fecha_hora"] = (
