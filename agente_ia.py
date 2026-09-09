@@ -385,7 +385,7 @@ def generar_identificador_indocumentado_v1619():
 
 def validar_documento_no_duplicado(numero_documento):
     """
-    V16.68 - Protección contra duplicados por documento.
+    V16.69 - Protección contra duplicados por documento.
     Compara el documento normalizado, ignorando puntos, espacios, guiones
     y diferencias de mayúsculas/minúsculas.
     """
@@ -984,7 +984,7 @@ def _panel_medidas_activas_v1647(clave="medidas_activas"):
         st.success("✅ No hay medidas activas registradas.")
         return
 
-    # V16.68: no inflar el tablero por duplicados históricos exactos.
+    # V16.69: no inflar el tablero por duplicados históricos exactos.
     df_medidas = df_medidas.drop_duplicates(
         subset=[
             "numero_identificacion",
@@ -3675,7 +3675,7 @@ def gestion_usuarios():
         persona_car = df_gestion.loc[indice_car]
         doc_car = str(persona_car["numero_identificacion"]).strip()
 
-        # V16.68 - La ficha individual usa EXACTAMENTE el mismo cálculo
+        # V16.69 - La ficha individual usa EXACTAMENTE el mismo cálculo
         # que el listado general de seguimiento.
         completos_car, pendientes_car, total_car, pct_car = (
             _estado_completitud_car_v16195(persona_car)
@@ -4305,10 +4305,10 @@ st.markdown("""
 
 
 # ============================================================
-# V16.68 - REGLAS INSTITUCIONALES DE POSIBLE REINGRESO
+# V16.69 - REGLAS INSTITUCIONALES DE POSIBLE REINGRESO
 # ============================================================
 CRITERIOS_REINGRESO_V1641 = {
-    # V16.68: la sanción empieza a contarse desde el DÍA SIGUIENTE
+    # V16.69: la sanción empieza a contarse desde el DÍA SIGUIENTE
     # a la salida. La fecha calculada es el primer día en que puede
     # VOLVER A SOLICITAR CUPO, no una garantía automática de reingreso.
     "SALIDA VOLUNTARIA": ("dias", 1, "1 día completo de sanción"),
@@ -4344,7 +4344,7 @@ def _fecha_posible_reingreso_v1641(fecha_salida, causal):
 
 def _es_reingreso_operativo_v1667(documento, estado_anterior=""):
     """
-    Regla institucional definitiva V16.68:
+    Regla institucional definitiva V16.69:
     - Si la cédula YA EXISTE en habitante_de_calle, la llegada es REINGRESO.
     - Solo puede ser INGRESO NUEVO cuando la persona NO existía previamente
       en la base maestra y fue creada desde el flujo 'Nuevo usuario'.
@@ -4697,8 +4697,10 @@ def _compartir_foto_texto_movimiento_v1636(
     filename=None
 ):
     """
-    Comparte foto + texto mediante el menú nativo del celular.
-    Si no hay soporte, deja respaldo con descarga temporal y WhatsApp de texto.
+    Comparte la foto y el texto del reporte mediante el menú nativo del celular.
+    En dispositivos compatibles, WhatsApp recibe la imagen con el texto como
+    leyenda/caption. Si no hay soporte, deja respaldo con descarga temporal
+    y botón de WhatsApp para el texto.
     """
     if not foto_bytes:
         _boton_whatsapp(texto, f"wa_txt_{evento}_{documento}")
@@ -4715,7 +4717,7 @@ def _compartir_foto_texto_movimiento_v1636(
         width:100%;padding:14px 16px;border:0;border-radius:10px;
         background:#25D366;color:white;font-size:16px;font-weight:700;
         cursor:pointer;">
-        📲 Compartir foto + reporte
+        📲 Compartir foto con leyenda
       </button>
       <div id="msgShareMov" style="margin-top:8px;font-size:13px;color:#777;"></div>
     </div>
@@ -5503,7 +5505,7 @@ def gestion_usuarios_movil():
         f"👤 {nombre_login} · Perfil: {rol_visible.title()}"
     )
 
-    # V16.68 - Los inspiradores también necesitan ver quién tiene
+    # V16.69 - Los inspiradores también necesitan ver quién tiene
     # una medida vigente antes de intentar un ingreso/reingreso.
     if rol_visible in ["INSPIRADOR", "COORDINACION", "MANAGER"]:
         with st.expander(
@@ -6055,7 +6057,7 @@ def gestion_usuarios_movil():
         )
         if not permiso_actual.empty:
             # Si existe una FUGA activa, el estado operativo prevalente ya no es
-            # "fuera con permiso". El permiso debe estar cerrado por la lógica V16.68.
+            # "fuera con permiso". El permiso debe estar cerrado por la lógica V16.69.
             tiene_fuga_activa = False
             try:
                 if not medida_activa.empty:
@@ -6144,7 +6146,7 @@ def gestion_usuarios_movil():
             "ingreso_reingreso"
         )
 
-        # V16.68 - Al estar en el flujo de usuario existente,
+        # V16.69 - Al estar en el flujo de usuario existente,
         # toda nueva llegada se registra como REINGRESO.
         tipo_previsto = "REINGRESO"
         st.info(
@@ -6168,9 +6170,9 @@ def gestion_usuarios_movil():
             else:
                 estado_anterior = str(u.get("estado_caso") or "").upper()
 
-                # V16.68 - Un usuario existente que salió y vuelve NO es
+                # V16.69 - Un usuario existente que salió y vuelve NO es
                 # "ingreso nuevo". Se clasifica por su historial operativo.
-                # V16.68 - Este flujo parte de "Buscar usuario existente".
+                # V16.69 - Este flujo parte de "Buscar usuario existente".
                 # Por definición, si ya está en habitante_de_calle, es REINGRESO.
                 tipo_mov = "REINGRESO"
 
@@ -6350,7 +6352,7 @@ def gestion_usuarios_movil():
                             }
                         )
 
-                        # V16.68 - Una salida voluntaria significa que la persona
+                        # V16.69 - Una salida voluntaria significa que la persona
                         # ya NO ocupa cupo ni debe contarse como ACTIVA.
                         # Se conserva el expediente; solo cambia su situación operativa.
                         conn.execute(
@@ -6878,6 +6880,14 @@ def gestion_usuarios_movil():
             key=f"movil_obs_medida_{documento}"
         )
 
+        # V16.69 - Foto temporal opcional para sanción / fuga / expulsión.
+        # Se usa únicamente para el reporte operativo a compartir y no se
+        # almacena en la base de datos ni en Supabase.
+        _capturar_foto_temporal_movimiento_v1636(
+            documento,
+            "sancion_expulsion"
+        )
+
         conf = st.checkbox(
             "Confirmo el registro de la medida",
             key=f"movil_conf_medida_{documento}"
@@ -6953,7 +6963,7 @@ def gestion_usuarios_movil():
                             }
                         )
 
-                        # V16.68 - Si la causal es FUGA, el permiso abierto deja
+                        # V16.69 - Si la causal es FUGA, el permiso abierto deja
                         # de tener sentido operativo. Se cierra como NO REGRESÓ,
                         # sin registrar un regreso ficticio.
                         if causal_medida == "FUGA":
@@ -7029,12 +7039,19 @@ def gestion_usuarios_movil():
                     )
                     invalidar_cache_datos()
 
+                    detalle_reporte = motivo.strip()
+                    if obs.strip():
+                        detalle_reporte += (
+                            (" | " if detalle_reporte else "")
+                            + obs.strip()
+                        )
+
                     reporte = _texto_whatsapp_movimiento(
                         f"{tipo} - {causal_medida}",
                         u.get("nombres"), u.get("apellidos"), documento,
                         modalidad=str(u.get("modalidad") or ""),
                         fecha=inicio,
-                        detalle=motivo.strip(),
+                        detalle=detalle_reporte,
                         responsable=usuario,
                         fecha_posible_reingreso=fin
                     )
@@ -8034,7 +8051,7 @@ def control_turno_v13():
             .str.strip()
         )
 
-    # V16.68 - Base maestra completa para resolver permisos.
+    # V16.69 - Base maestra completa para resolver permisos.
     try:
         personas_maestro = pd.read_sql(
             text("""
@@ -8211,7 +8228,7 @@ def control_turno_v13():
     # --------------------------------------------------------
     # Movimientos del día
     # --------------------------------------------------------
-    # V16.68 - "HOY" se define con la fecha local de Colombia.
+    # V16.69 - "HOY" se define con la fecha local de Colombia.
     # No se usa CURRENT_DATE de PostgreSQL porque en Streamlit Cloud
     # la sesión puede estar en UTC y cambiar de día cinco horas antes.
     hoy_colombia = ahora_colombia().date()
@@ -8384,7 +8401,7 @@ def control_turno_v13():
         else pd.DataFrame(columns=["modalidad", "otras_ausencias"])
     )
 
-    # V16.68 - "Con permiso" debe contar EXCLUSIVAMENTE permisos ABIERTOS.
+    # V16.69 - "Con permiso" debe contar EXCLUSIVAMENTE permisos ABIERTOS.
     # Antes se usaba `fuera`, que también incluye salidas voluntarias y otras
     # ausencias operativas; por eso el total podía mostrar, por ejemplo,
     # 6 en URBANO aunque no existieran 6 permisos abiertos visibles.
@@ -10022,7 +10039,7 @@ def panel_profesional_v15(doc_forzado=None, incrustado=False):
     prof_nombre = None
 
     if rol_actual == "PROFESIONAL":
-        # V16.68 - Todo funcionario con rol PROFESIONAL debe tener acceso completo al PAI.
+        # V16.69 - Todo funcionario con rol PROFESIONAL debe tener acceso completo al PAI.
         # Ya no se bloquea por el campo acceso_pai ni por falta de vinculación manual.
         # Si falta el vínculo, se intenta resolver automáticamente por nombre;
         # si tampoco existe el registro profesional, se crea y se vincula.
@@ -12425,7 +12442,7 @@ def dashboard_ejecutivo():
         )
 
     # ========================================================
-    # V16.68 - CLASIFICACIÓN HISTÓRICA CORREGIDA DE INGRESOS / REINGRESOS
+    # V16.69 - CLASIFICACIÓN HISTÓRICA CORREGIDA DE INGRESOS / REINGRESOS
     # ========================================================
     # Regla:
     # - Solo es INGRESO NUEVO si no existe evidencia previa en la base maestra.
@@ -12478,7 +12495,7 @@ def dashboard_ejecutivo():
     except Exception:
         df_llegadas_hist = pd.DataFrame()
 
-    # V16.68 - Recuperar evidencia histórica de la base maestra.
+    # V16.69 - Recuperar evidencia histórica de la base maestra.
     # Esto permite corregir en los reportes movimientos que antiguamente
     # quedaron como INGRESO aunque la persona ya existía desde meses antes.
     historial_maestro = pd.DataFrame()
@@ -12552,7 +12569,7 @@ def dashboard_ejecutivo():
         )
 
     if not df_llegadas_hist.empty:
-        # V16.68 - fecha_movimiento ya llega desde la consulta con la
+        # V16.69 - fecha_movimiento ya llega desde la consulta con la
         # fecha/hora operativa correcta. No se vuelve a convertir de UTC
         # para evitar desplazar un día hacia atrás.
         df_llegadas_hist["fecha_movimiento"] = pd.to_datetime(
@@ -12567,7 +12584,7 @@ def dashboard_ejecutivo():
             df_llegadas_hist["fecha_movimiento"].dt.date
         )
 
-        # V16.68 - Clasificación corregida para población histórica migrada.
+        # V16.69 - Clasificación corregida para población histórica migrada.
         # Un movimiento antiguo marcado como INGRESO se reclasifica como REINGRESO
         # si la base maestra demuestra que la persona ya estaba registrada antes
         # de la fecha de ese movimiento.
@@ -13641,7 +13658,7 @@ with st.sidebar:
 
     elif rol_menu == "PROFESIONAL":
 
-        # V16.68 - Los profesionales tienen acceso directo al módulo PAI completo.
+        # V16.69 - Los profesionales tienen acceso directo al módulo PAI completo.
         if st.button(
             "🩺 Mi Panel Profesional",
             use_container_width=True,
@@ -13671,7 +13688,7 @@ with st.sidebar:
             st.session_state.page = "historia_integral_v12"
             st.rerun()
 
-        # V16.68 - El informe mensual también es parte del acceso profesional.
+        # V16.69 - El informe mensual también es parte del acceso profesional.
         # No depende de una variable antigua de acceso_pai_menu.
         if st.button(
             "📄 Mi Informe Mensual",
@@ -13920,18 +13937,13 @@ def formulario_genero_diversidad(doc_forzado=None, nombre_persona=None, incrusta
             )
         )
 
-        expresion_opts = [
-            "Masculina", "Femenina", "Andrógina",
-            "Variable", "Otra", "No informa"
-        ]
-        expresion_genero = st.selectbox(
-            "Expresión de género",
-            expresion_opts,
-            index=_gidx(
-                expresion_opts,
-                _gv("expresion_genero", "Masculina")
-            )
-        )
+        # V16.69 - Se retira del formulario el campo "Expresión de género".
+        # La columna se conserva en base para no perder datos históricos.
+        # Al guardar, se mantiene el valor previo si existe; de lo contrario
+        # se registra "No informa" sin mostrar el campo al usuario.
+        expresion_genero = str(
+            _gv("expresion_genero", "No informa") or "No informa"
+        ).strip()
 
         st.markdown("#### Discriminación, violencias y protección")
         discriminacion = st.checkbox(
@@ -20707,7 +20719,7 @@ def modulo_auditoria_sesiones_v1634():
         st.error("La fecha inicial no puede ser posterior a la final.")
         return
 
-    # V16.68 - Los filtros se interpretan como días de Colombia.
+    # V16.69 - Los filtros se interpretan como días de Colombia.
     # La base conserva TIMESTAMPTZ; se consulta usando los límites equivalentes en UTC.
     desde_utc = pd.Timestamp(desde, tz="America/Bogota").tz_convert("UTC").to_pydatetime()
     hasta_utc = (
@@ -20763,7 +20775,7 @@ def modulo_auditoria_sesiones_v1634():
     except Exception:
         auditoria = pd.DataFrame()
 
-    # V16.68 - fecha_hora se guarda con zona horaria en PostgreSQL.
+    # V16.69 - fecha_hora se guarda con zona horaria en PostgreSQL.
     # Para visualización se convierte expresamente a America/Bogota.
     if not auditoria.empty:
         auditoria["fecha_hora"] = (
