@@ -385,7 +385,7 @@ def generar_identificador_indocumentado_v1619():
 
 def validar_documento_no_duplicado(numero_documento):
     """
-    V16.56 - Protección contra duplicados por documento.
+    V16.57 - Protección contra duplicados por documento.
     Compara el documento normalizado, ignorando puntos, espacios, guiones
     y diferencias de mayúsculas/minúsculas.
     """
@@ -984,7 +984,7 @@ def _panel_medidas_activas_v1647(clave="medidas_activas"):
         st.success("✅ No hay medidas activas registradas.")
         return
 
-    # V16.56: no inflar el tablero por duplicados históricos exactos.
+    # V16.57: no inflar el tablero por duplicados históricos exactos.
     df_medidas = df_medidas.drop_duplicates(
         subset=[
             "numero_identificacion",
@@ -3675,7 +3675,7 @@ def gestion_usuarios():
         persona_car = df_gestion.loc[indice_car]
         doc_car = str(persona_car["numero_identificacion"]).strip()
 
-        # V16.56 - La ficha individual usa EXACTAMENTE el mismo cálculo
+        # V16.57 - La ficha individual usa EXACTAMENTE el mismo cálculo
         # que el listado general de seguimiento.
         completos_car, pendientes_car, total_car, pct_car = (
             _estado_completitud_car_v16195(persona_car)
@@ -4305,10 +4305,10 @@ st.markdown("""
 
 
 # ============================================================
-# V16.56 - REGLAS INSTITUCIONALES DE POSIBLE REINGRESO
+# V16.57 - REGLAS INSTITUCIONALES DE POSIBLE REINGRESO
 # ============================================================
 CRITERIOS_REINGRESO_V1641 = {
-    # V16.56: la sanción empieza a contarse desde el DÍA SIGUIENTE
+    # V16.57: la sanción empieza a contarse desde el DÍA SIGUIENTE
     # a la salida. La fecha calculada es el primer día en que puede
     # VOLVER A SOLICITAR CUPO, no una garantía automática de reingreso.
     "SALIDA VOLUNTARIA": ("dias", 1, "1 día completo de sanción"),
@@ -5166,6 +5166,49 @@ def registrar_egreso_profesional_v12(u, documento):
 
 
 
+
+def _resolver_persona_maestra_v1657(documento):
+    """
+    Busca una persona en habitante_de_calle usando documento normalizado.
+    habitante_de_calle es el registro maestro de personas.
+    """
+    doc = str(documento or "").strip()
+    if not doc:
+        return None
+
+    try:
+        df = pd.read_sql(
+            text("""
+                SELECT
+                    nombres,
+                    apellidos,
+                    numero_identificacion,
+                    estado_caso,
+                    modalidad
+                FROM habitante_de_calle
+                WHERE REGEXP_REPLACE(
+                        UPPER(TRIM(CAST(numero_identificacion AS TEXT))),
+                        '[^A-Z0-9]', '', 'g'
+                      )
+                    =
+                      REGEXP_REPLACE(
+                        UPPER(TRIM(CAST(:doc AS TEXT))),
+                        '[^A-Z0-9]', '', 'g'
+                      )
+                LIMIT 1
+            """),
+            engine,
+            params={"doc": doc}
+        )
+    except Exception:
+        return None
+
+    if df.empty:
+        return None
+
+    return df.iloc[0].to_dict()
+
+
 def panel_inspirador_simple_v14():
     """Panel operativo simple integrado a Gestión Móvil."""
     responsable = st.session_state.get("usuario_actual", "inspirador")
@@ -5188,8 +5231,14 @@ def panel_inspirador_simple_v14():
                     h.modalidad
                 FROM permisos_usuarios p
                 LEFT JOIN habitante_de_calle h
-                  ON TRIM(CAST(h.numero_identificacion AS TEXT))
-                   = TRIM(CAST(p.numero_identificacion AS TEXT))
+                  ON REGEXP_REPLACE(
+                         UPPER(TRIM(CAST(h.numero_identificacion AS TEXT))),
+                         '[^A-Z0-9]', '', 'g'
+                     )
+                   = REGEXP_REPLACE(
+                         UPPER(TRIM(CAST(p.numero_identificacion AS TEXT))),
+                         '[^A-Z0-9]', '', 'g'
+                     )
                 WHERE UPPER(TRIM(COALESCE(p.estado_permiso,'')))='ABIERTO'
                 ORDER BY p.fecha_regreso_estimada, p.hora_regreso_estimada
             """),
@@ -5498,7 +5547,7 @@ def gestion_usuarios_movil():
         f"👤 {nombre_login} · Perfil: {rol_visible.title()}"
     )
 
-    # V16.56 - Los inspiradores también necesitan ver quién tiene
+    # V16.57 - Los inspiradores también necesitan ver quién tiene
     # una medida vigente antes de intentar un ingreso/reingreso.
     if rol_visible in ["INSPIRADOR", "COORDINACION", "MANAGER"]:
         with st.expander(
@@ -6140,7 +6189,7 @@ def gestion_usuarios_movil():
             else:
                 estado_anterior = str(u.get("estado_caso") or "").upper()
 
-                # V16.56 - Un usuario existente que salió y vuelve NO es
+                # V16.57 - Un usuario existente que salió y vuelve NO es
                 # "ingreso nuevo". Se clasifica por su historial operativo.
                 tipo_mov = (
                     "REINGRESO"
@@ -6517,6 +6566,14 @@ def gestion_usuarios_movil():
                 elif not conf_permiso:
                     st.error("Debe confirmar la salida.")
                 else:
+                    persona_maestra = _resolver_persona_maestra_v1657(documento)
+                    if not persona_maestra:
+                        st.error(
+                            "⛔ No se puede crear el permiso porque el documento "
+                            "no existe en la base maestra habitante_de_calle."
+                        )
+                        st.stop()
+
                     usuario_registra = st.session_state.get(
                         "usuario_actual", "inspirador"
                     )
@@ -7947,6 +8004,41 @@ def control_turno_v13():
             .str.strip()
         )
 
+    # V16.57 - Base maestra completa para resolver permisos.
+    try:
+        personas_maestro = pd.read_sql(
+            text("""
+                SELECT
+                    TRIM(CAST(numero_identificacion AS TEXT)) AS documento,
+                    nombres,
+                    apellidos,
+                    estado_caso,
+                    modalidad
+                FROM habitante_de_calle
+            """),
+            engine
+        )
+    except Exception:
+        personas_maestro = pd.DataFrame(
+            columns=["documento", "nombres", "apellidos", "estado_caso", "modalidad"]
+        )
+
+    if not personas_maestro.empty:
+        personas_maestro["documento_norm"] = (
+            personas_maestro["documento"]
+            .fillna("")
+            .astype(str)
+            .str.upper()
+            .str.replace(r"[^A-Z0-9]", "", regex=True)
+        )
+        personas_maestro["modalidad"] = (
+            personas_maestro["modalidad"]
+            .fillna("")
+            .astype(str)
+            .str.upper()
+            .str.strip()
+        )
+
     # --------------------------------------------------------
     # Permisos abiertos
     # --------------------------------------------------------
@@ -8032,16 +8124,36 @@ def control_turno_v13():
         activos["documento"].astype(str).str.strip().isin(docs_fuera)
     ].copy()
 
-    # Unir datos del permiso para saber vencimiento.
+    # Unir permisos con la BASE MAESTRA, no solo con activos.
     permisos_det = pd.DataFrame()
     if not permisos.empty:
-        permisos_det = permisos.merge(
-            activos[
-                ["documento", "nombres", "apellidos", "modalidad"]
-            ],
-            on="documento",
-            how="left"
+        permisos = permisos.copy()
+        permisos["documento_norm"] = (
+            permisos["documento"]
+            .fillna("")
+            .astype(str)
+            .str.upper()
+            .str.replace(r"[^A-Z0-9]", "", regex=True)
         )
+
+        if not personas_maestro.empty:
+            maestro_merge = (
+                personas_maestro[
+                    ["documento_norm", "nombres", "apellidos", "modalidad", "estado_caso"]
+                ]
+                .drop_duplicates(subset=["documento_norm"], keep="first")
+            )
+            permisos_det = permisos.merge(
+                maestro_merge,
+                on="documento_norm",
+                how="left"
+            )
+        else:
+            permisos_det = permisos.copy()
+            permisos_det["nombres"] = None
+            permisos_det["apellidos"] = None
+            permisos_det["modalidad"] = None
+            permisos_det["estado_caso"] = None
 
         permisos_det["regreso_estimado_dt"] = pd.to_datetime(
             permisos_det["fecha_regreso_estimada"].astype(str)
@@ -8346,11 +8458,19 @@ def control_turno_v13():
                 + permisos_sel["apellidos"].fillna("").astype(str).str.strip()
             ).str.strip()
 
+            permisos_sel["inconsistencia_maestro"] = (
+                permisos_sel["nombre_completo"].eq("")
+            )
+
             permisos_sel["etiqueta"] = permisos_sel.apply(
                 lambda r: (
-                    f"{r.get('nombre_completo','')} · "
+                    f"{(
+                        r.get('nombre_completo','')
+                        if not bool(r.get('inconsistencia_maestro'))
+                        else '⚠️ USUARIO SIN ENLACE EN BASE MAESTRA'
+                    )} · "
                     f"CC {r.get('documento','')} · "
-                    f"{r.get('modalidad','')} · "
+                    f"{r.get('modalidad','') or ''} · "
                     f"{r.get('situacion','')}"
                 ),
                 axis=1
@@ -8390,6 +8510,11 @@ def control_turno_v13():
             ):
                 if not confirmar_regreso_rapido:
                     st.error("Confirme que la persona ya regresó.")
+                elif bool(fila_regreso.get("inconsistencia_maestro", False)):
+                    st.error(
+                        "⛔ Este permiso no enlaza con la base maestra. "
+                        "Debe corregirse el documento antes de registrar el regreso."
+                    )
                 else:
                     doc_regreso = str(
                         fila_regreso.get("documento", "")
@@ -12077,7 +12202,7 @@ def dashboard_ejecutivo():
         )
 
     # ========================================================
-    # V16.56 - CLASIFICACIÓN HISTÓRICA DE INGRESOS / REINGRESOS
+    # V16.57 - CLASIFICACIÓN HISTÓRICA DE INGRESOS / REINGRESOS
     # ========================================================
     # Regla:
     # - Primera llegada histórica de una cédula = INGRESO NUEVO.
@@ -12131,7 +12256,7 @@ def dashboard_ejecutivo():
         df_llegadas_hist = pd.DataFrame()
 
     if not df_llegadas_hist.empty:
-        # V16.56 - fecha_movimiento ya llega desde la consulta con la
+        # V16.57 - fecha_movimiento ya llega desde la consulta con la
         # fecha/hora operativa correcta. No se vuelve a convertir de UTC
         # para evitar desplazar un día hacia atrás.
         df_llegadas_hist["fecha_movimiento"] = pd.to_datetime(
@@ -20269,7 +20394,7 @@ def modulo_auditoria_sesiones_v1634():
         st.error("La fecha inicial no puede ser posterior a la final.")
         return
 
-    # V16.56 - Los filtros se interpretan como días de Colombia.
+    # V16.57 - Los filtros se interpretan como días de Colombia.
     # La base conserva TIMESTAMPTZ; se consulta usando los límites equivalentes en UTC.
     desde_utc = pd.Timestamp(desde, tz="America/Bogota").tz_convert("UTC").to_pydatetime()
     hasta_utc = (
@@ -20325,7 +20450,7 @@ def modulo_auditoria_sesiones_v1634():
     except Exception:
         auditoria = pd.DataFrame()
 
-    # V16.56 - fecha_hora se guarda con zona horaria en PostgreSQL.
+    # V16.57 - fecha_hora se guarda con zona horaria en PostgreSQL.
     # Para visualización se convierte expresamente a America/Bogota.
     if not auditoria.empty:
         auditoria["fecha_hora"] = (
