@@ -385,7 +385,7 @@ def generar_identificador_indocumentado_v1619():
 
 def validar_documento_no_duplicado(numero_documento):
     """
-    V16.62 - Protección contra duplicados por documento.
+    V16.63 - Protección contra duplicados por documento.
     Compara el documento normalizado, ignorando puntos, espacios, guiones
     y diferencias de mayúsculas/minúsculas.
     """
@@ -984,7 +984,7 @@ def _panel_medidas_activas_v1647(clave="medidas_activas"):
         st.success("✅ No hay medidas activas registradas.")
         return
 
-    # V16.62: no inflar el tablero por duplicados históricos exactos.
+    # V16.63: no inflar el tablero por duplicados históricos exactos.
     df_medidas = df_medidas.drop_duplicates(
         subset=[
             "numero_identificacion",
@@ -3675,7 +3675,7 @@ def gestion_usuarios():
         persona_car = df_gestion.loc[indice_car]
         doc_car = str(persona_car["numero_identificacion"]).strip()
 
-        # V16.62 - La ficha individual usa EXACTAMENTE el mismo cálculo
+        # V16.63 - La ficha individual usa EXACTAMENTE el mismo cálculo
         # que el listado general de seguimiento.
         completos_car, pendientes_car, total_car, pct_car = (
             _estado_completitud_car_v16195(persona_car)
@@ -4305,10 +4305,10 @@ st.markdown("""
 
 
 # ============================================================
-# V16.62 - REGLAS INSTITUCIONALES DE POSIBLE REINGRESO
+# V16.63 - REGLAS INSTITUCIONALES DE POSIBLE REINGRESO
 # ============================================================
 CRITERIOS_REINGRESO_V1641 = {
-    # V16.62: la sanción empieza a contarse desde el DÍA SIGUIENTE
+    # V16.63: la sanción empieza a contarse desde el DÍA SIGUIENTE
     # a la salida. La fecha calculada es el primer día en que puede
     # VOLVER A SOLICITAR CUPO, no una garantía automática de reingreso.
     "SALIDA VOLUNTARIA": ("dias", 1, "1 día completo de sanción"),
@@ -5549,7 +5549,7 @@ def gestion_usuarios_movil():
         f"👤 {nombre_login} · Perfil: {rol_visible.title()}"
     )
 
-    # V16.62 - Los inspiradores también necesitan ver quién tiene
+    # V16.63 - Los inspiradores también necesitan ver quién tiene
     # una medida vigente antes de intentar un ingreso/reingreso.
     if rol_visible in ["INSPIRADOR", "COORDINACION", "MANAGER"]:
         with st.expander(
@@ -6101,7 +6101,7 @@ def gestion_usuarios_movil():
         )
         if not permiso_actual.empty:
             # Si existe una FUGA activa, el estado operativo prevalente ya no es
-            # "fuera con permiso". El permiso debe estar cerrado por la lógica V16.62.
+            # "fuera con permiso". El permiso debe estar cerrado por la lógica V16.63.
             tiene_fuga_activa = False
             try:
                 if not medida_activa.empty:
@@ -6219,7 +6219,7 @@ def gestion_usuarios_movil():
             else:
                 estado_anterior = str(u.get("estado_caso") or "").upper()
 
-                # V16.62 - Un usuario existente que salió y vuelve NO es
+                # V16.63 - Un usuario existente que salió y vuelve NO es
                 # "ingreso nuevo". Se clasifica por su historial operativo.
                 tipo_mov = (
                     "REINGRESO"
@@ -6406,7 +6406,7 @@ def gestion_usuarios_movil():
                             }
                         )
 
-                        # V16.62 - Una salida voluntaria significa que la persona
+                        # V16.63 - Una salida voluntaria significa que la persona
                         # ya NO ocupa cupo ni debe contarse como ACTIVA.
                         # Se conserva el expediente; solo cambia su situación operativa.
                         conn.execute(
@@ -7009,7 +7009,7 @@ def gestion_usuarios_movil():
                             }
                         )
 
-                        # V16.62 - Si la causal es FUGA, el permiso abierto deja
+                        # V16.63 - Si la causal es FUGA, el permiso abierto deja
                         # de tener sentido operativo. Se cierra como NO REGRESÓ,
                         # sin registrar un regreso ficticio.
                         if causal_medida == "FUGA":
@@ -8090,7 +8090,7 @@ def control_turno_v13():
             .str.strip()
         )
 
-    # V16.62 - Base maestra completa para resolver permisos.
+    # V16.63 - Base maestra completa para resolver permisos.
     try:
         personas_maestro = pd.read_sql(
             text("""
@@ -8267,7 +8267,7 @@ def control_turno_v13():
     # --------------------------------------------------------
     # Movimientos del día
     # --------------------------------------------------------
-    # V16.62 - "HOY" se define con la fecha local de Colombia.
+    # V16.63 - "HOY" se define con la fecha local de Colombia.
     # No se usa CURRENT_DATE de PostgreSQL porque en Streamlit Cloud
     # la sesión puede estar en UTC y cambiar de día cinco horas antes.
     hoy_colombia = ahora_colombia().date()
@@ -8440,7 +8440,7 @@ def control_turno_v13():
         else pd.DataFrame(columns=["modalidad", "otras_ausencias"])
     )
 
-    # V16.62 - "Con permiso" debe contar EXCLUSIVAMENTE permisos ABIERTOS.
+    # V16.63 - "Con permiso" debe contar EXCLUSIVAMENTE permisos ABIERTOS.
     # Antes se usaba `fuera`, que también incluye salidas voluntarias y otras
     # ausencias operativas; por eso el total podía mostrar, por ejemplo,
     # 6 en URBANO aunque no existieran 6 permisos abiertos visibles.
@@ -10078,43 +10078,126 @@ def panel_profesional_v15(doc_forzado=None, incrustado=False):
     prof_nombre = None
 
     if rol_actual == "PROFESIONAL":
-        acceso = pd.read_sql(
-            text("""
-                SELECT acceso_pai
-                FROM funcionarios_sistema
-                WHERE TRIM(CAST(cedula AS TEXT))=:cedula
-                LIMIT 1
-            """),
-            engine,
-            params={"cedula": cedula_actual}
-        )
-        if acceso.empty or not bool(acceso.iloc[0].get("acceso_pai", False)):
-            st.error("No tiene habilitado el acceso al módulo PAI.")
-            return
+        # V16.63 - Todo funcionario con rol PROFESIONAL debe tener acceso completo al PAI.
+        # Ya no se bloquea por el campo acceso_pai ni por falta de vinculación manual.
+        # Si falta el vínculo, se intenta resolver automáticamente por nombre;
+        # si tampoco existe el registro profesional, se crea y se vincula.
+        try:
+            with engine.begin() as conn:
+                # Mantener coherencia administrativa: un PROFESIONAL queda con acceso_pai habilitado.
+                conn.execute(
+                    text("""
+                        UPDATE funcionarios_sistema
+                        SET acceso_pai = TRUE
+                        WHERE TRIM(CAST(cedula AS TEXT)) = :cedula
+                          AND UPPER(TRIM(COALESCE(rol,''))) = 'PROFESIONAL'
+                    """),
+                    {"cedula": cedula_actual}
+                )
 
-        vinculo = pd.read_sql(
-            text("""
-                SELECT
-                    ppf.profesional_id,
-                    p.nombre
-                FROM pai_profesional_funcionario ppf
-                LEFT JOIN profesionales p
-                  ON p.id = ppf.profesional_id
-                WHERE TRIM(CAST(ppf.cedula_funcionario AS TEXT))=:cedula
-                  AND ppf.activo=TRUE
-                LIMIT 1
-            """),
-            engine,
-            params={"cedula": cedula_actual}
-        )
-        if vinculo.empty:
-            st.error("Su cuenta no está vinculada a un registro profesional PAI.")
-            return
+                vinculo_row = conn.execute(
+                    text("""
+                        SELECT
+                            ppf.profesional_id,
+                            p.nombre
+                        FROM pai_profesional_funcionario ppf
+                        LEFT JOIN profesionales p
+                          ON p.id = ppf.profesional_id
+                        WHERE TRIM(CAST(ppf.cedula_funcionario AS TEXT)) = :cedula
+                          AND COALESCE(ppf.activo, TRUE) = TRUE
+                        LIMIT 1
+                    """),
+                    {"cedula": cedula_actual}
+                ).mappings().first()
 
-        prof_id = int(vinculo.iloc[0]["profesional_id"])
-        prof_nombre = (
-            str(vinculo.iloc[0].get("nombre") or nombre_actual).strip()
-        )
+                if not vinculo_row:
+                    # Buscar registro profesional por nombre normalizado.
+                    prof_row = conn.execute(
+                        text("""
+                            SELECT id, nombre
+                            FROM profesionales
+                            WHERE UPPER(
+                                REGEXP_REPLACE(TRIM(COALESCE(nombre,'')), '\\s+', ' ', 'g')
+                            ) = UPPER(
+                                REGEXP_REPLACE(TRIM(:nombre), '\\s+', ' ', 'g')
+                            )
+                            ORDER BY id
+                            LIMIT 1
+                        """),
+                        {"nombre": nombre_actual}
+                    ).mappings().first()
+
+                    if not prof_row:
+                        # Crear automáticamente el registro profesional si aún no existe.
+                        prof_row = conn.execute(
+                            text("""
+                                INSERT INTO profesionales (nombre, rol)
+                                VALUES (:nombre, 'PROFESIONAL')
+                                RETURNING id, nombre
+                            """),
+                            {"nombre": nombre_actual}
+                        ).mappings().first()
+
+                    prof_auto_id = int(prof_row["id"])
+
+                    # Si había un vínculo inactivo para esta cédula, reactivarlo;
+                    # de lo contrario crear uno nuevo.
+                    existe_map = conn.execute(
+                        text("""
+                            SELECT 1
+                            FROM pai_profesional_funcionario
+                            WHERE TRIM(CAST(cedula_funcionario AS TEXT)) = :cedula
+                            LIMIT 1
+                        """),
+                        {"cedula": cedula_actual}
+                    ).first()
+
+                    if existe_map:
+                        conn.execute(
+                            text("""
+                                UPDATE pai_profesional_funcionario
+                                SET profesional_id = :profesional_id,
+                                    activo = TRUE
+                                WHERE TRIM(CAST(cedula_funcionario AS TEXT)) = :cedula
+                            """),
+                            {
+                                "profesional_id": prof_auto_id,
+                                "cedula": cedula_actual
+                            }
+                        )
+                    else:
+                        conn.execute(
+                            text("""
+                                INSERT INTO pai_profesional_funcionario (
+                                    cedula_funcionario,
+                                    profesional_id,
+                                    activo
+                                )
+                                VALUES (:cedula, :profesional_id, TRUE)
+                            """),
+                            {
+                                "cedula": cedula_actual,
+                                "profesional_id": prof_auto_id
+                            }
+                        )
+
+                    vinculo_row = {
+                        "profesional_id": prof_auto_id,
+                        "nombre": str(prof_row.get("nombre") or nombre_actual).strip()
+                    }
+
+                prof_id = int(vinculo_row["profesional_id"])
+                prof_nombre = str(
+                    vinculo_row.get("nombre") or nombre_actual
+                ).strip()
+
+        except Exception as e:
+            st.error(
+                "No fue posible preparar automáticamente el acceso profesional al PAI. "
+                "Revise la estructura de las tablas profesionales y pai_profesional_funcionario."
+            )
+            st.caption(str(e))
+            return
     else:
         profesionales = pd.read_sql(
             text("""
@@ -12369,7 +12452,7 @@ def dashboard_ejecutivo():
         )
 
     # ========================================================
-    # V16.62 - CLASIFICACIÓN HISTÓRICA DE INGRESOS / REINGRESOS
+    # V16.63 - CLASIFICACIÓN HISTÓRICA DE INGRESOS / REINGRESOS
     # ========================================================
     # Regla:
     # - Primera llegada histórica de una cédula = INGRESO NUEVO.
@@ -12423,7 +12506,7 @@ def dashboard_ejecutivo():
         df_llegadas_hist = pd.DataFrame()
 
     if not df_llegadas_hist.empty:
-        # V16.62 - fecha_movimiento ya llega desde la consulta con la
+        # V16.63 - fecha_movimiento ya llega desde la consulta con la
         # fecha/hora operativa correcta. No se vuelve a convertir de UTC
         # para evitar desplazar un día hacia atrás.
         df_llegadas_hist["fecha_movimiento"] = pd.to_datetime(
@@ -13473,37 +13556,14 @@ with st.sidebar:
 
     elif rol_menu == "PROFESIONAL":
 
-        acceso_pai_menu = False
-        try:
-            _cedula_menu = str(
-                st.session_state.get("documento_funcionario", "")
-            ).strip()
-            _permiso_menu = pd.read_sql(
-                text("""
-                    SELECT COALESCE(acceso_pai, FALSE) AS acceso_pai
-                    FROM funcionarios_sistema
-                    WHERE cedula=:cedula
-                      AND activo=TRUE
-                    LIMIT 1
-                """),
-                engine,
-                params={"cedula": _cedula_menu}
-            )
-            acceso_pai_menu = (
-                not _permiso_menu.empty
-                and bool(_permiso_menu.iloc[0]["acceso_pai"])
-            )
-        except Exception:
-            acceso_pai_menu = False
-
-        if acceso_pai_menu:
-            if st.button(
-                "🩺 Mi Panel Profesional",
-                use_container_width=True,
-                type="primary"
-            ):
-                st.session_state.page = "panel_profesional_v15"
-                st.rerun()
+        # V16.63 - Los profesionales tienen acceso directo al módulo PAI completo.
+        if st.button(
+            "🩺 Mi Panel Profesional",
+            use_container_width=True,
+            type="primary"
+        ):
+            st.session_state.page = "panel_profesional_v15"
+            st.rerun()
 
         if st.button(
             "👤 Gestión Profesional",
@@ -20561,7 +20621,7 @@ def modulo_auditoria_sesiones_v1634():
         st.error("La fecha inicial no puede ser posterior a la final.")
         return
 
-    # V16.62 - Los filtros se interpretan como días de Colombia.
+    # V16.63 - Los filtros se interpretan como días de Colombia.
     # La base conserva TIMESTAMPTZ; se consulta usando los límites equivalentes en UTC.
     desde_utc = pd.Timestamp(desde, tz="America/Bogota").tz_convert("UTC").to_pydatetime()
     hasta_utc = (
@@ -20617,7 +20677,7 @@ def modulo_auditoria_sesiones_v1634():
     except Exception:
         auditoria = pd.DataFrame()
 
-    # V16.62 - fecha_hora se guarda con zona horaria en PostgreSQL.
+    # V16.63 - fecha_hora se guarda con zona horaria en PostgreSQL.
     # Para visualización se convierte expresamente a America/Bogota.
     if not auditoria.empty:
         auditoria["fecha_hora"] = (
