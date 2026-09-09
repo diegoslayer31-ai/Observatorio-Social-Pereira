@@ -385,7 +385,7 @@ def generar_identificador_indocumentado_v1619():
 
 def validar_documento_no_duplicado(numero_documento):
     """
-    V16.58 - Protección contra duplicados por documento.
+    V16.59 - Protección contra duplicados por documento.
     Compara el documento normalizado, ignorando puntos, espacios, guiones
     y diferencias de mayúsculas/minúsculas.
     """
@@ -984,7 +984,7 @@ def _panel_medidas_activas_v1647(clave="medidas_activas"):
         st.success("✅ No hay medidas activas registradas.")
         return
 
-    # V16.58: no inflar el tablero por duplicados históricos exactos.
+    # V16.59: no inflar el tablero por duplicados históricos exactos.
     df_medidas = df_medidas.drop_duplicates(
         subset=[
             "numero_identificacion",
@@ -3675,7 +3675,7 @@ def gestion_usuarios():
         persona_car = df_gestion.loc[indice_car]
         doc_car = str(persona_car["numero_identificacion"]).strip()
 
-        # V16.58 - La ficha individual usa EXACTAMENTE el mismo cálculo
+        # V16.59 - La ficha individual usa EXACTAMENTE el mismo cálculo
         # que el listado general de seguimiento.
         completos_car, pendientes_car, total_car, pct_car = (
             _estado_completitud_car_v16195(persona_car)
@@ -4305,10 +4305,10 @@ st.markdown("""
 
 
 # ============================================================
-# V16.58 - REGLAS INSTITUCIONALES DE POSIBLE REINGRESO
+# V16.59 - REGLAS INSTITUCIONALES DE POSIBLE REINGRESO
 # ============================================================
 CRITERIOS_REINGRESO_V1641 = {
-    # V16.58: la sanción empieza a contarse desde el DÍA SIGUIENTE
+    # V16.59: la sanción empieza a contarse desde el DÍA SIGUIENTE
     # a la salida. La fecha calculada es el primer día en que puede
     # VOLVER A SOLICITAR CUPO, no una garantía automática de reingreso.
     "SALIDA VOLUNTARIA": ("dias", 1, "1 día completo de sanción"),
@@ -5547,7 +5547,7 @@ def gestion_usuarios_movil():
         f"👤 {nombre_login} · Perfil: {rol_visible.title()}"
     )
 
-    # V16.58 - Los inspiradores también necesitan ver quién tiene
+    # V16.59 - Los inspiradores también necesitan ver quién tiene
     # una medida vigente antes de intentar un ingreso/reingreso.
     if rol_visible in ["INSPIRADOR", "COORDINACION", "MANAGER"]:
         with st.expander(
@@ -6099,7 +6099,7 @@ def gestion_usuarios_movil():
         )
         if not permiso_actual.empty:
             # Si existe una FUGA activa, el estado operativo prevalente ya no es
-            # "fuera con permiso". El permiso debe estar cerrado por la lógica V16.58.
+            # "fuera con permiso". El permiso debe estar cerrado por la lógica V16.59.
             tiene_fuga_activa = False
             try:
                 if not medida_activa.empty:
@@ -6204,7 +6204,7 @@ def gestion_usuarios_movil():
             else:
                 estado_anterior = str(u.get("estado_caso") or "").upper()
 
-                # V16.58 - Un usuario existente que salió y vuelve NO es
+                # V16.59 - Un usuario existente que salió y vuelve NO es
                 # "ingreso nuevo". Se clasifica por su historial operativo.
                 tipo_mov = (
                     "REINGRESO"
@@ -6973,7 +6973,7 @@ def gestion_usuarios_movil():
                             }
                         )
 
-                        # V16.58 - Si la causal es FUGA, el permiso abierto deja
+                        # V16.59 - Si la causal es FUGA, el permiso abierto deja
                         # de tener sentido operativo. Se cierra como NO REGRESÓ,
                         # sin registrar un regreso ficticio.
                         if causal_medida == "FUGA":
@@ -8054,7 +8054,7 @@ def control_turno_v13():
             .str.strip()
         )
 
-    # V16.58 - Base maestra completa para resolver permisos.
+    # V16.59 - Base maestra completa para resolver permisos.
     try:
         personas_maestro = pd.read_sql(
             text("""
@@ -8314,6 +8314,11 @@ def control_turno_v13():
     # todavía no esté configurada.
     # --------------------------------------------------------
     st.markdown("### 🏘️ Ocupación actual")
+    st.caption(
+        "Con permiso = únicamente permisos ABIERTOS. "
+        "Otras ausencias = personas activas fuera por otra novedad operativa, "
+        "como una salida voluntaria aún reflejada en el estado de presencia."
+    )
 
     activos_mod = (
         activos.groupby("modalidad")
@@ -8331,11 +8336,51 @@ def control_turno_v13():
         else pd.DataFrame(columns=["modalidad", "presentes"])
     )
 
+    # Ausencias que NO son permisos abiertos (p. ej. salida voluntaria aún
+    # reflejada operativamente). Se separan para no confundirlas con permisos.
+    docs_permiso_abierto_norm = set()
+    if not permisos_det.empty:
+        docs_permiso_abierto_norm = set(
+            permisos_det["documento"]
+            .fillna("")
+            .astype(str)
+            .str.upper()
+            .str.replace(r"[^A-Z0-9]", "", regex=True)
+        )
+
+    fuera_otros = fuera.copy()
+    if not fuera_otros.empty:
+        fuera_otros["documento_norm"] = (
+            fuera_otros["documento"]
+            .fillna("")
+            .astype(str)
+            .str.upper()
+            .str.replace(r"[^A-Z0-9]", "", regex=True)
+        )
+        fuera_otros = fuera_otros[
+            ~fuera_otros["documento_norm"].isin(docs_permiso_abierto_norm)
+        ]
+
+    otras_ausencias_mod = (
+        fuera_otros.groupby("modalidad")
+        .size()
+        .reset_index(name="otras_ausencias")
+        if not fuera_otros.empty
+        else pd.DataFrame(columns=["modalidad", "otras_ausencias"])
+    )
+
+    # V16.59 - "Con permiso" debe contar EXCLUSIVAMENTE permisos ABIERTOS.
+    # Antes se usaba `fuera`, que también incluye salidas voluntarias y otras
+    # ausencias operativas; por eso el total podía mostrar, por ejemplo,
+    # 6 en URBANO aunque no existieran 6 permisos abiertos visibles.
     permisos_mod = (
-        fuera.groupby("modalidad")
+        permisos_det[
+            permisos_det["modalidad"].fillna("").astype(str).str.strip() != ""
+        ]
+        .groupby("modalidad")
         .size()
         .reset_index(name="con_permiso")
-        if not fuera.empty
+        if not permisos_det.empty
         else pd.DataFrame(columns=["modalidad", "con_permiso"])
     )
 
@@ -8353,6 +8398,7 @@ def control_turno_v13():
         .merge(activos_mod, on="modalidad", how="left")
         .merge(presentes_mod, on="modalidad", how="left")
         .merge(permisos_mod, on="modalidad", how="left")
+        .merge(otras_ausencias_mod, on="modalidad", how="left")
     )
 
     if not capacidades.empty:
@@ -8364,7 +8410,7 @@ def control_turno_v13():
     else:
         ocupacion["capacidad"] = pd.NA
 
-    for c in ["activos", "presentes", "con_permiso"]:
+    for c in ["activos", "presentes", "con_permiso", "otras_ausencias"]:
         ocupacion[c] = pd.to_numeric(
             ocupacion[c], errors="coerce"
         ).fillna(0).astype(int)
@@ -8402,6 +8448,7 @@ def control_turno_v13():
             "activos",
             "presentes",
             "con_permiso",
+            "otras_ausencias",
             "cupos_disponibles",
             "ocupacion_%"
         ]
@@ -12252,7 +12299,7 @@ def dashboard_ejecutivo():
         )
 
     # ========================================================
-    # V16.58 - CLASIFICACIÓN HISTÓRICA DE INGRESOS / REINGRESOS
+    # V16.59 - CLASIFICACIÓN HISTÓRICA DE INGRESOS / REINGRESOS
     # ========================================================
     # Regla:
     # - Primera llegada histórica de una cédula = INGRESO NUEVO.
@@ -12306,7 +12353,7 @@ def dashboard_ejecutivo():
         df_llegadas_hist = pd.DataFrame()
 
     if not df_llegadas_hist.empty:
-        # V16.58 - fecha_movimiento ya llega desde la consulta con la
+        # V16.59 - fecha_movimiento ya llega desde la consulta con la
         # fecha/hora operativa correcta. No se vuelve a convertir de UTC
         # para evitar desplazar un día hacia atrás.
         df_llegadas_hist["fecha_movimiento"] = pd.to_datetime(
@@ -20444,7 +20491,7 @@ def modulo_auditoria_sesiones_v1634():
         st.error("La fecha inicial no puede ser posterior a la final.")
         return
 
-    # V16.58 - Los filtros se interpretan como días de Colombia.
+    # V16.59 - Los filtros se interpretan como días de Colombia.
     # La base conserva TIMESTAMPTZ; se consulta usando los límites equivalentes en UTC.
     desde_utc = pd.Timestamp(desde, tz="America/Bogota").tz_convert("UTC").to_pydatetime()
     hasta_utc = (
@@ -20500,7 +20547,7 @@ def modulo_auditoria_sesiones_v1634():
     except Exception:
         auditoria = pd.DataFrame()
 
-    # V16.58 - fecha_hora se guarda con zona horaria en PostgreSQL.
+    # V16.59 - fecha_hora se guarda con zona horaria en PostgreSQL.
     # Para visualización se convierte expresamente a America/Bogota.
     if not auditoria.empty:
         auditoria["fecha_hora"] = (
