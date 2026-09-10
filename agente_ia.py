@@ -20368,14 +20368,10 @@ def modulo_enfermeria_v1673():
         if puede_registrar:
             with st.form(f"enf73_val_{doc}"):
                 st.markdown("#### 1. Datos de identificación")
-                c0, c01, c02, c03 = st.columns(4)
+                c0, c01, c02 = st.columns([2, 1, 1])
                 c0.text_input("Nombre completo", value=p["nombre_completo"], disabled=True)
                 c01.text_input("Documento", value=doc, disabled=True)
-                eps_identificacion = c02.text_input(
-                    "EPS",
-                    value=str(p.get("tipo_seguridad_salud") or "")
-                )
-                c03.text_input("Edad", value=str(p.get("edad") or ""), disabled=True)
+                c02.text_input("Edad", value=str(p.get("edad") or ""), disabled=True)
 
                 st.markdown("#### 2. Antecedentes y condiciones de salud")
                 enfermedad_conocida = st.selectbox(
@@ -20588,7 +20584,7 @@ def modulo_enfermeria_v1673():
                                 "doc": doc,
                                 "nombre": p["nombre_completo"],
                                 "modalidad": p["modalidad"],
-                                "eps": eps_identificacion.strip() or None,
+                                "eps": eps_nombre.strip() or None,
                                 "enf_conocida": enfermedad_conocida,
                                 "enf_detalle": enfermedad_detalle.strip() or None,
                                 "toma_med": toma_medicamento,
