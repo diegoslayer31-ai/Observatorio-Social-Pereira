@@ -8,6 +8,8 @@ import json
 import base64
 from sqlalchemy import create_engine, text
 import os
+import unicodedata
+from difflib import SequenceMatcher
 import matplotlib.pyplot as plt
 
 from reportlab.platypus import (
