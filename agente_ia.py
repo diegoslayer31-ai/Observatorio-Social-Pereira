@@ -10027,7 +10027,7 @@ def tablero_contribucion_ods_v16():
         st.plotly_chart(fig_modalidad, use_container_width=True)
 
     # ========================================================
-    # V16.85 - EVIDENCIA COMPLEMENTARIA DE ENFERMERÍA PARA ODS 3
+    # V16.86 - EVIDENCIA COMPLEMENTARIA DE ENFERMERÍA PARA ODS 3
     # ========================================================
     st.markdown("### 🩺 Evidencia complementaria de Enfermería · ODS 3")
     st.caption(
@@ -14547,7 +14547,7 @@ def inicio_ejecutivo_v167():
         avance = pd.to_numeric(
             pai["porcentaje_avance"], errors="coerce"
         ).fillna(0)
-        # V16.85 - Normalización de fechas para evitar mezclar
+        # V16.86 - Normalización de fechas para evitar mezclar
         # timestamps con zona horaria de Supabase y fechas locales sin zona.
         fecha_meta = pd.to_datetime(
             pai["fecha_meta"], errors="coerce"
@@ -15013,7 +15013,7 @@ def modulo_reportes_institucionales_v169():
         df_gen_rep = pd.DataFrame()
 
     # ------------------------------------------------------------
-    # V16.85 - DATOS DE ENFERMERÍA PARA INFORME INSTITUCIONAL
+    # V16.86 - DATOS DE ENFERMERÍA PARA INFORME INSTITUCIONAL
     # ------------------------------------------------------------
     df_enf_rep = pd.DataFrame()
     try:
@@ -15945,7 +15945,7 @@ def modulo_reportes_institucionales_v169():
                 st.write("• " + inf_h)
 
         # ========================================================
-        # V16.85 - GESTIÓN DE SALUD Y ENFERMERÍA
+        # V16.86 - GESTIÓN DE SALUD Y ENFERMERÍA
         # ========================================================
         st.markdown("---")
         st.subheader("🩺 Gestión de Salud y Enfermería")
@@ -17267,7 +17267,7 @@ def modulo_reportes_institucionales_v169():
                         seccion += 1
 
                     # ==================================================
-                    # V16.85 - GESTIÓN DE SALUD Y ENFERMERÍA
+                    # V16.86 - GESTIÓN DE SALUD Y ENFERMERÍA
                     # ==================================================
                     if not df_enf_rep.empty or not df_enf_val_rep.empty:
                         contenido.append(PageBreak())
@@ -18683,7 +18683,7 @@ def caracterizacion_habitabilidad_v1611():
             index=_idx(opciones_relacion, _v("relacion_consumo_calle", ""))
         )
 
-    # V16.85 - Opciones comunes usadas por Redes y Salud integral.
+    # V16.86 - Opciones comunes usadas por Redes y Salud integral.
     # Se definen antes de las pestañas para evitar UnboundLocalError después
     # de convertir Consumo de SPA en una vista de solo lectura.
     si_no = ["", "Sí", "No", "No sabe / no responde"]
@@ -19052,7 +19052,7 @@ def caracterizacion_habitabilidad_v1611():
         type="primary",
         disabled=not confirmar
     ):
-        # V16.85 - trazabilidad explícita de la sesión que registra
+        # V16.86 - trazabilidad explícita de la sesión que registra
         nombre_sesion_hab = str(
             st.session_state.get("nombre_funcionario", "")
         ).strip() or str(st.session_state.get("usuario_actual", "Sistema")).strip()
@@ -19462,7 +19462,7 @@ def tablero_habitabilidad_v1611():
     k5.metric("10+ años en calle", f"{int(alta_cron.sum())}")
 
     # ============================================================
-    # V16.85 - TRAZABILIDAD DE QUIÉN REGISTRA LAS CARACTERIZACIONES
+    # V16.86 - TRAZABILIDAD DE QUIÉN REGISTRA LAS CARACTERIZACIONES
     # ============================================================
     st.markdown("### 👤 Trazabilidad de registros")
     st.caption(
@@ -21033,10 +21033,19 @@ def modulo_enfermeria_v1673():
                 )
 
         reporte_guardado_enf = st.session_state.get(f"reporte_val_enf_{doc}")
-        foto_guardada_enf = st.session_state.get(f"foto_val_enf_{doc}")
         if reporte_guardado_enf:
-            st.markdown("#### 📲 Reporte de valoración para WhatsApp")
+            st.markdown("### 📲 Reporte final de valoración")
+            st.caption(
+                "La valoración ya fue guardada. Ahora puede tomar o seleccionar "
+                "la foto y compartir el reporte por WhatsApp."
+            )
             st.code(reporte_guardado_enf, language=None)
+
+            foto_guardada_enf = _capturar_foto_temporal_movimiento_v1636(
+                doc,
+                "VALORACION_ENFERMERIA"
+            )
+
             _compartir_foto_texto_movimiento_v1636(
                 foto_guardada_enf,
                 reporte_guardado_enf,
@@ -21044,23 +21053,22 @@ def modulo_enfermeria_v1673():
                 "VALORACION_ENFERMERIA",
                 filename=f"valoracion_enfermeria_{doc}.jpg"
             )
+
             if st.button(
-                "🗑️ Limpiar reporte temporal",
+                "🗑️ Finalizar y limpiar reporte temporal",
                 key=f"limpiar_rep_enf_{doc}",
                 use_container_width=True
             ):
                 st.session_state.pop(f"reporte_val_enf_{doc}", None)
-                st.session_state.pop(f"foto_val_enf_{doc}", None)
-                st.session_state.pop(f"foto_temp_mov_VALORACION_ENFERMERIA_{doc}", None)
+                st.session_state.pop(
+                    f"foto_temp_mov_VALORACION_ENFERMERIA_{doc}", None
+                )
+                st.session_state.pop(
+                    f"foto_temp_mov_VALORACION_ENFERMERIA_{doc}_origen", None
+                )
                 st.rerun()
 
         if puede_registrar:
-            st.markdown("#### 📷 Foto para reporte de valoración")
-            foto_val_enf = _capturar_foto_temporal_movimiento_v1636(
-                doc,
-                "VALORACION_ENFERMERIA"
-            )
-
             with st.form(f"enf73_val_{doc}"):
                 st.markdown("#### 1. Datos de identificación")
                 c0, c01, c02 = st.columns([2, 1, 1])
@@ -21462,7 +21470,7 @@ def modulo_enfermeria_v1673():
                         observacion=(observaciones or "")[:500]
                     )
 
-                    # V16.85 - Reporte operativo de valoración para WhatsApp
+                    # V16.86 - Reporte operativo de valoración para WhatsApp
                     try:
                         mov_ult = pd.read_sql(
                             text("""
@@ -21597,7 +21605,6 @@ def modulo_enfermeria_v1673():
                     )
 
                     st.session_state[f"reporte_val_enf_{doc}"] = reporte_enf
-                    st.session_state[f"foto_val_enf_{doc}"] = foto_val_enf
 
                     invalidar_cache_datos()
                     st.success(
