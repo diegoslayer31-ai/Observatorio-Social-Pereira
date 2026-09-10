@@ -18196,6 +18196,11 @@ def caracterizacion_habitabilidad_v1611():
             index=_idx(opciones_relacion, _v("relacion_consumo_calle", ""))
         )
 
+    # V16.81 - Opciones comunes usadas por Redes y Salud integral.
+    # Se definen antes de las pestañas para evitar UnboundLocalError después
+    # de convertir Consumo de SPA en una vista de solo lectura.
+    si_no = ["", "Sí", "No", "No sabe / no responde"]
+
     # ---------------- SPA ----------------
     with tabs[1]:
         st.markdown("### 🧪 Consumo de sustancias psicoactivas")
@@ -18379,8 +18384,6 @@ def caracterizacion_habitabilidad_v1611():
         st.caption(
             "Esta sección continúa disponible para el abordaje profesional."
         )
-
-        si_no = ["", "Sí", "No", "No sabe / no responde"]
 
         mh1, mh2 = st.columns(2)
         apoyo_emocional = mh1.selectbox(
