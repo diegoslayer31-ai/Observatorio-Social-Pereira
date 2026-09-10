@@ -387,7 +387,7 @@ def generar_identificador_indocumentado_v1619():
 
 def validar_documento_no_duplicado(numero_documento):
     """
-    V16.76 - Protección contra duplicados por documento.
+    V16.77 - Protección contra duplicados por documento.
     Compara el documento normalizado, ignorando puntos, espacios, guiones
     y diferencias de mayúsculas/minúsculas.
     """
@@ -446,7 +446,7 @@ def validar_posible_persona_duplicada_v1672(
     documento_nuevo=None
 ):
     """
-    V16.76 - Prevención reforzada de duplicados.
+    V16.77 - Prevención reforzada de duplicados.
 
     Bloquea la creación si encuentra en habitante_de_calle una persona con:
     1) misma fecha de nacimiento, y
@@ -1034,7 +1034,7 @@ def _panel_medidas_activas_v1647(clave="medidas_activas"):
         st.success("✅ No hay medidas activas registradas.")
         return
 
-    # V16.76: no inflar el tablero por duplicados históricos exactos.
+    # V16.77: no inflar el tablero por duplicados históricos exactos.
     df_medidas = df_medidas.drop_duplicates(
         subset=[
             "numero_identificacion",
@@ -3725,7 +3725,7 @@ def gestion_usuarios():
         persona_car = df_gestion.loc[indice_car]
         doc_car = str(persona_car["numero_identificacion"]).strip()
 
-        # V16.76 - La ficha individual usa EXACTAMENTE el mismo cálculo
+        # V16.77 - La ficha individual usa EXACTAMENTE el mismo cálculo
         # que el listado general de seguimiento.
         completos_car, pendientes_car, total_car, pct_car = (
             _estado_completitud_car_v16195(persona_car)
@@ -4355,10 +4355,10 @@ st.markdown("""
 
 
 # ============================================================
-# V16.76 - REGLAS INSTITUCIONALES DE POSIBLE REINGRESO
+# V16.77 - REGLAS INSTITUCIONALES DE POSIBLE REINGRESO
 # ============================================================
 CRITERIOS_REINGRESO_V1641 = {
-    # V16.76: la sanción empieza a contarse desde el DÍA SIGUIENTE
+    # V16.77: la sanción empieza a contarse desde el DÍA SIGUIENTE
     # a la salida. La fecha calculada es el primer día en que puede
     # VOLVER A SOLICITAR CUPO, no una garantía automática de reingreso.
     "SALIDA VOLUNTARIA": ("dias", 1, "1 día completo de sanción"),
@@ -4394,7 +4394,7 @@ def _fecha_posible_reingreso_v1641(fecha_salida, causal):
 
 def _es_reingreso_operativo_v1667(documento, estado_anterior=""):
     """
-    Regla institucional definitiva V16.76:
+    Regla institucional definitiva V16.77:
     - Si la cédula YA EXISTE en habitante_de_calle, la llegada es REINGRESO.
     - Solo puede ser INGRESO NUEVO cuando la persona NO existía previamente
       en la base maestra y fue creada desde el flujo 'Nuevo usuario'.
@@ -4432,7 +4432,7 @@ def _restriccion_reingreso_v1670(documento):
     """
     Devuelve (fecha, causal) de una restricción REALMENTE vigente.
 
-    Reglas V16.76:
+    Reglas V16.77:
     1. Una salida voluntaria solo bloquea si ocurrió DESPUÉS del último
        INGRESO/REINGRESO. Si la persona ya reingresó después, esa salida
        voluntaria quedó superada y no puede volver a bloquear.
@@ -5645,7 +5645,7 @@ def gestion_usuarios_movil():
         f"👤 {nombre_login} · Perfil: {rol_visible.title()}"
     )
 
-    # V16.76 - Los inspiradores también necesitan ver quién tiene
+    # V16.77 - Los inspiradores también necesitan ver quién tiene
     # una medida vigente antes de intentar un ingreso/reingreso.
     if rol_visible in ["INSPIRADOR", "COORDINACION", "MANAGER"]:
         with st.expander(
@@ -6201,7 +6201,7 @@ def gestion_usuarios_movil():
         )
         if not permiso_actual.empty:
             # Si existe una FUGA activa, el estado operativo prevalente ya no es
-            # "fuera con permiso". El permiso debe estar cerrado por la lógica V16.76.
+            # "fuera con permiso". El permiso debe estar cerrado por la lógica V16.77.
             tiene_fuga_activa = False
             try:
                 if not medida_activa.empty:
@@ -6290,7 +6290,7 @@ def gestion_usuarios_movil():
             "ingreso_reingreso"
         )
 
-        # V16.76 - Al estar en el flujo de usuario existente,
+        # V16.77 - Al estar en el flujo de usuario existente,
         # toda nueva llegada se registra como REINGRESO.
         tipo_previsto = "REINGRESO"
         st.info(
@@ -6314,9 +6314,9 @@ def gestion_usuarios_movil():
             else:
                 estado_anterior = str(u.get("estado_caso") or "").upper()
 
-                # V16.76 - Un usuario existente que salió y vuelve NO es
+                # V16.77 - Un usuario existente que salió y vuelve NO es
                 # "ingreso nuevo". Se clasifica por su historial operativo.
-                # V16.76 - Este flujo parte de "Buscar usuario existente".
+                # V16.77 - Este flujo parte de "Buscar usuario existente".
                 # Por definición, si ya está en habitante_de_calle, es REINGRESO.
                 tipo_mov = "REINGRESO"
 
@@ -6496,7 +6496,7 @@ def gestion_usuarios_movil():
                             }
                         )
 
-                        # V16.76 - Una salida voluntaria significa que la persona
+                        # V16.77 - Una salida voluntaria significa que la persona
                         # ya NO ocupa cupo ni debe contarse como ACTIVA.
                         # Se conserva el expediente; solo cambia su situación operativa.
                         conn.execute(
@@ -7024,7 +7024,7 @@ def gestion_usuarios_movil():
             key=f"movil_obs_medida_{documento}"
         )
 
-        # V16.76 - Foto temporal opcional para sanción / fuga / expulsión.
+        # V16.77 - Foto temporal opcional para sanción / fuga / expulsión.
         # Se usa únicamente para el reporte operativo a compartir y no se
         # almacena en la base de datos ni en Supabase.
         _capturar_foto_temporal_movimiento_v1636(
@@ -7107,7 +7107,7 @@ def gestion_usuarios_movil():
                             }
                         )
 
-                        # V16.76 - Si la causal es FUGA, el permiso abierto deja
+                        # V16.77 - Si la causal es FUGA, el permiso abierto deja
                         # de tener sentido operativo. Se cierra como NO REGRESÓ,
                         # sin registrar un regreso ficticio.
                         if causal_medida == "FUGA":
@@ -8197,7 +8197,7 @@ def control_turno_v13():
             .str.strip()
         )
 
-    # V16.76 - Base maestra completa para resolver permisos.
+    # V16.77 - Base maestra completa para resolver permisos.
     try:
         personas_maestro = pd.read_sql(
             text("""
@@ -8374,7 +8374,7 @@ def control_turno_v13():
     # --------------------------------------------------------
     # Movimientos del día
     # --------------------------------------------------------
-    # V16.76 - "HOY" se define con la fecha local de Colombia.
+    # V16.77 - "HOY" se define con la fecha local de Colombia.
     # No se usa CURRENT_DATE de PostgreSQL porque en Streamlit Cloud
     # la sesión puede estar en UTC y cambiar de día cinco horas antes.
     hoy_colombia = ahora_colombia().date()
@@ -8547,7 +8547,7 @@ def control_turno_v13():
         else pd.DataFrame(columns=["modalidad", "otras_ausencias"])
     )
 
-    # V16.76 - "Con permiso" debe contar EXCLUSIVAMENTE permisos ABIERTOS.
+    # V16.77 - "Con permiso" debe contar EXCLUSIVAMENTE permisos ABIERTOS.
     # Antes se usaba `fuera`, que también incluye salidas voluntarias y otras
     # ausencias operativas; por eso el total podía mostrar, por ejemplo,
     # 6 en URBANO aunque no existieran 6 permisos abiertos visibles.
@@ -10185,7 +10185,7 @@ def panel_profesional_v15(doc_forzado=None, incrustado=False):
     prof_nombre = None
 
     if rol_actual == "PROFESIONAL":
-        # V16.76 - Todo funcionario con rol PROFESIONAL debe tener acceso completo al PAI.
+        # V16.77 - Todo funcionario con rol PROFESIONAL debe tener acceso completo al PAI.
         # Ya no se bloquea por el campo acceso_pai ni por falta de vinculación manual.
         # Si falta el vínculo, se intenta resolver automáticamente por nombre;
         # si tampoco existe el registro profesional, se crea y se vincula.
@@ -12588,7 +12588,7 @@ def dashboard_ejecutivo():
         )
 
     # ========================================================
-    # V16.76 - CLASIFICACIÓN HISTÓRICA CORREGIDA DE INGRESOS / REINGRESOS
+    # V16.77 - CLASIFICACIÓN HISTÓRICA CORREGIDA DE INGRESOS / REINGRESOS
     # ========================================================
     # Regla:
     # - Solo es INGRESO NUEVO si no existe evidencia previa en la base maestra.
@@ -12641,7 +12641,7 @@ def dashboard_ejecutivo():
     except Exception:
         df_llegadas_hist = pd.DataFrame()
 
-    # V16.76 - Recuperar evidencia histórica de la base maestra.
+    # V16.77 - Recuperar evidencia histórica de la base maestra.
     # Esto permite corregir en los reportes movimientos que antiguamente
     # quedaron como INGRESO aunque la persona ya existía desde meses antes.
     historial_maestro = pd.DataFrame()
@@ -12715,7 +12715,7 @@ def dashboard_ejecutivo():
         )
 
     if not df_llegadas_hist.empty:
-        # V16.76 - fecha_movimiento ya llega desde la consulta con la
+        # V16.77 - fecha_movimiento ya llega desde la consulta con la
         # fecha/hora operativa correcta. No se vuelve a convertir de UTC
         # para evitar desplazar un día hacia atrás.
         df_llegadas_hist["fecha_movimiento"] = pd.to_datetime(
@@ -12730,7 +12730,7 @@ def dashboard_ejecutivo():
             df_llegadas_hist["fecha_movimiento"].dt.date
         )
 
-        # V16.76 - Clasificación corregida para población histórica migrada.
+        # V16.77 - Clasificación corregida para población histórica migrada.
         # Un movimiento antiguo marcado como INGRESO se reclasifica como REINGRESO
         # si la base maestra demuestra que la persona ya estaba registrada antes
         # de la fecha de ese movimiento.
@@ -13820,8 +13820,9 @@ with st.sidebar:
             st.rerun()
 
         st.caption(
-            "Coordinación de Enfermería · consulta de valoraciones, historias, "
-            "novedades, consolidado y actividad por enfermera."
+            "Coordinación de Enfermería · puede registrar valoraciones, atenciones "
+            "y novedades, además de consultar historias, consolidados y actividad "
+            "por enfermera."
         )
 
     elif rol_menu == "ENFERMERA":
@@ -13848,7 +13849,7 @@ with st.sidebar:
 
     elif rol_menu == "PROFESIONAL":
 
-        # V16.76 - Los profesionales tienen acceso directo al módulo PAI completo.
+        # V16.77 - Los profesionales tienen acceso directo al módulo PAI completo.
         if st.button(
             "🩺 Mi Panel Profesional",
             use_container_width=True,
@@ -13878,7 +13879,7 @@ with st.sidebar:
             st.session_state.page = "historia_integral_v12"
             st.rerun()
 
-        # V16.76 - El informe mensual también es parte del acceso profesional.
+        # V16.77 - El informe mensual también es parte del acceso profesional.
         # No depende de una variable antigua de acceso_pai_menu.
         if st.button(
             "📄 Mi Informe Mensual",
@@ -14137,7 +14138,7 @@ def formulario_genero_diversidad(doc_forzado=None, nombre_persona=None, incrusta
             )
         )
 
-        # V16.76 - Se retira del formulario el campo "Expresión de género".
+        # V16.77 - Se retira del formulario el campo "Expresión de género".
         # La columna se conserva en base para no perder datos históricos.
         # Al guardar, se mantiene el valor previo si existe; de lo contrario
         # se registra "No informa" sin mostrar el campo al usuario.
@@ -20188,9 +20189,10 @@ def modulo_enfermeria_v1673():
         st.error("Acceso exclusivo para Enfermería, Coordinación o Manager.")
         return
 
-    # Solo las enfermeras operativas pueden registrar.
-    # Coordinación de Enfermería consulta, supervisa y consolida.
-    puede_registrar = rol == "ENFERMERA"
+    # V16.77 - Enfermería operativa y Coordinación de Enfermería
+    # pueden registrar valoraciones, atenciones y novedades.
+    # Toda acción conserva automáticamente nombre y cédula de la sesión activa.
+    puede_registrar = rol in ["ENFERMERA", "COORDINACION_ENFERMERIA"]
 
     enfermera_nombre = str(
         st.session_state.get("nombre_funcionario", "")
@@ -20209,10 +20211,11 @@ def modulo_enfermeria_v1673():
         )
     else:
         if rol == "COORDINACION_ENFERMERIA":
-            st.info(
-                "👩‍⚕️ **Coordinación de Enfermería**: acceso de supervisión y consulta. "
-                "Puede revisar valoraciones, historias, novedades, consolidados y "
-                "actividad por enfermera. Solo el rol ENFERMERA registra atenciones."
+            st.success(
+                f"👩‍⚕️ **Coordinación de Enfermería activa:** {enfermera_nombre} · "
+                f"CC **{enfermera_documento}**. Puede registrar valoraciones, "
+                "atenciones y novedades, además de supervisar historias y reportes. "
+                "Cada registro quedará asociado automáticamente a su sesión."
             )
         else:
             st.info(
@@ -20244,7 +20247,7 @@ def modulo_enfermeria_v1673():
     }.issubset(set(tablas)):
         st.error(
             "Falta instalar o actualizar las tablas del módulo. "
-            "Ejecute el SQL V16.76 en Supabase."
+            "Ejecute el SQL V16.77 en Supabase."
         )
         return
 
@@ -20735,8 +20738,8 @@ def modulo_enfermeria_v1673():
                     st.rerun()
         else:
             st.warning(
-                "🔒 Solo Enfermería puede registrar valoraciones. "
-                "Coordinación y Manager tienen acceso de consulta."
+                "🔒 Solo Enfermería y Coordinación de Enfermería pueden registrar valoraciones. "
+                "Coordinación general y Manager tienen acceso de consulta."
             )
 
             if prev.empty:
@@ -20869,7 +20872,7 @@ def modulo_enfermeria_v1673():
                     st.rerun()
         else:
             st.warning(
-                "🔒 Solo las enfermeras pueden crear atenciones o novedades."
+                "🔒 Solo Enfermería y Coordinación de Enfermería pueden crear atenciones o novedades."
             )
 
     # ========================================================
@@ -21524,7 +21527,7 @@ def modulo_auditoria_sesiones_v1634():
         st.error("La fecha inicial no puede ser posterior a la final.")
         return
 
-    # V16.76 - Los filtros se interpretan como días de Colombia.
+    # V16.77 - Los filtros se interpretan como días de Colombia.
     # La base conserva TIMESTAMPTZ; se consulta usando los límites equivalentes en UTC.
     desde_utc = pd.Timestamp(desde, tz="America/Bogota").tz_convert("UTC").to_pydatetime()
     hasta_utc = (
@@ -21580,7 +21583,7 @@ def modulo_auditoria_sesiones_v1634():
     except Exception:
         auditoria = pd.DataFrame()
 
-    # V16.76 - fecha_hora se guarda con zona horaria en PostgreSQL.
+    # V16.77 - fecha_hora se guarda con zona horaria en PostgreSQL.
     # Para visualización se convierte expresamente a America/Bogota.
     if not auditoria.empty:
         auditoria["fecha_hora"] = (
@@ -22473,7 +22476,7 @@ with st.sidebar:
 
 
 # ============================================================
-# V16.76 - MÓDULO INTEGRAL DE ENFERMERÍA
+# V16.77 - MÓDULO INTEGRAL DE ENFERMERÍA
 # V16.7: navegación central histórica conservada como código legado.
 tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9= st.tabs([
 
