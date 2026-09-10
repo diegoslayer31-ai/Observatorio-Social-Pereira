@@ -387,7 +387,7 @@ def generar_identificador_indocumentado_v1619():
 
 def validar_documento_no_duplicado(numero_documento):
     """
-    V16.77 - Protección contra duplicados por documento.
+    V16.78 - Protección contra duplicados por documento.
     Compara el documento normalizado, ignorando puntos, espacios, guiones
     y diferencias de mayúsculas/minúsculas.
     """
@@ -446,7 +446,7 @@ def validar_posible_persona_duplicada_v1672(
     documento_nuevo=None
 ):
     """
-    V16.77 - Prevención reforzada de duplicados.
+    V16.78 - Prevención reforzada de duplicados.
 
     Bloquea la creación si encuentra en habitante_de_calle una persona con:
     1) misma fecha de nacimiento, y
@@ -1034,7 +1034,7 @@ def _panel_medidas_activas_v1647(clave="medidas_activas"):
         st.success("✅ No hay medidas activas registradas.")
         return
 
-    # V16.77: no inflar el tablero por duplicados históricos exactos.
+    # V16.78: no inflar el tablero por duplicados históricos exactos.
     df_medidas = df_medidas.drop_duplicates(
         subset=[
             "numero_identificacion",
@@ -3725,7 +3725,7 @@ def gestion_usuarios():
         persona_car = df_gestion.loc[indice_car]
         doc_car = str(persona_car["numero_identificacion"]).strip()
 
-        # V16.77 - La ficha individual usa EXACTAMENTE el mismo cálculo
+        # V16.78 - La ficha individual usa EXACTAMENTE el mismo cálculo
         # que el listado general de seguimiento.
         completos_car, pendientes_car, total_car, pct_car = (
             _estado_completitud_car_v16195(persona_car)
@@ -4355,10 +4355,10 @@ st.markdown("""
 
 
 # ============================================================
-# V16.77 - REGLAS INSTITUCIONALES DE POSIBLE REINGRESO
+# V16.78 - REGLAS INSTITUCIONALES DE POSIBLE REINGRESO
 # ============================================================
 CRITERIOS_REINGRESO_V1641 = {
-    # V16.77: la sanción empieza a contarse desde el DÍA SIGUIENTE
+    # V16.78: la sanción empieza a contarse desde el DÍA SIGUIENTE
     # a la salida. La fecha calculada es el primer día en que puede
     # VOLVER A SOLICITAR CUPO, no una garantía automática de reingreso.
     "SALIDA VOLUNTARIA": ("dias", 1, "1 día completo de sanción"),
@@ -4394,7 +4394,7 @@ def _fecha_posible_reingreso_v1641(fecha_salida, causal):
 
 def _es_reingreso_operativo_v1667(documento, estado_anterior=""):
     """
-    Regla institucional definitiva V16.77:
+    Regla institucional definitiva V16.78:
     - Si la cédula YA EXISTE en habitante_de_calle, la llegada es REINGRESO.
     - Solo puede ser INGRESO NUEVO cuando la persona NO existía previamente
       en la base maestra y fue creada desde el flujo 'Nuevo usuario'.
@@ -4432,7 +4432,7 @@ def _restriccion_reingreso_v1670(documento):
     """
     Devuelve (fecha, causal) de una restricción REALMENTE vigente.
 
-    Reglas V16.77:
+    Reglas V16.78:
     1. Una salida voluntaria solo bloquea si ocurrió DESPUÉS del último
        INGRESO/REINGRESO. Si la persona ya reingresó después, esa salida
        voluntaria quedó superada y no puede volver a bloquear.
@@ -5645,7 +5645,7 @@ def gestion_usuarios_movil():
         f"👤 {nombre_login} · Perfil: {rol_visible.title()}"
     )
 
-    # V16.77 - Los inspiradores también necesitan ver quién tiene
+    # V16.78 - Los inspiradores también necesitan ver quién tiene
     # una medida vigente antes de intentar un ingreso/reingreso.
     if rol_visible in ["INSPIRADOR", "COORDINACION", "MANAGER"]:
         with st.expander(
@@ -6201,7 +6201,7 @@ def gestion_usuarios_movil():
         )
         if not permiso_actual.empty:
             # Si existe una FUGA activa, el estado operativo prevalente ya no es
-            # "fuera con permiso". El permiso debe estar cerrado por la lógica V16.77.
+            # "fuera con permiso". El permiso debe estar cerrado por la lógica V16.78.
             tiene_fuga_activa = False
             try:
                 if not medida_activa.empty:
@@ -6290,7 +6290,7 @@ def gestion_usuarios_movil():
             "ingreso_reingreso"
         )
 
-        # V16.77 - Al estar en el flujo de usuario existente,
+        # V16.78 - Al estar en el flujo de usuario existente,
         # toda nueva llegada se registra como REINGRESO.
         tipo_previsto = "REINGRESO"
         st.info(
@@ -6314,9 +6314,9 @@ def gestion_usuarios_movil():
             else:
                 estado_anterior = str(u.get("estado_caso") or "").upper()
 
-                # V16.77 - Un usuario existente que salió y vuelve NO es
+                # V16.78 - Un usuario existente que salió y vuelve NO es
                 # "ingreso nuevo". Se clasifica por su historial operativo.
-                # V16.77 - Este flujo parte de "Buscar usuario existente".
+                # V16.78 - Este flujo parte de "Buscar usuario existente".
                 # Por definición, si ya está en habitante_de_calle, es REINGRESO.
                 tipo_mov = "REINGRESO"
 
@@ -6496,7 +6496,7 @@ def gestion_usuarios_movil():
                             }
                         )
 
-                        # V16.77 - Una salida voluntaria significa que la persona
+                        # V16.78 - Una salida voluntaria significa que la persona
                         # ya NO ocupa cupo ni debe contarse como ACTIVA.
                         # Se conserva el expediente; solo cambia su situación operativa.
                         conn.execute(
@@ -7024,7 +7024,7 @@ def gestion_usuarios_movil():
             key=f"movil_obs_medida_{documento}"
         )
 
-        # V16.77 - Foto temporal opcional para sanción / fuga / expulsión.
+        # V16.78 - Foto temporal opcional para sanción / fuga / expulsión.
         # Se usa únicamente para el reporte operativo a compartir y no se
         # almacena en la base de datos ni en Supabase.
         _capturar_foto_temporal_movimiento_v1636(
@@ -7107,7 +7107,7 @@ def gestion_usuarios_movil():
                             }
                         )
 
-                        # V16.77 - Si la causal es FUGA, el permiso abierto deja
+                        # V16.78 - Si la causal es FUGA, el permiso abierto deja
                         # de tener sentido operativo. Se cierra como NO REGRESÓ,
                         # sin registrar un regreso ficticio.
                         if causal_medida == "FUGA":
@@ -8197,7 +8197,7 @@ def control_turno_v13():
             .str.strip()
         )
 
-    # V16.77 - Base maestra completa para resolver permisos.
+    # V16.78 - Base maestra completa para resolver permisos.
     try:
         personas_maestro = pd.read_sql(
             text("""
@@ -8374,7 +8374,7 @@ def control_turno_v13():
     # --------------------------------------------------------
     # Movimientos del día
     # --------------------------------------------------------
-    # V16.77 - "HOY" se define con la fecha local de Colombia.
+    # V16.78 - "HOY" se define con la fecha local de Colombia.
     # No se usa CURRENT_DATE de PostgreSQL porque en Streamlit Cloud
     # la sesión puede estar en UTC y cambiar de día cinco horas antes.
     hoy_colombia = ahora_colombia().date()
@@ -8547,7 +8547,7 @@ def control_turno_v13():
         else pd.DataFrame(columns=["modalidad", "otras_ausencias"])
     )
 
-    # V16.77 - "Con permiso" debe contar EXCLUSIVAMENTE permisos ABIERTOS.
+    # V16.78 - "Con permiso" debe contar EXCLUSIVAMENTE permisos ABIERTOS.
     # Antes se usaba `fuera`, que también incluye salidas voluntarias y otras
     # ausencias operativas; por eso el total podía mostrar, por ejemplo,
     # 6 en URBANO aunque no existieran 6 permisos abiertos visibles.
@@ -10185,7 +10185,7 @@ def panel_profesional_v15(doc_forzado=None, incrustado=False):
     prof_nombre = None
 
     if rol_actual == "PROFESIONAL":
-        # V16.77 - Todo funcionario con rol PROFESIONAL debe tener acceso completo al PAI.
+        # V16.78 - Todo funcionario con rol PROFESIONAL debe tener acceso completo al PAI.
         # Ya no se bloquea por el campo acceso_pai ni por falta de vinculación manual.
         # Si falta el vínculo, se intenta resolver automáticamente por nombre;
         # si tampoco existe el registro profesional, se crea y se vincula.
@@ -12588,7 +12588,7 @@ def dashboard_ejecutivo():
         )
 
     # ========================================================
-    # V16.77 - CLASIFICACIÓN HISTÓRICA CORREGIDA DE INGRESOS / REINGRESOS
+    # V16.78 - CLASIFICACIÓN HISTÓRICA CORREGIDA DE INGRESOS / REINGRESOS
     # ========================================================
     # Regla:
     # - Solo es INGRESO NUEVO si no existe evidencia previa en la base maestra.
@@ -12641,7 +12641,7 @@ def dashboard_ejecutivo():
     except Exception:
         df_llegadas_hist = pd.DataFrame()
 
-    # V16.77 - Recuperar evidencia histórica de la base maestra.
+    # V16.78 - Recuperar evidencia histórica de la base maestra.
     # Esto permite corregir en los reportes movimientos que antiguamente
     # quedaron como INGRESO aunque la persona ya existía desde meses antes.
     historial_maestro = pd.DataFrame()
@@ -12715,7 +12715,7 @@ def dashboard_ejecutivo():
         )
 
     if not df_llegadas_hist.empty:
-        # V16.77 - fecha_movimiento ya llega desde la consulta con la
+        # V16.78 - fecha_movimiento ya llega desde la consulta con la
         # fecha/hora operativa correcta. No se vuelve a convertir de UTC
         # para evitar desplazar un día hacia atrás.
         df_llegadas_hist["fecha_movimiento"] = pd.to_datetime(
@@ -12730,7 +12730,7 @@ def dashboard_ejecutivo():
             df_llegadas_hist["fecha_movimiento"].dt.date
         )
 
-        # V16.77 - Clasificación corregida para población histórica migrada.
+        # V16.78 - Clasificación corregida para población histórica migrada.
         # Un movimiento antiguo marcado como INGRESO se reclasifica como REINGRESO
         # si la base maestra demuestra que la persona ya estaba registrada antes
         # de la fecha de ese movimiento.
@@ -13805,6 +13805,14 @@ with st.sidebar:
     elif rol_menu == "COORDINACION_ENFERMERIA":
 
         if st.button(
+            "📋 Acciones Política Pública",
+            use_container_width=True,
+            key="menu_pp_coord_enf_v1678"
+        ):
+            st.session_state.page = "politica_publica_v1678"
+            st.rerun()
+
+        if st.button(
             "🩺 Módulo de Enfermería",
             use_container_width=True,
             type="primary"
@@ -13828,6 +13836,14 @@ with st.sidebar:
     elif rol_menu == "ENFERMERA":
 
         if st.button(
+            "📋 Acciones Política Pública",
+            use_container_width=True,
+            key="menu_pp_enf_v1678"
+        ):
+            st.session_state.page = "politica_publica_v1678"
+            st.rerun()
+
+        if st.button(
             "🩺 Módulo de Enfermería",
             use_container_width=True,
             type="primary"
@@ -13849,7 +13865,15 @@ with st.sidebar:
 
     elif rol_menu == "PROFESIONAL":
 
-        # V16.77 - Los profesionales tienen acceso directo al módulo PAI completo.
+        if st.button(
+            "📋 Acciones Política Pública",
+            use_container_width=True,
+            key="menu_pp_prof_v1678"
+        ):
+            st.session_state.page = "politica_publica_v1678"
+            st.rerun()
+
+        # V16.78 - Los profesionales tienen acceso directo al módulo PAI completo.
         if st.button(
             "🩺 Mi Panel Profesional",
             use_container_width=True,
@@ -13879,7 +13903,7 @@ with st.sidebar:
             st.session_state.page = "historia_integral_v12"
             st.rerun()
 
-        # V16.77 - El informe mensual también es parte del acceso profesional.
+        # V16.78 - El informe mensual también es parte del acceso profesional.
         # No depende de una variable antigua de acceso_pai_menu.
         if st.button(
             "📄 Mi Informe Mensual",
@@ -13927,6 +13951,16 @@ with st.sidebar:
             key="menu_enfermeria_coord_v1671"
         ):
             st.session_state.page = "enfermeria_v1671"
+            st.rerun()
+
+        st.markdown("##### 📋 Seguimiento de Política Pública")
+
+        if st.button(
+            "📋 Acciones Política Pública",
+            use_container_width=True,
+            key="menu_pp_coord_v1678"
+        ):
+            st.session_state.page = "politica_publica_v1678"
             st.rerun()
 
         st.markdown("##### 🎯 Intervención profesional")
@@ -14138,7 +14172,7 @@ def formulario_genero_diversidad(doc_forzado=None, nombre_persona=None, incrusta
             )
         )
 
-        # V16.77 - Se retira del formulario el campo "Expresión de género".
+        # V16.78 - Se retira del formulario el campo "Expresión de género".
         # La columna se conserva en base para no perder datos históricos.
         # Al guardar, se mantiene el valor previo si existe; de lo contrario
         # se registra "No informa" sin mostrar el campo al usuario.
@@ -20189,7 +20223,7 @@ def modulo_enfermeria_v1673():
         st.error("Acceso exclusivo para Enfermería, Coordinación o Manager.")
         return
 
-    # V16.77 - Enfermería operativa y Coordinación de Enfermería
+    # V16.78 - Enfermería operativa y Coordinación de Enfermería
     # pueden registrar valoraciones, atenciones y novedades.
     # Toda acción conserva automáticamente nombre y cédula de la sesión activa.
     puede_registrar = rol in ["ENFERMERA", "COORDINACION_ENFERMERIA"]
@@ -20247,7 +20281,7 @@ def modulo_enfermeria_v1673():
     }.issubset(set(tablas)):
         st.error(
             "Falta instalar o actualizar las tablas del módulo. "
-            "Ejecute el SQL V16.77 en Supabase."
+            "Ejecute el SQL V16.78 en Supabase."
         )
         return
 
@@ -21008,6 +21042,543 @@ def modulo_enfermeria_v1673():
             hide_index=True
         )
 
+
+# ============================================================
+# V16.78 - ACCIONES DE POLÍTICA PÚBLICA
+# ============================================================
+
+POLITICA_PUBLICA_CATALOGO_V1678 = {
+    "2.1.1": {
+        "accion": "Registro de beneficiarios de atención psicológica y socio familiar",
+        "tipo": "INDIVIDUAL",
+        "responsables": [
+            "ESTEFANY SCARPETTA",
+            "DAMIAN LEANDRO ZAPATA BERMUDEZ",
+            "JHON ANDREY",
+            "MARIA ELENA LONDONO",
+            "VALERIA MARTINEZ GARCIA",
+        ],
+    },
+    "2.1.2": {
+        "accion": "Registro de beneficiarios remitidos para tratamiento de adicciones, con el seguimiento correspondiente",
+        "tipo": "INDIVIDUAL",
+        "responsables": ["INGRID TATIANA"],
+    },
+    "2.1.3": {
+        "accion": "Registro de beneficiarios de estrategias para mitigar la violencia física y sexual en los habitantes de calle",
+        "tipo": "INDIVIDUAL/ACTIVIDAD",
+        "responsables": ["VICTORIA SANTAMARIA"],
+    },
+    "2.1.4": {
+        "accion": "Registro de beneficiarios de estrategias de inclusión social para la población habitante de calle LGTBI",
+        "tipo": "INDIVIDUAL/ACTIVIDAD",
+        "responsables": [
+            "MARCELA MOSQUERA",
+            "SELMIRA MOSQUERA RENTERIA",
+        ],
+    },
+    "2.1.5": {
+        "accion": "Registro de beneficiarios de procesos de reintegración familiar y social con su respectivo seguimiento",
+        "tipo": "INDIVIDUAL",
+        "responsables": ["VALERIA MARTINEZ GARCIA"],
+    },
+    "2.1.6": {
+        "accion": "Registro de beneficiarios de actividades lúdicas, deportivas, de desarrollo personal y de reflexión en temas relacionados con la espiritualidad",
+        "tipo": "INDIVIDUAL/ACTIVIDAD",
+        "responsables": [
+            "MARCELA MOSQUERA",
+            "HUGO CASTRO",
+            "JUAN DAVID ROBLEDO PULGARIN",
+            "SAMARA HINESTROZA AGUILAR",
+            "VALERIA MARTINEZ GARCIA",
+            "VICTORIA SANTAMARIA",
+        ],
+    },
+    "2.1.7": {
+        "accion": "Registro de beneficiarios de atención, direccionamiento y seguimiento para prestación de servicios de salud",
+        "tipo": "INDIVIDUAL",
+        "responsables": ["INGRID TATIANA"],
+    },
+    "2.1.8": {
+        "accion": "Registro de beneficiarios de procesos de emprendimiento y empleabilidad",
+        "tipo": "INDIVIDUAL/ACTIVIDAD",
+        "responsables": ["VALERIA MARTINEZ GARCIA"],
+    },
+    "2.1.9": {
+        "accion": "Registro de beneficiarios de actividades de sana convivencia",
+        "tipo": "INDIVIDUAL",
+        "responsables": [
+            "ESTEFANY SCARPETTA",
+            "MARCELA MOSQUERA",
+            "DAMIAN LEANDRO ZAPATA BERMUDEZ",
+            "DANA LOPEZ",
+            "JHON ANDREY",
+            "MARIA ELENA LONDONO",
+            "SAMARA HINESTROZA AGUILAR",
+            "SELMIRA MOSQUERA RENTERIA",
+            "VALERIA MARTINEZ GARCIA",
+        ],
+    },
+    "2.1.11": {
+        "accion": "Registro de beneficiarios de actividades de mitigación del daño por consumo de sustancias psicoactivas",
+        "tipo": "INDIVIDUAL/ACTIVIDAD",
+        "responsables": [
+            "HUGO CASTRO",
+            "JUAN DAVID ROBLEDO PULGARIN",
+        ],
+    },
+}
+
+
+def _norm_nombre_pp_v1678(valor):
+    txt = str(valor or "").strip().upper()
+    try:
+        txt = unicodedata.normalize("NFKD", txt)
+        txt = "".join(c for c in txt if not unicodedata.combining(c))
+    except Exception:
+        pass
+    txt = "".join(c if c.isalnum() or c.isspace() else " " for c in txt)
+    return " ".join(txt.split())
+
+
+def _responsable_pp_v1678(nombre_sesion, nombre_referencia):
+    a = _norm_nombre_pp_v1678(nombre_sesion)
+    b = _norm_nombre_pp_v1678(nombre_referencia)
+    if not a or not b:
+        return False
+    return a == b or a.startswith(b + " ") or b.startswith(a + " ")
+
+
+def modulo_politica_publica_v1678():
+    rol = str(st.session_state.get("rol_actual", "")).strip().upper()
+    nombre_func = str(st.session_state.get("nombre_funcionario", "")).strip()
+    doc_func = str(st.session_state.get("documento_funcionario", "")).strip()
+
+    roles_operativos = ["PROFESIONAL", "ENFERMERA", "COORDINACION_ENFERMERIA"]
+    roles_supervision = ["COORDINACION", "MANAGER"]
+
+    if rol not in roles_operativos + roles_supervision:
+        st.error("No tiene acceso al módulo de Acciones de Política Pública.")
+        return
+
+    st.title("📋 Acciones de Política Pública")
+    st.caption(
+        "Registro individual y grupal de beneficiarios conforme a las acciones "
+        "reportadas a la Alcaldía. Cada registro conserva automáticamente quién lo realizó."
+    )
+
+    acciones_asignadas = []
+    if rol in roles_supervision:
+        acciones_asignadas = list(POLITICA_PUBLICA_CATALOGO_V1678.keys())
+    else:
+        for cod, cfg in POLITICA_PUBLICA_CATALOGO_V1678.items():
+            if any(
+                _responsable_pp_v1678(nombre_func, ref)
+                for ref in cfg["responsables"]
+            ):
+                acciones_asignadas.append(cod)
+
+    if rol in roles_operativos and not acciones_asignadas:
+        st.warning(
+            f"No se encontró una acción asignada a **{nombre_func}** en el listado vigente. "
+            "Coordinación o Manager puede verificar la asignación."
+        )
+
+    # Tablas instaladas
+    try:
+        tablas = set(pd.read_sql(
+            text("""
+                SELECT table_name
+                FROM information_schema.tables
+                WHERE table_schema='public'
+                  AND table_name IN (
+                    'politica_publica_registros',
+                    'politica_publica_participantes'
+                  )
+            """), engine
+        )["table_name"].astype(str).tolist())
+    except Exception:
+        tablas = set()
+
+    if not {
+        "politica_publica_registros",
+        "politica_publica_participantes"
+    }.issubset(tablas):
+        st.error(
+            "Faltan las tablas del módulo. Ejecute el SQL V16.78 en Supabase."
+        )
+        return
+
+    # Población activa
+    activos = pd.read_sql(
+        text("""
+            SELECT
+                TRIM(CAST(numero_identificacion AS TEXT)) AS documento,
+                COALESCE(nombres,'') AS nombres,
+                COALESCE(apellidos,'') AS apellidos,
+                COALESCE(modalidad,'') AS modalidad
+            FROM habitante_de_calle
+            WHERE UPPER(TRIM(COALESCE(estado_caso,'')))='ACTIVO'
+            ORDER BY nombres, apellidos
+        """),
+        engine
+    )
+    if not activos.empty:
+        activos["nombre_completo"] = (
+            activos["nombres"].astype(str).str.strip()
+            + " "
+            + activos["apellidos"].astype(str).str.strip()
+        ).str.strip()
+        activos["label"] = (
+            activos["nombre_completo"]
+            + " · CC "
+            + activos["documento"].astype(str)
+            + " · "
+            + activos["modalidad"].astype(str)
+        )
+
+    tabs = st.tabs([
+        "➕ Registrar acción",
+        "🧾 Mis registros",
+        "📊 Reporte mensual",
+        "👥 Responsables",
+    ])
+
+    with tabs[0]:
+        if rol in roles_supervision:
+            st.info(
+                "Coordinación/Manager puede consultar y probar el módulo. "
+                "La autoría siempre queda asociada a la sesión activa."
+            )
+
+        if not acciones_asignadas:
+            st.stop()
+
+        opciones = {
+            f"{cod} · {POLITICA_PUBLICA_CATALOGO_V1678[cod]['accion']}": cod
+            for cod in acciones_asignadas
+        }
+        etiqueta_accion = st.selectbox(
+            "Acción de política pública",
+            list(opciones.keys()),
+            key="pp78_accion"
+        )
+        codigo = opciones[etiqueta_accion]
+        cfg = POLITICA_PUBLICA_CATALOGO_V1678[codigo]
+
+        st.caption(
+            f"Tipo permitido según matriz: **{cfg['tipo']}**"
+        )
+
+        if cfg["tipo"] == "INDIVIDUAL/ACTIVIDAD":
+            modalidad_registro = st.radio(
+                "Forma de registro",
+                ["INDIVIDUAL", "ACTIVIDAD GRUPAL"],
+                horizontal=True,
+                key="pp78_tipo"
+            )
+        else:
+            modalidad_registro = "INDIVIDUAL"
+
+        c1, c2 = st.columns(2)
+        fecha_reg = c1.date_input(
+            "Fecha de la acción",
+            value=ahora_colombia().date(),
+            key="pp78_fecha"
+        )
+        filtro_modalidad = c2.selectbox(
+            "Modalidad de población",
+            ["TODAS", "URBANO", "GRANJA"],
+            key="pp78_modalidad"
+        )
+
+        base = activos.copy()
+        if filtro_modalidad != "TODAS" and not base.empty:
+            base = base[
+                base["modalidad"].astype(str).str.upper().str.strip()
+                == filtro_modalidad
+            ]
+
+        if modalidad_registro == "INDIVIDUAL":
+            if base.empty:
+                st.warning("No hay personas activas disponibles con ese filtro.")
+                seleccionados = []
+            else:
+                idx = st.selectbox(
+                    "Beneficiario",
+                    base.index.tolist(),
+                    format_func=lambda i: base.loc[i, "label"],
+                    key="pp78_persona_ind"
+                )
+                seleccionados = [idx]
+            nombre_actividad = ""
+        else:
+            nombre_actividad = st.text_input(
+                "Nombre de la actividad grupal *",
+                placeholder="Ej. Taller de sana convivencia, actividad deportiva...",
+                key="pp78_nombre_actividad"
+            )
+            if base.empty:
+                st.warning("No hay personas activas disponibles con ese filtro.")
+                seleccionados = []
+            else:
+                seleccionados = st.multiselect(
+                    "Seleccione participantes activos",
+                    base.index.tolist(),
+                    format_func=lambda i: base.loc[i, "label"],
+                    key="pp78_participantes"
+                )
+                st.caption(
+                    f"Participantes seleccionados: **{len(seleccionados)}**"
+                )
+
+        lugar = st.text_input(
+            "Lugar / espacio de realización",
+            key="pp78_lugar"
+        )
+        descripcion = st.text_area(
+            "Descripción de la acción realizada *",
+            placeholder="Describa brevemente qué se hizo, propósito y resultado.",
+            key="pp78_descripcion"
+        )
+        observacion = st.text_area(
+            "Observaciones / seguimiento",
+            key="pp78_observacion"
+        )
+
+        confirmar = st.checkbox(
+            "Confirmo que la información y los participantes corresponden a esta acción.",
+            key="pp78_confirmar"
+        )
+
+        if st.button(
+            "💾 Guardar acción de política pública",
+            use_container_width=True,
+            type="primary",
+            key="pp78_guardar"
+        ):
+            if not seleccionados:
+                st.error("Debe seleccionar al menos un beneficiario.")
+            elif modalidad_registro == "ACTIVIDAD GRUPAL" and not nombre_actividad.strip():
+                st.error("Debe indicar el nombre de la actividad grupal.")
+            elif not descripcion.strip():
+                st.error("Debe registrar la descripción de la acción.")
+            elif not confirmar:
+                st.error("Debe confirmar la información antes de guardar.")
+            else:
+                participantes = base.loc[seleccionados].copy()
+
+                with engine.begin() as conn:
+                    reg_id = conn.execute(
+                        text("""
+                            INSERT INTO politica_publica_registros (
+                                codigo_accion,
+                                accion,
+                                tipo_registro,
+                                fecha_accion,
+                                nombre_actividad,
+                                lugar,
+                                descripcion,
+                                observacion,
+                                registrado_por_cc,
+                                registrado_por_nombre,
+                                rol_registra,
+                                creado_en
+                            )
+                            VALUES (
+                                :codigo, :accion, :tipo, :fecha,
+                                :nombre_actividad, :lugar, :descripcion,
+                                :observacion, :cc, :nombre, :rol, NOW()
+                            )
+                            RETURNING id
+                        """),
+                        {
+                            "codigo": codigo,
+                            "accion": cfg["accion"],
+                            "tipo": modalidad_registro,
+                            "fecha": fecha_reg,
+                            "nombre_actividad": nombre_actividad.strip() or None,
+                            "lugar": lugar.strip() or None,
+                            "descripcion": descripcion.strip(),
+                            "observacion": observacion.strip() or None,
+                            "cc": doc_func,
+                            "nombre": nombre_func,
+                            "rol": rol,
+                        }
+                    ).scalar_one()
+
+                    rows = []
+                    for _, r in participantes.iterrows():
+                        rows.append({
+                            "registro_id": reg_id,
+                            "documento": str(r["documento"]).strip(),
+                            "nombre": str(r["nombre_completo"]).strip(),
+                            "modalidad": str(r["modalidad"]).strip(),
+                        })
+
+                    for row in rows:
+                        conn.execute(
+                            text("""
+                                INSERT INTO politica_publica_participantes (
+                                    registro_id,
+                                    documento_usuario,
+                                    nombre_usuario,
+                                    modalidad_usuario
+                                )
+                                VALUES (
+                                    :registro_id, :documento, :nombre, :modalidad
+                                )
+                                ON CONFLICT (registro_id, documento_usuario)
+                                DO NOTHING
+                            """),
+                            row
+                        )
+
+                registrar_auditoria(
+                    "REGISTRAR_ACCION_POLITICA_PUBLICA",
+                    documento="",
+                    modulo="Acciones Política Pública",
+                    valor_nuevo=(
+                        f"{codigo} · {modalidad_registro} · "
+                        f"{len(seleccionados)} participante(s)"
+                    ),
+                    observacion=(
+                        f"Registró {nombre_func} | CC {doc_func}. "
+                        + descripcion.strip()
+                    )[:500]
+                )
+
+                st.success(
+                    f"✅ Acción {codigo} registrada por **{nombre_func}** "
+                    f"con **{len(seleccionados)}** participante(s)."
+                )
+                st.rerun()
+
+    with tabs[1]:
+        st.subheader("🧾 Registros realizados por la sesión actual")
+        mis = pd.read_sql(
+            text("""
+                SELECT
+                    r.id,
+                    r.fecha_accion,
+                    r.codigo_accion,
+                    r.tipo_registro,
+                    COALESCE(r.nombre_actividad,'') AS actividad,
+                    r.descripcion,
+                    COUNT(p.id)::int AS participantes,
+                    r.registrado_por_nombre,
+                    r.registrado_por_cc,
+                    r.creado_en
+                FROM politica_publica_registros r
+                LEFT JOIN politica_publica_participantes p
+                  ON p.registro_id=r.id
+                WHERE TRIM(CAST(r.registrado_por_cc AS TEXT))=:cc
+                GROUP BY r.id
+                ORDER BY r.fecha_accion DESC, r.id DESC
+                LIMIT 300
+            """),
+            engine,
+            params={"cc": doc_func}
+        )
+        st.dataframe(mis, use_container_width=True, hide_index=True)
+
+    with tabs[2]:
+        st.subheader("📊 Consolidado mensual de acciones")
+        c1, c2 = st.columns(2)
+        mes = c1.selectbox(
+            "Mes",
+            list(range(1, 13)),
+            index=ahora_colombia().month - 1,
+            key="pp78_mes"
+        )
+        anio = c2.number_input(
+            "Año",
+            min_value=2020,
+            max_value=2100,
+            value=ahora_colombia().year,
+            step=1,
+            key="pp78_anio"
+        )
+
+        rep = pd.read_sql(
+            text("""
+                SELECT
+                    r.codigo_accion,
+                    r.accion,
+                    r.registrado_por_nombre AS responsable,
+                    COUNT(DISTINCT r.id)::int AS registros,
+                    COUNT(p.id)::int AS beneficiarios_registrados
+                FROM politica_publica_registros r
+                LEFT JOIN politica_publica_participantes p
+                  ON p.registro_id=r.id
+                WHERE EXTRACT(MONTH FROM r.fecha_accion)=:mes
+                  AND EXTRACT(YEAR FROM r.fecha_accion)=:anio
+                GROUP BY
+                    r.codigo_accion,
+                    r.accion,
+                    r.registrado_por_nombre
+                ORDER BY r.codigo_accion, responsable
+            """),
+            engine,
+            params={"mes": int(mes), "anio": int(anio)}
+        )
+
+        if rep.empty:
+            st.info("No hay registros para el periodo seleccionado.")
+        else:
+            st.dataframe(rep, use_container_width=True, hide_index=True)
+
+            st.markdown("#### Detalle de actividades grupales")
+            grupales = pd.read_sql(
+                text("""
+                    SELECT
+                        r.fecha_accion,
+                        r.codigo_accion,
+                        r.nombre_actividad,
+                        r.lugar,
+                        r.registrado_por_nombre AS responsable,
+                        COUNT(p.id)::int AS participantes
+                    FROM politica_publica_registros r
+                    LEFT JOIN politica_publica_participantes p
+                      ON p.registro_id=r.id
+                    WHERE r.tipo_registro='ACTIVIDAD GRUPAL'
+                      AND EXTRACT(MONTH FROM r.fecha_accion)=:mes
+                      AND EXTRACT(YEAR FROM r.fecha_accion)=:anio
+                    GROUP BY r.id
+                    ORDER BY r.fecha_accion DESC, r.id DESC
+                """),
+                engine,
+                params={"mes": int(mes), "anio": int(anio)}
+            )
+            st.dataframe(grupales, use_container_width=True, hide_index=True)
+
+    with tabs[3]:
+        st.subheader("👥 Responsables definidos para el informe mensual")
+        filas = []
+        for cod, cfg in POLITICA_PUBLICA_CATALOGO_V1678.items():
+            for resp in cfg["responsables"]:
+                filas.append({
+                    "Código": cod,
+                    "Acción": cfg["accion"],
+                    "Tipo": cfg["tipo"],
+                    "Responsable": resp,
+                })
+        st.dataframe(
+            pd.DataFrame(filas),
+            use_container_width=True,
+            hide_index=True
+        )
+        st.caption(
+            "Las acciones visibles para cada operador se determinan por el nombre "
+            "de la sesión activa y este listado de responsables."
+        )
+
+
+
+if st.session_state.page == "politica_publica_v1678":
+    modulo_politica_publica_v1678()
+    st.stop()
+
 if st.session_state.page == "enfermeria_v1671":
     if rol_router not in [
         "ENFERMERA",
@@ -21527,7 +22098,7 @@ def modulo_auditoria_sesiones_v1634():
         st.error("La fecha inicial no puede ser posterior a la final.")
         return
 
-    # V16.77 - Los filtros se interpretan como días de Colombia.
+    # V16.78 - Los filtros se interpretan como días de Colombia.
     # La base conserva TIMESTAMPTZ; se consulta usando los límites equivalentes en UTC.
     desde_utc = pd.Timestamp(desde, tz="America/Bogota").tz_convert("UTC").to_pydatetime()
     hasta_utc = (
@@ -21583,7 +22154,7 @@ def modulo_auditoria_sesiones_v1634():
     except Exception:
         auditoria = pd.DataFrame()
 
-    # V16.77 - fecha_hora se guarda con zona horaria en PostgreSQL.
+    # V16.78 - fecha_hora se guarda con zona horaria en PostgreSQL.
     # Para visualización se convierte expresamente a America/Bogota.
     if not auditoria.empty:
         auditoria["fecha_hora"] = (
@@ -22476,7 +23047,7 @@ with st.sidebar:
 
 
 # ============================================================
-# V16.77 - MÓDULO INTEGRAL DE ENFERMERÍA
+# V16.78 - MÓDULO INTEGRAL DE ENFERMERÍA
 # V16.7: navegación central histórica conservada como código legado.
 tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9= st.tabs([
 
