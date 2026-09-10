@@ -10027,7 +10027,7 @@ def tablero_contribucion_ods_v16():
         st.plotly_chart(fig_modalidad, use_container_width=True)
 
     # ========================================================
-    # V16.83 - EVIDENCIA COMPLEMENTARIA DE ENFERMERÍA PARA ODS 3
+    # V16.84 - EVIDENCIA COMPLEMENTARIA DE ENFERMERÍA PARA ODS 3
     # ========================================================
     st.markdown("### 🩺 Evidencia complementaria de Enfermería · ODS 3")
     st.caption(
@@ -14547,7 +14547,7 @@ def inicio_ejecutivo_v167():
         avance = pd.to_numeric(
             pai["porcentaje_avance"], errors="coerce"
         ).fillna(0)
-        # V16.83 - Normalización de fechas para evitar mezclar
+        # V16.84 - Normalización de fechas para evitar mezclar
         # timestamps con zona horaria de Supabase y fechas locales sin zona.
         fecha_meta = pd.to_datetime(
             pai["fecha_meta"], errors="coerce"
@@ -15013,7 +15013,7 @@ def modulo_reportes_institucionales_v169():
         df_gen_rep = pd.DataFrame()
 
     # ------------------------------------------------------------
-    # V16.83 - DATOS DE ENFERMERÍA PARA INFORME INSTITUCIONAL
+    # V16.84 - DATOS DE ENFERMERÍA PARA INFORME INSTITUCIONAL
     # ------------------------------------------------------------
     df_enf_rep = pd.DataFrame()
     try:
@@ -15945,7 +15945,7 @@ def modulo_reportes_institucionales_v169():
                 st.write("• " + inf_h)
 
         # ========================================================
-        # V16.83 - GESTIÓN DE SALUD Y ENFERMERÍA
+        # V16.84 - GESTIÓN DE SALUD Y ENFERMERÍA
         # ========================================================
         st.markdown("---")
         st.subheader("🩺 Gestión de Salud y Enfermería")
@@ -17267,7 +17267,7 @@ def modulo_reportes_institucionales_v169():
                         seccion += 1
 
                     # ==================================================
-                    # V16.83 - GESTIÓN DE SALUD Y ENFERMERÍA
+                    # V16.84 - GESTIÓN DE SALUD Y ENFERMERÍA
                     # ==================================================
                     if not df_enf_rep.empty or not df_enf_val_rep.empty:
                         contenido.append(PageBreak())
@@ -18533,6 +18533,30 @@ def caracterizacion_habitabilidad_v1611():
 
     reg = actual.iloc[0].to_dict() if not actual.empty else {}
 
+    if reg:
+        creado_por_hab = str(reg.get("creado_por") or "").strip()
+        actualizado_por_hab = str(reg.get("actualizado_por") or "").strip()
+        actualizado_en_hab = pd.to_datetime(
+            reg.get("actualizado_en"), errors="coerce", utc=True
+        )
+        partes_autor = []
+        if creado_por_hab:
+            partes_autor.append(f"Creó: **{creado_por_hab}**")
+        if actualizado_por_hab:
+            partes_autor.append(f"Última actualización: **{actualizado_por_hab}**")
+        if pd.notna(actualizado_en_hab):
+            try:
+                actualizado_en_hab = actualizado_en_hab.tz_convert("America/Bogota")
+                partes_autor.append(
+                    "Fecha: **"
+                    + actualizado_en_hab.strftime("%d/%m/%Y %I:%M %p")
+                    + "**"
+                )
+            except Exception:
+                pass
+        if partes_autor:
+            st.caption(" · ".join(partes_autor))
+
     def _v(campo, default=""):
         valor = reg.get(campo, default)
         if pd.isna(valor):
@@ -18659,7 +18683,7 @@ def caracterizacion_habitabilidad_v1611():
             index=_idx(opciones_relacion, _v("relacion_consumo_calle", ""))
         )
 
-    # V16.83 - Opciones comunes usadas por Redes y Salud integral.
+    # V16.84 - Opciones comunes usadas por Redes y Salud integral.
     # Se definen antes de las pestañas para evitar UnboundLocalError después
     # de convertir Consumo de SPA en una vista de solo lectura.
     si_no = ["", "Sí", "No", "No sabe / no responde"]
@@ -19028,9 +19052,21 @@ def caracterizacion_habitabilidad_v1611():
         type="primary",
         disabled=not confirmar
     ):
-        usuario = st.session_state.get(
-            "usuario_actual",
-            st.session_state.get("nombre_funcionario", "Sistema")
+        # V16.84 - trazabilidad explícita de la sesión que registra
+        nombre_sesion_hab = str(
+            st.session_state.get("nombre_funcionario", "")
+        ).strip() or str(st.session_state.get("usuario_actual", "Sistema")).strip()
+        cc_sesion_hab = str(
+            st.session_state.get("documento_funcionario", "")
+        ).strip()
+        rol_sesion_hab = str(
+            st.session_state.get("rol_actual", "")
+        ).strip().upper()
+
+        usuario = (
+            f"{nombre_sesion_hab}"
+            + (f" | CC {cc_sesion_hab}" if cc_sesion_hab else "")
+            + (f" | {rol_sesion_hab}" if rol_sesion_hab else "")
         )
 
         payload = {
@@ -19176,6 +19212,7 @@ def caracterizacion_habitabilidad_v1611():
                             factor_protector_superacion,
                             observaciones,
                             clasificacion_trayectoria,
+                            creado_por,
                             actualizado_por,
                             actualizado_en
                         )
@@ -19247,6 +19284,7 @@ def caracterizacion_habitabilidad_v1611():
                             :factor_protector_superacion,
                             :observaciones,
                             :clasificacion_trayectoria,
+                            :usuario,
                             :usuario,
                             NOW()
                         )
@@ -19323,6 +19361,45 @@ def caracterizacion_habitabilidad_v1611():
                     """),
                     payload
                 )
+
+                # Historial inmutable de cada guardado de la caracterización
+                conn.execute(
+                    text("""
+                        INSERT INTO caracterizacion_habitabilidad_auditoria (
+                            numero_identificacion,
+                            accion,
+                            funcionario_nombre,
+                            funcionario_cedula,
+                            funcionario_rol,
+                            sesion_identificada,
+                            fecha_hora
+                        )
+                        VALUES (
+                            :doc,
+                            CASE
+                                WHEN EXISTS (
+                                    SELECT 1
+                                    FROM caracterizacion_habitabilidad_auditoria
+                                    WHERE numero_identificacion = :doc
+                                )
+                                THEN 'ACTUALIZACION'
+                                ELSE 'CREACION'
+                            END,
+                            :funcionario_nombre,
+                            :funcionario_cedula,
+                            :funcionario_rol,
+                            :sesion,
+                            NOW()
+                        )
+                    """),
+                    {
+                        "doc": documento,
+                        "funcionario_nombre": nombre_sesion_hab,
+                        "funcionario_cedula": cc_sesion_hab or None,
+                        "funcionario_rol": rol_sesion_hab or None,
+                        "sesion": usuario,
+                    }
+                )
             st.session_state["habcalle_flash_v1630"] = (
                 f"✅ Caracterización especializada de {nombre} guardada correctamente."
             )
@@ -19383,6 +19460,127 @@ def tablero_habitabilidad_v1611():
     k3.metric("Consumo SPA actual", f"{int(spa_si.sum())}")
     k4.metric("Con red de apoyo", f"{int(red_si.sum())}")
     k5.metric("10+ años en calle", f"{int(alta_cron.sum())}")
+
+    # ============================================================
+    # V16.84 - TRAZABILIDAD DE QUIÉN REGISTRA LAS CARACTERIZACIONES
+    # ============================================================
+    st.markdown("### 👤 Trazabilidad de registros")
+    st.caption(
+        "Permite identificar desde qué sesión se crean o actualizan las "
+        "caracterizaciones especializadas."
+    )
+
+    try:
+        audit_hab = pd.read_sql(
+            text("""
+                SELECT
+                    a.fecha_hora,
+                    a.numero_identificacion,
+                    COALESCE(h.nombres,'') AS nombres,
+                    COALESCE(h.apellidos,'') AS apellidos,
+                    a.accion,
+                    a.funcionario_nombre,
+                    a.funcionario_cedula,
+                    a.funcionario_rol,
+                    a.sesion_identificada
+                FROM caracterizacion_habitabilidad_auditoria a
+                LEFT JOIN habitante_de_calle h
+                  ON TRIM(CAST(h.numero_identificacion AS TEXT))
+                   = TRIM(CAST(a.numero_identificacion AS TEXT))
+                ORDER BY a.fecha_hora DESC, a.id DESC
+            """),
+            engine
+        )
+    except Exception:
+        audit_hab = pd.DataFrame()
+
+    if audit_hab.empty:
+        st.info(
+            "Todavía no hay historial de auditoría de caracterizaciones. "
+            "Los nuevos guardados quedarán registrados automáticamente."
+        )
+
+        # Para registros históricos, mostrar al menos el último responsable
+        if "actualizado_por" in dfh.columns:
+            ultimos_hist = (
+                dfh["actualizado_por"]
+                .fillna("")
+                .astype(str)
+                .str.strip()
+            )
+            ultimos_hist = ultimos_hist[ultimos_hist != ""]
+            if not ultimos_hist.empty:
+                resumen_hist = (
+                    ultimos_hist.value_counts()
+                    .rename_axis("Último responsable registrado")
+                    .reset_index(name="Caracterizaciones")
+                )
+                st.dataframe(
+                    resumen_hist,
+                    use_container_width=True,
+                    hide_index=True
+                )
+    else:
+        audit_hab["fecha_hora"] = pd.to_datetime(
+            audit_hab["fecha_hora"], errors="coerce", utc=True
+        ).dt.tz_convert("America/Bogota")
+        audit_hab["Fecha / hora"] = audit_hab["fecha_hora"].dt.strftime(
+            "%d/%m/%Y %I:%M %p"
+        )
+        audit_hab["Persona"] = (
+            audit_hab["nombres"].astype(str).str.strip()
+            + " "
+            + audit_hab["apellidos"].astype(str).str.strip()
+        ).str.strip()
+
+        resumen_autores = (
+            audit_hab.groupby(
+                ["funcionario_nombre", "funcionario_cedula", "funcionario_rol"],
+                dropna=False,
+                as_index=False
+            )
+            .agg(
+                registros=("numero_identificacion", "count"),
+                personas=("numero_identificacion", "nunique")
+            )
+            .sort_values(["registros", "personas"], ascending=False)
+        )
+
+        st.markdown("#### Resumen por sesión / funcionario")
+        st.dataframe(
+            resumen_autores.rename(columns={
+                "funcionario_nombre": "Funcionario",
+                "funcionario_cedula": "CC",
+                "funcionario_rol": "Rol",
+                "registros": "Guardados realizados",
+                "personas": "Personas caracterizadas"
+            }),
+            use_container_width=True,
+            hide_index=True
+        )
+
+        with st.expander("🕘 Ver historial detallado de registros"):
+            st.dataframe(
+                audit_hab[
+                    [
+                        "Fecha / hora",
+                        "Persona",
+                        "numero_identificacion",
+                        "accion",
+                        "funcionario_nombre",
+                        "funcionario_cedula",
+                        "funcionario_rol",
+                    ]
+                ].rename(columns={
+                    "numero_identificacion": "Documento",
+                    "accion": "Acción",
+                    "funcionario_nombre": "Registró",
+                    "funcionario_cedula": "CC funcionario",
+                    "funcionario_rol": "Rol",
+                }),
+                use_container_width=True,
+                hide_index=True
+            )
 
     g1, g2 = st.columns(2)
     with g1:
