@@ -10027,7 +10027,7 @@ def tablero_contribucion_ods_v16():
         st.plotly_chart(fig_modalidad, use_container_width=True)
 
     # ========================================================
-    # V16.84 - EVIDENCIA COMPLEMENTARIA DE ENFERMERÍA PARA ODS 3
+    # V16.85 - EVIDENCIA COMPLEMENTARIA DE ENFERMERÍA PARA ODS 3
     # ========================================================
     st.markdown("### 🩺 Evidencia complementaria de Enfermería · ODS 3")
     st.caption(
@@ -14547,7 +14547,7 @@ def inicio_ejecutivo_v167():
         avance = pd.to_numeric(
             pai["porcentaje_avance"], errors="coerce"
         ).fillna(0)
-        # V16.84 - Normalización de fechas para evitar mezclar
+        # V16.85 - Normalización de fechas para evitar mezclar
         # timestamps con zona horaria de Supabase y fechas locales sin zona.
         fecha_meta = pd.to_datetime(
             pai["fecha_meta"], errors="coerce"
@@ -15013,7 +15013,7 @@ def modulo_reportes_institucionales_v169():
         df_gen_rep = pd.DataFrame()
 
     # ------------------------------------------------------------
-    # V16.84 - DATOS DE ENFERMERÍA PARA INFORME INSTITUCIONAL
+    # V16.85 - DATOS DE ENFERMERÍA PARA INFORME INSTITUCIONAL
     # ------------------------------------------------------------
     df_enf_rep = pd.DataFrame()
     try:
@@ -15945,7 +15945,7 @@ def modulo_reportes_institucionales_v169():
                 st.write("• " + inf_h)
 
         # ========================================================
-        # V16.84 - GESTIÓN DE SALUD Y ENFERMERÍA
+        # V16.85 - GESTIÓN DE SALUD Y ENFERMERÍA
         # ========================================================
         st.markdown("---")
         st.subheader("🩺 Gestión de Salud y Enfermería")
@@ -17267,7 +17267,7 @@ def modulo_reportes_institucionales_v169():
                         seccion += 1
 
                     # ==================================================
-                    # V16.84 - GESTIÓN DE SALUD Y ENFERMERÍA
+                    # V16.85 - GESTIÓN DE SALUD Y ENFERMERÍA
                     # ==================================================
                     if not df_enf_rep.empty or not df_enf_val_rep.empty:
                         contenido.append(PageBreak())
@@ -18683,7 +18683,7 @@ def caracterizacion_habitabilidad_v1611():
             index=_idx(opciones_relacion, _v("relacion_consumo_calle", ""))
         )
 
-    # V16.84 - Opciones comunes usadas por Redes y Salud integral.
+    # V16.85 - Opciones comunes usadas por Redes y Salud integral.
     # Se definen antes de las pestañas para evitar UnboundLocalError después
     # de convertir Consumo de SPA en una vista de solo lectura.
     si_no = ["", "Sí", "No", "No sabe / no responde"]
@@ -19052,7 +19052,7 @@ def caracterizacion_habitabilidad_v1611():
         type="primary",
         disabled=not confirmar
     ):
-        # V16.84 - trazabilidad explícita de la sesión que registra
+        # V16.85 - trazabilidad explícita de la sesión que registra
         nombre_sesion_hab = str(
             st.session_state.get("nombre_funcionario", "")
         ).strip() or str(st.session_state.get("usuario_actual", "Sistema")).strip()
@@ -19462,7 +19462,7 @@ def tablero_habitabilidad_v1611():
     k5.metric("10+ años en calle", f"{int(alta_cron.sum())}")
 
     # ============================================================
-    # V16.84 - TRAZABILIDAD DE QUIÉN REGISTRA LAS CARACTERIZACIONES
+    # V16.85 - TRAZABILIDAD DE QUIÉN REGISTRA LAS CARACTERIZACIONES
     # ============================================================
     st.markdown("### 👤 Trazabilidad de registros")
     st.caption(
@@ -20960,6 +20960,7 @@ def modulo_enfermeria_v1673():
                 COALESCE(estado_caso,'') AS estado_caso,
                 COALESCE(modalidad,'') AS modalidad,
                 edad,
+                fecha_nacimiento,
                 sexo_al_nacer,
                 tipo_seguridad_salud
             FROM habitante_de_calle
@@ -21031,7 +21032,35 @@ def modulo_enfermeria_v1673():
                     f"Registró: **{ult.get('enfermera_nombre','')}**"
                 )
 
+        reporte_guardado_enf = st.session_state.get(f"reporte_val_enf_{doc}")
+        foto_guardada_enf = st.session_state.get(f"foto_val_enf_{doc}")
+        if reporte_guardado_enf:
+            st.markdown("#### 📲 Reporte de valoración para WhatsApp")
+            st.code(reporte_guardado_enf, language=None)
+            _compartir_foto_texto_movimiento_v1636(
+                foto_guardada_enf,
+                reporte_guardado_enf,
+                doc,
+                "VALORACION_ENFERMERIA",
+                filename=f"valoracion_enfermeria_{doc}.jpg"
+            )
+            if st.button(
+                "🗑️ Limpiar reporte temporal",
+                key=f"limpiar_rep_enf_{doc}",
+                use_container_width=True
+            ):
+                st.session_state.pop(f"reporte_val_enf_{doc}", None)
+                st.session_state.pop(f"foto_val_enf_{doc}", None)
+                st.session_state.pop(f"foto_temp_mov_VALORACION_ENFERMERIA_{doc}", None)
+                st.rerun()
+
         if puede_registrar:
+            st.markdown("#### 📷 Foto para reporte de valoración")
+            foto_val_enf = _capturar_foto_temporal_movimiento_v1636(
+                doc,
+                "VALORACION_ENFERMERIA"
+            )
+
             with st.form(f"enf73_val_{doc}"):
                 st.markdown("#### 1. Datos de identificación")
                 c0, c01, c02 = st.columns([2, 1, 1])
@@ -21060,13 +21089,17 @@ def modulo_enfermeria_v1673():
                 )
                 alergias_detalle = st.text_input("¿Cuál alergia?")
 
-                c1, c2 = st.columns(2)
+                c1, c2, c3 = st.columns(3)
                 sintomas_gripales = c1.selectbox(
                     "¿Presenta actualmente síntomas gripales?",
                     ["NO", "SÍ", "POR VERIFICAR"]
                 )
                 dificultad_respirar = c2.selectbox(
                     "¿Presenta dificultad para respirar?",
+                    ["NO", "SÍ", "POR VERIFICAR"]
+                )
+                erupciones_cutaneas = c3.selectbox(
+                    "¿Presenta erupciones cutáneas?",
                     ["NO", "SÍ", "POR VERIFICAR"]
                 )
 
@@ -21215,6 +21248,7 @@ def modulo_enfermeria_v1673():
                                     toma_medicamento, medicamentos,
                                     alergia_medicamento, alergias,
                                     sintomas_gripales, dificultad_respirar,
+                                    erupciones_cutaneas,
                                     necesidad_salud_inmediata, necesidad_salud_detalle,
                                     peso, talla, heridas_hallazgos,
                                     presenta_dolor, dolor_localizacion, dolor_intensidad,
@@ -21234,7 +21268,7 @@ def modulo_enfermeria_v1673():
                                     :doc, :nombre, :modalidad, NOW(), :eps,
                                     :enf_conocida, :enf_detalle,
                                     :toma_med, :meds, :alergia_med, :alergias,
-                                    :gripa, :disnea, :necesidad, :necesidad_det,
+                                    :gripa, :disnea, :erupciones, :necesidad, :necesidad_det,
                                     :peso, :talla, :heridas, :dolor, :dolor_loc, :dolor_int,
                                     :marcha, :conciencia, :orientacion,
                                     :consume_spa, :sustancia, :via_spa, :otras_spa,
@@ -21259,6 +21293,7 @@ def modulo_enfermeria_v1673():
                                 "alergias": alergias_detalle.strip() or None,
                                 "gripa": sintomas_gripales,
                                 "disnea": dificultad_respirar,
+                                "erupciones": erupciones_cutaneas,
                                 "necesidad": necesidad_salud,
                                 "necesidad_det": necesidad_salud_detalle.strip() or None,
                                 "peso": float(peso) if peso else None,
@@ -21426,6 +21461,144 @@ def modulo_enfermeria_v1673():
                         ),
                         observacion=(observaciones or "")[:500]
                     )
+
+                    # V16.85 - Reporte operativo de valoración para WhatsApp
+                    try:
+                        mov_ult = pd.read_sql(
+                            text("""
+                                SELECT tipo_movimiento
+                                FROM movimientos_habitante
+                                WHERE TRIM(CAST(numero_identificacion AS TEXT))=:doc
+                                ORDER BY fecha_movimiento DESC
+                                LIMIT 1
+                            """),
+                            engine,
+                            params={"doc": doc}
+                        )
+                        tipo_mov_val = (
+                            str(mov_ult.iloc[0]["tipo_movimiento"]).strip().upper()
+                            if not mov_ult.empty else ""
+                        )
+                    except Exception:
+                        tipo_mov_val = ""
+
+                    tipo_ingreso_val = (
+                        "REINGRESO"
+                        if "REINGRESO" in tipo_mov_val
+                        else "INGRESO NUEVO"
+                    )
+
+                    fn_val = pd.to_datetime(
+                        p.get("fecha_nacimiento"),
+                        errors="coerce"
+                    )
+                    fn_txt = (
+                        fn_val.strftime("%d/%m/%Y")
+                        if pd.notna(fn_val)
+                        else "NO REGISTRA"
+                    )
+
+                    edad_txt = (
+                        str(int(float(p.get("edad"))))
+                        if pd.notna(p.get("edad")) and str(p.get("edad")).strip()
+                        else "NO REGISTRA"
+                    )
+
+                    consumo_txt = (
+                        sustancia_principal
+                        if consume_spa == "Sí" and sustancia_principal
+                        else (
+                            "NO"
+                            if consume_spa == "No"
+                            else "POR VERIFICAR"
+                        )
+                    )
+
+                    antecedentes_negados = []
+                    if alergia_medicamento == "NO":
+                        antecedentes_negados.append("alergias")
+                    if enfermedad_conocida == "NO":
+                        antecedentes_negados.append("Dx")
+                    if toma_medicamento == "NO":
+                        antecedentes_negados.append("tratamiento")
+
+                    if antecedentes_negados:
+                        antecedentes_txt = (
+                            "Niega " + ", ".join(antecedentes_negados)
+                        )
+                    else:
+                        antecedentes_partes = []
+                        if enfermedad_conocida == "SÍ":
+                            antecedentes_partes.append(
+                                "Dx: " + (enfermedad_detalle.strip() or "refiere diagnóstico")
+                            )
+                        if toma_medicamento == "SÍ":
+                            antecedentes_partes.append(
+                                "Tratamiento: " + (medicamentos_detalle.strip() or "refiere medicación")
+                            )
+                        if alergia_medicamento == "SÍ":
+                            antecedentes_partes.append(
+                                "Alergias: " + (alergias_detalle.strip() or "refiere alergia")
+                            )
+                        antecedentes_txt = (
+                            " | ".join(antecedentes_partes)
+                            if antecedentes_partes
+                            else "Antecedentes por verificar"
+                        )
+
+                    sintomas_negados = []
+                    if dificultad_respirar == "NO":
+                        sintomas_negados.append("síntomas respiratorios")
+                    if erupciones_cutaneas == "NO":
+                        sintomas_negados.append("erupciones cutáneas")
+
+                    if sintomas_negados:
+                        sintomas_txt = "Niega " + " y ".join(sintomas_negados)
+                    else:
+                        sintomas_partes = []
+                        if dificultad_respirar == "SÍ":
+                            sintomas_partes.append("refiere dificultad respiratoria")
+                        if erupciones_cutaneas == "SÍ":
+                            sintomas_partes.append("presenta erupciones cutáneas")
+                        sintomas_txt = (
+                            " y ".join(sintomas_partes)
+                            if sintomas_partes
+                            else "Síntomas respiratorios/cutáneos por verificar"
+                        )
+
+                    eps_txt = (
+                        (eps_nombre.strip() or "EPS POR VERIFICAR")
+                        + (
+                            f" / {municipio_eps.strip()}"
+                            if municipio_eps.strip()
+                            else ""
+                        )
+                    )
+
+                    obs_reporte = (
+                        observaciones.strip()
+                        or "Se observa en aparentes buenas condiciones."
+                    )
+
+                    reporte_enf = (
+                        f"Se realiza valoración por enfermería {tipo_ingreso_val.lower()} "
+                        f"al usuario:\n"
+                        f"* NOMBRE: {p['nombre_completo']}\n"
+                        f"* CC: {doc}\n"
+                        f"* FN: {fn_txt}\n"
+                        f"* EDAD: {edad_txt} años\n"
+                        f"* DOCUMENTO FÍSICO: {documento_fisico or 'POR VERIFICAR'}\n"
+                        f"* CONSUMO: {consumo_txt}\n"
+                        f"* {antecedentes_txt}\n"
+                        f"* EPS: {eps_txt}\n"
+                        f"* {sintomas_txt}\n"
+                        f"{obs_reporte}\n"
+                        f"REGISTRA: {enfermera_nombre} | CC {enfermera_documento}"
+                    )
+
+                    st.session_state[f"reporte_val_enf_{doc}"] = reporte_enf
+                    st.session_state[f"foto_val_enf_{doc}"] = foto_val_enf
+
                     invalidar_cache_datos()
                     st.success(
                         f"✅ Valoración guardada. Registró: "
