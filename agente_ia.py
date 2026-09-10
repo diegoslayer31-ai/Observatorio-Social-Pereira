@@ -10026,6 +10026,130 @@ def tablero_contribucion_ods_v16():
         )
         st.plotly_chart(fig_modalidad, use_container_width=True)
 
+    # ========================================================
+    # V16.83 - EVIDENCIA COMPLEMENTARIA DE ENFERMERÍA PARA ODS 3
+    # ========================================================
+    st.markdown("### 🩺 Evidencia complementaria de Enfermería · ODS 3")
+    st.caption(
+        "Este bloque complementa los objetivos PAI con resultados operativos "
+        "registrados por Enfermería. Se presenta como evidencia de contribución "
+        "al ODS 3 · Salud y bienestar, no como cumplimiento total del ODS."
+    )
+
+    try:
+        enf_ods = pd.read_sql(
+            text("""
+                SELECT
+                    r.id,
+                    r.fecha_hora,
+                    TRIM(CAST(r.documento_usuario AS TEXT)) AS documento,
+                    r.nombre_usuario,
+                    r.modalidad,
+                    r.tipo_atencion,
+                    COALESCE(r.cantidad,1) AS cantidad,
+                    r.resultado,
+                    r.enfermera_nombre,
+                    r.enfermera_documento
+                FROM enfermeria_registros r
+            """),
+            engine
+        )
+    except Exception:
+        enf_ods = pd.DataFrame()
+
+    if enf_ods.empty:
+        st.info("Aún no hay registros de Enfermería para cruzar con ODS 3.")
+    else:
+        enf_ods["fecha_hora"] = pd.to_datetime(
+            enf_ods["fecha_hora"], errors="coerce", utc=True
+        )
+        enf_ods["cantidad"] = pd.to_numeric(
+            enf_ods["cantidad"], errors="coerce"
+        ).fillna(1)
+
+        # Aplicar filtros equivalentes del tablero cuando sea posible
+        if modalidad_sel:
+            enf_ods = enf_ods[
+                enf_ods["modalidad"].astype(str).str.strip().isin(modalidad_sel)
+            ]
+
+        if ano_sel:
+            enf_ods = enf_ods[
+                enf_ods["fecha_hora"].dt.year.isin(ano_sel)
+            ]
+
+        if enf_ods.empty:
+            st.info(
+                "No hay registros de Enfermería para los filtros de modalidad/año seleccionados."
+            )
+        else:
+            personas_enf = int(enf_ods["documento"].nunique())
+            registros_enf = int(len(enf_ods))
+            atenciones_enf = int(enf_ods["cantidad"].sum())
+
+            val_ingreso = int(
+                enf_ods.loc[
+                    enf_ods["tipo_atencion"].astype(str).str.upper().eq(
+                        "VALORACIÓN DE INGRESO"
+                    ),
+                    "documento"
+                ].nunique()
+            )
+
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric("Personas con gestión de Enfermería", personas_enf)
+            c2.metric("Registros de Enfermería", registros_enf)
+            c3.metric("Atenciones registradas", atenciones_enf)
+            c4.metric("Personas con valoración de ingreso", val_ingreso)
+
+            resumen_enf_ods = (
+                enf_ods.groupby("tipo_atencion", as_index=False)
+                .agg(
+                    personas=("documento", "nunique"),
+                    registros=("id", "count"),
+                    atenciones=("cantidad", "sum")
+                )
+                .sort_values(["personas", "atenciones"], ascending=False)
+            )
+            resumen_enf_ods["atenciones"] = (
+                resumen_enf_ods["atenciones"].round(0).astype(int)
+            )
+
+            st.dataframe(
+                resumen_enf_ods.rename(columns={
+                    "tipo_atencion": "Evidencia de salud",
+                    "personas": "Personas únicas",
+                    "registros": "Registros",
+                    "atenciones": "Atenciones"
+                }),
+                use_container_width=True,
+                hide_index=True
+            )
+
+            st.markdown("#### 👩‍⚕️ Trazabilidad por responsable")
+            autores_enf_ods = (
+                enf_ods.groupby(
+                    ["enfermera_nombre", "enfermera_documento"],
+                    dropna=False,
+                    as_index=False
+                )
+                .agg(
+                    registros=("id", "count"),
+                    personas=("documento", "nunique")
+                )
+                .sort_values("registros", ascending=False)
+            )
+            st.dataframe(
+                autores_enf_ods.rename(columns={
+                    "enfermera_nombre": "Enfermera / responsable",
+                    "enfermera_documento": "CC",
+                    "registros": "Registros",
+                    "personas": "Personas únicas"
+                }),
+                use_container_width=True,
+                hide_index=True
+            )
+
     # Calidad de la clasificación ODS
     st.markdown("### 🧪 Calidad del registro ODS")
     conocidos = set(ods_catalogo.keys())
@@ -10044,8 +10168,9 @@ def tablero_contribucion_ods_v16():
         )
 
     st.caption(
-        "El tablero se alimenta automáticamente de los objetivos PAI; "
-        "el profesional no debe diligenciar un formulario ODS adicional."
+        "El tablero se alimenta automáticamente de los objetivos PAI y, para ODS 3, "
+        "incorpora evidencia complementaria del módulo de Enfermería. "
+        "No se requiere diligenciar un formulario ODS adicional."
     )
 
 
@@ -14422,13 +14547,30 @@ def inicio_ejecutivo_v167():
         avance = pd.to_numeric(
             pai["porcentaje_avance"], errors="coerce"
         ).fillna(0)
+        # V16.83 - Normalización de fechas para evitar mezclar
+        # timestamps con zona horaria de Supabase y fechas locales sin zona.
         fecha_meta = pd.to_datetime(
             pai["fecha_meta"], errors="coerce"
         )
+
         ultimo = pd.to_datetime(
-            pai["fecha_ultimo_seguimiento"], errors="coerce"
+            pai["fecha_ultimo_seguimiento"],
+            errors="coerce",
+            utc=True
         )
-        hoy = pd.Timestamp.today().normalize()
+
+        # Llevar seguimientos a hora Colombia y luego quitar la zona para
+        # comparar de forma homogénea con una fecha local normalizada.
+        ultimo = (
+            ultimo.dt
+            .tz_convert("America/Bogota")
+            .dt
+            .tz_localize(None)
+            .dt
+            .normalize()
+        )
+
+        hoy = pd.Timestamp(ahora_colombia().date())
         cerrado = (
             estado_pai.isin(["CUMPLIDO", "CERRADO", "FINALIZADO"])
             | avance.ge(100)
@@ -14870,11 +15012,71 @@ def modulo_reportes_institucionales_v169():
     except Exception:
         df_gen_rep = pd.DataFrame()
 
+    # ------------------------------------------------------------
+    # V16.83 - DATOS DE ENFERMERÍA PARA INFORME INSTITUCIONAL
+    # ------------------------------------------------------------
+    df_enf_rep = pd.DataFrame()
+    try:
+        df_enf_rep = pd.read_sql(
+            text("""
+                SELECT
+                    r.id,
+                    r.fecha_hora,
+                    TRIM(CAST(r.documento_usuario AS TEXT)) AS documento_usuario,
+                    r.nombre_usuario,
+                    r.modalidad,
+                    r.tipo_atencion,
+                    COALESCE(r.cantidad,1) AS cantidad,
+                    r.resultado,
+                    r.detalle,
+                    r.enfermera_nombre,
+                    r.enfermera_documento
+                FROM enfermeria_registros r
+            """),
+            engine
+        )
+    except Exception:
+        df_enf_rep = pd.DataFrame()
+
+    df_enf_val_rep = pd.DataFrame()
+    try:
+        df_enf_val_rep = pd.read_sql(
+            text("""
+                SELECT
+                    id,
+                    fecha_hora,
+                    TRIM(CAST(documento_usuario AS TEXT)) AS documento_usuario,
+                    nombre_usuario,
+                    modalidad,
+                    enfermera_nombre,
+                    enfermera_documento
+                FROM enfermeria_valoraciones_iniciales
+            """),
+            engine
+        )
+    except Exception:
+        df_enf_val_rep = pd.DataFrame()
+
     docs_filtrados_rep = set()
     if col_doc and col_doc in df_f.columns:
         docs_filtrados_rep = set(
             df_f[col_doc].astype(str).str.strip().tolist()
         )
+
+    if docs_filtrados_rep:
+        if not df_enf_rep.empty and "documento_usuario" in df_enf_rep.columns:
+            df_enf_rep = df_enf_rep[
+                df_enf_rep["documento_usuario"].astype(str).str.strip().isin(
+                    docs_filtrados_rep
+                )
+            ].copy()
+
+        if not df_enf_val_rep.empty and "documento_usuario" in df_enf_val_rep.columns:
+            df_enf_val_rep = df_enf_val_rep[
+                df_enf_val_rep["documento_usuario"].astype(str).str.strip().isin(
+                    docs_filtrados_rep
+                )
+            ].copy()
 
     if not df_hab_rep.empty and "numero_identificacion" in df_hab_rep.columns:
         df_hab_rep["__doc"] = (
@@ -15741,6 +15943,107 @@ def modulo_reportes_institucionales_v169():
 
             for inf_h in inferencias_hab:
                 st.write("• " + inf_h)
+
+        # ========================================================
+        # V16.83 - GESTIÓN DE SALUD Y ENFERMERÍA
+        # ========================================================
+        st.markdown("---")
+        st.subheader("🩺 Gestión de Salud y Enfermería")
+        st.caption(
+            "Cruce automático con los registros del módulo de Enfermería para "
+            "la misma población seleccionada en los filtros del informe. "
+            "Se diferencian personas únicas, registros y atenciones."
+        )
+
+        if df_enf_rep.empty and df_enf_val_rep.empty:
+            st.info(
+                "No hay registros de Enfermería asociados a la población filtrada."
+            )
+        else:
+            if not df_enf_rep.empty:
+                df_enf_rep["cantidad"] = pd.to_numeric(
+                    df_enf_rep["cantidad"], errors="coerce"
+                ).fillna(1)
+                personas_enf_rep = int(
+                    df_enf_rep["documento_usuario"].nunique()
+                )
+                registros_enf_rep = int(len(df_enf_rep))
+                atenciones_enf_rep = int(df_enf_rep["cantidad"].sum())
+            else:
+                personas_enf_rep = 0
+                registros_enf_rep = 0
+                atenciones_enf_rep = 0
+
+            valorados_enf_rep = (
+                int(df_enf_val_rep["documento_usuario"].nunique())
+                if not df_enf_val_rep.empty else 0
+            )
+            cobertura_enf_rep = (
+                round(valorados_enf_rep / len(df_f) * 100, 1)
+                if len(df_f) else 0.0
+            )
+
+            e1, e2, e3, e4, e5 = st.columns(5)
+            e1.metric("Personas atendidas únicas", personas_enf_rep)
+            e2.metric("Registros de Enfermería", registros_enf_rep)
+            e3.metric("Atenciones realizadas", atenciones_enf_rep)
+            e4.metric("Con valoración inicial", valorados_enf_rep)
+            e5.metric("Cobertura valoración", f"{cobertura_enf_rep:.1f}%")
+
+            if not df_enf_rep.empty:
+                resumen_enf_rep = (
+                    df_enf_rep.groupby("tipo_atencion", as_index=False)
+                    .agg(
+                        personas=("documento_usuario", "nunique"),
+                        registros=("id", "count"),
+                        atenciones=("cantidad", "sum")
+                    )
+                    .sort_values(["atenciones", "personas"], ascending=False)
+                )
+                resumen_enf_rep["atenciones"] = (
+                    resumen_enf_rep["atenciones"].round(0).astype(int)
+                )
+
+                st.markdown("#### Atenciones realizadas")
+                st.dataframe(
+                    resumen_enf_rep.rename(columns={
+                        "tipo_atencion": "ATENCIONES REALIZADAS",
+                        "personas": "PERSONAS ÚNICAS",
+                        "registros": "REGISTROS",
+                        "atenciones": "TOTAL"
+                    }),
+                    use_container_width=True,
+                    hide_index=True
+                )
+
+                st.markdown("#### 👩‍⚕️ Actividad por responsable")
+                autores_enf_rep = (
+                    df_enf_rep.groupby(
+                        ["enfermera_nombre", "enfermera_documento"],
+                        dropna=False,
+                        as_index=False
+                    )
+                    .agg(
+                        registros=("id", "count"),
+                        personas=("documento_usuario", "nunique"),
+                        atenciones=("cantidad", "sum")
+                    )
+                    .sort_values("atenciones", ascending=False)
+                )
+                autores_enf_rep["atenciones"] = (
+                    autores_enf_rep["atenciones"].round(0).astype(int)
+                )
+                st.dataframe(
+                    autores_enf_rep.rename(columns={
+                        "enfermera_nombre": "RESPONSABLE",
+                        "enfermera_documento": "CC",
+                        "registros": "REGISTROS",
+                        "personas": "PERSONAS ÚNICAS",
+                        "atenciones": "ATENCIONES"
+                    }),
+                    use_container_width=True,
+                    hide_index=True
+                )
 
         # --------------------------------------------------------
         # EXPORTACIONES
@@ -16963,6 +17266,159 @@ def modulo_reportes_institucionales_v169():
 
                         seccion += 1
 
+                    # ==================================================
+                    # V16.83 - GESTIÓN DE SALUD Y ENFERMERÍA
+                    # ==================================================
+                    if not df_enf_rep.empty or not df_enf_val_rep.empty:
+                        contenido.append(PageBreak())
+                        contenido.append(
+                            Paragraph(
+                                f"{seccion}. Gestión de Salud y Enfermería",
+                                estilo_h1
+                            )
+                        )
+                        contenido.append(
+                            Paragraph(
+                                "Esta sección consolida los registros del módulo de "
+                                "Enfermería asociados a la población incluida en los "
+                                "filtros del informe. Se distinguen personas únicas, "
+                                "registros y atenciones para evitar duplicar beneficiarios.",
+                                estilo_cuerpo
+                            )
+                        )
+
+                        if not df_enf_rep.empty:
+                            _enf_pdf = df_enf_rep.copy()
+                            _enf_pdf["cantidad"] = pd.to_numeric(
+                                _enf_pdf["cantidad"], errors="coerce"
+                            ).fillna(1)
+                            _pers_enf = int(
+                                _enf_pdf["documento_usuario"].nunique()
+                            )
+                            _reg_enf = int(len(_enf_pdf))
+                            _at_enf = int(_enf_pdf["cantidad"].sum())
+                        else:
+                            _enf_pdf = pd.DataFrame()
+                            _pers_enf = 0
+                            _reg_enf = 0
+                            _at_enf = 0
+
+                        _val_enf = (
+                            int(df_enf_val_rep["documento_usuario"].nunique())
+                            if not df_enf_val_rep.empty else 0
+                        )
+                        _cob_enf = (
+                            round(_val_enf / len(df_f) * 100, 1)
+                            if len(df_f) else 0
+                        )
+
+                        contenido.append(
+                            _tabla_pdf(
+                                [
+                                    ["Indicador", "Resultado"],
+                                    ["Personas atendidas únicas", str(_pers_enf)],
+                                    ["Registros de Enfermería", str(_reg_enf)],
+                                    ["Atenciones realizadas", str(_at_enf)],
+                                    ["Personas con valoración inicial", str(_val_enf)],
+                                    ["Cobertura de valoración inicial", f"{_cob_enf:.1f}%"],
+                                ],
+                                anchos=[11 * cm, 5.5 * cm],
+                                fontsize=8.5
+                            )
+                        )
+
+                        if not _enf_pdf.empty:
+                            _res_enf = (
+                                _enf_pdf.groupby("tipo_atencion", as_index=False)
+                                .agg(
+                                    personas=("documento_usuario", "nunique"),
+                                    registros=("id", "count"),
+                                    atenciones=("cantidad", "sum")
+                                )
+                                .sort_values("atenciones", ascending=False)
+                            )
+                            _datos_enf = [[
+                                "Atención realizada",
+                                "Personas únicas",
+                                "Registros",
+                                "Total"
+                            ]]
+                            for _, _r in _res_enf.iterrows():
+                                _datos_enf.append([
+                                    _texto_pdf(_r["tipo_atencion"]),
+                                    str(int(_r["personas"])),
+                                    str(int(_r["registros"])),
+                                    str(int(round(float(_r["atenciones"])))),
+                                ])
+                            contenido.append(
+                                Paragraph(
+                                    "Atenciones realizadas",
+                                    estilo_h2
+                                )
+                            )
+                            contenido.append(
+                                _tabla_pdf(
+                                    _datos_enf,
+                                    anchos=[
+                                        8.5 * cm, 2.8 * cm,
+                                        2.6 * cm, 2.2 * cm
+                                    ],
+                                    fontsize=7.5
+                                )
+                            )
+
+                            _aut_enf = (
+                                _enf_pdf.groupby(
+                                    ["enfermera_nombre", "enfermera_documento"],
+                                    dropna=False,
+                                    as_index=False
+                                )
+                                .agg(
+                                    personas=("documento_usuario", "nunique"),
+                                    registros=("id", "count"),
+                                    atenciones=("cantidad", "sum")
+                                )
+                                .sort_values("atenciones", ascending=False)
+                            )
+                            _datos_aut = [[
+                                "Responsable", "CC", "Personas", "Registros", "Atenciones"
+                            ]]
+                            for _, _r in _aut_enf.iterrows():
+                                _datos_aut.append([
+                                    _texto_pdf(_r["enfermera_nombre"]),
+                                    _texto_pdf(_r["enfermera_documento"]),
+                                    str(int(_r["personas"])),
+                                    str(int(_r["registros"])),
+                                    str(int(round(float(_r["atenciones"])))),
+                                ])
+                            contenido.append(
+                                Paragraph(
+                                    "Trazabilidad por responsable",
+                                    estilo_h2
+                                )
+                            )
+                            contenido.append(
+                                _tabla_pdf(
+                                    _datos_aut,
+                                    anchos=[
+                                        6.1 * cm, 3.0 * cm, 2.3 * cm,
+                                        2.3 * cm, 2.5 * cm
+                                    ],
+                                    fontsize=7.2
+                                )
+                            )
+
+                        contenido.append(
+                            Paragraph(
+                                "Los registros de Enfermería constituyen evidencia "
+                                "operativa de contribución al ODS 3 · Salud y bienestar. "
+                                "Esta relación no debe interpretarse como cumplimiento "
+                                "total del ODS.",
+                                estilo_nota
+                            )
+                        )
+                        seccion += 1
+
                     # ------------------------------------------------
                     # HALLAZGOS Y CONCLUSIONES
                     # ------------------------------------------------
@@ -17356,6 +17812,13 @@ def modulo_reportes_institucionales_v169():
                             "<b>Fuente de egresos:</b> tabla "
                             "<i>personas_caracterizacion</i>, utilizada "
                             "para contabilizar los egresos registrados."
+                        ),
+                        (
+                            "<b>Fuente de Enfermería:</b> tablas "
+                            "<i>enfermeria_registros</i> y "
+                            "<i>enfermeria_valoraciones_iniciales</i>, utilizadas "
+                            "para consolidar atenciones, personas únicas, valoración "
+                            "inicial y trazabilidad del funcionario responsable."
                         ),
                         (
                             "<b>Universo:</b> la población caracterizada "
@@ -18196,7 +18659,7 @@ def caracterizacion_habitabilidad_v1611():
             index=_idx(opciones_relacion, _v("relacion_consumo_calle", ""))
         )
 
-    # V16.81 - Opciones comunes usadas por Redes y Salud integral.
+    # V16.83 - Opciones comunes usadas por Redes y Salud integral.
     # Se definen antes de las pestañas para evitar UnboundLocalError después
     # de convertir Consumo de SPA en una vista de solo lectura.
     si_no = ["", "Sí", "No", "No sabe / no responde"]
