@@ -387,7 +387,7 @@ def generar_identificador_indocumentado_v1619():
 
 def validar_documento_no_duplicado(numero_documento):
     """
-    V16.73 - Protección contra duplicados por documento.
+    V16.75 - Protección contra duplicados por documento.
     Compara el documento normalizado, ignorando puntos, espacios, guiones
     y diferencias de mayúsculas/minúsculas.
     """
@@ -446,7 +446,7 @@ def validar_posible_persona_duplicada_v1672(
     documento_nuevo=None
 ):
     """
-    V16.73 - Prevención reforzada de duplicados.
+    V16.75 - Prevención reforzada de duplicados.
 
     Bloquea la creación si encuentra en habitante_de_calle una persona con:
     1) misma fecha de nacimiento, y
@@ -1034,7 +1034,7 @@ def _panel_medidas_activas_v1647(clave="medidas_activas"):
         st.success("✅ No hay medidas activas registradas.")
         return
 
-    # V16.73: no inflar el tablero por duplicados históricos exactos.
+    # V16.75: no inflar el tablero por duplicados históricos exactos.
     df_medidas = df_medidas.drop_duplicates(
         subset=[
             "numero_identificacion",
@@ -3725,7 +3725,7 @@ def gestion_usuarios():
         persona_car = df_gestion.loc[indice_car]
         doc_car = str(persona_car["numero_identificacion"]).strip()
 
-        # V16.73 - La ficha individual usa EXACTAMENTE el mismo cálculo
+        # V16.75 - La ficha individual usa EXACTAMENTE el mismo cálculo
         # que el listado general de seguimiento.
         completos_car, pendientes_car, total_car, pct_car = (
             _estado_completitud_car_v16195(persona_car)
@@ -4355,10 +4355,10 @@ st.markdown("""
 
 
 # ============================================================
-# V16.73 - REGLAS INSTITUCIONALES DE POSIBLE REINGRESO
+# V16.75 - REGLAS INSTITUCIONALES DE POSIBLE REINGRESO
 # ============================================================
 CRITERIOS_REINGRESO_V1641 = {
-    # V16.73: la sanción empieza a contarse desde el DÍA SIGUIENTE
+    # V16.75: la sanción empieza a contarse desde el DÍA SIGUIENTE
     # a la salida. La fecha calculada es el primer día en que puede
     # VOLVER A SOLICITAR CUPO, no una garantía automática de reingreso.
     "SALIDA VOLUNTARIA": ("dias", 1, "1 día completo de sanción"),
@@ -4394,7 +4394,7 @@ def _fecha_posible_reingreso_v1641(fecha_salida, causal):
 
 def _es_reingreso_operativo_v1667(documento, estado_anterior=""):
     """
-    Regla institucional definitiva V16.73:
+    Regla institucional definitiva V16.75:
     - Si la cédula YA EXISTE en habitante_de_calle, la llegada es REINGRESO.
     - Solo puede ser INGRESO NUEVO cuando la persona NO existía previamente
       en la base maestra y fue creada desde el flujo 'Nuevo usuario'.
@@ -4432,7 +4432,7 @@ def _restriccion_reingreso_v1670(documento):
     """
     Devuelve (fecha, causal) de una restricción REALMENTE vigente.
 
-    Reglas V16.73:
+    Reglas V16.75:
     1. Una salida voluntaria solo bloquea si ocurrió DESPUÉS del último
        INGRESO/REINGRESO. Si la persona ya reingresó después, esa salida
        voluntaria quedó superada y no puede volver a bloquear.
@@ -5645,7 +5645,7 @@ def gestion_usuarios_movil():
         f"👤 {nombre_login} · Perfil: {rol_visible.title()}"
     )
 
-    # V16.73 - Los inspiradores también necesitan ver quién tiene
+    # V16.75 - Los inspiradores también necesitan ver quién tiene
     # una medida vigente antes de intentar un ingreso/reingreso.
     if rol_visible in ["INSPIRADOR", "COORDINACION", "MANAGER"]:
         with st.expander(
@@ -6201,7 +6201,7 @@ def gestion_usuarios_movil():
         )
         if not permiso_actual.empty:
             # Si existe una FUGA activa, el estado operativo prevalente ya no es
-            # "fuera con permiso". El permiso debe estar cerrado por la lógica V16.73.
+            # "fuera con permiso". El permiso debe estar cerrado por la lógica V16.75.
             tiene_fuga_activa = False
             try:
                 if not medida_activa.empty:
@@ -6290,7 +6290,7 @@ def gestion_usuarios_movil():
             "ingreso_reingreso"
         )
 
-        # V16.73 - Al estar en el flujo de usuario existente,
+        # V16.75 - Al estar en el flujo de usuario existente,
         # toda nueva llegada se registra como REINGRESO.
         tipo_previsto = "REINGRESO"
         st.info(
@@ -6314,9 +6314,9 @@ def gestion_usuarios_movil():
             else:
                 estado_anterior = str(u.get("estado_caso") or "").upper()
 
-                # V16.73 - Un usuario existente que salió y vuelve NO es
+                # V16.75 - Un usuario existente que salió y vuelve NO es
                 # "ingreso nuevo". Se clasifica por su historial operativo.
-                # V16.73 - Este flujo parte de "Buscar usuario existente".
+                # V16.75 - Este flujo parte de "Buscar usuario existente".
                 # Por definición, si ya está en habitante_de_calle, es REINGRESO.
                 tipo_mov = "REINGRESO"
 
@@ -6496,7 +6496,7 @@ def gestion_usuarios_movil():
                             }
                         )
 
-                        # V16.73 - Una salida voluntaria significa que la persona
+                        # V16.75 - Una salida voluntaria significa que la persona
                         # ya NO ocupa cupo ni debe contarse como ACTIVA.
                         # Se conserva el expediente; solo cambia su situación operativa.
                         conn.execute(
@@ -7024,7 +7024,7 @@ def gestion_usuarios_movil():
             key=f"movil_obs_medida_{documento}"
         )
 
-        # V16.73 - Foto temporal opcional para sanción / fuga / expulsión.
+        # V16.75 - Foto temporal opcional para sanción / fuga / expulsión.
         # Se usa únicamente para el reporte operativo a compartir y no se
         # almacena en la base de datos ni en Supabase.
         _capturar_foto_temporal_movimiento_v1636(
@@ -7107,7 +7107,7 @@ def gestion_usuarios_movil():
                             }
                         )
 
-                        # V16.73 - Si la causal es FUGA, el permiso abierto deja
+                        # V16.75 - Si la causal es FUGA, el permiso abierto deja
                         # de tener sentido operativo. Se cierra como NO REGRESÓ,
                         # sin registrar un regreso ficticio.
                         if causal_medida == "FUGA":
@@ -8196,7 +8196,7 @@ def control_turno_v13():
             .str.strip()
         )
 
-    # V16.73 - Base maestra completa para resolver permisos.
+    # V16.75 - Base maestra completa para resolver permisos.
     try:
         personas_maestro = pd.read_sql(
             text("""
@@ -8373,7 +8373,7 @@ def control_turno_v13():
     # --------------------------------------------------------
     # Movimientos del día
     # --------------------------------------------------------
-    # V16.73 - "HOY" se define con la fecha local de Colombia.
+    # V16.75 - "HOY" se define con la fecha local de Colombia.
     # No se usa CURRENT_DATE de PostgreSQL porque en Streamlit Cloud
     # la sesión puede estar en UTC y cambiar de día cinco horas antes.
     hoy_colombia = ahora_colombia().date()
@@ -8546,7 +8546,7 @@ def control_turno_v13():
         else pd.DataFrame(columns=["modalidad", "otras_ausencias"])
     )
 
-    # V16.73 - "Con permiso" debe contar EXCLUSIVAMENTE permisos ABIERTOS.
+    # V16.75 - "Con permiso" debe contar EXCLUSIVAMENTE permisos ABIERTOS.
     # Antes se usaba `fuera`, que también incluye salidas voluntarias y otras
     # ausencias operativas; por eso el total podía mostrar, por ejemplo,
     # 6 en URBANO aunque no existieran 6 permisos abiertos visibles.
@@ -10184,7 +10184,7 @@ def panel_profesional_v15(doc_forzado=None, incrustado=False):
     prof_nombre = None
 
     if rol_actual == "PROFESIONAL":
-        # V16.73 - Todo funcionario con rol PROFESIONAL debe tener acceso completo al PAI.
+        # V16.75 - Todo funcionario con rol PROFESIONAL debe tener acceso completo al PAI.
         # Ya no se bloquea por el campo acceso_pai ni por falta de vinculación manual.
         # Si falta el vínculo, se intenta resolver automáticamente por nombre;
         # si tampoco existe el registro profesional, se crea y se vincula.
@@ -12587,7 +12587,7 @@ def dashboard_ejecutivo():
         )
 
     # ========================================================
-    # V16.73 - CLASIFICACIÓN HISTÓRICA CORREGIDA DE INGRESOS / REINGRESOS
+    # V16.75 - CLASIFICACIÓN HISTÓRICA CORREGIDA DE INGRESOS / REINGRESOS
     # ========================================================
     # Regla:
     # - Solo es INGRESO NUEVO si no existe evidencia previa en la base maestra.
@@ -12640,7 +12640,7 @@ def dashboard_ejecutivo():
     except Exception:
         df_llegadas_hist = pd.DataFrame()
 
-    # V16.73 - Recuperar evidencia histórica de la base maestra.
+    # V16.75 - Recuperar evidencia histórica de la base maestra.
     # Esto permite corregir en los reportes movimientos que antiguamente
     # quedaron como INGRESO aunque la persona ya existía desde meses antes.
     historial_maestro = pd.DataFrame()
@@ -12714,7 +12714,7 @@ def dashboard_ejecutivo():
         )
 
     if not df_llegadas_hist.empty:
-        # V16.73 - fecha_movimiento ya llega desde la consulta con la
+        # V16.75 - fecha_movimiento ya llega desde la consulta con la
         # fecha/hora operativa correcta. No se vuelve a convertir de UTC
         # para evitar desplazar un día hacia atrás.
         df_llegadas_hist["fecha_movimiento"] = pd.to_datetime(
@@ -12729,7 +12729,7 @@ def dashboard_ejecutivo():
             df_llegadas_hist["fecha_movimiento"].dt.date
         )
 
-        # V16.73 - Clasificación corregida para población histórica migrada.
+        # V16.75 - Clasificación corregida para población histórica migrada.
         # Un movimiento antiguo marcado como INGRESO se reclasifica como REINGRESO
         # si la base maestra demuestra que la persona ya estaba registrada antes
         # de la fecha de ese movimiento.
@@ -13825,7 +13825,7 @@ with st.sidebar:
 
     elif rol_menu == "PROFESIONAL":
 
-        # V16.73 - Los profesionales tienen acceso directo al módulo PAI completo.
+        # V16.75 - Los profesionales tienen acceso directo al módulo PAI completo.
         if st.button(
             "🩺 Mi Panel Profesional",
             use_container_width=True,
@@ -13855,7 +13855,7 @@ with st.sidebar:
             st.session_state.page = "historia_integral_v12"
             st.rerun()
 
-        # V16.73 - El informe mensual también es parte del acceso profesional.
+        # V16.75 - El informe mensual también es parte del acceso profesional.
         # No depende de una variable antigua de acceso_pai_menu.
         if st.button(
             "📄 Mi Informe Mensual",
@@ -14114,7 +14114,7 @@ def formulario_genero_diversidad(doc_forzado=None, nombre_persona=None, incrusta
             )
         )
 
-        # V16.73 - Se retira del formulario el campo "Expresión de género".
+        # V16.75 - Se retira del formulario el campo "Expresión de género".
         # La columna se conserva en base para no perder datos históricos.
         # Al guardar, se mantiene el valor previo si existe; de lo contrario
         # se registra "No informa" sin mostrar el campo al usuario.
@@ -20134,6 +20134,840 @@ if (
     except Exception:
         pass
 
+# ============================================================
+
+CATEGORIAS_ENFERMERIA_V1671 = [
+    "ACOMPAÑAMIENTO A CITA MÉDICA",
+    "ATENCIÓN EN LA MÓVIL POR MEDICINA GENERAL",
+    "ATENCIÓN EN LA MÓVIL POR ODONTOLOGÍA",
+    "ATENCIÓN REALIZADA",
+    "GESTIÓN",
+    "PRUEBA DE EMBARAZO",
+    "SEGUIMIENTO A USUARIO HOSPITALIZADO",
+    "TRASLADO A URGENCIAS",
+    "ADHERENCIA AL TRATAMIENTO TB",
+    "ADHERENCIA AL TRATAMIENTO SPA",
+    "ADHERENCIA AL TRATAMIENTO ITS",
+    "ADHERENCIA AL TRATAMIENTO VIH",
+    "USUARIO HOSPITALIZADO",
+    "VALORACIÓN DE INGRESO",
+]
+
+
+def modulo_enfermeria_v1673():
+    rol = str(st.session_state.get("rol_actual", "")).strip().upper()
+    if rol not in ["ENFERMERA", "COORDINACION", "MANAGER"]:
+        st.error("Acceso exclusivo para Enfermería, Coordinación o Manager.")
+        return
+
+    puede_registrar = rol == "ENFERMERA"
+
+    enfermera_nombre = str(
+        st.session_state.get("nombre_funcionario", "")
+    ).strip()
+    enfermera_documento = str(
+        st.session_state.get("documento_funcionario", "")
+    ).strip()
+
+    st.title("🩺 Módulo Integral de Enfermería")
+
+    if puede_registrar:
+        st.success(
+            f"Sesión de Enfermería activa: **{enfermera_nombre}** · "
+            f"CC **{enfermera_documento}**. "
+            "Todo registro quedará asociado automáticamente a esta sesión."
+        )
+    else:
+        st.info(
+            f"Perfil **{rol}**: acceso de consulta. "
+            "Solo las cuentas con rol ENFERMERA pueden crear o modificar "
+            "registros de enfermería."
+        )
+
+    # Verificación de tablas
+    try:
+        tablas = pd.read_sql(
+            text("""
+                SELECT table_name
+                FROM information_schema.tables
+                WHERE table_schema='public'
+                  AND table_name IN (
+                      'enfermeria_valoraciones_iniciales',
+                      'enfermeria_registros'
+                  )
+            """),
+            engine
+        )["table_name"].astype(str).tolist()
+    except Exception:
+        tablas = []
+
+    if not {
+        "enfermeria_valoraciones_iniciales",
+        "enfermeria_registros"
+    }.issubset(set(tablas)):
+        st.error(
+            "Falta instalar o actualizar las tablas del módulo. "
+            "Ejecute el SQL V16.75 en Supabase."
+        )
+        return
+
+    personas = pd.read_sql(
+        text("""
+            SELECT
+                TRIM(CAST(numero_identificacion AS TEXT)) AS documento,
+                COALESCE(nombres,'') AS nombres,
+                COALESCE(apellidos,'') AS apellidos,
+                COALESCE(estado_caso,'') AS estado_caso,
+                COALESCE(modalidad,'') AS modalidad,
+                edad,
+                sexo_al_nacer,
+                tipo_seguridad_salud
+            FROM habitante_de_calle
+            ORDER BY nombres, apellidos
+        """),
+        engine
+    )
+
+    if personas.empty:
+        st.warning("No hay personas disponibles en la base maestra.")
+        return
+
+    personas["nombre_completo"] = (
+        personas["nombres"].astype(str).str.strip()
+        + " "
+        + personas["apellidos"].astype(str).str.strip()
+    ).str.strip()
+    personas["label"] = (
+        personas["nombre_completo"]
+        + " · CC "
+        + personas["documento"].astype(str)
+    )
+
+    tabs = st.tabs([
+        "🧾 Valoración inicial",
+        "➕ Atenciones",
+        "📚 Historia",
+        "📊 Reportes",
+    ])
+
+    # ========================================================
+    # VALORACIÓN INICIAL
+    # ========================================================
+    with tabs[0]:
+        st.subheader("🧾 Valoración inicial de enfermería – ingreso al albergue")
+        st.caption(
+            "Se prioriza información indispensable para atención inmediata y "
+            "emergencias, evitando duplicarla en otros formularios."
+        )
+
+        idx = st.selectbox(
+            "Seleccione usuario",
+            personas.index.tolist(),
+            format_func=lambda i: personas.loc[i, "label"],
+            key="enf73_usuario_val"
+        )
+        p = personas.loc[idx]
+        doc = str(p["documento"]).strip()
+
+        prev = pd.read_sql(
+            text("""
+                SELECT *
+                FROM enfermeria_valoraciones_iniciales
+                WHERE TRIM(CAST(documento_usuario AS TEXT))=:doc
+                ORDER BY fecha_hora DESC
+                LIMIT 1
+            """),
+            engine,
+            params={"doc": doc}
+        )
+
+        if not prev.empty:
+            ult = prev.iloc[0]
+            fh = pd.to_datetime(ult.get("fecha_hora"), errors="coerce", utc=True)
+            if pd.notna(fh):
+                fh = fh.tz_convert("America/Bogota")
+                st.info(
+                    f"Última valoración: **{fh.strftime('%d/%m/%Y %I:%M %p')}** · "
+                    f"Registró: **{ult.get('enfermera_nombre','')}**"
+                )
+
+        if puede_registrar:
+            with st.form(f"enf73_val_{doc}"):
+                st.markdown("#### 1. Datos de identificación")
+                c0, c01, c02, c03 = st.columns(4)
+                c0.text_input("Nombre completo", value=p["nombre_completo"], disabled=True)
+                c01.text_input("Documento", value=doc, disabled=True)
+                eps_identificacion = c02.text_input(
+                    "EPS",
+                    value=str(p.get("tipo_seguridad_salud") or "")
+                )
+                c03.text_input("Edad", value=str(p.get("edad") or ""), disabled=True)
+
+                st.markdown("#### 2. Antecedentes y condiciones de salud")
+                enfermedad_conocida = st.selectbox(
+                    "¿Sufre alguna enfermedad o tiene diagnóstico conocido?",
+                    ["NO", "SÍ", "POR VERIFICAR"]
+                )
+                enfermedad_detalle = st.text_area("¿Cuál enfermedad / diagnóstico?")
+
+                toma_medicamento = st.selectbox(
+                    "¿Toma actualmente algún medicamento?",
+                    ["NO", "SÍ", "POR VERIFICAR"]
+                )
+                medicamentos_detalle = st.text_area(
+                    "Medicamento(s): nombre, dosis y frecuencia si se conocen"
+                )
+
+                alergia_medicamento = st.selectbox(
+                    "¿Es alérgico a algún medicamento?",
+                    ["NO", "SÍ", "POR VERIFICAR"]
+                )
+                alergias_detalle = st.text_input("¿Cuál alergia?")
+
+                c1, c2 = st.columns(2)
+                sintomas_gripales = c1.selectbox(
+                    "¿Presenta actualmente síntomas gripales?",
+                    ["NO", "SÍ", "POR VERIFICAR"]
+                )
+                dificultad_respirar = c2.selectbox(
+                    "¿Presenta dificultad para respirar?",
+                    ["NO", "SÍ", "POR VERIFICAR"]
+                )
+
+                necesidad_salud = st.selectbox(
+                    "¿Refiere necesidad inmediata relacionada con su salud?",
+                    ["NO", "SÍ", "POR VERIFICAR"]
+                )
+                necesidad_salud_detalle = st.text_area(
+                    "Detalle de la necesidad inmediata"
+                )
+
+                st.markdown("#### 3. Valoración física")
+                f1, f2 = st.columns(2)
+                peso = f1.number_input(
+                    "Peso (kg)", min_value=0.0, max_value=300.0, step=0.1
+                )
+                talla = f2.number_input(
+                    "Talla (m)", min_value=0.0, max_value=2.5, step=0.01
+                )
+
+                heridas_hallazgos = st.text_area(
+                    "Heridas, lesiones, hematomas, quemaduras o signos visibles de infección"
+                )
+
+                d1, d2, d3 = st.columns([1, 2, 1])
+                presenta_dolor = d1.selectbox("¿Presenta dolor?", ["NO", "SÍ"])
+                dolor_localizacion = d2.text_input("Localización del dolor")
+                dolor_intensidad = d3.number_input(
+                    "Intensidad 0–10", min_value=0, max_value=10, step=1
+                )
+
+                m1, m2, m3 = st.columns(3)
+                movilidad_marcha = m1.selectbox(
+                    "Movilidad y marcha",
+                    ["NORMAL", "ALTERADA", "REQUIERE APOYO", "POR VERIFICAR"]
+                )
+                estado_conciencia = m2.selectbox(
+                    "Estado de conciencia",
+                    ["ALERTA", "SOMNOLIENTO", "ALTERADO", "OTRO"]
+                )
+                orientacion = m3.selectbox(
+                    "Orientación",
+                    ["ORIENTADO", "DESORIENTADO", "POR VERIFICAR"]
+                )
+
+                st.markdown("#### 4. Consumo de SPA")
+                s1, s2 = st.columns(2)
+                consume_spa = s1.selectbox(
+                    "¿Consume SPA actualmente?",
+                    ["", "Sí", "No", "No sabe / no responde"]
+                )
+                sustancia_principal = s2.selectbox(
+                    "Sustancia principal",
+                    ["", "Bazuco", "Marihuana", "Cigarrillo / nicotina",
+                     "Alcohol", "Cocaína", "Heroína", "Inhalantes",
+                     "Pepas / medicamentos", "Tusi / mezclas", "Otra", "No aplica"]
+                )
+                via_spa = st.selectbox(
+                    "Vía de administración principal",
+                    ["", "FUMADA", "INHALADA / ASPIRADA", "ORAL / INGERIDA",
+                     "INYECTADA / INTRAVENOSA", "SUBLINGUAL", "TRANSDÉRMICA",
+                     "OTRA", "NO SABE / POR VERIFICAR"]
+                )
+                otras_spa = st.text_input("Otras sustancias consumidas")
+
+                st.markdown("#### 5. Restablecimiento de derechos")
+                r1, r2 = st.columns(2)
+                regimen_salud = r1.selectbox(
+                    "Régimen de aseguramiento en salud",
+                    ["", "CONTRIBUTIVO", "SUBSIDIADO", "ESPECIAL / EXCEPCIÓN",
+                     "NO ASEGURADO", "NO SABE / POR VERIFICAR"]
+                )
+                eps_nombre = r2.text_input("Nombre de la EPS / entidad aseguradora")
+                municipio_eps = st.text_input(
+                    "Municipio / ciudad donde tiene registrada la EPS"
+                )
+                r3, r4 = st.columns(2)
+                cedulado = r3.selectbox(
+                    "¿Está cedulado?",
+                    ["", "SÍ", "NO", "EN TRÁMITE", "POR VERIFICAR"]
+                )
+                documento_fisico = r4.selectbox(
+                    "¿Tiene documento de identidad en físico?",
+                    ["", "SÍ", "NO", "NO APLICA", "POR VERIFICAR"]
+                )
+
+                st.markdown("#### 6. Salud integral")
+                st.caption("Enfermedades infectocontagiosas / transmisibles")
+                estados_salud = [
+                    "", "NO REFIERE", "SOSPECHA", "DIAGNÓSTICO CONFIRMADO",
+                    "EN TRATAMIENTO", "TRATAMIENTO FINALIZADO", "POR VERIFICAR"
+                ]
+                i1, i2, i3 = st.columns(3)
+                tuberculosis = i1.selectbox("Tuberculosis (TB)", estados_salud)
+                vih = i2.selectbox("VIH", estados_salud)
+                its = i3.selectbox("ITS / Sífilis", estados_salud)
+                i4, i5 = st.columns(2)
+                hepatitis_b = i4.selectbox("Hepatitis B", estados_salud)
+                hepatitis_c = i5.selectbox("Hepatitis C", estados_salud)
+                otra_transmisible = st.text_input("Otra enfermedad transmisible")
+
+                st.caption("Medicación y tratamiento")
+                mt1, mt2 = st.columns(2)
+                usa_medicacion = mt1.selectbox(
+                    "¿Tiene medicación formulada actualmente?",
+                    ["", "NO", "SÍ", "POR VERIFICAR"]
+                )
+                adherencia_medicacion = mt2.selectbox(
+                    "Adherencia a la medicación",
+                    ["", "NO APLICA", "ADECUADA", "IRREGULAR",
+                     "NO ADHERENTE", "POR VERIFICAR"]
+                )
+                hospitalizacion_reciente = st.selectbox(
+                    "Hospitalización reciente",
+                    ["", "NO", "SÍ", "POR VERIFICAR"]
+                )
+
+                st.markdown("#### 7. Conducta / remisión")
+                requiere_urgencias = st.selectbox(
+                    "¿Requiere atención o remisión a urgencias?",
+                    ["NO", "SÍ", "PENDIENTE VALORACIÓN"]
+                )
+                motivo_remision = st.text_area("Motivo de la remisión")
+                observaciones = st.text_area("Observaciones de enfermería")
+
+                confirmar = st.checkbox(
+                    f"Confirmo que la valoración corresponde a {p['nombre_completo']} · CC {doc}"
+                )
+                guardar = st.form_submit_button(
+                    "💾 Guardar valoración de enfermería",
+                    use_container_width=True,
+                    type="primary"
+                )
+
+            if guardar:
+                if not confirmar:
+                    st.error("Debe confirmar la identidad de la persona.")
+                else:
+                    with engine.begin() as conn:
+                        conn.execute(
+                            text("""
+                                INSERT INTO enfermeria_valoraciones_iniciales (
+                                    documento_usuario, nombre_usuario, modalidad,
+                                    fecha_hora, eps,
+                                    enfermedad_conocida, enfermedad_detalle,
+                                    toma_medicamento, medicamentos,
+                                    alergia_medicamento, alergias,
+                                    sintomas_gripales, dificultad_respirar,
+                                    necesidad_salud_inmediata, necesidad_salud_detalle,
+                                    peso, talla, heridas_hallazgos,
+                                    presenta_dolor, dolor_localizacion, dolor_intensidad,
+                                    movilidad_marcha, estado_conciencia, orientacion,
+                                    consume_spa_actualmente, sustancia_principal,
+                                    via_administracion_consumo, sustancias_secundarias,
+                                    regimen_salud, eps_nombre, municipio_eps,
+                                    cedulado, documento_fisico,
+                                    tuberculosis, vih, its_sifilis,
+                                    hepatitis_b, hepatitis_c, otra_infectocontagiosa,
+                                    usa_medicacion, adherencia_medicacion,
+                                    hospitalizacion_reciente, requiere_remision_salud,
+                                    motivo_remision, observaciones,
+                                    enfermera_documento, enfermera_nombre
+                                )
+                                VALUES (
+                                    :doc, :nombre, :modalidad, NOW(), :eps,
+                                    :enf_conocida, :enf_detalle,
+                                    :toma_med, :meds, :alergia_med, :alergias,
+                                    :gripa, :disnea, :necesidad, :necesidad_det,
+                                    :peso, :talla, :heridas, :dolor, :dolor_loc, :dolor_int,
+                                    :marcha, :conciencia, :orientacion,
+                                    :consume_spa, :sustancia, :via_spa, :otras_spa,
+                                    :regimen, :eps_nombre, :municipio_eps,
+                                    :cedulado, :doc_fisico,
+                                    :tb, :vih, :its, :hep_b, :hep_c, :otra_inf,
+                                    :usa_med, :adherencia, :hospitalizacion,
+                                    :remision, :motivo_remision, :obs,
+                                    :enf_doc, :enf_nombre
+                                )
+                            """),
+                            {
+                                "doc": doc,
+                                "nombre": p["nombre_completo"],
+                                "modalidad": p["modalidad"],
+                                "eps": eps_identificacion.strip() or None,
+                                "enf_conocida": enfermedad_conocida,
+                                "enf_detalle": enfermedad_detalle.strip() or None,
+                                "toma_med": toma_medicamento,
+                                "meds": medicamentos_detalle.strip() or None,
+                                "alergia_med": alergia_medicamento,
+                                "alergias": alergias_detalle.strip() or None,
+                                "gripa": sintomas_gripales,
+                                "disnea": dificultad_respirar,
+                                "necesidad": necesidad_salud,
+                                "necesidad_det": necesidad_salud_detalle.strip() or None,
+                                "peso": float(peso) if peso else None,
+                                "talla": float(talla) if talla else None,
+                                "heridas": heridas_hallazgos.strip() or None,
+                                "dolor": presenta_dolor,
+                                "dolor_loc": dolor_localizacion.strip() or None,
+                                "dolor_int": int(dolor_intensidad),
+                                "marcha": movilidad_marcha,
+                                "conciencia": estado_conciencia,
+                                "orientacion": orientacion,
+                                "consume_spa": consume_spa or None,
+                                "sustancia": sustancia_principal or None,
+                                "via_spa": via_spa or None,
+                                "otras_spa": otras_spa.strip() or None,
+                                "regimen": regimen_salud or None,
+                                "eps_nombre": eps_nombre.strip() or None,
+                                "municipio_eps": municipio_eps.strip() or None,
+                                "cedulado": cedulado or None,
+                                "doc_fisico": documento_fisico or None,
+                                "tb": tuberculosis or None,
+                                "vih": vih or None,
+                                "its": its or None,
+                                "hep_b": hepatitis_b or None,
+                                "hep_c": hepatitis_c or None,
+                                "otra_inf": otra_transmisible.strip() or None,
+                                "usa_med": usa_medicacion or None,
+                                "adherencia": adherencia_medicacion or None,
+                                "hospitalizacion": hospitalizacion_reciente or None,
+                                "remision": requiere_urgencias or None,
+                                "motivo_remision": motivo_remision.strip() or None,
+                                "obs": observaciones.strip() or None,
+                                "enf_doc": enfermera_documento,
+                                "enf_nombre": enfermera_nombre,
+                            }
+                        )
+
+                        # Reflejar la información de Enfermería en la
+                        # caracterización especializada para consulta profesional.
+                        conn.execute(
+                            text("""
+                                INSERT INTO caracterizacion_habitabilidad_calle (
+                                    numero_identificacion,
+                                    consume_spa_actualmente,
+                                    sustancia_principal,
+                                    via_administracion_consumo,
+                                    sustancias_secundarias,
+                                    regimen_salud,
+                                    eps_nombre,
+                                    municipio_eps,
+                                    cedulado,
+                                    documento_fisico,
+                                    tuberculosis,
+                                    vih,
+                                    its_sifilis,
+                                    hepatitis_b,
+                                    hepatitis_c,
+                                    otra_infectocontagiosa,
+                                    usa_medicacion,
+                                    medicamentos_actuales,
+                                    adherencia_medicacion,
+                                    alergias,
+                                    hospitalizacion_reciente,
+                                    requiere_remision_salud,
+                                    observaciones_salud,
+                                    actualizado_por,
+                                    actualizado_en
+                                )
+                                VALUES (
+                                    :doc, :consume_spa, :sustancia, :via_spa, :otras_spa,
+                                    :regimen, :eps_nombre, :municipio_eps,
+                                    :cedulado, :doc_fisico,
+                                    :tb, :vih, :its, :hep_b, :hep_c, :otra_inf,
+                                    :usa_med, :meds, :adherencia, :alergias,
+                                    :hospitalizacion, :remision, :obs_salud,
+                                    :enf_nombre, NOW()
+                                )
+                                ON CONFLICT (numero_identificacion)
+                                DO UPDATE SET
+                                    consume_spa_actualmente=EXCLUDED.consume_spa_actualmente,
+                                    sustancia_principal=EXCLUDED.sustancia_principal,
+                                    via_administracion_consumo=EXCLUDED.via_administracion_consumo,
+                                    sustancias_secundarias=EXCLUDED.sustancias_secundarias,
+                                    regimen_salud=EXCLUDED.regimen_salud,
+                                    eps_nombre=EXCLUDED.eps_nombre,
+                                    municipio_eps=EXCLUDED.municipio_eps,
+                                    cedulado=EXCLUDED.cedulado,
+                                    documento_fisico=EXCLUDED.documento_fisico,
+                                    tuberculosis=EXCLUDED.tuberculosis,
+                                    vih=EXCLUDED.vih,
+                                    its_sifilis=EXCLUDED.its_sifilis,
+                                    hepatitis_b=EXCLUDED.hepatitis_b,
+                                    hepatitis_c=EXCLUDED.hepatitis_c,
+                                    otra_infectocontagiosa=EXCLUDED.otra_infectocontagiosa,
+                                    usa_medicacion=EXCLUDED.usa_medicacion,
+                                    medicamentos_actuales=EXCLUDED.medicamentos_actuales,
+                                    adherencia_medicacion=EXCLUDED.adherencia_medicacion,
+                                    alergias=EXCLUDED.alergias,
+                                    hospitalizacion_reciente=EXCLUDED.hospitalizacion_reciente,
+                                    requiere_remision_salud=EXCLUDED.requiere_remision_salud,
+                                    observaciones_salud=EXCLUDED.observaciones_salud,
+                                    actualizado_por=EXCLUDED.actualizado_por,
+                                    actualizado_en=NOW()
+                            """),
+                            {
+                                "doc": doc,
+                                "consume_spa": consume_spa or None,
+                                "sustancia": sustancia_principal or None,
+                                "via_spa": via_spa or None,
+                                "otras_spa": otras_spa.strip() or None,
+                                "regimen": regimen_salud or None,
+                                "eps_nombre": eps_nombre.strip() or None,
+                                "municipio_eps": municipio_eps.strip() or None,
+                                "cedulado": cedulado or None,
+                                "doc_fisico": documento_fisico or None,
+                                "tb": tuberculosis or None,
+                                "vih": vih or None,
+                                "its": its or None,
+                                "hep_b": hepatitis_b or None,
+                                "hep_c": hepatitis_c or None,
+                                "otra_inf": otra_transmisible.strip() or None,
+                                "usa_med": usa_medicacion or None,
+                                "meds": medicamentos_detalle.strip() or None,
+                                "adherencia": adherencia_medicacion or None,
+                                "alergias": alergias_detalle.strip() or None,
+                                "hospitalizacion": hospitalizacion_reciente or None,
+                                "remision": requiere_urgencias or None,
+                                "obs_salud": observaciones.strip() or None,
+                                "enf_nombre": (
+                                    f"{enfermera_nombre} | CC {enfermera_documento}"
+                                )
+                            }
+                        )
+
+                        conn.execute(
+                            text("""
+                                INSERT INTO enfermeria_registros (
+                                    fecha_hora, documento_usuario, nombre_usuario,
+                                    modalidad, tipo_atencion, cantidad, resultado,
+                                    detalle, enfermera_documento, enfermera_nombre
+                                )
+                                VALUES (
+                                    NOW(), :doc, :nombre, :modalidad,
+                                    'VALORACIÓN DE INGRESO', 1, 'REALIZADO',
+                                    :detalle, :enf_doc, :enf_nombre
+                                )
+                            """),
+                            {
+                                "doc": doc,
+                                "nombre": p["nombre_completo"],
+                                "modalidad": p["modalidad"],
+                                "detalle": observaciones.strip() or "Valoración inicial",
+                                "enf_doc": enfermera_documento,
+                                "enf_nombre": enfermera_nombre,
+                            }
+                        )
+
+                    registrar_auditoria(
+                        "VALORACION_INICIAL_ENFERMERIA",
+                        documento=doc,
+                        modulo="Enfermería",
+                        valor_nuevo=(
+                            f"Valoración registrada por {enfermera_nombre} "
+                            f"| CC {enfermera_documento}"
+                        ),
+                        observacion=(observaciones or "")[:500]
+                    )
+                    invalidar_cache_datos()
+                    st.success(
+                        f"✅ Valoración guardada. Registró: "
+                        f"{enfermera_nombre} · CC {enfermera_documento}."
+                    )
+                    st.rerun()
+        else:
+            st.warning(
+                "🔒 Solo Enfermería puede registrar valoraciones. "
+                "Coordinación y Manager tienen acceso de consulta."
+            )
+
+            if prev.empty:
+                st.info("La persona aún no tiene valoración inicial de Enfermería.")
+            else:
+                ult = prev.iloc[0]
+                cols_mostrar = [
+                    c for c in [
+                        "fecha_hora", "eps", "enfermedad_conocida",
+                        "enfermedad_detalle", "toma_medicamento", "medicamentos",
+                        "alergias", "sintomas_gripales", "dificultad_respirar",
+                        "peso", "talla", "heridas_hallazgos", "presenta_dolor",
+                        "dolor_localizacion", "dolor_intensidad", "movilidad_marcha",
+                        "estado_conciencia", "orientacion", "requiere_remision_salud",
+                        "motivo_remision", "observaciones", "enfermera_nombre",
+                        "enfermera_documento"
+                    ] if c in prev.columns
+                ]
+                st.dataframe(
+                    prev[cols_mostrar],
+                    use_container_width=True,
+                    hide_index=True
+                )
+
+    # ========================================================
+    # ATENCIONES / NOVEDADES
+    # ========================================================
+    with tabs[1]:
+        st.subheader("➕ Registro de atenciones y novedades")
+
+        if puede_registrar:
+            idx2 = st.selectbox(
+                "Usuario",
+                personas.index.tolist(),
+                format_func=lambda i: personas.loc[i, "label"],
+                key="enf73_usuario_reg"
+            )
+            p2 = personas.loc[idx2]
+            doc2 = str(p2["documento"]).strip()
+
+            with st.form(f"enf73_reg_{doc2}"):
+                tipo = st.selectbox(
+                    "Tipo de atención",
+                    CATEGORIAS_ENFERMERIA_V1671
+                )
+                cantidad = st.number_input(
+                    "Cantidad", min_value=1, max_value=100, value=1, step=1
+                )
+                resultado = st.selectbox(
+                    "Resultado / estado",
+                    ["REALIZADO", "EN SEGUIMIENTO", "PENDIENTE",
+                     "REMITIDO", "RECHAZADO POR USUARIO"]
+                )
+                detalle = st.text_area(
+                    "Detalle de la atención / novedad *",
+                    placeholder=(
+                        "Ej.: acompañamiento a cita médica, institución, resultado, "
+                        "tratamiento, recomendación o gestión realizada."
+                    )
+                )
+                c1, c2 = st.columns(2)
+                fecha_evento = c1.date_input(
+                    "Fecha", value=ahora_colombia().date()
+                )
+                hora_evento = c2.time_input(
+                    "Hora",
+                    value=ahora_colombia().time().replace(second=0, microsecond=0)
+                )
+                confirmar_reg = st.checkbox(
+                    "Confirmo que el registro corresponde a esta persona"
+                )
+                guardar_reg = st.form_submit_button(
+                    "💾 Guardar atención / novedad",
+                    use_container_width=True,
+                    type="primary"
+                )
+
+            if guardar_reg:
+                if not detalle.strip():
+                    st.error("Debe registrar el detalle.")
+                elif not confirmar_reg:
+                    st.error("Debe confirmar la identidad de la persona.")
+                else:
+                    fecha_hora_local = datetime.combine(
+                        fecha_evento, hora_evento
+                    ).replace(tzinfo=BOGOTA_TZ)
+
+                    with engine.begin() as conn:
+                        conn.execute(
+                            text("""
+                                INSERT INTO enfermeria_registros (
+                                    fecha_hora, documento_usuario, nombre_usuario,
+                                    modalidad, tipo_atencion, cantidad, resultado,
+                                    detalle, enfermera_documento, enfermera_nombre
+                                )
+                                VALUES (
+                                    :fecha_hora, :doc, :nombre, :modalidad,
+                                    :tipo, :cantidad, :resultado, :detalle,
+                                    :enf_doc, :enf_nombre
+                                )
+                            """),
+                            {
+                                "fecha_hora": fecha_hora_local,
+                                "doc": doc2,
+                                "nombre": p2["nombre_completo"],
+                                "modalidad": p2["modalidad"],
+                                "tipo": tipo,
+                                "cantidad": int(cantidad),
+                                "resultado": resultado,
+                                "detalle": detalle.strip(),
+                                "enf_doc": enfermera_documento,
+                                "enf_nombre": enfermera_nombre,
+                            }
+                        )
+
+                    registrar_auditoria(
+                        "REGISTRO_ENFERMERIA",
+                        documento=doc2,
+                        modulo="Enfermería",
+                        valor_nuevo=(
+                            f"{tipo} · {enfermera_nombre} "
+                            f"| CC {enfermera_documento}"
+                        ),
+                        observacion=detalle.strip()[:500]
+                    )
+                    st.success(
+                        f"✅ Registro guardado por {enfermera_nombre} "
+                        f"· CC {enfermera_documento}."
+                    )
+                    st.rerun()
+        else:
+            st.warning(
+                "🔒 Solo las enfermeras pueden crear atenciones o novedades."
+            )
+
+    # ========================================================
+    # HISTORIA POR USUARIO
+    # ========================================================
+    with tabs[2]:
+        st.subheader("📚 Historia de Enfermería por usuario")
+        idx3 = st.selectbox(
+            "Seleccione usuario",
+            personas.index.tolist(),
+            format_func=lambda i: personas.loc[i, "label"],
+            key="enf73_usuario_hist"
+        )
+        p3 = personas.loc[idx3]
+        doc3 = str(p3["documento"]).strip()
+
+        hist = pd.read_sql(
+            text("""
+                SELECT
+                    fecha_hora, tipo_atencion, cantidad, resultado, detalle,
+                    enfermera_nombre, enfermera_documento
+                FROM enfermeria_registros
+                WHERE TRIM(CAST(documento_usuario AS TEXT))=:doc
+                ORDER BY fecha_hora DESC, id DESC
+            """),
+            engine,
+            params={"doc": doc3}
+        )
+
+        if hist.empty:
+            st.info("Este usuario aún no tiene registros de Enfermería.")
+        else:
+            hist["fecha_hora"] = pd.to_datetime(
+                hist["fecha_hora"], errors="coerce", utc=True
+            ).dt.tz_convert("America/Bogota")
+            hist["Fecha"] = hist["fecha_hora"].dt.strftime("%d/%m/%Y %I:%M %p")
+
+            mostrar = hist[
+                ["Fecha", "tipo_atencion", "resultado", "detalle",
+                 "enfermera_nombre", "enfermera_documento"]
+            ].rename(columns={
+                "tipo_atencion": "Atención / novedad",
+                "resultado": "Resultado",
+                "detalle": "Detalle",
+                "enfermera_nombre": "Registró",
+                "enfermera_documento": "CC enfermera",
+            })
+            st.dataframe(mostrar, use_container_width=True, hide_index=True)
+            st.caption(
+                "Cada registro conserva su autoría original. Un registro realizado "
+                "por Martha no cambia si posteriormente Jessica registra otra atención."
+            )
+
+    # ========================================================
+    # REPORTES
+    # ========================================================
+    with tabs[3]:
+        st.subheader("📊 Reporte de atenciones realizadas")
+        r1, r2, r3 = st.columns(3)
+        desde = r1.date_input(
+            "Desde", value=ahora_colombia().date().replace(day=1),
+            key="enf73_rep_desde"
+        )
+        hasta = r2.date_input(
+            "Hasta", value=ahora_colombia().date(),
+            key="enf73_rep_hasta"
+        )
+        modalidad_filtro = r3.selectbox(
+            "Modalidad", ["TODAS", "URBANO", "GRANJA"],
+            key="enf73_rep_modalidad"
+        )
+
+        params = {"desde": desde, "hasta": hasta + timedelta(days=1)}
+        filtro_mod = ""
+        if modalidad_filtro != "TODAS":
+            filtro_mod = " AND UPPER(TRIM(COALESCE(modalidad,'')))=:modalidad "
+            params["modalidad"] = modalidad_filtro
+
+        rep = pd.read_sql(
+            text(f"""
+                SELECT tipo_atencion,
+                       SUM(COALESCE(cantidad,1))::int AS total
+                FROM enfermeria_registros
+                WHERE fecha_hora >= :desde
+                  AND fecha_hora < :hasta
+                  {filtro_mod}
+                GROUP BY tipo_atencion
+            """),
+            engine,
+            params=params
+        )
+
+        base_cat = pd.DataFrame({
+            "ATENCIONES REALIZADAS": CATEGORIAS_ENFERMERIA_V1671
+        })
+        mapa = (
+            dict(zip(rep["tipo_atencion"], rep["total"]))
+            if not rep.empty else {}
+        )
+        base_cat["TOTAL"] = (
+            base_cat["ATENCIONES REALIZADAS"]
+            .map(mapa).fillna(0).astype(int)
+        )
+        st.metric("TOTAL", int(base_cat["TOTAL"].sum()))
+        st.dataframe(base_cat, use_container_width=True, hide_index=True)
+
+        st.markdown("#### 👩‍⚕️ Registros por enfermera")
+        por_enfermera = pd.read_sql(
+            text(f"""
+                SELECT
+                    COALESCE(enfermera_nombre,'SIN IDENTIFICAR') AS enfermera,
+                    COALESCE(enfermera_documento,'') AS documento,
+                    COUNT(*)::int AS registros,
+                    SUM(COALESCE(cantidad,1))::int AS atenciones
+                FROM enfermeria_registros
+                WHERE fecha_hora >= :desde
+                  AND fecha_hora < :hasta
+                  {filtro_mod}
+                GROUP BY enfermera_nombre, enfermera_documento
+                ORDER BY atenciones DESC, enfermera
+            """),
+            engine,
+            params=params
+        )
+        st.dataframe(
+            por_enfermera.rename(columns={
+                "enfermera": "Enfermera",
+                "documento": "CC",
+                "registros": "Registros",
+                "atenciones": "Atenciones"
+            }),
+            use_container_width=True,
+            hide_index=True
+        )
+
 if st.session_state.page == "enfermeria_v1671":
     if rol_router not in ["ENFERMERA", "COORDINACION", "MANAGER"]:
         st.error("Acceso exclusivo para Enfermería, Coordinación o Manager.")
@@ -20648,7 +21482,7 @@ def modulo_auditoria_sesiones_v1634():
         st.error("La fecha inicial no puede ser posterior a la final.")
         return
 
-    # V16.73 - Los filtros se interpretan como días de Colombia.
+    # V16.75 - Los filtros se interpretan como días de Colombia.
     # La base conserva TIMESTAMPTZ; se consulta usando los límites equivalentes en UTC.
     desde_utc = pd.Timestamp(desde, tz="America/Bogota").tz_convert("UTC").to_pydatetime()
     hasta_utc = (
@@ -20704,7 +21538,7 @@ def modulo_auditoria_sesiones_v1634():
     except Exception:
         auditoria = pd.DataFrame()
 
-    # V16.73 - fecha_hora se guarda con zona horaria en PostgreSQL.
+    # V16.75 - fecha_hora se guarda con zona horaria en PostgreSQL.
     # Para visualización se convierte expresamente a America/Bogota.
     if not auditoria.empty:
         auditoria["fecha_hora"] = (
@@ -21597,843 +22431,7 @@ with st.sidebar:
 
 
 # ============================================================
-# V16.73 - MÓDULO INTEGRAL DE ENFERMERÍA
-# ============================================================
-
-CATEGORIAS_ENFERMERIA_V1671 = [
-    "ACOMPAÑAMIENTO A CITA MÉDICA",
-    "ATENCIÓN EN LA MÓVIL POR MEDICINA GENERAL",
-    "ATENCIÓN EN LA MÓVIL POR ODONTOLOGÍA",
-    "ATENCIÓN REALIZADA",
-    "GESTIÓN",
-    "PRUEBA DE EMBARAZO",
-    "SEGUIMIENTO A USUARIO HOSPITALIZADO",
-    "TRASLADO A URGENCIAS",
-    "ADHERENCIA AL TRATAMIENTO TB",
-    "ADHERENCIA AL TRATAMIENTO SPA",
-    "ADHERENCIA AL TRATAMIENTO ITS",
-    "ADHERENCIA AL TRATAMIENTO VIH",
-    "USUARIO HOSPITALIZADO",
-    "VALORACIÓN DE INGRESO",
-]
-
-
-def modulo_enfermeria_v1673():
-    rol = str(st.session_state.get("rol_actual", "")).strip().upper()
-    if rol not in ["ENFERMERA", "COORDINACION", "MANAGER"]:
-        st.error("Acceso exclusivo para Enfermería, Coordinación o Manager.")
-        return
-
-    puede_registrar = rol == "ENFERMERA"
-
-    enfermera_nombre = str(
-        st.session_state.get("nombre_funcionario", "")
-    ).strip()
-    enfermera_documento = str(
-        st.session_state.get("documento_funcionario", "")
-    ).strip()
-
-    st.title("🩺 Módulo Integral de Enfermería")
-
-    if puede_registrar:
-        st.success(
-            f"Sesión de Enfermería activa: **{enfermera_nombre}** · "
-            f"CC **{enfermera_documento}**. "
-            "Todo registro quedará asociado automáticamente a esta sesión."
-        )
-    else:
-        st.info(
-            f"Perfil **{rol}**: acceso de consulta. "
-            "Solo las cuentas con rol ENFERMERA pueden crear o modificar "
-            "registros de enfermería."
-        )
-
-    # Verificación de tablas
-    try:
-        tablas = pd.read_sql(
-            text("""
-                SELECT table_name
-                FROM information_schema.tables
-                WHERE table_schema='public'
-                  AND table_name IN (
-                      'enfermeria_valoraciones_iniciales',
-                      'enfermeria_registros'
-                  )
-            """),
-            engine
-        )["table_name"].astype(str).tolist()
-    except Exception:
-        tablas = []
-
-    if not {
-        "enfermeria_valoraciones_iniciales",
-        "enfermeria_registros"
-    }.issubset(set(tablas)):
-        st.error(
-            "Falta instalar o actualizar las tablas del módulo. "
-            "Ejecute el SQL V16.73 en Supabase."
-        )
-        return
-
-    personas = pd.read_sql(
-        text("""
-            SELECT
-                TRIM(CAST(numero_identificacion AS TEXT)) AS documento,
-                COALESCE(nombres,'') AS nombres,
-                COALESCE(apellidos,'') AS apellidos,
-                COALESCE(estado_caso,'') AS estado_caso,
-                COALESCE(modalidad,'') AS modalidad,
-                edad,
-                sexo_al_nacer,
-                tipo_seguridad_salud
-            FROM habitante_de_calle
-            ORDER BY nombres, apellidos
-        """),
-        engine
-    )
-
-    if personas.empty:
-        st.warning("No hay personas disponibles en la base maestra.")
-        return
-
-    personas["nombre_completo"] = (
-        personas["nombres"].astype(str).str.strip()
-        + " "
-        + personas["apellidos"].astype(str).str.strip()
-    ).str.strip()
-    personas["label"] = (
-        personas["nombre_completo"]
-        + " · CC "
-        + personas["documento"].astype(str)
-    )
-
-    tabs = st.tabs([
-        "🧾 Valoración inicial",
-        "➕ Atenciones",
-        "📚 Historia",
-        "📊 Reportes",
-    ])
-
-    # ========================================================
-    # VALORACIÓN INICIAL
-    # ========================================================
-    with tabs[0]:
-        st.subheader("🧾 Valoración inicial de enfermería – ingreso al albergue")
-        st.caption(
-            "Se prioriza información indispensable para atención inmediata y "
-            "emergencias, evitando duplicarla en otros formularios."
-        )
-
-        idx = st.selectbox(
-            "Seleccione usuario",
-            personas.index.tolist(),
-            format_func=lambda i: personas.loc[i, "label"],
-            key="enf73_usuario_val"
-        )
-        p = personas.loc[idx]
-        doc = str(p["documento"]).strip()
-
-        prev = pd.read_sql(
-            text("""
-                SELECT *
-                FROM enfermeria_valoraciones_iniciales
-                WHERE TRIM(CAST(documento_usuario AS TEXT))=:doc
-                ORDER BY fecha_hora DESC
-                LIMIT 1
-            """),
-            engine,
-            params={"doc": doc}
-        )
-
-        if not prev.empty:
-            ult = prev.iloc[0]
-            fh = pd.to_datetime(ult.get("fecha_hora"), errors="coerce", utc=True)
-            if pd.notna(fh):
-                fh = fh.tz_convert("America/Bogota")
-                st.info(
-                    f"Última valoración: **{fh.strftime('%d/%m/%Y %I:%M %p')}** · "
-                    f"Registró: **{ult.get('enfermera_nombre','')}**"
-                )
-
-        if puede_registrar:
-            with st.form(f"enf73_val_{doc}"):
-                st.markdown("#### 1. Datos de identificación")
-                c0, c01, c02, c03 = st.columns(4)
-                c0.text_input("Nombre completo", value=p["nombre_completo"], disabled=True)
-                c01.text_input("Documento", value=doc, disabled=True)
-                eps_identificacion = c02.text_input(
-                    "EPS",
-                    value=str(p.get("tipo_seguridad_salud") or "")
-                )
-                c03.text_input("Edad", value=str(p.get("edad") or ""), disabled=True)
-
-                st.markdown("#### 2. Antecedentes y condiciones de salud")
-                enfermedad_conocida = st.selectbox(
-                    "¿Sufre alguna enfermedad o tiene diagnóstico conocido?",
-                    ["NO", "SÍ", "POR VERIFICAR"]
-                )
-                enfermedad_detalle = st.text_area("¿Cuál enfermedad / diagnóstico?")
-
-                toma_medicamento = st.selectbox(
-                    "¿Toma actualmente algún medicamento?",
-                    ["NO", "SÍ", "POR VERIFICAR"]
-                )
-                medicamentos_detalle = st.text_area(
-                    "Medicamento(s): nombre, dosis y frecuencia si se conocen"
-                )
-
-                alergia_medicamento = st.selectbox(
-                    "¿Es alérgico a algún medicamento?",
-                    ["NO", "SÍ", "POR VERIFICAR"]
-                )
-                alergias_detalle = st.text_input("¿Cuál alergia?")
-
-                c1, c2 = st.columns(2)
-                sintomas_gripales = c1.selectbox(
-                    "¿Presenta actualmente síntomas gripales?",
-                    ["NO", "SÍ", "POR VERIFICAR"]
-                )
-                dificultad_respirar = c2.selectbox(
-                    "¿Presenta dificultad para respirar?",
-                    ["NO", "SÍ", "POR VERIFICAR"]
-                )
-
-                necesidad_salud = st.selectbox(
-                    "¿Refiere necesidad inmediata relacionada con su salud?",
-                    ["NO", "SÍ", "POR VERIFICAR"]
-                )
-                necesidad_salud_detalle = st.text_area(
-                    "Detalle de la necesidad inmediata"
-                )
-
-                st.markdown("#### 3. Valoración física")
-                f1, f2 = st.columns(2)
-                peso = f1.number_input(
-                    "Peso (kg)", min_value=0.0, max_value=300.0, step=0.1
-                )
-                talla = f2.number_input(
-                    "Talla (m)", min_value=0.0, max_value=2.5, step=0.01
-                )
-
-                heridas_hallazgos = st.text_area(
-                    "Heridas, lesiones, hematomas, quemaduras o signos visibles de infección"
-                )
-
-                d1, d2, d3 = st.columns([1, 2, 1])
-                presenta_dolor = d1.selectbox("¿Presenta dolor?", ["NO", "SÍ"])
-                dolor_localizacion = d2.text_input("Localización del dolor")
-                dolor_intensidad = d3.number_input(
-                    "Intensidad 0–10", min_value=0, max_value=10, step=1
-                )
-
-                m1, m2, m3 = st.columns(3)
-                movilidad_marcha = m1.selectbox(
-                    "Movilidad y marcha",
-                    ["NORMAL", "ALTERADA", "REQUIERE APOYO", "POR VERIFICAR"]
-                )
-                estado_conciencia = m2.selectbox(
-                    "Estado de conciencia",
-                    ["ALERTA", "SOMNOLIENTO", "ALTERADO", "OTRO"]
-                )
-                orientacion = m3.selectbox(
-                    "Orientación",
-                    ["ORIENTADO", "DESORIENTADO", "POR VERIFICAR"]
-                )
-
-                st.markdown("#### 4. Consumo de SPA")
-                s1, s2 = st.columns(2)
-                consume_spa = s1.selectbox(
-                    "¿Consume SPA actualmente?",
-                    ["", "Sí", "No", "No sabe / no responde"]
-                )
-                sustancia_principal = s2.selectbox(
-                    "Sustancia principal",
-                    ["", "Bazuco", "Marihuana", "Cigarrillo / nicotina",
-                     "Alcohol", "Cocaína", "Heroína", "Inhalantes",
-                     "Pepas / medicamentos", "Tusi / mezclas", "Otra", "No aplica"]
-                )
-                via_spa = st.selectbox(
-                    "Vía de administración principal",
-                    ["", "FUMADA", "INHALADA / ASPIRADA", "ORAL / INGERIDA",
-                     "INYECTADA / INTRAVENOSA", "SUBLINGUAL", "TRANSDÉRMICA",
-                     "OTRA", "NO SABE / POR VERIFICAR"]
-                )
-                otras_spa = st.text_input("Otras sustancias consumidas")
-
-                st.markdown("#### 5. Restablecimiento de derechos")
-                r1, r2 = st.columns(2)
-                regimen_salud = r1.selectbox(
-                    "Régimen de aseguramiento en salud",
-                    ["", "CONTRIBUTIVO", "SUBSIDIADO", "ESPECIAL / EXCEPCIÓN",
-                     "NO ASEGURADO", "NO SABE / POR VERIFICAR"]
-                )
-                eps_nombre = r2.text_input("Nombre de la EPS / entidad aseguradora")
-                municipio_eps = st.text_input(
-                    "Municipio / ciudad donde tiene registrada la EPS"
-                )
-                r3, r4 = st.columns(2)
-                cedulado = r3.selectbox(
-                    "¿Está cedulado?",
-                    ["", "SÍ", "NO", "EN TRÁMITE", "POR VERIFICAR"]
-                )
-                documento_fisico = r4.selectbox(
-                    "¿Tiene documento de identidad en físico?",
-                    ["", "SÍ", "NO", "NO APLICA", "POR VERIFICAR"]
-                )
-
-                st.markdown("#### 6. Salud integral")
-                st.caption("Enfermedades infectocontagiosas / transmisibles")
-                estados_salud = [
-                    "", "NO REFIERE", "SOSPECHA", "DIAGNÓSTICO CONFIRMADO",
-                    "EN TRATAMIENTO", "TRATAMIENTO FINALIZADO", "POR VERIFICAR"
-                ]
-                i1, i2, i3 = st.columns(3)
-                tuberculosis = i1.selectbox("Tuberculosis (TB)", estados_salud)
-                vih = i2.selectbox("VIH", estados_salud)
-                its = i3.selectbox("ITS / Sífilis", estados_salud)
-                i4, i5 = st.columns(2)
-                hepatitis_b = i4.selectbox("Hepatitis B", estados_salud)
-                hepatitis_c = i5.selectbox("Hepatitis C", estados_salud)
-                otra_transmisible = st.text_input("Otra enfermedad transmisible")
-
-                st.caption("Medicación y tratamiento")
-                mt1, mt2 = st.columns(2)
-                usa_medicacion = mt1.selectbox(
-                    "¿Tiene medicación formulada actualmente?",
-                    ["", "NO", "SÍ", "POR VERIFICAR"]
-                )
-                adherencia_medicacion = mt2.selectbox(
-                    "Adherencia a la medicación",
-                    ["", "NO APLICA", "ADECUADA", "IRREGULAR",
-                     "NO ADHERENTE", "POR VERIFICAR"]
-                )
-                hospitalizacion_reciente = st.selectbox(
-                    "Hospitalización reciente",
-                    ["", "NO", "SÍ", "POR VERIFICAR"]
-                )
-
-                st.markdown("#### 7. Conducta / remisión")
-                requiere_urgencias = st.selectbox(
-                    "¿Requiere atención o remisión a urgencias?",
-                    ["NO", "SÍ", "PENDIENTE VALORACIÓN"]
-                )
-                motivo_remision = st.text_area("Motivo de la remisión")
-                observaciones = st.text_area("Observaciones de enfermería")
-
-                confirmar = st.checkbox(
-                    f"Confirmo que la valoración corresponde a {p['nombre_completo']} · CC {doc}"
-                )
-                guardar = st.form_submit_button(
-                    "💾 Guardar valoración de enfermería",
-                    use_container_width=True,
-                    type="primary"
-                )
-
-            if guardar:
-                if not confirmar:
-                    st.error("Debe confirmar la identidad de la persona.")
-                else:
-                    with engine.begin() as conn:
-                        conn.execute(
-                            text("""
-                                INSERT INTO enfermeria_valoraciones_iniciales (
-                                    documento_usuario, nombre_usuario, modalidad,
-                                    fecha_hora, eps,
-                                    enfermedad_conocida, enfermedad_detalle,
-                                    toma_medicamento, medicamentos,
-                                    alergia_medicamento, alergias,
-                                    sintomas_gripales, dificultad_respirar,
-                                    necesidad_salud_inmediata, necesidad_salud_detalle,
-                                    peso, talla, heridas_hallazgos,
-                                    presenta_dolor, dolor_localizacion, dolor_intensidad,
-                                    movilidad_marcha, estado_conciencia, orientacion,
-                                    consume_spa_actualmente, sustancia_principal,
-                                    via_administracion_consumo, sustancias_secundarias,
-                                    regimen_salud, eps_nombre, municipio_eps,
-                                    cedulado, documento_fisico,
-                                    tuberculosis, vih, its_sifilis,
-                                    hepatitis_b, hepatitis_c, otra_infectocontagiosa,
-                                    usa_medicacion, adherencia_medicacion,
-                                    hospitalizacion_reciente, requiere_remision_salud,
-                                    motivo_remision, observaciones,
-                                    enfermera_documento, enfermera_nombre
-                                )
-                                VALUES (
-                                    :doc, :nombre, :modalidad, NOW(), :eps,
-                                    :enf_conocida, :enf_detalle,
-                                    :toma_med, :meds, :alergia_med, :alergias,
-                                    :gripa, :disnea, :necesidad, :necesidad_det,
-                                    :peso, :talla, :heridas, :dolor, :dolor_loc, :dolor_int,
-                                    :marcha, :conciencia, :orientacion,
-                                    :consume_spa, :sustancia, :via_spa, :otras_spa,
-                                    :regimen, :eps_nombre, :municipio_eps,
-                                    :cedulado, :doc_fisico,
-                                    :tb, :vih, :its, :hep_b, :hep_c, :otra_inf,
-                                    :usa_med, :adherencia, :hospitalizacion,
-                                    :remision, :motivo_remision, :obs,
-                                    :enf_doc, :enf_nombre
-                                )
-                            """),
-                            {
-                                "doc": doc,
-                                "nombre": p["nombre_completo"],
-                                "modalidad": p["modalidad"],
-                                "eps": eps_identificacion.strip() or None,
-                                "enf_conocida": enfermedad_conocida,
-                                "enf_detalle": enfermedad_detalle.strip() or None,
-                                "toma_med": toma_medicamento,
-                                "meds": medicamentos_detalle.strip() or None,
-                                "alergia_med": alergia_medicamento,
-                                "alergias": alergias_detalle.strip() or None,
-                                "gripa": sintomas_gripales,
-                                "disnea": dificultad_respirar,
-                                "necesidad": necesidad_salud,
-                                "necesidad_det": necesidad_salud_detalle.strip() or None,
-                                "peso": float(peso) if peso else None,
-                                "talla": float(talla) if talla else None,
-                                "heridas": heridas_hallazgos.strip() or None,
-                                "dolor": presenta_dolor,
-                                "dolor_loc": dolor_localizacion.strip() or None,
-                                "dolor_int": int(dolor_intensidad),
-                                "marcha": movilidad_marcha,
-                                "conciencia": estado_conciencia,
-                                "orientacion": orientacion,
-                                "consume_spa": consume_spa or None,
-                                "sustancia": sustancia_principal or None,
-                                "via_spa": via_spa or None,
-                                "otras_spa": otras_spa.strip() or None,
-                                "regimen": regimen_salud or None,
-                                "eps_nombre": eps_nombre.strip() or None,
-                                "municipio_eps": municipio_eps.strip() or None,
-                                "cedulado": cedulado or None,
-                                "doc_fisico": documento_fisico or None,
-                                "tb": tuberculosis or None,
-                                "vih": vih or None,
-                                "its": its or None,
-                                "hep_b": hepatitis_b or None,
-                                "hep_c": hepatitis_c or None,
-                                "otra_inf": otra_transmisible.strip() or None,
-                                "usa_med": usa_medicacion or None,
-                                "adherencia": adherencia_medicacion or None,
-                                "hospitalizacion": hospitalizacion_reciente or None,
-                                "remision": requiere_urgencias or None,
-                                "motivo_remision": motivo_remision.strip() or None,
-                                "obs": observaciones.strip() or None,
-                                "enf_doc": enfermera_documento,
-                                "enf_nombre": enfermera_nombre,
-                            }
-                        )
-
-                        # Reflejar la información de Enfermería en la
-                        # caracterización especializada para consulta profesional.
-                        conn.execute(
-                            text("""
-                                INSERT INTO caracterizacion_habitabilidad_calle (
-                                    numero_identificacion,
-                                    consume_spa_actualmente,
-                                    sustancia_principal,
-                                    via_administracion_consumo,
-                                    sustancias_secundarias,
-                                    regimen_salud,
-                                    eps_nombre,
-                                    municipio_eps,
-                                    cedulado,
-                                    documento_fisico,
-                                    tuberculosis,
-                                    vih,
-                                    its_sifilis,
-                                    hepatitis_b,
-                                    hepatitis_c,
-                                    otra_infectocontagiosa,
-                                    usa_medicacion,
-                                    medicamentos_actuales,
-                                    adherencia_medicacion,
-                                    alergias,
-                                    hospitalizacion_reciente,
-                                    requiere_remision_salud,
-                                    observaciones_salud,
-                                    actualizado_por,
-                                    actualizado_en
-                                )
-                                VALUES (
-                                    :doc, :consume_spa, :sustancia, :via_spa, :otras_spa,
-                                    :regimen, :eps_nombre, :municipio_eps,
-                                    :cedulado, :doc_fisico,
-                                    :tb, :vih, :its, :hep_b, :hep_c, :otra_inf,
-                                    :usa_med, :meds, :adherencia, :alergias,
-                                    :hospitalizacion, :remision, :obs_salud,
-                                    :enf_nombre, NOW()
-                                )
-                                ON CONFLICT (numero_identificacion)
-                                DO UPDATE SET
-                                    consume_spa_actualmente=EXCLUDED.consume_spa_actualmente,
-                                    sustancia_principal=EXCLUDED.sustancia_principal,
-                                    via_administracion_consumo=EXCLUDED.via_administracion_consumo,
-                                    sustancias_secundarias=EXCLUDED.sustancias_secundarias,
-                                    regimen_salud=EXCLUDED.regimen_salud,
-                                    eps_nombre=EXCLUDED.eps_nombre,
-                                    municipio_eps=EXCLUDED.municipio_eps,
-                                    cedulado=EXCLUDED.cedulado,
-                                    documento_fisico=EXCLUDED.documento_fisico,
-                                    tuberculosis=EXCLUDED.tuberculosis,
-                                    vih=EXCLUDED.vih,
-                                    its_sifilis=EXCLUDED.its_sifilis,
-                                    hepatitis_b=EXCLUDED.hepatitis_b,
-                                    hepatitis_c=EXCLUDED.hepatitis_c,
-                                    otra_infectocontagiosa=EXCLUDED.otra_infectocontagiosa,
-                                    usa_medicacion=EXCLUDED.usa_medicacion,
-                                    medicamentos_actuales=EXCLUDED.medicamentos_actuales,
-                                    adherencia_medicacion=EXCLUDED.adherencia_medicacion,
-                                    alergias=EXCLUDED.alergias,
-                                    hospitalizacion_reciente=EXCLUDED.hospitalizacion_reciente,
-                                    requiere_remision_salud=EXCLUDED.requiere_remision_salud,
-                                    observaciones_salud=EXCLUDED.observaciones_salud,
-                                    actualizado_por=EXCLUDED.actualizado_por,
-                                    actualizado_en=NOW()
-                            """),
-                            {
-                                "doc": doc,
-                                "consume_spa": consume_spa or None,
-                                "sustancia": sustancia_principal or None,
-                                "via_spa": via_spa or None,
-                                "otras_spa": otras_spa.strip() or None,
-                                "regimen": regimen_salud or None,
-                                "eps_nombre": eps_nombre.strip() or None,
-                                "municipio_eps": municipio_eps.strip() or None,
-                                "cedulado": cedulado or None,
-                                "doc_fisico": documento_fisico or None,
-                                "tb": tuberculosis or None,
-                                "vih": vih or None,
-                                "its": its or None,
-                                "hep_b": hepatitis_b or None,
-                                "hep_c": hepatitis_c or None,
-                                "otra_inf": otra_transmisible.strip() or None,
-                                "usa_med": usa_medicacion or None,
-                                "meds": medicamentos_detalle.strip() or None,
-                                "adherencia": adherencia_medicacion or None,
-                                "alergias": alergias_detalle.strip() or None,
-                                "hospitalizacion": hospitalizacion_reciente or None,
-                                "remision": requiere_urgencias or None,
-                                "obs_salud": observaciones.strip() or None,
-                                "enf_nombre": (
-                                    f"{enfermera_nombre} | CC {enfermera_documento}"
-                                )
-                            }
-                        )
-
-                        conn.execute(
-                            text("""
-                                INSERT INTO enfermeria_registros (
-                                    fecha_hora, documento_usuario, nombre_usuario,
-                                    modalidad, tipo_atencion, cantidad, resultado,
-                                    detalle, enfermera_documento, enfermera_nombre
-                                )
-                                VALUES (
-                                    NOW(), :doc, :nombre, :modalidad,
-                                    'VALORACIÓN DE INGRESO', 1, 'REALIZADO',
-                                    :detalle, :enf_doc, :enf_nombre
-                                )
-                            """),
-                            {
-                                "doc": doc,
-                                "nombre": p["nombre_completo"],
-                                "modalidad": p["modalidad"],
-                                "detalle": observaciones.strip() or "Valoración inicial",
-                                "enf_doc": enfermera_documento,
-                                "enf_nombre": enfermera_nombre,
-                            }
-                        )
-
-                    registrar_auditoria(
-                        "VALORACION_INICIAL_ENFERMERIA",
-                        documento=doc,
-                        modulo="Enfermería",
-                        valor_nuevo=(
-                            f"Valoración registrada por {enfermera_nombre} "
-                            f"| CC {enfermera_documento}"
-                        ),
-                        observacion=(observaciones or "")[:500]
-                    )
-                    invalidar_cache_datos()
-                    st.success(
-                        f"✅ Valoración guardada. Registró: "
-                        f"{enfermera_nombre} · CC {enfermera_documento}."
-                    )
-                    st.rerun()
-        else:
-            st.warning(
-                "🔒 Solo Enfermería puede registrar valoraciones. "
-                "Coordinación y Manager tienen acceso de consulta."
-            )
-
-            if prev.empty:
-                st.info("La persona aún no tiene valoración inicial de Enfermería.")
-            else:
-                ult = prev.iloc[0]
-                cols_mostrar = [
-                    c for c in [
-                        "fecha_hora", "eps", "enfermedad_conocida",
-                        "enfermedad_detalle", "toma_medicamento", "medicamentos",
-                        "alergias", "sintomas_gripales", "dificultad_respirar",
-                        "peso", "talla", "heridas_hallazgos", "presenta_dolor",
-                        "dolor_localizacion", "dolor_intensidad", "movilidad_marcha",
-                        "estado_conciencia", "orientacion", "requiere_remision_salud",
-                        "motivo_remision", "observaciones", "enfermera_nombre",
-                        "enfermera_documento"
-                    ] if c in prev.columns
-                ]
-                st.dataframe(
-                    prev[cols_mostrar],
-                    use_container_width=True,
-                    hide_index=True
-                )
-
-    # ========================================================
-    # ATENCIONES / NOVEDADES
-    # ========================================================
-    with tabs[1]:
-        st.subheader("➕ Registro de atenciones y novedades")
-
-        if puede_registrar:
-            idx2 = st.selectbox(
-                "Usuario",
-                personas.index.tolist(),
-                format_func=lambda i: personas.loc[i, "label"],
-                key="enf73_usuario_reg"
-            )
-            p2 = personas.loc[idx2]
-            doc2 = str(p2["documento"]).strip()
-
-            with st.form(f"enf73_reg_{doc2}"):
-                tipo = st.selectbox(
-                    "Tipo de atención",
-                    CATEGORIAS_ENFERMERIA_V1671
-                )
-                cantidad = st.number_input(
-                    "Cantidad", min_value=1, max_value=100, value=1, step=1
-                )
-                resultado = st.selectbox(
-                    "Resultado / estado",
-                    ["REALIZADO", "EN SEGUIMIENTO", "PENDIENTE",
-                     "REMITIDO", "RECHAZADO POR USUARIO"]
-                )
-                detalle = st.text_area(
-                    "Detalle de la atención / novedad *",
-                    placeholder=(
-                        "Ej.: acompañamiento a cita médica, institución, resultado, "
-                        "tratamiento, recomendación o gestión realizada."
-                    )
-                )
-                c1, c2 = st.columns(2)
-                fecha_evento = c1.date_input(
-                    "Fecha", value=ahora_colombia().date()
-                )
-                hora_evento = c2.time_input(
-                    "Hora",
-                    value=ahora_colombia().time().replace(second=0, microsecond=0)
-                )
-                confirmar_reg = st.checkbox(
-                    "Confirmo que el registro corresponde a esta persona"
-                )
-                guardar_reg = st.form_submit_button(
-                    "💾 Guardar atención / novedad",
-                    use_container_width=True,
-                    type="primary"
-                )
-
-            if guardar_reg:
-                if not detalle.strip():
-                    st.error("Debe registrar el detalle.")
-                elif not confirmar_reg:
-                    st.error("Debe confirmar la identidad de la persona.")
-                else:
-                    fecha_hora_local = datetime.combine(
-                        fecha_evento, hora_evento
-                    ).replace(tzinfo=BOGOTA_TZ)
-
-                    with engine.begin() as conn:
-                        conn.execute(
-                            text("""
-                                INSERT INTO enfermeria_registros (
-                                    fecha_hora, documento_usuario, nombre_usuario,
-                                    modalidad, tipo_atencion, cantidad, resultado,
-                                    detalle, enfermera_documento, enfermera_nombre
-                                )
-                                VALUES (
-                                    :fecha_hora, :doc, :nombre, :modalidad,
-                                    :tipo, :cantidad, :resultado, :detalle,
-                                    :enf_doc, :enf_nombre
-                                )
-                            """),
-                            {
-                                "fecha_hora": fecha_hora_local,
-                                "doc": doc2,
-                                "nombre": p2["nombre_completo"],
-                                "modalidad": p2["modalidad"],
-                                "tipo": tipo,
-                                "cantidad": int(cantidad),
-                                "resultado": resultado,
-                                "detalle": detalle.strip(),
-                                "enf_doc": enfermera_documento,
-                                "enf_nombre": enfermera_nombre,
-                            }
-                        )
-
-                    registrar_auditoria(
-                        "REGISTRO_ENFERMERIA",
-                        documento=doc2,
-                        modulo="Enfermería",
-                        valor_nuevo=(
-                            f"{tipo} · {enfermera_nombre} "
-                            f"| CC {enfermera_documento}"
-                        ),
-                        observacion=detalle.strip()[:500]
-                    )
-                    st.success(
-                        f"✅ Registro guardado por {enfermera_nombre} "
-                        f"· CC {enfermera_documento}."
-                    )
-                    st.rerun()
-        else:
-            st.warning(
-                "🔒 Solo las enfermeras pueden crear atenciones o novedades."
-            )
-
-    # ========================================================
-    # HISTORIA POR USUARIO
-    # ========================================================
-    with tabs[2]:
-        st.subheader("📚 Historia de Enfermería por usuario")
-        idx3 = st.selectbox(
-            "Seleccione usuario",
-            personas.index.tolist(),
-            format_func=lambda i: personas.loc[i, "label"],
-            key="enf73_usuario_hist"
-        )
-        p3 = personas.loc[idx3]
-        doc3 = str(p3["documento"]).strip()
-
-        hist = pd.read_sql(
-            text("""
-                SELECT
-                    fecha_hora, tipo_atencion, cantidad, resultado, detalle,
-                    enfermera_nombre, enfermera_documento
-                FROM enfermeria_registros
-                WHERE TRIM(CAST(documento_usuario AS TEXT))=:doc
-                ORDER BY fecha_hora DESC, id DESC
-            """),
-            engine,
-            params={"doc": doc3}
-        )
-
-        if hist.empty:
-            st.info("Este usuario aún no tiene registros de Enfermería.")
-        else:
-            hist["fecha_hora"] = pd.to_datetime(
-                hist["fecha_hora"], errors="coerce", utc=True
-            ).dt.tz_convert("America/Bogota")
-            hist["Fecha"] = hist["fecha_hora"].dt.strftime("%d/%m/%Y %I:%M %p")
-
-            mostrar = hist[
-                ["Fecha", "tipo_atencion", "resultado", "detalle",
-                 "enfermera_nombre", "enfermera_documento"]
-            ].rename(columns={
-                "tipo_atencion": "Atención / novedad",
-                "resultado": "Resultado",
-                "detalle": "Detalle",
-                "enfermera_nombre": "Registró",
-                "enfermera_documento": "CC enfermera",
-            })
-            st.dataframe(mostrar, use_container_width=True, hide_index=True)
-            st.caption(
-                "Cada registro conserva su autoría original. Un registro realizado "
-                "por Martha no cambia si posteriormente Jessica registra otra atención."
-            )
-
-    # ========================================================
-    # REPORTES
-    # ========================================================
-    with tabs[3]:
-        st.subheader("📊 Reporte de atenciones realizadas")
-        r1, r2, r3 = st.columns(3)
-        desde = r1.date_input(
-            "Desde", value=ahora_colombia().date().replace(day=1),
-            key="enf73_rep_desde"
-        )
-        hasta = r2.date_input(
-            "Hasta", value=ahora_colombia().date(),
-            key="enf73_rep_hasta"
-        )
-        modalidad_filtro = r3.selectbox(
-            "Modalidad", ["TODAS", "URBANO", "GRANJA"],
-            key="enf73_rep_modalidad"
-        )
-
-        params = {"desde": desde, "hasta": hasta + timedelta(days=1)}
-        filtro_mod = ""
-        if modalidad_filtro != "TODAS":
-            filtro_mod = " AND UPPER(TRIM(COALESCE(modalidad,'')))=:modalidad "
-            params["modalidad"] = modalidad_filtro
-
-        rep = pd.read_sql(
-            text(f"""
-                SELECT tipo_atencion,
-                       SUM(COALESCE(cantidad,1))::int AS total
-                FROM enfermeria_registros
-                WHERE fecha_hora >= :desde
-                  AND fecha_hora < :hasta
-                  {filtro_mod}
-                GROUP BY tipo_atencion
-            """),
-            engine,
-            params=params
-        )
-
-        base_cat = pd.DataFrame({
-            "ATENCIONES REALIZADAS": CATEGORIAS_ENFERMERIA_V1671
-        })
-        mapa = (
-            dict(zip(rep["tipo_atencion"], rep["total"]))
-            if not rep.empty else {}
-        )
-        base_cat["TOTAL"] = (
-            base_cat["ATENCIONES REALIZADAS"]
-            .map(mapa).fillna(0).astype(int)
-        )
-        st.metric("TOTAL", int(base_cat["TOTAL"].sum()))
-        st.dataframe(base_cat, use_container_width=True, hide_index=True)
-
-        st.markdown("#### 👩‍⚕️ Registros por enfermera")
-        por_enfermera = pd.read_sql(
-            text(f"""
-                SELECT
-                    COALESCE(enfermera_nombre,'SIN IDENTIFICAR') AS enfermera,
-                    COALESCE(enfermera_documento,'') AS documento,
-                    COUNT(*)::int AS registros,
-                    SUM(COALESCE(cantidad,1))::int AS atenciones
-                FROM enfermeria_registros
-                WHERE fecha_hora >= :desde
-                  AND fecha_hora < :hasta
-                  {filtro_mod}
-                GROUP BY enfermera_nombre, enfermera_documento
-                ORDER BY atenciones DESC, enfermera
-            """),
-            engine,
-            params=params
-        )
-        st.dataframe(
-            por_enfermera.rename(columns={
-                "enfermera": "Enfermera",
-                "documento": "CC",
-                "registros": "Registros",
-                "atenciones": "Atenciones"
-            }),
-            use_container_width=True,
-            hide_index=True
-        )
-
-
-
+# V16.75 - MÓDULO INTEGRAL DE ENFERMERÍA
 # V16.7: navegación central histórica conservada como código legado.
 tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9= st.tabs([
 
