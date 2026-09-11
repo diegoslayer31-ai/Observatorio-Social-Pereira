@@ -20328,7 +20328,7 @@ def control_asistencia_albergue_v1613():
         return txt.upper()
 
     def _cargar_maestro_v1691():
-        # V16.94 - La fuente principal de nombres es SIEMPRE habitante_de_calle.
+        # V16.95 - La fuente principal de nombres es SIEMPRE habitante_de_calle.
         # personas_caracterizacion se consulta aparte como respaldo para que,
         # si su estructura cambia, no deje vacía toda la base de nombres.
         partes = []
@@ -22557,6 +22557,11 @@ def modulo_politica_publica_v1678():
 
 
 
+# V16.95 - Rol de la sesión definido ANTES de cualquier ruta protegida.
+rol_router = str(
+    st.session_state.get("rol_actual", "")
+).upper().strip()
+
 if st.session_state.page == "politica_publica_v1678":
     modulo_politica_publica_v1678()
     st.stop()
@@ -23436,7 +23441,7 @@ if st.session_state.get("autenticado"):
     _v1634_tocar_sesion()
 
 
-# V16.94 - Rol de la sesión para el enrutador principal.
+# V16.95 - Rol de la sesión para el enrutador principal.
 # Se define aquí de forma independiente para que no dependa de ningún módulo anterior.
 rol_router = str(
     st.session_state.get("rol_actual", "")
