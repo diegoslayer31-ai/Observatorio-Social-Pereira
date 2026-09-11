@@ -20329,139 +20329,55 @@ def control_asistencia_albergue_v1613():
 
     st.title("📋 Control Diario de Asistencia")
     st.caption(
-        "Consulta histórica y consolidado mensual de asistencia de los albergues. "
-        "La información se reconstruye a partir de los movimientos registrados en la plataforma."
+        "La base del cálculo son las personas ACTIVAS en habitante_de_calle. "
+        "Los movimientos solo se usan para reconstruir hacia atrás los cambios "
+        "ocurridos desde que empezó a utilizarse la app."
     )
 
-    tab_dia, tab_mes = st.tabs([
-        "📅 Asistencia por día",
-        "📆 Consolidado mensual"
-    ])
+    vista_asistencia = st.radio(
+        "Vista",
+        ["📅 Asistencia por día", "📆 Consolidado mensual"],
+        horizontal=True,
+        key="v16102_vista_asistencia"
+    )
 
     # ========================================================
-    # FUNCIONES COMUNES
+    # DATOS BASE AUTORITATIVOS
     # ========================================================
-    def _norm_tipo_asistencia_v1691(valor):
-        v = str(valor or "").strip().upper()
-        v = (
-            v.replace("Á","A").replace("É","E").replace("Í","I")
-             .replace("Ó","O").replace("Ú","U").replace("Ñ","N")
+    @st.cache_data(ttl=60, show_spinner=False)
+    def _base_actual_v16102():
+        df = pd.read_sql(
+            text("""
+                SELECT
+                    TRIM(CAST(numero_identificacion AS TEXT)) AS documento,
+                    COALESCE(nombres,'') AS nombres,
+                    COALESCE(apellidos,'') AS apellidos,
+                    UPPER(TRIM(COALESCE(estado_caso,''))) AS estado_actual,
+                    UPPER(TRIM(COALESCE(modalidad,''))) AS modalidad_actual
+                FROM habitante_de_calle
+            """),
+            engine
         )
-        return " ".join(v.replace("_", " ").split())
+        if df.empty:
+            return df
 
-    def _estado_por_tipo_v1691(tipo):
-        t = _norm_tipo_asistencia_v1691(tipo)
-
-        if t in {
-            "INGRESO",
-            "REINGRESO",
-            "REGRESO PERMISO",
-            "REGRESO DE PERMISO"
-        }:
-            return "ACTIVO"
-
-        if t in {
-            "SALIDA PERMISO",
-            "SALIDA DE PERMISO"
-        }:
-            # Para efectos de canasta y atención, permiso cuenta como activo.
-            return "ACTIVO"
-
-        if t in {
-            "SALIDA VOLUNTARIA",
-            "SUSPENSION",
-            "EXPULSION",
-            "EGRESO"
-        }:
-            return "NO ACTIVO"
-
-        return "SIN CAMBIO"
-
-    def _normalizar_documento_v1693(valor):
-        txt = str(valor or "").strip()
-        txt = "".join(c for c in txt if c.isalnum())
-        if txt.endswith("0") and ".0" in str(valor):
-            txt = txt[:-1]
-        return txt.upper()
-
-    def _cargar_maestro_v1691():
-        # V16.96 - La fuente principal de nombres es SIEMPRE habitante_de_calle.
-        # personas_caracterizacion se consulta aparte como respaldo para que,
-        # si su estructura cambia, no deje vacía toda la base de nombres.
-        partes = []
-
-        try:
-            maestro_hdc = pd.read_sql(
-                text("""
-                    SELECT
-                        TRIM(CAST(numero_identificacion AS TEXT)) AS documento,
-                        COALESCE(nombres,'') AS nombres,
-                        COALESCE(apellidos,'') AS apellidos
-                    FROM habitante_de_calle
-                """),
-                engine
-            )
-            if not maestro_hdc.empty:
-                maestro_hdc["prioridad"] = 1
-                partes.append(maestro_hdc)
-        except Exception:
-            pass
-
-        try:
-            maestro_egr = pd.read_sql(
-                text("""
-                    SELECT
-                        TRIM(CAST(numero_identificacion AS TEXT)) AS documento,
-                        COALESCE(nombres,'') AS nombres,
-                        COALESCE(apellidos,'') AS apellidos
-                    FROM personas_caracterizacion
-                """),
-                engine
-            )
-            if not maestro_egr.empty:
-                maestro_egr["prioridad"] = 2
-                partes.append(maestro_egr)
-        except Exception:
-            pass
-
-        if not partes:
-            return pd.DataFrame(
-                columns=[
-                    "documento", "nombres", "apellidos",
-                    "prioridad", "documento_norm", "nombre_completo"
-                ]
-            )
-
-        maestro = pd.concat(partes, ignore_index=True, sort=False)
-
-        maestro["documento"] = (
-            maestro["documento"].fillna("").astype(str).str.strip()
+        df["documento"] = (
+            df["documento"].fillna("").astype(str).str.strip()
         )
-        maestro["documento_norm"] = maestro["documento"].apply(
-            _normalizar_documento_v1693
-        )
-        maestro["nombre_completo"] = (
-            maestro["nombres"].fillna("").astype(str).str.strip()
+        df["nombre_completo"] = (
+            df["nombres"].fillna("").astype(str).str.strip()
             + " "
-            + maestro["apellidos"].fillna("").astype(str).str.strip()
+            + df["apellidos"].fillna("").astype(str).str.strip()
         ).str.replace(r"\s+", " ", regex=True).str.strip()
 
-        # Preferir registros que efectivamente tengan nombre.
-        maestro["sin_nombre"] = maestro["nombre_completo"].eq("")
-        maestro = (
-            maestro.sort_values(
-                ["documento_norm", "sin_nombre", "prioridad"]
-            )
-            .drop_duplicates(subset=["documento_norm"], keep="first")
+        return df.drop_duplicates(
+            subset=["documento"], keep="first"
         )
 
-        return maestro
-
-    maestro_asistencia = _cargar_maestro_v1691()
-
-    def _cargar_movimientos_hasta_v1691(fecha_fin):
+    @st.cache_data(ttl=60, show_spinner=False)
+    def _movimientos_v16102():
         try:
-            dfm = pd.read_sql(
+            mov = pd.read_sql(
                 text("""
                     SELECT
                         id_movimiento,
@@ -20469,562 +20385,508 @@ def control_asistencia_albergue_v1613():
                         UPPER(TRIM(COALESCE(tipo_movimiento,''))) AS tipo_movimiento,
                         UPPER(TRIM(COALESCE(modalidad,''))) AS modalidad,
                         fecha_movimiento,
-                        hora_movimiento,
-                        usuario_registra,
                         observacion
                     FROM movimientos_habitante
-                    WHERE CAST(fecha_movimiento AS DATE) <= :fecha_fin
-                    ORDER BY
-                        numero_identificacion,
-                        fecha_movimiento,
-                        id_movimiento
+                    ORDER BY fecha_movimiento, id_movimiento
                 """),
-                engine,
-                params={"fecha_fin": fecha_fin}
+                engine
             )
-        except Exception as e:
-            st.error(f"No fue posible consultar movimientos: {e}")
+        except Exception:
             return pd.DataFrame()
 
-        if dfm.empty:
-            return dfm
+        if mov.empty:
+            return mov
 
-        dfm["documento"] = (
-            dfm["documento"].fillna("").astype(str).str.strip()
+        mov["documento"] = (
+            mov["documento"].fillna("").astype(str).str.strip()
         )
-        dfm["documento_norm"] = dfm["documento"].apply(
-            _normalizar_documento_v1693
+        mov["fecha_movimiento"] = pd.to_datetime(
+            mov["fecha_movimiento"], errors="coerce"
         )
-        dfm["tipo_norm"] = dfm["tipo_movimiento"].apply(
-            _norm_tipo_asistencia_v1691
+        mov = mov.dropna(subset=["fecha_movimiento"])
+        return mov
+
+    base_actual = _base_actual_v16102()
+    movimientos = _movimientos_v16102()
+
+    if base_actual.empty:
+        st.warning("No hay personas registradas en habitante_de_calle.")
+        return
+
+    hoy = ahora_colombia().date()
+
+    if movimientos.empty:
+        fecha_inicio_app = hoy
+    else:
+        fecha_inicio_app = movimientos["fecha_movimiento"].dt.date.min()
+
+    st.caption(
+        f"Inicio operativo detectado de la app: "
+        f"**{fecha_inicio_app.strftime('%d/%m/%Y')}**."
+    )
+
+    # --------------------------------------------------------
+    # Utilidades de reconstrucción
+    # --------------------------------------------------------
+    def _norm_tipo_v16102(valor):
+        v = str(valor or "").strip().upper()
+        v = (
+            v.replace("Á","A").replace("É","E").replace("Í","I")
+             .replace("Ó","O").replace("Ú","U").replace("Ñ","N")
         )
-        dfm["modalidad"] = dfm["modalidad"].replace("", pd.NA)
-        dfm["modalidad_hist"] = (
-            dfm.groupby("documento")["modalidad"].ffill()
+        return " ".join(v.replace("_", " ").split())
+
+    def _parse_cambio_manual_v16102(obs):
+        """
+        Extrae valores anteriores de observaciones tipo:
+        Estado ACTIVO -> INACTIVO; modalidad GRANJA -> URBANO
+        """
+        txt = str(obs or "")
+        estado_ant = None
+        modalidad_ant = None
+
+        m_estado = re.search(
+            r"Estado\s+([A-ZÁÉÍÓÚÑ_ ]+?)\s*->",
+            txt,
+            flags=re.IGNORECASE
         )
-        dfm["fecha_movimiento"] = pd.to_datetime(
-            dfm["fecha_movimiento"], errors="coerce"
+        if m_estado:
+            estado_ant = _norm_tipo_v16102(m_estado.group(1))
+
+        m_mod = re.search(
+            r"modalidad\s+([A-ZÁÉÍÓÚÑ_ ]+?)\s*->",
+            txt,
+            flags=re.IGNORECASE
         )
-        return dfm
+        if m_mod:
+            modalidad_ant = _norm_tipo_v16102(m_mod.group(1))
+
+        return estado_ant, modalidad_ant
+
+    def _estado_en_fecha_v16102(documento, fecha_objetivo):
+        """
+        Parte del estado ACTUAL (fuente autoritativa) y deshace, en reversa,
+        todos los movimientos posteriores a la fecha consultada.
+
+        Esto conserva correctamente a quienes permanecen en el albergue y no
+        generan permisos ni novedades: siguen contando como activos.
+        """
+        fila = base_actual[
+            base_actual["documento"] == str(documento).strip()
+        ]
+        if fila.empty:
+            return False, ""
+
+        r = fila.iloc[0]
+        activo = str(r.get("estado_actual") or "").strip().upper() == "ACTIVO"
+        modalidad = str(r.get("modalidad_actual") or "").strip().upper()
+
+        if fecha_objetivo > hoy:
+            return False, ""
+
+        if movimientos.empty:
+            return activo, modalidad
+
+        mov_doc = movimientos[
+            (movimientos["documento"] == str(documento).strip())
+            & (movimientos["fecha_movimiento"].dt.date > fecha_objetivo)
+        ].sort_values(
+            ["fecha_movimiento", "id_movimiento"],
+            ascending=[False, False]
+        )
+
+        for _, ev in mov_doc.iterrows():
+            tipo = _norm_tipo_v16102(ev.get("tipo_movimiento"))
+            mod = str(ev.get("modalidad") or "").strip().upper()
+            obs = ev.get("observacion")
+
+            # Deshacer un ingreso/reingreso:
+            # antes de ese evento la persona estaba fuera.
+            if tipo in {"INGRESO", "REINGRESO"}:
+                activo = False
+
+            # Deshacer una salida/suspensión/expulsión/egreso:
+            # antes del evento estaba activa y en la modalidad registrada.
+            elif tipo in {
+                "SALIDA VOLUNTARIA",
+                "SUSPENSION",
+                "EXPULSION",
+                "EGRESO"
+            }:
+                activo = True
+                if mod in {"URBANO", "GRANJA"}:
+                    modalidad = mod
+
+            # Permisos NO sacan a la persona del conteo.
+            elif tipo in {
+                "SALIDA PERMISO",
+                "SALIDA DE PERMISO",
+                "REGRESO PERMISO",
+                "REGRESO DE PERMISO"
+            }:
+                activo = True
+                if mod in {"URBANO", "GRANJA"}:
+                    modalidad = mod
+
+            # Cambios manuales: restaurar estado/modalidad anterior si está
+            # registrado en la observación.
+            elif tipo == "CAMBIO ESTADO MANUAL":
+                est_ant, mod_ant = _parse_cambio_manual_v16102(obs)
+                if est_ant:
+                    activo = est_ant == "ACTIVO"
+                if mod_ant in {"URBANO", "GRANJA"}:
+                    modalidad = mod_ant
+
+            # Carga de activos con cambio de modalidad:
+            # si la observación contiene "X -> Y", restaurar X.
+            elif tipo == "CAMBIO MODALIDAD CARGA":
+                _, mod_ant = _parse_cambio_manual_v16102(obs)
+                if mod_ant in {"URBANO", "GRANJA"}:
+                    modalidad = mod_ant
+
+        # Antes del inicio real de la app no se certifica asistencia.
+        if fecha_objetivo < fecha_inicio_app:
+            return False, ""
+
+        return activo, modalidad
+
+    def _construir_dia_v16102(fecha_objetivo):
+        filas = []
+        for _, p in base_actual.iterrows():
+            doc = str(p["documento"]).strip()
+            activo, modalidad = _estado_en_fecha_v16102(
+                doc,
+                fecha_objetivo
+            )
+            if activo and modalidad in {"URBANO", "GRANJA"}:
+                filas.append({
+                    "Documento": doc,
+                    "Nombre completo": p["nombre_completo"],
+                    "Modalidad": modalidad,
+                    "Activo": 1
+                })
+        return pd.DataFrame(filas)
 
     # ========================================================
-    # TAB 1 · ASISTENCIA POR DÍA
+    # ASISTENCIA POR DÍA
     # ========================================================
-    with tab_dia:
-        fecha_asistencia = st.date_input(
+    if vista_asistencia == "📅 Asistencia por día":
+        fecha = st.date_input(
             "Fecha a consultar",
-            value=ahora_colombia().date(),
-            key="v1691_fecha_asistencia"
+            value=hoy,
+            min_value=fecha_inicio_app,
+            max_value=hoy,
+            key="v16102_fecha_dia"
         )
 
-        mov_asistencia = _cargar_movimientos_hasta_v1691(
-            fecha_asistencia
+        with st.spinner("Reconstruyendo activos de la fecha..."):
+            dia_df = _construir_dia_v16102(fecha)
+
+        if dia_df.empty:
+            st.info("No se reconstruyeron personas activas para esa fecha.")
+            return
+
+        urbano = dia_df[dia_df["Modalidad"] == "URBANO"].copy()
+        granja = dia_df[dia_df["Modalidad"] == "GRANJA"].copy()
+
+        c1, c2, c3 = st.columns(3)
+        c1.metric("🏢 Urbano", len(urbano))
+        c2.metric("🌱 Granja", len(granja))
+        c3.metric("👥 Total activos", len(dia_df))
+
+        st.markdown("##### 🏢 URBANO")
+        st.dataframe(
+            urbano[["Documento", "Nombre completo"]],
+            use_container_width=True,
+            hide_index=True
         )
 
-        diario = pd.DataFrame()
+        st.markdown("##### 🌱 GRANJA")
+        st.dataframe(
+            granja[["Documento", "Nombre completo"]],
+            use_container_width=True,
+            hide_index=True
+        )
 
-        if not mov_asistencia.empty:
-            ultimo_mov = (
-                mov_asistencia
-                .sort_values(
-                    ["documento", "fecha_movimiento", "id_movimiento"]
-                )
-                .groupby("documento", as_index=False)
-                .tail(1)
-                .copy()
-            )
+        b1, b2 = st.columns(2)
+        b1.download_button(
+            "⬇️ Exportar día CSV",
+            dia_df.to_csv(index=False).encode("utf-8-sig"),
+            file_name=f"activos_{fecha.strftime('%Y_%m_%d')}.csv",
+            mime="text/csv",
+            use_container_width=True
+        )
 
-            ultimo_mov["estado_dia"] = ultimo_mov[
-                "tipo_movimiento"
-            ].apply(_estado_por_tipo_v1691)
+        buffer = BytesIO()
+        with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
+            urbano.to_excel(writer, sheet_name="URBANO", index=False)
+            granja.to_excel(writer, sheet_name="GRANJA", index=False)
 
-            diario = ultimo_mov[
-                ultimo_mov["estado_dia"] == "ACTIVO"
-            ].copy()
-
-            if not maestro_asistencia.empty:
-                diario = diario.merge(
-                    maestro_asistencia[
-                        ["documento_norm", "nombre_completo"]
-                    ],
-                    on="documento_norm",
-                    how="left"
-                )
-            else:
-                diario["nombre_completo"] = ""
-
-            diario["modalidad"] = (
-                diario["modalidad_hist"]
-                .fillna(diario["modalidad"])
-                .fillna("")
-                .astype(str)
-                .str.upper()
-                .str.strip()
-            )
-            diario = diario[
-                diario["modalidad"].isin(["URBANO", "GRANJA"])
-            ].copy()
-
-        if diario.empty:
-            st.info(
-                "No se encontraron personas activas reconstruidas para esa fecha."
-            )
-        else:
-            urbano = diario[diario["modalidad"] == "URBANO"].copy()
-            granja = diario[diario["modalidad"] == "GRANJA"].copy()
-
-            c1, c2, c3 = st.columns(3)
-            c1.metric("URBANO", len(urbano))
-            c2.metric("GRANJA", len(granja))
-            c3.metric("TOTAL", len(diario))
-
-            def _vista_dia_v1691(df):
-                if df.empty:
-                    return pd.DataFrame(
-                        columns=[
-                            "Documento",
-                            "Nombre completo",
-                            "Último movimiento",
-                            "Observación"
-                        ]
-                    )
-
-                return (
-                    df[
-                        [
-                            "documento",
-                            "nombre_completo",
-                            "tipo_norm",
-                            "observacion"
-                        ]
-                    ]
-                    .rename(columns={
-                        "documento": "Documento",
-                        "nombre_completo": "Nombre completo",
-                        "tipo_norm": "Último movimiento",
-                        "observacion": "Observación"
-                    })
-                    .sort_values("Nombre completo")
-                )
-
-            st.markdown("##### 🏢 URBANO")
-            st.dataframe(
-                _vista_dia_v1691(urbano),
-                use_container_width=True,
-                hide_index=True
-            )
-
-            st.markdown("##### 🌱 GRANJA")
-            st.dataframe(
-                _vista_dia_v1691(granja),
-                use_container_width=True,
-                hide_index=True
-            )
-
-            export_dia = diario[
-                [
-                    "documento",
-                    "nombre_completo",
-                    "modalidad",
-                    "tipo_norm",
-                    "observacion"
-                ]
-            ].copy()
-            export_dia.insert(
-                0,
-                "Fecha",
-                fecha_asistencia.strftime("%d/%m/%Y")
-            )
-            export_dia = export_dia.rename(columns={
-                "documento": "Documento",
-                "nombre_completo": "Nombre completo",
-                "modalidad": "Modalidad",
-                "tipo_norm": "Último movimiento",
-                "observacion": "Observación"
-            }).sort_values(
-                ["Modalidad", "Nombre completo"]
-            )
-
-            e1, e2 = st.columns(2)
-
-            e1.download_button(
-                "⬇️ Exportar día CSV",
-                export_dia.to_csv(
-                    index=False
-                ).encode("utf-8-sig"),
-                file_name=(
-                    "asistencia_diaria_"
-                    + fecha_asistencia.strftime("%Y_%m_%d")
-                    + ".csv"
-                ),
-                mime="text/csv",
-                use_container_width=True,
-                key="v1691_export_dia_csv"
-            )
-
-            try:
-                buffer_dia = BytesIO()
-                with pd.ExcelWriter(
-                    buffer_dia,
-                    engine="openpyxl"
-                ) as writer:
-                    export_dia.to_excel(
-                        writer,
-                        sheet_name="ASISTENCIA",
-                        index=False
-                    )
-                    _vista_dia_v1691(urbano).to_excel(
-                        writer,
-                        sheet_name="URBANO",
-                        index=False
-                    )
-                    _vista_dia_v1691(granja).to_excel(
-                        writer,
-                        sheet_name="GRANJA",
-                        index=False
-                    )
-
-                e2.download_button(
-                    "📗 Exportar día Excel",
-                    data=buffer_dia.getvalue(),
-                    file_name=(
-                        "asistencia_diaria_"
-                        + fecha_asistencia.strftime("%Y_%m_%d")
-                        + ".xlsx"
-                    ),
-                    mime=(
-                        "application/vnd.openxmlformats-officedocument."
-                        "spreadsheetml.sheet"
-                    ),
-                    use_container_width=True,
-                    key="v1691_export_dia_xlsx"
-                )
-            except Exception as e:
-                e2.warning(f"No fue posible generar Excel: {e}")
+        b2.download_button(
+            "📗 Exportar día Excel",
+            data=buffer.getvalue(),
+            file_name=f"activos_{fecha.strftime('%Y_%m_%d')}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=True
+        )
 
     # ========================================================
-    # TAB 2 · CONSOLIDADO MENSUAL
+    # CONSOLIDADO MENSUAL
     # ========================================================
-    with tab_mes:
-        st.markdown("### 📆 Consolidado mensual")
+    if vista_asistencia == "📆 Consolidado mensual":
+        st.markdown("### 📆 Consolidado mensual de activos")
         st.caption(
-            "**1 = activo para efectos de atención** · **0 = no activo**. "
-            "Los permisos se contabilizan como 1 porque se mantiene la garantía "
-            "de cupo y de la canasta durante el permiso."
+            "Cada día vale 1 si la persona estaba ACTIVA en esa modalidad. "
+            "Los permisos también cuentan como 1 porque se garantiza cupo y canasta. "
+            "Los días futuros no se contabilizan."
         )
 
         mes_base = st.date_input(
             "Mes a consultar",
-            value=ahora_colombia().date().replace(day=1),
-            key="v1691_mes_asistencia"
+            value=hoy.replace(day=1),
+            min_value=fecha_inicio_app.replace(day=1),
+            max_value=hoy,
+            key="v16102_mes"
         )
-        primer_dia = mes_base.replace(day=1)
 
-        if primer_dia.month == 12:
-            siguiente_mes = primer_dia.replace(
-                year=primer_dia.year + 1,
+        primer_dia_mes = mes_base.replace(day=1)
+        if primer_dia_mes.month == 12:
+            sig_mes = primer_dia_mes.replace(
+                year=primer_dia_mes.year + 1,
                 month=1
             )
         else:
-            siguiente_mes = primer_dia.replace(
-                month=primer_dia.month + 1
+            sig_mes = primer_dia_mes.replace(
+                month=primer_dia_mes.month + 1
             )
 
-        ultimo_dia = siguiente_mes - timedelta(days=1)
+        ultimo_dia_mes = sig_mes - timedelta(days=1)
+        inicio_calculo = max(primer_dia_mes, fecha_inicio_app)
+        fin_calculo = min(ultimo_dia_mes, hoy)
 
-        mov_mes = _cargar_movimientos_hasta_v1691(
-            ultimo_dia
+        generar = st.button(
+            "▶️ Generar consolidado mensual",
+            type="primary",
+            use_container_width=True,
+            key=f"v16102_generar_{primer_dia_mes.strftime('%Y_%m')}"
         )
 
-        if mov_mes.empty:
+        cache_key = f"v16102_resultado_{primer_dia_mes.strftime('%Y_%m')}"
+
+        if generar:
+            with st.spinner("Calculando activos por día..."):
+                dias = pd.date_range(
+                    inicio_calculo,
+                    fin_calculo,
+                    freq="D"
+                )
+
+                filas_u = []
+                filas_g = []
+
+                for _, p in base_actual.iterrows():
+                    doc = str(p["documento"]).strip()
+                    nombre = p["nombre_completo"]
+
+                    fila_u = {
+                        "Documento": doc,
+                        "Nombre completo": nombre
+                    }
+                    fila_g = {
+                        "Documento": doc,
+                        "Nombre completo": nombre
+                    }
+
+                    total_u = 0
+                    total_g = 0
+                    tuvo_u = False
+                    tuvo_g = False
+
+                    for d in dias:
+                        activo, modalidad = _estado_en_fecha_v16102(
+                            doc,
+                            d.date()
+                        )
+
+                        vu = int(activo and modalidad == "URBANO")
+                        vg = int(activo and modalidad == "GRANJA")
+
+                        fila_u[str(d.day)] = vu
+                        fila_g[str(d.day)] = vg
+
+                        total_u += vu
+                        total_g += vg
+                        tuvo_u = tuvo_u or bool(vu)
+                        tuvo_g = tuvo_g or bool(vg)
+
+                    fila_u["TOTAL ATENCIONES"] = total_u
+                    fila_g["TOTAL ATENCIONES"] = total_g
+
+                    orden = (
+                        ["Documento", "Nombre completo", "TOTAL ATENCIONES"]
+                        + [str(d.day) for d in dias]
+                    )
+
+                    if tuvo_u:
+                        filas_u.append({
+                            c: fila_u.get(c, 0 if c.isdigit() else "")
+                            for c in orden
+                        })
+
+                    if tuvo_g:
+                        filas_g.append({
+                            c: fila_g.get(c, 0 if c.isdigit() else "")
+                            for c in orden
+                        })
+
+                def _cerrar_v16102(filas, dias):
+                    df = pd.DataFrame(filas)
+                    if df.empty:
+                        return df
+
+                    total = {
+                        "Documento": "",
+                        "Nombre completo": "TOTAL ACTIVOS / ATENCIONES DÍA",
+                        "TOTAL ATENCIONES": int(
+                            pd.to_numeric(
+                                df["TOTAL ATENCIONES"],
+                                errors="coerce"
+                            ).fillna(0).sum()
+                        )
+                    }
+
+                    for d in dias:
+                        c = str(d.day)
+                        total[c] = int(
+                            pd.to_numeric(
+                                df[c],
+                                errors="coerce"
+                            ).fillna(0).sum()
+                        )
+
+                    orden = (
+                        ["Documento", "Nombre completo", "TOTAL ATENCIONES"]
+                        + [str(d.day) for d in dias]
+                    )
+                    total = {
+                        c: total.get(c, 0 if c.isdigit() else "")
+                        for c in orden
+                    }
+
+                    return pd.concat(
+                        [df, pd.DataFrame([total])],
+                        ignore_index=True
+                    )
+
+                matriz_u = _cerrar_v16102(filas_u, dias)
+                matriz_g = _cerrar_v16102(filas_g, dias)
+
+                st.session_state[cache_key] = {
+                    "urbano": matriz_u,
+                    "granja": matriz_g,
+                    "inicio": inicio_calculo,
+                    "fin": fin_calculo
+                }
+
+        resultado = st.session_state.get(cache_key)
+
+        if not resultado:
             st.info(
-                "No hay movimientos suficientes para construir el consolidado."
+                "Pulse «Generar consolidado mensual». "
+                "El cálculo parte de los ACTIVOS actuales y reconstruye hacia atrás."
             )
             return
 
-        dias_mes = pd.date_range(
-            primer_dia,
-            ultimo_dia,
-            freq="D"
+        matriz_u = resultado["urbano"]
+        matriz_g = resultado["granja"]
+
+        st.success(
+            f"Periodo reconstruido: "
+            f"{resultado['inicio'].strftime('%d/%m/%Y')} a "
+            f"{resultado['fin'].strftime('%d/%m/%Y')}."
         )
 
-        maestro_map = {}
-        if not maestro_asistencia.empty:
-            maestro_map = dict(
-                zip(
-                    maestro_asistencia["documento_norm"],
-                    maestro_asistencia["nombre_completo"]
-                )
-            )
+        tu, tg = st.tabs(["🏢 URBANO", "🌱 GRANJA"])
 
-        def _matriz_modalidad_v1691(modalidad_objetivo):
-            filas = []
-
-            for doc in mov_mes["documento"].dropna().unique().tolist():
-                mov_doc = mov_mes[
-                    mov_mes["documento"] == doc
-                ].sort_values(
-                    ["fecha_movimiento", "id_movimiento"]
-                )
-
-                doc_norm = _normalizar_documento_v1693(doc)
-                nombre_encontrado = maestro_map.get(doc_norm, "")
-                if not nombre_encontrado:
-                    nombre_encontrado = f"CC {doc}"
-
-                fila = {
-                    "Documento": doc,
-                    "Nombre completo": nombre_encontrado
-                }
-
-                relacionado = False
-                total = 0
-
-                for dia in dias_mes:
-                    hasta = mov_doc[
-                        mov_doc["fecha_movimiento"].dt.date <= dia.date()
-                    ]
-
-                    valor = 0
-
-                    if not hasta.empty:
-                        ult = hasta.iloc[-1]
-                        estado = _estado_por_tipo_v1691(
-                            ult["tipo_movimiento"]
-                        )
-                        modalidad_dia = str(
-                            ult.get("modalidad_hist") or ""
-                        ).strip().upper()
-
-                        if modalidad_dia == modalidad_objetivo:
-                            relacionado = True
-                            valor = 1 if estado == "ACTIVO" else 0
-
-                    fila[str(dia.day)] = int(valor)
-                    total += int(valor)
-
-                # Mostrar el total junto al nombre, antes de los días.
-                fila["TOTAL ATENCIONES"] = int(total)
-
-                if relacionado:
-                    orden_columnas = (
-                        ["Documento", "Nombre completo", "TOTAL ATENCIONES"]
-                        + [str(d.day) for d in dias_mes]
-                    )
-                    fila = {c: fila.get(c, 0 if c.isdigit() else "") for c in orden_columnas}
-                    filas.append(fila)
-
-            matriz = pd.DataFrame(filas)
-
-            if matriz.empty:
-                return matriz
-
-            fila_total = {
-                "Documento": "",
-                "Nombre completo": "TOTAL ATENCIONES DÍA",
-                "TOTAL ATENCIONES": int(
-                    pd.to_numeric(
-                        matriz["TOTAL ATENCIONES"],
-                        errors="coerce"
-                    ).fillna(0).sum()
-                )
-            }
-
-            for dia in dias_mes:
-                col = str(dia.day)
-                fila_total[col] = int(
-                    pd.to_numeric(
-                        matriz[col], errors="coerce"
-                    ).fillna(0).sum()
-                )
-
-            orden_total = (
-                ["Documento", "Nombre completo", "TOTAL ATENCIONES"]
-                + [str(d.day) for d in dias_mes]
-            )
-            fila_total = {c: fila_total.get(c, 0 if c.isdigit() else "") for c in orden_total}
-
-            return pd.concat(
-                [matriz, pd.DataFrame([fila_total])],
-                ignore_index=True
-            )
-
-        matriz_urbano = _matriz_modalidad_v1691("URBANO")
-        matriz_granja = _matriz_modalidad_v1691("GRANJA")
-
-        t_u, t_g = st.tabs([
-            "🏢 URBANO",
-            "🌱 GRANJA"
-        ])
-
-        with t_u:
-            if matriz_urbano.empty:
-                st.info("Sin registros reconstruidos para URBANO.")
+        with tu:
+            if matriz_u.empty:
+                st.info("Sin activos reconstruidos para Urbano.")
             else:
                 st.dataframe(
-                    matriz_urbano,
+                    matriz_u,
                     use_container_width=True,
                     hide_index=True
                 )
                 st.metric(
                     "TOTAL ATENCIONES URBANO",
-                    int(
-                        matriz_urbano.iloc[-1]["TOTAL ATENCIONES"]
-                    )
+                    int(matriz_u.iloc[-1]["TOTAL ATENCIONES"])
                 )
 
-        with t_g:
-            if matriz_granja.empty:
-                st.info("Sin registros reconstruidos para GRANJA.")
+        with tg:
+            if matriz_g.empty:
+                st.info("Sin activos reconstruidos para Granja.")
             else:
                 st.dataframe(
-                    matriz_granja,
+                    matriz_g,
                     use_container_width=True,
                     hide_index=True
                 )
                 st.metric(
                     "TOTAL ATENCIONES GRANJA",
-                    int(
-                        matriz_granja.iloc[-1]["TOTAL ATENCIONES"]
-                    )
+                    int(matriz_g.iloc[-1]["TOTAL ATENCIONES"])
                 )
 
-        if not matriz_urbano.empty or not matriz_granja.empty:
-            partes = []
+        partes = []
+        if not matriz_u.empty:
+            t = matriz_u.copy()
+            t.insert(0, "Modalidad", "URBANO")
+            partes.append(t)
+        if not matriz_g.empty:
+            t = matriz_g.copy()
+            t.insert(0, "Modalidad", "GRANJA")
+            partes.append(t)
 
-            if not matriz_urbano.empty:
-                tmp = matriz_urbano.copy()
-                tmp.insert(0, "Modalidad", "URBANO")
-                partes.append(tmp)
+        if partes:
+            consolidado = pd.concat(partes, ignore_index=True)
 
-            if not matriz_granja.empty:
-                tmp = matriz_granja.copy()
-                tmp.insert(0, "Modalidad", "GRANJA")
-                partes.append(tmp)
-
-            consolidado = pd.concat(
-                partes,
-                ignore_index=True
-            )
-
-            st.markdown("#### 📥 Exportar consolidado")
-            x1, x2 = st.columns(2)
-
-            x1.download_button(
+            ex1, ex2 = st.columns(2)
+            ex1.download_button(
                 "⬇️ Exportar consolidado CSV",
-                consolidado.to_csv(
-                    index=False
-                ).encode("utf-8-sig"),
+                consolidado.to_csv(index=False).encode("utf-8-sig"),
                 file_name=(
-                    "consolidado_asistencia_"
-                    + primer_dia.strftime("%Y_%m")
+                    "consolidado_activos_"
+                    + primer_dia_mes.strftime("%Y_%m")
                     + ".csv"
                 ),
                 mime="text/csv",
-                use_container_width=True,
-                key="v1691_export_mes_csv"
+                use_container_width=True
             )
 
-            try:
-                buffer_mes = BytesIO()
-
-                with pd.ExcelWriter(
-                    buffer_mes,
-                    engine="openpyxl"
-                ) as writer:
-                    if not matriz_urbano.empty:
-                        matriz_urbano.to_excel(
-                            writer,
-                            sheet_name="URBANO",
-                            index=False
-                        )
-
-                    if not matriz_granja.empty:
-                        matriz_granja.to_excel(
-                            writer,
-                            sheet_name="GRANJA",
-                            index=False
-                        )
-
-                    resumen = []
-
-                    if not matriz_urbano.empty:
-                        resumen.append({
-                            "Modalidad": "URBANO",
-                            "Total atenciones": int(
-                                matriz_urbano.iloc[-1][
-                                    "TOTAL ATENCIONES"
-                                ]
-                            )
-                        })
-
-                    if not matriz_granja.empty:
-                        resumen.append({
-                            "Modalidad": "GRANJA",
-                            "Total atenciones": int(
-                                matriz_granja.iloc[-1][
-                                    "TOTAL ATENCIONES"
-                                ]
-                            )
-                        })
-
-                    pd.DataFrame(resumen).to_excel(
-                        writer,
-                        sheet_name="RESUMEN",
-                        index=False
+            buffer = BytesIO()
+            with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
+                if not matriz_u.empty:
+                    matriz_u.to_excel(
+                        writer, sheet_name="URBANO", index=False
+                    )
+                if not matriz_g.empty:
+                    matriz_g.to_excel(
+                        writer, sheet_name="GRANJA", index=False
                     )
 
-                x2.download_button(
-                    "📗 Exportar consolidado Excel",
-                    data=buffer_mes.getvalue(),
-                    file_name=(
-                        "consolidado_asistencia_"
-                        + primer_dia.strftime("%Y_%m")
-                        + ".xlsx"
-                    ),
-                    mime=(
-                        "application/vnd.openxmlformats-officedocument."
-                        "spreadsheetml.sheet"
-                    ),
-                    use_container_width=True,
-                    key="v1691_export_mes_xlsx"
-                )
-            except Exception as e:
-                x2.warning(
-                    f"No fue posible generar el Excel: {e}"
-                )
-
-        st.info(
-            "Los permisos no se descuentan de la asistencia consolidada. "
-            "Mientras la persona conserva el cupo, el día se contabiliza como 1."
-        )
-
-        st.caption(
-            "Nota metodológica: la asistencia histórica se reconstruye a partir "
-            "de los movimientos registrados en la plataforma. Los periodos previos "
-            "al inicio del registro operativo pueden estar incompletos."
-        )
-
-
-# V16.96 - Catálogo institucional de atenciones de Enfermería.
-# Se define de forma global antes del módulo porque lo usan tanto
-# el formulario de registro como el consolidado de reportes.
-CATEGORIAS_ENFERMERIA_V1671 = [
-    "ACOMPAÑAMIENTOS A CITAS MÉDICAS",
-    "ATENCIÓN EN LA MÓVIL POR MEDICINA GENERAL",
-    "ATENCIÓN EN LA MÓVIL POR ODONTOLOGÍA",
-    "ATENCIÓN REALIZADA",
-    "GESTIONES",
-    "PRUEBAS DE EMBARAZO",
-    "SEGUIMIENTO A USUARIO HOSPITALIZADO",
-    "TRASLADO A URGENCIAS",
-    "USUARIO CON ADHERENCIA AL TRATAMIENTO TB",
-    "USUARIO CON ADHERENCIA EN EL TRATAMIENTO DE SPA",
-    "USUARIO CON ADHERENCIA EN EL TRATAMIENTO ITS",
-    "USUARIO CON ADHERENCIA EN EL TRATAMIENTO VIH",
-    "USUARIO HOSPITALIZADO",
-    "VALORACIÓN DE INGRESO",
-]
+            ex2.download_button(
+                "📗 Exportar consolidado Excel",
+                data=buffer.getvalue(),
+                file_name=(
+                    "consolidado_activos_"
+                    + primer_dia_mes.strftime("%Y_%m")
+                    + ".xlsx"
+                ),
+                mime=(
+                    "application/vnd.openxmlformats-officedocument."
+                    "spreadsheetml.sheet"
+                ),
+                use_container_width=True
+            )
 
 def modulo_enfermeria_v1673():
     rol = str(st.session_state.get("rol_actual", "")).strip().upper()
