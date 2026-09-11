@@ -10027,7 +10027,7 @@ def tablero_contribucion_ods_v16():
         st.plotly_chart(fig_modalidad, use_container_width=True)
 
     # ========================================================
-    # V16.87 - EVIDENCIA COMPLEMENTARIA DE ENFERMERÍA PARA ODS 3
+    # V16.88 - EVIDENCIA COMPLEMENTARIA DE ENFERMERÍA PARA ODS 3
     # ========================================================
     st.markdown("### 🩺 Evidencia complementaria de Enfermería · ODS 3")
     st.caption(
@@ -14547,7 +14547,7 @@ def inicio_ejecutivo_v167():
         avance = pd.to_numeric(
             pai["porcentaje_avance"], errors="coerce"
         ).fillna(0)
-        # V16.87 - Normalización de fechas para evitar mezclar
+        # V16.88 - Normalización de fechas para evitar mezclar
         # timestamps con zona horaria de Supabase y fechas locales sin zona.
         fecha_meta = pd.to_datetime(
             pai["fecha_meta"], errors="coerce"
@@ -15013,7 +15013,7 @@ def modulo_reportes_institucionales_v169():
         df_gen_rep = pd.DataFrame()
 
     # ------------------------------------------------------------
-    # V16.87 - DATOS DE ENFERMERÍA PARA INFORME INSTITUCIONAL
+    # V16.88 - DATOS DE ENFERMERÍA PARA INFORME INSTITUCIONAL
     # ------------------------------------------------------------
     df_enf_rep = pd.DataFrame()
     try:
@@ -15945,7 +15945,7 @@ def modulo_reportes_institucionales_v169():
                 st.write("• " + inf_h)
 
         # ========================================================
-        # V16.87 - GESTIÓN DE SALUD Y ENFERMERÍA
+        # V16.88 - GESTIÓN DE SALUD Y ENFERMERÍA
         # ========================================================
         st.markdown("---")
         st.subheader("🩺 Gestión de Salud y Enfermería")
@@ -17267,7 +17267,7 @@ def modulo_reportes_institucionales_v169():
                         seccion += 1
 
                     # ==================================================
-                    # V16.87 - GESTIÓN DE SALUD Y ENFERMERÍA
+                    # V16.88 - GESTIÓN DE SALUD Y ENFERMERÍA
                     # ==================================================
                     if not df_enf_rep.empty or not df_enf_val_rep.empty:
                         contenido.append(PageBreak())
@@ -18683,7 +18683,7 @@ def caracterizacion_habitabilidad_v1611():
             index=_idx(opciones_relacion, _v("relacion_consumo_calle", ""))
         )
 
-    # V16.87 - Opciones comunes usadas por Redes y Salud integral.
+    # V16.88 - Opciones comunes usadas por Redes y Salud integral.
     # Se definen antes de las pestañas para evitar UnboundLocalError después
     # de convertir Consumo de SPA en una vista de solo lectura.
     si_no = ["", "Sí", "No", "No sabe / no responde"]
@@ -19052,7 +19052,7 @@ def caracterizacion_habitabilidad_v1611():
         type="primary",
         disabled=not confirmar
     ):
-        # V16.87 - trazabilidad explícita de la sesión que registra
+        # V16.88 - trazabilidad explícita de la sesión que registra
         nombre_sesion_hab = str(
             st.session_state.get("nombre_funcionario", "")
         ).strip() or str(st.session_state.get("usuario_actual", "Sistema")).strip()
@@ -19462,7 +19462,7 @@ def tablero_habitabilidad_v1611():
     k5.metric("10+ años en calle", f"{int(alta_cron.sum())}")
 
     # ============================================================
-    # V16.87 - TRAZABILIDAD DE QUIÉN REGISTRA LAS CARACTERIZACIONES
+    # V16.88 - TRAZABILIDAD DE QUIÉN REGISTRA LAS CARACTERIZACIONES
     # ============================================================
     st.markdown("### 👤 Trazabilidad de registros")
     st.caption(
@@ -21172,6 +21172,38 @@ def modulo_enfermeria_v1673():
                 )
                 otras_spa = st.text_input("Otras sustancias consumidas")
 
+                spa1, spa2 = st.columns(2)
+                tiempo_anos_consumo = spa1.number_input(
+                    "Años aproximados de consumo",
+                    min_value=0.0,
+                    max_value=80.0,
+                    value=0.0,
+                    step=0.5
+                )
+                frecuencia_consumo = spa2.selectbox(
+                    "Frecuencia de consumo",
+                    [
+                        "",
+                        "Ocasional",
+                        "1-2 días por semana",
+                        "3-4 días por semana",
+                        "5-6 días por semana",
+                        "Diario",
+                        "Varias veces al día",
+                        "No aplica / no consume"
+                    ]
+                )
+
+                tr1, tr2 = st.columns(2)
+                tratamiento_spa = tr1.selectbox(
+                    "¿Ha recibido tratamiento por consumo de SPA?",
+                    ["", "Sí", "No", "No sabe / no responde"]
+                )
+                tratamiento_spa_actual = tr2.selectbox(
+                    "¿Actualmente está en tratamiento por consumo de SPA?",
+                    ["", "Sí", "No", "No aplica", "No sabe / no responde"]
+                )
+
                 st.markdown("#### 5. Restablecimiento de derechos")
                 r1, r2 = st.columns(2)
                 regimen_salud = r1.selectbox(
@@ -21241,7 +21273,7 @@ def modulo_enfermeria_v1673():
                     type="primary"
                 )
 
-            # V16.87 - La foto permanece visible al FINAL del formulario.
+            # V16.88 - La foto permanece visible al FINAL del formulario.
             # Puede tomarse antes o después de guardar; es temporal y no se almacena.
             st.markdown("### 📷 Foto para el reporte de valoración")
             st.caption(
@@ -21274,6 +21306,8 @@ def modulo_enfermeria_v1673():
                                     movilidad_marcha, estado_conciencia, orientacion,
                                     consume_spa_actualmente, sustancia_principal,
                                     via_administracion_consumo, sustancias_secundarias,
+                                    tiempo_anos_consumo, frecuencia_consumo,
+                                    tratamiento_spa, tratamiento_spa_actual,
                                     regimen_salud, eps_nombre, municipio_eps,
                                     cedulado, documento_fisico,
                                     tuberculosis, vih, its_sifilis,
@@ -21291,6 +21325,8 @@ def modulo_enfermeria_v1673():
                                     :peso, :talla, :heridas, :dolor, :dolor_loc, :dolor_int,
                                     :marcha, :conciencia, :orientacion,
                                     :consume_spa, :sustancia, :via_spa, :otras_spa,
+                                    :anos_consumo, :frecuencia_consumo,
+                                    :tratamiento_spa, :tratamiento_spa_actual,
                                     :regimen, :eps_nombre, :municipio_eps,
                                     :cedulado, :doc_fisico,
                                     :tb, :vih, :its, :hep_b, :hep_c, :otra_inf,
@@ -21328,6 +21364,10 @@ def modulo_enfermeria_v1673():
                                 "sustancia": sustancia_principal or None,
                                 "via_spa": via_spa or None,
                                 "otras_spa": otras_spa.strip() or None,
+                                "anos_consumo": float(tiempo_anos_consumo) if tiempo_anos_consumo else None,
+                                "frecuencia_consumo": frecuencia_consumo or None,
+                                "tratamiento_spa": tratamiento_spa or None,
+                                "tratamiento_spa_actual": tratamiento_spa_actual or None,
                                 "regimen": regimen_salud or None,
                                 "eps_nombre": eps_nombre.strip() or None,
                                 "municipio_eps": municipio_eps.strip() or None,
@@ -21360,6 +21400,10 @@ def modulo_enfermeria_v1673():
                                     sustancia_principal,
                                     via_administracion_consumo,
                                     sustancias_secundarias,
+                                    tiempo_anos_consumo,
+                                    frecuencia_consumo,
+                                    tratamiento_spa,
+                                    tratamiento_spa_actual,
                                     regimen_salud,
                                     eps_nombre,
                                     municipio_eps,
@@ -21383,6 +21427,8 @@ def modulo_enfermeria_v1673():
                                 )
                                 VALUES (
                                     :doc, :consume_spa, :sustancia, :via_spa, :otras_spa,
+                                    :anos_consumo, :frecuencia_consumo,
+                                    :tratamiento_spa, :tratamiento_spa_actual,
                                     :regimen, :eps_nombre, :municipio_eps,
                                     :cedulado, :doc_fisico,
                                     :tb, :vih, :its, :hep_b, :hep_c, :otra_inf,
@@ -21396,6 +21442,10 @@ def modulo_enfermeria_v1673():
                                     sustancia_principal=EXCLUDED.sustancia_principal,
                                     via_administracion_consumo=EXCLUDED.via_administracion_consumo,
                                     sustancias_secundarias=EXCLUDED.sustancias_secundarias,
+                                    tiempo_anos_consumo=EXCLUDED.tiempo_anos_consumo,
+                                    frecuencia_consumo=EXCLUDED.frecuencia_consumo,
+                                    tratamiento_spa=EXCLUDED.tratamiento_spa,
+                                    tratamiento_spa_actual=EXCLUDED.tratamiento_spa_actual,
                                     regimen_salud=EXCLUDED.regimen_salud,
                                     eps_nombre=EXCLUDED.eps_nombre,
                                     municipio_eps=EXCLUDED.municipio_eps,
@@ -21423,6 +21473,10 @@ def modulo_enfermeria_v1673():
                                 "sustancia": sustancia_principal or None,
                                 "via_spa": via_spa or None,
                                 "otras_spa": otras_spa.strip() or None,
+                                "anos_consumo": float(tiempo_anos_consumo) if tiempo_anos_consumo else None,
+                                "frecuencia_consumo": frecuencia_consumo or None,
+                                "tratamiento_spa": tratamiento_spa or None,
+                                "tratamiento_spa_actual": tratamiento_spa_actual or None,
                                 "regimen": regimen_salud or None,
                                 "eps_nombre": eps_nombre.strip() or None,
                                 "municipio_eps": municipio_eps.strip() or None,
@@ -21481,7 +21535,7 @@ def modulo_enfermeria_v1673():
                         observacion=(observaciones or "")[:500]
                     )
 
-                    # V16.87 - Reporte operativo de valoración para WhatsApp
+                    # V16.88 - Reporte operativo de valoración para WhatsApp
                     try:
                         mov_ult = pd.read_sql(
                             text("""
@@ -21608,6 +21662,10 @@ def modulo_enfermeria_v1673():
                         f"* EDAD: {edad_txt} años\n"
                         f"* DOCUMENTO FÍSICO: {documento_fisico or 'POR VERIFICAR'}\n"
                         f"* CONSUMO: {consumo_txt}\n"
+                        f"* AÑOS APROX. DE CONSUMO: {tiempo_anos_consumo if tiempo_anos_consumo else 'NO REGISTRA'}\n"
+                        f"* FRECUENCIA DE CONSUMO: {frecuencia_consumo or 'NO REGISTRA'}\n"
+                        f"* TRATAMIENTO SPA: {tratamiento_spa or 'NO REGISTRA'}\n"
+                        f"* TRATAMIENTO SPA ACTUAL: {tratamiento_spa_actual or 'NO REGISTRA'}\n"
                         f"* {antecedentes_txt}\n"
                         f"* EPS: {eps_txt}\n"
                         f"* {sintomas_txt}\n"
