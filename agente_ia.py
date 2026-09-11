@@ -9730,6 +9730,18 @@ def cierre_pai_usuario_v16(documento, profesional_id=None, profesional_nombre=No
 
 
 def comite_casos_v16():
+    """
+    V16.107 - Comité de Casos integrado con medidas remitidas.
+
+    Flujo institucional:
+    1. Las medidas ACTIVA + remitido_comite=TRUE aparecen automáticamente
+       como casos pendientes de estudio.
+    2. El Comité registra el análisis y la decisión en comites_casos.
+    3. La misma decisión puede levantar la medida, mantenerla bloqueada o
+       convertirla en una medida temporal con nueva fecha de posible reingreso.
+    4. Levantar la medida NO reactiva automáticamente a la persona: el regreso
+       real se registra después desde Ingreso / Reingreso.
+    """
     rol = str(st.session_state.get("rol_actual", "")).upper()
     if rol not in ["COORDINACION", "MANAGER"]:
         st.error("Acceso exclusivo para Coordinación y Manager.")
@@ -9737,129 +9749,507 @@ def comite_casos_v16():
 
     st.title("🧠 Comité de Casos")
     st.caption(
-        "Registro de análisis interdisciplinario, decisiones, compromisos "
-        "y responsables."
+        "Estudio de casos remitidos, decisión institucional, compromisos "
+        "y cierre o continuidad de medidas disciplinarias."
     )
 
-    personas = pd.read_sql(
-        text("""
-            SELECT
-                TRIM(CAST(numero_identificacion AS TEXT)) AS documento,
-                nombres,
-                apellidos,
-                modalidad,
-                estado_caso
-            FROM habitante_de_calle
-            ORDER BY nombres, apellidos
-        """),
-        engine
-    )
-    personas["nombre_completo"] = (
-        personas["nombres"].fillna("").astype(str).str.strip()
-        + " "
-        + personas["apellidos"].fillna("").astype(str).str.strip()
-    ).str.strip()
-
-    docs = personas["documento"].astype(str).tolist()
-
-    with st.form("v16_nuevo_comite"):
-        doc = st.selectbox(
-            "Usuario",
-            docs,
-            format_func=lambda d: (
-                personas.loc[
-                    personas["documento"].astype(str) == str(d),
-                    "nombre_completo"
-                ].iloc[0]
-                + f" · CC {d}"
-            )
+    # ============================================================
+    # 1. BANDEJA AUTOMÁTICA DE CASOS REMITIDOS
+    # ============================================================
+    try:
+        pendientes = pd.read_sql(
+            text("""
+                SELECT
+                    s.id AS id_medida,
+                    TRIM(CAST(s.numero_identificacion AS TEXT)) AS documento,
+                    COALESCE(h.nombres, '') AS nombres,
+                    COALESCE(h.apellidos, '') AS apellidos,
+                    h.estado_caso,
+                    h.modalidad,
+                    s.tipo_medida,
+                    s.motivo,
+                    s.fecha_inicio,
+                    s.fecha_fin,
+                    s.observacion,
+                    s.usuario_registra,
+                    s.creado_en
+                FROM sanciones_usuarios s
+                LEFT JOIN habitante_de_calle h
+                  ON TRIM(CAST(h.numero_identificacion AS TEXT))
+                   = TRIM(CAST(s.numero_identificacion AS TEXT))
+                WHERE UPPER(TRIM(COALESCE(s.estado_medida,''))) = 'ACTIVA'
+                  AND COALESCE(s.remitido_comite, FALSE) = TRUE
+                ORDER BY s.creado_en ASC, s.id ASC
+            """),
+            engine
         )
-        fecha_comite = st.date_input("Fecha del comité", value=date.today())
-        situacion = st.text_area("Situación analizada *")
-        decision = st.text_area("Decisiones del comité *")
-        participantes = st.text_area(
-            "Participantes",
-            placeholder="Nombres o perfiles participantes"
+    except Exception as e:
+        pendientes = pd.DataFrame()
+        st.error(f"No fue posible consultar los casos remitidos a Comité: {e}")
+
+    if not pendientes.empty:
+        pendientes["nombre_completo"] = (
+            pendientes["nombres"].fillna("").astype(str).str.strip()
+            + " "
+            + pendientes["apellidos"].fillna("").astype(str).str.strip()
+        ).str.strip()
+        pendientes["fecha_inicio"] = pd.to_datetime(
+            pendientes["fecha_inicio"], errors="coerce"
         )
-        crear = st.form_submit_button(
-            "💾 Registrar comité",
+
+        st.markdown(f"### 🟠 Casos pendientes de estudio · {len(pendientes)}")
+
+        tabla_pendientes = pendientes.copy()
+        tabla_pendientes["Fecha medida"] = tabla_pendientes["fecha_inicio"].apply(
+            lambda x: x.strftime("%d/%m/%Y") if pd.notna(x) else "—"
+        )
+        tabla_pendientes["Estado"] = "🟠 PENDIENTE COMITÉ"
+
+        st.dataframe(
+            tabla_pendientes[
+                [
+                    "nombre_completo",
+                    "documento",
+                    "tipo_medida",
+                    "motivo",
+                    "Fecha medida",
+                    "usuario_registra",
+                    "Estado",
+                ]
+            ].rename(
+                columns={
+                    "nombre_completo": "Usuario",
+                    "documento": "Documento",
+                    "tipo_medida": "Medida preliminar",
+                    "motivo": "Causal",
+                    "usuario_registra": "Remitido / registrado por",
+                }
+            ),
             use_container_width=True,
-            type="primary"
+            hide_index=True,
         )
 
-    if crear:
-        if not situacion.strip() or not decision.strip():
-            st.error("Situación y decisiones son obligatorias.")
-        else:
-            with engine.begin() as conn:
-                res = conn.execute(
-                    text("""
-                        INSERT INTO comites_casos(
-                            documento_usuario,
-                            fecha_comite,
-                            situacion_analizada,
-                            decisiones,
-                            participantes,
-                            registrado_por
-                        )
-                        VALUES(
-                            :doc,
-                            :fecha,
-                            :situacion,
-                            :decision,
-                            :participantes,
-                            :usuario
-                        )
-                        RETURNING id
-                    """),
-                    {
-                        "doc": doc,
-                        "fecha": fecha_comite,
-                        "situacion": situacion.strip(),
-                        "decision": decision.strip(),
-                        "participantes": participantes.strip(),
-                        "usuario": st.session_state.get(
-                            "usuario_actual", "coordinacion"
-                        )
-                    }
+        ids_medidas = pendientes["id_medida"].astype(int).tolist()
+        id_medida_sel = st.selectbox(
+            "Caso para estudio",
+            ids_medidas,
+            key="v16107_medida_comite_sel",
+            format_func=lambda mid: (
+                pendientes.loc[
+                    pendientes["id_medida"].astype(int) == int(mid),
+                    "nombre_completo",
+                ].iloc[0]
+                + " · CC "
+                + str(
+                    pendientes.loc[
+                        pendientes["id_medida"].astype(int) == int(mid),
+                        "documento",
+                    ].iloc[0]
                 )
-                comite_id = int(res.scalar())
-            st.session_state["v16_comite_id"] = comite_id
-            st.success("✅ Comité registrado.")
+                + " · "
+                + str(
+                    pendientes.loc[
+                        pendientes["id_medida"].astype(int) == int(mid),
+                        "motivo",
+                    ].iloc[0]
+                )
+            ),
+        )
 
-    comites = pd.read_sql(
-        text("""
-            SELECT
-                c.id,
-                c.fecha_comite,
-                c.documento_usuario,
-                h.nombres,
-                h.apellidos,
-                c.situacion_analizada,
-                c.decisiones,
-                c.participantes,
-                c.registrado_por
-            FROM comites_casos c
-            LEFT JOIN habitante_de_calle h
-              ON TRIM(CAST(h.numero_identificacion AS TEXT))
-               = TRIM(CAST(c.documento_usuario AS TEXT))
-            ORDER BY c.fecha_comite DESC, c.id DESC
-            LIMIT 50
-        """),
-        engine
-    )
+        caso = pendientes.loc[
+            pendientes["id_medida"].astype(int) == int(id_medida_sel)
+        ].iloc[0]
+        doc_caso = str(caso["documento"]).strip()
+        nombre_caso = str(caso["nombre_completo"]).strip()
+        fecha_medida_txt = (
+            caso["fecha_inicio"].strftime("%d/%m/%Y")
+            if pd.notna(caso["fecha_inicio"])
+            else "—"
+        )
+
+        st.info(
+            f"**{nombre_caso} · CC {doc_caso}**  \n"
+            f"Medida preliminar: **{caso['tipo_medida']}** · "
+            f"Causal: **{caso['motivo']}** · Fecha: **{fecha_medida_txt}**  \n"
+            f"Observación previa: {caso.get('observacion') or 'Sin observación adicional'}"
+        )
+
+        with st.form(f"v16107_estudio_comite_{id_medida_sel}"):
+            fecha_comite = st.date_input(
+                "Fecha del comité",
+                value=ahora_colombia().date(),
+                key=f"v16107_fecha_{id_medida_sel}",
+            )
+            situacion = st.text_area(
+                "Situación analizada *",
+                value=(
+                    f"Estudio de caso remitido por medida preliminar de "
+                    f"{caso['tipo_medida']} - {caso['motivo']}."
+                ),
+                key=f"v16107_situacion_{id_medida_sel}",
+            )
+            analisis = st.text_area(
+                "Análisis interdisciplinario / consideraciones *",
+                key=f"v16107_analisis_{id_medida_sel}",
+                placeholder=(
+                    "Registre hechos verificados, antecedentes, versión del usuario, "
+                    "criterios del equipo y demás elementos considerados."
+                ),
+            )
+            decision = st.text_area(
+                "Decisión motivada del Comité *",
+                key=f"v16107_decision_{id_medida_sel}",
+            )
+            resultado = st.selectbox(
+                "Resultado institucional *",
+                [
+                    "LEVANTAR MEDIDA Y HABILITAR REINGRESO",
+                    "MANTENER MEDIDA / NO AUTORIZAR REINGRESO POR AHORA",
+                    "FIJAR NUEVA FECHA DE POSIBLE REINGRESO",
+                ],
+                key=f"v16107_resultado_{id_medida_sel}",
+            )
+
+            nueva_fecha = None
+            if resultado == "FIJAR NUEVA FECHA DE POSIBLE REINGRESO":
+                nueva_fecha = st.date_input(
+                    "Nueva fecha desde la cual puede solicitar reingreso *",
+                    value=ahora_colombia().date() + timedelta(days=1),
+                    key=f"v16107_nueva_fecha_{id_medida_sel}",
+                )
+
+            participantes = st.text_area(
+                "Participantes *",
+                placeholder="Nombres o perfiles participantes",
+                key=f"v16107_participantes_{id_medida_sel}",
+            )
+            confirmar = st.checkbox(
+                "Confirmo que esta es la decisión formal del Comité de Casos.",
+                key=f"v16107_confirmar_{id_medida_sel}",
+            )
+            crear = st.form_submit_button(
+                "💾 Registrar decisión del Comité",
+                use_container_width=True,
+                type="primary",
+            )
+
+        if crear:
+            if not situacion.strip():
+                st.error("Debe registrar la situación analizada.")
+            elif not analisis.strip():
+                st.error("Debe registrar el análisis interdisciplinario.")
+            elif not decision.strip():
+                st.error("Debe registrar la decisión motivada.")
+            elif not participantes.strip():
+                st.error("Debe registrar los participantes del Comité.")
+            elif not confirmar:
+                st.error("Debe confirmar la decisión formal del Comité.")
+            elif (
+                resultado == "FIJAR NUEVA FECHA DE POSIBLE REINGRESO"
+                and (nueva_fecha is None or nueva_fecha <= ahora_colombia().date())
+            ):
+                st.error("La nueva fecha de posible reingreso debe ser posterior a hoy.")
+            else:
+                usuario_actual = st.session_state.get(
+                    "usuario_actual", "coordinacion"
+                )
+                decision_integral = (
+                    f"RESULTADO INSTITUCIONAL: {resultado}\n\n"
+                    f"ANÁLISIS INTERDISCIPLINARIO:\n{analisis.strip()}\n\n"
+                    f"DECISIÓN MOTIVADA:\n{decision.strip()}"
+                )
+
+                try:
+                    with engine.begin() as conn:
+                        res = conn.execute(
+                            text("""
+                                INSERT INTO comites_casos(
+                                    documento_usuario,
+                                    fecha_comite,
+                                    situacion_analizada,
+                                    decisiones,
+                                    participantes,
+                                    registrado_por
+                                )
+                                VALUES(
+                                    :doc,
+                                    :fecha,
+                                    :situacion,
+                                    :decision,
+                                    :participantes,
+                                    :usuario
+                                )
+                                RETURNING id
+                            """),
+                            {
+                                "doc": doc_caso,
+                                "fecha": fecha_comite,
+                                "situacion": situacion.strip(),
+                                "decision": decision_integral,
+                                "participantes": participantes.strip(),
+                                "usuario": usuario_actual,
+                            },
+                        )
+                        comite_id = int(res.scalar())
+
+                        if resultado == "LEVANTAR MEDIDA Y HABILITAR REINGRESO":
+                            conn.execute(
+                                text("""
+                                    UPDATE sanciones_usuarios
+                                    SET estado_medida = 'LEVANTADA_COMITE',
+                                        cerrado_en = NOW(),
+                                        observacion = CONCAT_WS(
+                                            ' | ',
+                                            NULLIF(TRIM(COALESCE(observacion,'')), ''),
+                                            :obs_comite
+                                        )
+                                    WHERE id = :id_medida
+                                      AND UPPER(TRIM(COALESCE(estado_medida,''))) = 'ACTIVA'
+                                """),
+                                {
+                                    "id_medida": int(id_medida_sel),
+                                    "obs_comite": (
+                                        f"COMITÉ #{comite_id}: medida levantada; "
+                                        "persona habilitada para solicitar reingreso."
+                                    ),
+                                },
+                            )
+
+                        elif resultado == "FIJAR NUEVA FECHA DE POSIBLE REINGRESO":
+                            conn.execute(
+                                text("""
+                                    UPDATE sanciones_usuarios
+                                    SET fecha_fin = :fecha_fin,
+                                        remitido_comite = FALSE,
+                                        observacion = CONCAT_WS(
+                                            ' | ',
+                                            NULLIF(TRIM(COALESCE(observacion,'')), ''),
+                                            :obs_comite
+                                        )
+                                    WHERE id = :id_medida
+                                      AND UPPER(TRIM(COALESCE(estado_medida,''))) = 'ACTIVA'
+                                """),
+                                {
+                                    "id_medida": int(id_medida_sel),
+                                    "fecha_fin": nueva_fecha,
+                                    "obs_comite": (
+                                        f"COMITÉ #{comite_id}: fija posible reingreso "
+                                        f"desde {nueva_fecha.strftime('%d/%m/%Y')}. "
+                                        "El antecedente de remisión queda documentado en el Comité."
+                                    ),
+                                },
+                            )
+
+                        else:
+                            # Se mantiene ACTIVA + remitido_comite=TRUE para conservar
+                            # el bloqueo institucional hasta una nueva decisión formal.
+                            conn.execute(
+                                text("""
+                                    UPDATE sanciones_usuarios
+                                    SET observacion = CONCAT_WS(
+                                            ' | ',
+                                            NULLIF(TRIM(COALESCE(observacion,'')), ''),
+                                            :obs_comite
+                                        )
+                                    WHERE id = :id_medida
+                                      AND UPPER(TRIM(COALESCE(estado_medida,''))) = 'ACTIVA'
+                                """),
+                                {
+                                    "id_medida": int(id_medida_sel),
+                                    "obs_comite": (
+                                        f"COMITÉ #{comite_id}: se mantiene la medida; "
+                                        "reingreso no autorizado por ahora."
+                                    ),
+                                },
+                            )
+
+                    registrar_auditoria(
+                        "DECISION_COMITE_CASOS",
+                        documento=doc_caso,
+                        modulo="Comité de Casos",
+                        valor_anterior=(
+                            f"Medida #{id_medida_sel} ACTIVA · "
+                            f"{caso['tipo_medida']} · {caso['motivo']}"
+                        ),
+                        valor_nuevo=resultado,
+                        observacion=(
+                            f"Comité #{comite_id}. {decision.strip()}"
+                        )[:500],
+                    )
+
+                    invalidar_cache_datos()
+                    st.session_state["v16_comite_id"] = comite_id
+
+                    if resultado == "LEVANTAR MEDIDA Y HABILITAR REINGRESO":
+                        st.success(
+                            "✅ Decisión registrada. La medida fue levantada y la persona "
+                            "quedó habilitada para solicitar reingreso. NO fue reactivada "
+                            "automáticamente; el regreso real debe registrarse desde "
+                            "Ingreso / Reingreso."
+                        )
+                    elif resultado == "FIJAR NUEVA FECHA DE POSIBLE REINGRESO":
+                        st.success(
+                            "✅ Decisión registrada. La medida continúa ACTIVA hasta la "
+                            f"fecha definida: {nueva_fecha.strftime('%d/%m/%Y')}."
+                        )
+                    else:
+                        st.success(
+                            "✅ Decisión registrada. La medida continúa ACTIVA y el "
+                            "reingreso permanece bloqueado hasta una nueva decisión del Comité."
+                        )
+                    st.rerun()
+
+                except Exception as e:
+                    st.error(f"No fue posible registrar la decisión del Comité: {e}")
+
+    else:
+        st.success("✅ No hay medidas activas pendientes de estudio por Comité.")
+
+    # ============================================================
+    # 2. COMITÉ EXTRAORDINARIO / CASO NO ORIGINADO EN SANCIÓN
+    #    Se conserva la funcionalidad anterior para no perder capacidad.
+    # ============================================================
+    with st.expander(
+        "➕ Registrar comité extraordinario (sin medida remitida)",
+        expanded=False,
+    ):
+        personas = pd.read_sql(
+            text("""
+                SELECT
+                    TRIM(CAST(numero_identificacion AS TEXT)) AS documento,
+                    nombres,
+                    apellidos,
+                    modalidad,
+                    estado_caso
+                FROM habitante_de_calle
+                ORDER BY nombres, apellidos
+            """),
+            engine,
+        )
+
+        if not personas.empty:
+            personas["nombre_completo"] = (
+                personas["nombres"].fillna("").astype(str).str.strip()
+                + " "
+                + personas["apellidos"].fillna("").astype(str).str.strip()
+            ).str.strip()
+            docs = personas["documento"].astype(str).tolist()
+
+            with st.form("v16107_comite_extraordinario"):
+                doc_extra = st.selectbox(
+                    "Usuario",
+                    docs,
+                    format_func=lambda d: (
+                        personas.loc[
+                            personas["documento"].astype(str) == str(d),
+                            "nombre_completo",
+                        ].iloc[0]
+                        + f" · CC {d}"
+                    ),
+                )
+                fecha_extra = st.date_input(
+                    "Fecha del comité",
+                    value=ahora_colombia().date(),
+                    key="v16107_fecha_extra",
+                )
+                situacion_extra = st.text_area(
+                    "Situación analizada *",
+                    key="v16107_situacion_extra",
+                )
+                decision_extra = st.text_area(
+                    "Decisiones del comité *",
+                    key="v16107_decision_extra",
+                )
+                participantes_extra = st.text_area(
+                    "Participantes",
+                    placeholder="Nombres o perfiles participantes",
+                    key="v16107_participantes_extra",
+                )
+                crear_extra = st.form_submit_button(
+                    "💾 Registrar comité extraordinario",
+                    use_container_width=True,
+                )
+
+            if crear_extra:
+                if not situacion_extra.strip() or not decision_extra.strip():
+                    st.error("Situación y decisiones son obligatorias.")
+                else:
+                    with engine.begin() as conn:
+                        res = conn.execute(
+                            text("""
+                                INSERT INTO comites_casos(
+                                    documento_usuario,
+                                    fecha_comite,
+                                    situacion_analizada,
+                                    decisiones,
+                                    participantes,
+                                    registrado_por
+                                )
+                                VALUES(
+                                    :doc, :fecha, :situacion, :decision,
+                                    :participantes, :usuario
+                                )
+                                RETURNING id
+                            """),
+                            {
+                                "doc": doc_extra,
+                                "fecha": fecha_extra,
+                                "situacion": situacion_extra.strip(),
+                                "decision": decision_extra.strip(),
+                                "participantes": participantes_extra.strip(),
+                                "usuario": st.session_state.get(
+                                    "usuario_actual", "coordinacion"
+                                ),
+                            },
+                        )
+                        comite_extra_id = int(res.scalar())
+                    st.session_state["v16_comite_id"] = comite_extra_id
+                    st.success("✅ Comité extraordinario registrado.")
+                    st.rerun()
+
+    # ============================================================
+    # 3. HISTÓRICO DE COMITÉS Y COMPROMISOS
+    # ============================================================
+    try:
+        comites = pd.read_sql(
+            text("""
+                SELECT
+                    c.id,
+                    c.fecha_comite,
+                    c.documento_usuario,
+                    h.nombres,
+                    h.apellidos,
+                    c.situacion_analizada,
+                    c.decisiones,
+                    c.participantes,
+                    c.registrado_por
+                FROM comites_casos c
+                LEFT JOIN habitante_de_calle h
+                  ON TRIM(CAST(h.numero_identificacion AS TEXT))
+                   = TRIM(CAST(c.documento_usuario AS TEXT))
+                ORDER BY c.fecha_comite DESC, c.id DESC
+                LIMIT 50
+            """),
+            engine,
+        )
+    except Exception:
+        comites = pd.DataFrame()
 
     st.markdown("### 📋 Comités recientes")
-    if not comites.empty:
-        st.dataframe(comites, use_container_width=True, hide_index=True)
+    if comites.empty:
+        st.caption("Aún no hay comités registrados.")
+        return
 
-        ids = comites["id"].tolist()
-        comite_sel = st.selectbox(
-            "Comité para agregar compromiso",
-            ids,
-            key="v16_comite_sel"
-        )
+    st.dataframe(comites, use_container_width=True, hide_index=True)
 
+    ids = comites["id"].astype(int).tolist()
+    comite_sel = st.selectbox(
+        "Comité para agregar compromiso",
+        ids,
+        key="v16107_comite_sel_compromiso",
+    )
+
+    try:
         funcionarios = pd.read_sql(
             text("""
                 SELECT cedula, nombre
@@ -9867,63 +10257,69 @@ def comite_casos_v16():
                 WHERE activo=TRUE
                 ORDER BY nombre
             """),
-            engine
+            engine,
+        )
+    except Exception:
+        funcionarios = pd.DataFrame()
+
+    if funcionarios.empty:
+        st.info("No hay funcionarios activos disponibles para asignar compromisos.")
+        return
+
+    with st.form("v16107_compromiso"):
+        responsable = st.selectbox(
+            "Responsable",
+            funcionarios["cedula"].astype(str).tolist(),
+            format_func=lambda c: (
+                funcionarios.loc[
+                    funcionarios["cedula"].astype(str) == str(c),
+                    "nombre",
+                ].iloc[0]
+                + f" · CC {c}"
+            ),
+        )
+        compromiso = st.text_area("Compromiso *")
+        fecha_limite = st.date_input(
+            "Fecha límite",
+            value=ahora_colombia().date() + timedelta(days=15),
+            key="v16107_fecha_compromiso",
+        )
+        guardar = st.form_submit_button(
+            "➕ Agregar compromiso",
+            use_container_width=True,
         )
 
-        with st.form("v16_compromiso"):
-            responsable = st.selectbox(
-                "Responsable",
-                funcionarios["cedula"].astype(str).tolist(),
-                format_func=lambda c: (
-                    funcionarios.loc[
-                        funcionarios["cedula"].astype(str) == str(c),
-                        "nombre"
-                    ].iloc[0]
-                    + f" · CC {c}"
+    if guardar:
+        if not compromiso.strip():
+            st.error("Debe registrar el compromiso.")
+        else:
+            with engine.begin() as conn:
+                conn.execute(
+                    text("""
+                        INSERT INTO compromisos_comite(
+                            comite_id,
+                            compromiso,
+                            responsable_cedula,
+                            fecha_limite,
+                            estado
+                        )
+                        VALUES(
+                            :comite,
+                            :compromiso,
+                            :responsable,
+                            :fecha,
+                            'PENDIENTE'
+                        )
+                    """),
+                    {
+                        "comite": int(comite_sel),
+                        "compromiso": compromiso.strip(),
+                        "responsable": str(responsable),
+                        "fecha": fecha_limite,
+                    },
                 )
-            )
-            compromiso = st.text_area("Compromiso *")
-            fecha_limite = st.date_input(
-                "Fecha límite",
-                value=date.today() + timedelta(days=15)
-            )
-            guardar = st.form_submit_button(
-                "➕ Agregar compromiso",
-                use_container_width=True
-            )
-
-        if guardar:
-            if not compromiso.strip():
-                st.error("Debe registrar el compromiso.")
-            else:
-                with engine.begin() as conn:
-                    conn.execute(
-                        text("""
-                            INSERT INTO compromisos_comite(
-                                comite_id,
-                                compromiso,
-                                responsable_cedula,
-                                fecha_limite,
-                                estado
-                            )
-                            VALUES(
-                                :comite,
-                                :compromiso,
-                                :responsable,
-                                :fecha,
-                                'PENDIENTE'
-                            )
-                        """),
-                        {
-                            "comite": int(comite_sel),
-                            "compromiso": compromiso.strip(),
-                            "responsable": str(responsable),
-                            "fecha": fecha_limite
-                        }
-                    )
-                st.success("✅ Compromiso agregado.")
-                st.rerun()
-
+            st.success("✅ Compromiso agregado.")
+            st.rerun()
 
 def tablero_contribucion_ods_v16():
     """Tablero institucional de contribución del programa a los ODS."""
