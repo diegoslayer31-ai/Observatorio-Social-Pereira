@@ -5616,7 +5616,7 @@ def gestion_usuarios_movil():
         "regresos de permiso, sanciones, expulsiones y control de turno."
     )
 
-    # V16.98 - Ajuste visual de medidas vencidas/reingresadas.
+    # V16.99 - Ajuste visual de medidas vencidas/reingresadas.
     # V16.39 - Unificación operativa.
     # Control de Turno deja de ser un módulo separado del menú lateral.
     seccion_movil = st.radio(
@@ -6186,7 +6186,7 @@ def gestion_usuarios_movil():
             )
             hoy_medida = ahora_colombia().date()
 
-            # V16.98 - La alerta visual distingue entre una medida realmente
+            # V16.99 - La alerta visual distingue entre una medida realmente
             # vigente y una medida cuya fecha de reingreso ya se cumplió.
             # Si ya existe un REINGRESO posterior al vencimiento, no se muestra
             # ninguna alerta de suspensión aunque el registro histórico aún
@@ -20512,7 +20512,7 @@ def control_asistencia_albergue_v1613():
         return dfm
 
     # ========================================================
-    # V16.98 - RECONSTRUCCIÓN REAL DESDE EL INICIO DE USO DE LA APP
+    # V16.99 - RECONSTRUCCIÓN REAL DESDE EL INICIO DE USO DE LA APP
     # ========================================================
     def _fecha_inicio_operacion_v1698():
         """
@@ -20914,149 +20914,265 @@ def control_asistencia_albergue_v1613():
 
         ultimo_dia = siguiente_mes - timedelta(days=1)
 
-        mov_mes = _cargar_movimientos_hasta_v1691(
-            ultimo_dia
+        generar_consolidado = st.button(
+            "▶️ Generar consolidado mensual",
+            type="primary",
+            use_container_width=True,
+            key=f"v1699_generar_{primer_dia.strftime('%Y_%m')}"
         )
 
-        if mov_mes.empty:
-            st.info(
-                "No hay movimientos suficientes para construir el consolidado."
-            )
-            return
+        clave_cache_mes = f"v1699_matrices_{primer_dia.strftime('%Y_%m')}"
 
-        dias_mes = pd.date_range(
-            primer_dia,
-            ultimo_dia,
-            freq="D"
-        )
-
-        maestro_map = {}
-        if not maestro_asistencia.empty:
-            maestro_map = dict(
-                zip(
-                    maestro_asistencia["documento_norm"],
-                    maestro_asistencia["nombre_completo"]
-                )
-            )
-
-        def _matriz_modalidad_v1691(modalidad_objetivo):
-            filas = []
-
-            # Universo real: incluye quienes ya estaban activos al comenzar
-            # la app, aunque todavía no hubieran generado un movimiento.
-            docs_universo = set()
-            if not maestro_asistencia.empty:
-                docs_universo.update(
-                    maestro_asistencia[
-                        "documento"
-                    ].dropna().astype(str).str.strip().tolist()
-                )
-            if not mov_mes.empty:
-                docs_universo.update(
-                    mov_mes[
-                        "documento"
-                    ].dropna().astype(str).str.strip().tolist()
+        if generar_consolidado:
+            with st.spinner("Reconstruyendo asistencia mensual..."):
+                mov_mes = _cargar_movimientos_hasta_v1691(
+                    ultimo_dia
                 )
 
-            for doc in sorted(docs_universo):
-                if not doc:
-                    continue
-
-                mov_doc = (
-                    mov_mes[mov_mes["documento"] == doc].copy()
-                    if not mov_mes.empty
-                    else pd.DataFrame()
+                dias_mes = pd.date_range(
+                    primer_dia,
+                    ultimo_dia,
+                    freq="D"
                 )
 
-                doc_norm = _normalizar_documento_v1693(doc)
-                nombre_encontrado = maestro_map.get(doc_norm, "")
-                if not nombre_encontrado:
-                    nombre_encontrado = f"CC {doc}"
+                maestro_map = {}
+                if not maestro_asistencia.empty:
+                    maestro_map = dict(
+                        zip(
+                            maestro_asistencia["documento_norm"],
+                            maestro_asistencia["nombre_completo"]
+                        )
+                    )
 
-                fila = {
-                    "Documento": doc,
-                    "Nombre completo": nombre_encontrado
-                }
+                # ------------------------------------------------
+                # V16.99 - reconstrucción eficiente:
+                # una sola pasada por persona y por sus movimientos.
+                # Antes se filtraba todo el DataFrame por persona y por día,
+                # lo que hacía muy lento el módulo.
+                # ------------------------------------------------
+                docs_universo = set()
+                if not maestro_asistencia.empty:
+                    docs_universo.update(
+                        maestro_asistencia[
+                            "documento"
+                        ].dropna().astype(str).str.strip().tolist()
+                    )
+                if not mov_mes.empty:
+                    docs_universo.update(
+                        mov_mes[
+                            "documento"
+                        ].dropna().astype(str).str.strip().tolist()
+                    )
 
-                relacionado = False
-                total = 0
-
-                for dia in dias_mes:
-                    fecha_dia = dia.date()
-
-                    # Antes de que empezara a operar la app no se imputa atención.
-                    if fecha_dia < FECHA_INICIO_APP_V1698:
-                        valor = 0
-                    else:
-                        activo, modalidad_dia = _estado_persona_en_fecha_v1698(
-                            doc,
-                            mov_doc,
-                            fecha_dia
+                movimientos_por_doc = {}
+                if not mov_mes.empty:
+                    for doc_g, grupo in mov_mes.groupby("documento", sort=False):
+                        movimientos_por_doc[str(doc_g).strip()] = (
+                            grupo.sort_values(
+                                ["fecha_movimiento", "id_movimiento"]
+                            ).reset_index(drop=True)
                         )
 
-                        if modalidad_dia == modalidad_objetivo:
-                            relacionado = True
-                            valor = 1 if activo else 0
+                filas_urbano = []
+                filas_granja = []
+
+                for doc in sorted(docs_universo):
+                    if not doc:
+                        continue
+
+                    mov_doc = movimientos_por_doc.get(
+                        doc,
+                        pd.DataFrame()
+                    )
+
+                    doc_norm = _normalizar_documento_v1693(doc)
+                    nombre = maestro_map.get(doc_norm, "") or f"CC {doc}"
+
+                    # Estado inmediatamente anterior/inicial a la operación.
+                    activo, modalidad = _estado_inicial_persona_v1698(
+                        doc,
+                        mov_doc
+                    )
+
+                    eventos = []
+                    if not mov_doc.empty:
+                        for _, ev in mov_doc.iterrows():
+                            fecha_ev = pd.to_datetime(
+                                ev.get("fecha_movimiento"),
+                                errors="coerce"
+                            )
+                            if pd.isna(fecha_ev):
+                                continue
+                            eventos.append({
+                                "fecha": fecha_ev.date(),
+                                "tipo": ev.get("tipo_movimiento"),
+                                "modalidad": str(
+                                    ev.get("modalidad_hist")
+                                    or ev.get("modalidad")
+                                    or ""
+                                ).strip().upper()
+                            })
+
+                    idx_evento = 0
+                    fila_u = {
+                        "Documento": doc,
+                        "Nombre completo": nombre
+                    }
+                    fila_g = {
+                        "Documento": doc,
+                        "Nombre completo": nombre
+                    }
+                    total_u = 0
+                    total_g = 0
+                    relacionado_u = False
+                    relacionado_g = False
+
+                    for dia in dias_mes:
+                        fecha_dia = dia.date()
+
+                        if fecha_dia < FECHA_INICIO_APP_V1698:
+                            valor_u = 0
+                            valor_g = 0
                         else:
-                            valor = 0
+                            # Aplicar solo los movimientos que ocurrieron
+                            # hasta este día. Cada evento se procesa una sola vez.
+                            while (
+                                idx_evento < len(eventos)
+                                and eventos[idx_evento]["fecha"] <= fecha_dia
+                            ):
+                                ev = eventos[idx_evento]
+                                mod_ev = ev["modalidad"]
 
-                    fila[str(dia.day)] = int(valor)
-                    total += int(valor)
+                                if mod_ev in ["URBANO", "GRANJA"]:
+                                    modalidad = mod_ev
 
-                fila["TOTAL ATENCIONES"] = int(total)
+                                if _tipo_activa_v1698(ev["tipo"]):
+                                    activo = True
+                                elif _tipo_permiso_v1698(ev["tipo"]):
+                                    activo = True
+                                elif _tipo_salida_v1698(ev["tipo"]):
+                                    activo = False
 
-                if relacionado:
-                    orden_columnas = (
+                                idx_evento += 1
+
+                            if modalidad == "URBANO":
+                                relacionado_u = True
+                            elif modalidad == "GRANJA":
+                                relacionado_g = True
+
+                            valor_u = int(
+                                activo and modalidad == "URBANO"
+                            )
+                            valor_g = int(
+                                activo and modalidad == "GRANJA"
+                            )
+
+                        fila_u[str(dia.day)] = valor_u
+                        fila_g[str(dia.day)] = valor_g
+                        total_u += valor_u
+                        total_g += valor_g
+
+                    fila_u["TOTAL ATENCIONES"] = total_u
+                    fila_g["TOTAL ATENCIONES"] = total_g
+
+                    orden = (
                         ["Documento", "Nombre completo", "TOTAL ATENCIONES"]
                         + [str(d.day) for d in dias_mes]
                     )
-                    fila = {
-                        c: fila.get(c, 0 if c.isdigit() else "")
-                        for c in orden_columnas
+
+                    if relacionado_u:
+                        filas_urbano.append({
+                            c: fila_u.get(
+                                c,
+                                0 if c.isdigit() else ""
+                            )
+                            for c in orden
+                        })
+
+                    if relacionado_g:
+                        filas_granja.append({
+                            c: fila_g.get(
+                                c,
+                                0 if c.isdigit() else ""
+                            )
+                            for c in orden
+                        })
+
+                def _cerrar_matriz_v1699(filas):
+                    matriz = pd.DataFrame(filas)
+
+                    if matriz.empty:
+                        return matriz
+
+                    fila_total = {
+                        "Documento": "",
+                        "Nombre completo": "TOTAL ATENCIONES DÍA",
+                        "TOTAL ATENCIONES": int(
+                            pd.to_numeric(
+                                matriz["TOTAL ATENCIONES"],
+                                errors="coerce"
+                            ).fillna(0).sum()
+                        )
                     }
-                    filas.append(fila)
 
-            matriz = pd.DataFrame(filas)
+                    for dia in dias_mes:
+                        col = str(dia.day)
+                        fila_total[col] = int(
+                            pd.to_numeric(
+                                matriz[col],
+                                errors="coerce"
+                            ).fillna(0).sum()
+                        )
 
-            if matriz.empty:
-                return matriz
+                    orden = (
+                        ["Documento", "Nombre completo", "TOTAL ATENCIONES"]
+                        + [str(d.day) for d in dias_mes]
+                    )
+                    fila_total = {
+                        c: fila_total.get(
+                            c,
+                            0 if c.isdigit() else ""
+                        )
+                        for c in orden
+                    }
 
-            fila_total = {
-                "Documento": "",
-                "Nombre completo": "TOTAL ATENCIONES DÍA",
-                "TOTAL ATENCIONES": int(
-                    pd.to_numeric(
-                        matriz["TOTAL ATENCIONES"],
-                        errors="coerce"
-                    ).fillna(0).sum()
+                    return pd.concat(
+                        [matriz, pd.DataFrame([fila_total])],
+                        ignore_index=True
+                    )
+
+                matriz_urbano = _cerrar_matriz_v1699(
+                    filas_urbano
                 )
-            }
-
-            for dia in dias_mes:
-                col = str(dia.day)
-                fila_total[col] = int(
-                    pd.to_numeric(
-                        matriz[col],
-                        errors="coerce"
-                    ).fillna(0).sum()
+                matriz_granja = _cerrar_matriz_v1699(
+                    filas_granja
                 )
 
-            orden_total = (
-                ["Documento", "Nombre completo", "TOTAL ATENCIONES"]
-                + [str(d.day) for d in dias_mes]
-            )
-            fila_total = {
-                c: fila_total.get(c, 0 if c.isdigit() else "")
-                for c in orden_total
-            }
+                st.session_state[clave_cache_mes] = {
+                    "urbano": matriz_urbano,
+                    "granja": matriz_granja
+                }
 
-            return pd.concat(
-                [matriz, pd.DataFrame([fila_total])],
-                ignore_index=True
-            )
+        matrices_mes = st.session_state.get(
+            clave_cache_mes
+        )
 
-        matriz_urbano = _matriz_modalidad_v1691("URBANO")
-        matriz_granja = _matriz_modalidad_v1691("GRANJA")
+        if not matrices_mes:
+            st.info(
+                "Seleccione el mes y pulse «Generar consolidado mensual». "
+                "Así el módulo no hace cálculos pesados mientras consulta otra sección."
+            )
+            matriz_urbano = pd.DataFrame()
+            matriz_granja = pd.DataFrame()
+        else:
+            matriz_urbano = matrices_mes.get(
+                "urbano",
+                pd.DataFrame()
+            )
+            matriz_granja = matrices_mes.get(
+                "granja",
+                pd.DataFrame()
+            )
 
         t_u, t_g = st.tabs([
             "🏢 URBANO",
@@ -21064,9 +21180,9 @@ def control_asistencia_albergue_v1613():
         ])
 
         with t_u:
-            if matriz_urbano.empty:
+            if matriz_urbano.empty and matrices_mes:
                 st.info("Sin registros reconstruidos para URBANO.")
-            else:
+            elif not matriz_urbano.empty:
                 st.dataframe(
                     matriz_urbano,
                     use_container_width=True,
@@ -21080,9 +21196,9 @@ def control_asistencia_albergue_v1613():
                 )
 
         with t_g:
-            if matriz_granja.empty:
+            if matriz_granja.empty and matrices_mes:
                 st.info("Sin registros reconstruidos para GRANJA.")
-            else:
+            elif not matriz_granja.empty:
                 st.dataframe(
                     matriz_granja,
                     use_container_width=True,
@@ -21095,7 +21211,9 @@ def control_asistencia_albergue_v1613():
                     )
                 )
 
-        if not matriz_urbano.empty or not matriz_granja.empty:
+        if matrices_mes and (
+            not matriz_urbano.empty or not matriz_granja.empty
+        ):
             partes = []
 
             if not matriz_urbano.empty:
