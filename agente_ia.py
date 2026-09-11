@@ -20328,7 +20328,7 @@ def control_asistencia_albergue_v1613():
         return txt.upper()
 
     def _cargar_maestro_v1691():
-        # V16.95 - La fuente principal de nombres es SIEMPRE habitante_de_calle.
+        # V16.96 - La fuente principal de nombres es SIEMPRE habitante_de_calle.
         # personas_caracterizacion se consulta aparte como respaldo para que,
         # si su estructura cambia, no deje vacía toda la base de nombres.
         partes = []
@@ -20948,6 +20948,26 @@ def control_asistencia_albergue_v1613():
             "al inicio del registro operativo pueden estar incompletos."
         )
 
+
+# V16.96 - Catálogo institucional de atenciones de Enfermería.
+# Se define de forma global antes del módulo porque lo usan tanto
+# el formulario de registro como el consolidado de reportes.
+CATEGORIAS_ENFERMERIA_V1671 = [
+    "ACOMPAÑAMIENTOS A CITAS MÉDICAS",
+    "ATENCIÓN EN LA MÓVIL POR MEDICINA GENERAL",
+    "ATENCIÓN EN LA MÓVIL POR ODONTOLOGÍA",
+    "ATENCIÓN REALIZADA",
+    "GESTIONES",
+    "PRUEBAS DE EMBARAZO",
+    "SEGUIMIENTO A USUARIO HOSPITALIZADO",
+    "TRASLADO A URGENCIAS",
+    "USUARIO CON ADHERENCIA AL TRATAMIENTO TB",
+    "USUARIO CON ADHERENCIA EN EL TRATAMIENTO DE SPA",
+    "USUARIO CON ADHERENCIA EN EL TRATAMIENTO ITS",
+    "USUARIO CON ADHERENCIA EN EL TRATAMIENTO VIH",
+    "USUARIO HOSPITALIZADO",
+    "VALORACIÓN DE INGRESO",
+]
 
 def modulo_enfermeria_v1673():
     rol = str(st.session_state.get("rol_actual", "")).strip().upper()
@@ -22557,7 +22577,7 @@ def modulo_politica_publica_v1678():
 
 
 
-# V16.95 - Rol de la sesión definido ANTES de cualquier ruta protegida.
+# V16.96 - Rol de la sesión definido ANTES de cualquier ruta protegida.
 rol_router = str(
     st.session_state.get("rol_actual", "")
 ).upper().strip()
@@ -23441,7 +23461,7 @@ if st.session_state.get("autenticado"):
     _v1634_tocar_sesion()
 
 
-# V16.95 - Rol de la sesión para el enrutador principal.
+# V16.96 - Rol de la sesión para el enrutador principal.
 # Se define aquí de forma independiente para que no dependa de ningún módulo anterior.
 rol_router = str(
     st.session_state.get("rol_actual", "")
