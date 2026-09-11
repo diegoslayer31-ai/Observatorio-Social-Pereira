@@ -20320,6 +20320,13 @@ def control_asistencia_albergue_v1613():
 
         return "SIN CAMBIO"
 
+    def _normalizar_documento_v1693(valor):
+        txt = str(valor or "").strip()
+        txt = "".join(c for c in txt if c.isalnum())
+        if txt.endswith("0") and ".0" in str(valor):
+            txt = txt[:-1]
+        return txt.upper()
+
     def _cargar_maestro_v1691():
         try:
             maestro = pd.read_sql(
@@ -20327,25 +20334,43 @@ def control_asistencia_albergue_v1613():
                     SELECT
                         TRIM(CAST(numero_identificacion AS TEXT)) AS documento,
                         COALESCE(nombres,'') AS nombres,
-                        COALESCE(apellidos,'') AS apellidos
+                        COALESCE(apellidos,'') AS apellidos,
+                        1 AS prioridad
                     FROM habitante_de_calle
+
+                    UNION ALL
+
+                    SELECT
+                        TRIM(CAST(numero_identificacion AS TEXT)) AS documento,
+                        COALESCE(nombres,'') AS nombres,
+                        COALESCE(apellidos,'') AS apellidos,
+                        2 AS prioridad
+                    FROM personas_caracterizacion
                 """),
                 engine
             )
         except Exception:
             maestro = pd.DataFrame(
-                columns=["documento", "nombres", "apellidos"]
+                columns=["documento", "nombres", "apellidos", "prioridad"]
             )
 
         if not maestro.empty:
             maestro["documento"] = (
                 maestro["documento"].fillna("").astype(str).str.strip()
             )
+            maestro["documento_norm"] = maestro["documento"].apply(
+                _normalizar_documento_v1693
+            )
             maestro["nombre_completo"] = (
                 maestro["nombres"].fillna("").astype(str).str.strip()
                 + " "
                 + maestro["apellidos"].fillna("").astype(str).str.strip()
             ).str.replace(r"\s+", " ", regex=True).str.strip()
+
+            maestro = (
+                maestro.sort_values(["documento_norm", "prioridad"])
+                .drop_duplicates(subset=["documento_norm"], keep="first")
+            )
 
         return maestro
 
@@ -20383,6 +20408,9 @@ def control_asistencia_albergue_v1613():
 
         dfm["documento"] = (
             dfm["documento"].fillna("").astype(str).str.strip()
+        )
+        dfm["documento_norm"] = dfm["documento"].apply(
+            _normalizar_documento_v1693
         )
         dfm["tipo_norm"] = dfm["tipo_movimiento"].apply(
             _norm_tipo_asistencia_v1691
@@ -20434,11 +20462,9 @@ def control_asistencia_albergue_v1613():
             if not maestro_asistencia.empty:
                 diario = diario.merge(
                     maestro_asistencia[
-                        ["documento", "nombre_completo"]
-                    ].drop_duplicates(
-                        subset=["documento"], keep="first"
-                    ),
-                    on="documento",
+                        ["documento_norm", "nombre_completo"]
+                    ],
+                    on="documento_norm",
                     how="left"
                 )
             else:
@@ -20643,7 +20669,7 @@ def control_asistencia_albergue_v1613():
         if not maestro_asistencia.empty:
             maestro_map = dict(
                 zip(
-                    maestro_asistencia["documento"],
+                    maestro_asistencia["documento_norm"],
                     maestro_asistencia["nombre_completo"]
                 )
             )
@@ -20658,9 +20684,14 @@ def control_asistencia_albergue_v1613():
                     ["fecha_movimiento", "id_movimiento"]
                 )
 
+                doc_norm = _normalizar_documento_v1693(doc)
+                nombre_encontrado = maestro_map.get(doc_norm, "")
+                if not nombre_encontrado:
+                    nombre_encontrado = "⚠️ NOMBRE NO ENCONTRADO EN BASE MAESTRA"
+
                 fila = {
                     "Documento": doc,
-                    "Nombre completo": maestro_map.get(doc, "")
+                    "Nombre completo": nombre_encontrado
                 }
 
                 relacionado = False
@@ -20689,9 +20720,15 @@ def control_asistencia_albergue_v1613():
                     fila[str(dia.day)] = int(valor)
                     total += int(valor)
 
+                # Mostrar el total junto al nombre, antes de los días.
                 fila["TOTAL ATENCIONES"] = int(total)
 
                 if relacionado:
+                    orden_columnas = (
+                        ["Documento", "Nombre completo", "TOTAL ATENCIONES"]
+                        + [str(d.day) for d in dias_mes]
+                    )
+                    fila = {c: fila.get(c, 0 if c.isdigit() else "") for c in orden_columnas}
                     filas.append(fila)
 
             matriz = pd.DataFrame(filas)
@@ -20701,7 +20738,13 @@ def control_asistencia_albergue_v1613():
 
             fila_total = {
                 "Documento": "",
-                "Nombre completo": "TOTAL ATENCIONES DÍA"
+                "Nombre completo": "TOTAL ATENCIONES DÍA",
+                "TOTAL ATENCIONES": int(
+                    pd.to_numeric(
+                        matriz["TOTAL ATENCIONES"],
+                        errors="coerce"
+                    ).fillna(0).sum()
+                )
             }
 
             for dia in dias_mes:
@@ -20712,12 +20755,11 @@ def control_asistencia_albergue_v1613():
                     ).fillna(0).sum()
                 )
 
-            fila_total["TOTAL ATENCIONES"] = int(
-                pd.to_numeric(
-                    matriz["TOTAL ATENCIONES"],
-                    errors="coerce"
-                ).fillna(0).sum()
+            orden_total = (
+                ["Documento", "Nombre completo", "TOTAL ATENCIONES"]
+                + [str(d.day) for d in dias_mes]
             )
+            fila_total = {c: fila_total.get(c, 0 if c.isdigit() else "") for c in orden_total}
 
             return pd.concat(
                 [matriz, pd.DataFrame([fila_total])],
@@ -23368,7 +23410,7 @@ if st.session_state.get("autenticado"):
     _v1634_tocar_sesion()
 
 
-# V16.92 - Rol de la sesión para el enrutador principal.
+# V16.93 - Rol de la sesión para el enrutador principal.
 # Se define aquí de forma independiente para que no dependa de ningún módulo anterior.
 rol_router = str(
     st.session_state.get("rol_actual", "")
