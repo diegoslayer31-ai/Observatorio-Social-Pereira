@@ -5616,7 +5616,7 @@ def gestion_usuarios_movil():
         "regresos de permiso, sanciones, expulsiones y control de turno."
     )
 
-    # V16.99 - Ajuste visual de medidas vencidas/reingresadas.
+    # V16.97 - Ajuste visual de medidas vencidas/reingresadas.
     # V16.39 - Unificación operativa.
     # Control de Turno deja de ser un módulo separado del menú lateral.
     seccion_movil = st.radio(
@@ -6186,7 +6186,7 @@ def gestion_usuarios_movil():
             )
             hoy_medida = ahora_colombia().date()
 
-            # V16.99 - La alerta visual distingue entre una medida realmente
+            # V16.97 - La alerta visual distingue entre una medida realmente
             # vigente y una medida cuya fecha de reingreso ya se cumplió.
             # Si ya existe un REINGRESO posterior al vencimiento, no se muestra
             # ninguna alerta de suspensión aunque el registro histórico aún
@@ -20396,9 +20396,7 @@ def control_asistencia_albergue_v1613():
                     SELECT
                         TRIM(CAST(numero_identificacion AS TEXT)) AS documento,
                         COALESCE(nombres,'') AS nombres,
-                        COALESCE(apellidos,'') AS apellidos,
-                        UPPER(TRIM(COALESCE(estado_caso,''))) AS estado_actual,
-                        UPPER(TRIM(COALESCE(modalidad,''))) AS modalidad_actual
+                        COALESCE(apellidos,'') AS apellidos
                     FROM habitante_de_calle
                 """),
                 engine
@@ -20415,9 +20413,7 @@ def control_asistencia_albergue_v1613():
                     SELECT
                         TRIM(CAST(numero_identificacion AS TEXT)) AS documento,
                         COALESCE(nombres,'') AS nombres,
-                        COALESCE(apellidos,'') AS apellidos,
-                        ''::TEXT AS estado_actual,
-                        ''::TEXT AS modalidad_actual
+                        COALESCE(apellidos,'') AS apellidos
                     FROM personas_caracterizacion
                 """),
                 engine
@@ -20512,154 +20508,6 @@ def control_asistencia_albergue_v1613():
         return dfm
 
     # ========================================================
-    # V16.99 - RECONSTRUCCIÓN REAL DESDE EL INICIO DE USO DE LA APP
-    # ========================================================
-    def _fecha_inicio_operacion_v1698():
-        """
-        Usa la primera fecha real registrada en movimientos_habitante como
-        inicio operativo del sistema. Desde ese día se reconstruye la atención.
-        """
-        try:
-            f = pd.read_sql(
-                text("""
-                    SELECT MIN(CAST(fecha_movimiento AS DATE)) AS fecha_inicio
-                    FROM movimientos_habitante
-                """),
-                engine
-            )
-            if not f.empty and pd.notna(f.iloc[0]["fecha_inicio"]):
-                return pd.to_datetime(f.iloc[0]["fecha_inicio"]).date()
-        except Exception:
-            pass
-        return ahora_colombia().date()
-
-    FECHA_INICIO_APP_V1698 = _fecha_inicio_operacion_v1698()
-
-    def _tipo_activa_v1698(tipo):
-        t = _norm_tipo_asistencia_v1691(tipo)
-        return t in {
-            "INGRESO",
-            "REINGRESO",
-            "REGRESO PERMISO",
-            "REGRESO DE PERMISO"
-        }
-
-    def _tipo_permiso_v1698(tipo):
-        t = _norm_tipo_asistencia_v1691(tipo)
-        return t in {
-            "SALIDA PERMISO",
-            "SALIDA DE PERMISO"
-        }
-
-    def _tipo_salida_v1698(tipo):
-        t = _norm_tipo_asistencia_v1691(tipo)
-        return t in {
-            "SALIDA VOLUNTARIA",
-            "SUSPENSION",
-            "EXPULSION",
-            "EGRESO"
-        }
-
-    def _estado_inicial_persona_v1698(doc, mov_doc):
-        """
-        Infere la situación al comenzar el uso de la app.
-
-        - Si el primer evento es una salida/suspensión/permiso, la persona
-          necesariamente estaba activa antes de ese evento.
-        - Si el primer evento es ingreso/reingreso, aún no estaba activa.
-        - Si nunca tuvo movimientos, usa el estado/modalidad actual del maestro.
-        """
-        doc_norm = _normalizar_documento_v1693(doc)
-
-        fila_m = pd.DataFrame()
-        if not maestro_asistencia.empty and "documento_norm" in maestro_asistencia.columns:
-            fila_m = maestro_asistencia[
-                maestro_asistencia["documento_norm"] == doc_norm
-            ].head(1)
-
-        estado_actual = ""
-        modalidad_actual = ""
-        if not fila_m.empty:
-            estado_actual = str(
-                fila_m.iloc[0].get("estado_actual") or ""
-            ).strip().upper()
-            modalidad_actual = str(
-                fila_m.iloc[0].get("modalidad_actual") or ""
-            ).strip().upper()
-
-        activo = False
-        modalidad = modalidad_actual if modalidad_actual in ["URBANO", "GRANJA"] else ""
-
-        if mov_doc.empty:
-            activo = estado_actual == "ACTIVO"
-            return activo, modalidad
-
-        primero = mov_doc.sort_values(
-            ["fecha_movimiento", "id_movimiento"]
-        ).iloc[0]
-
-        tipo_primero = primero.get("tipo_movimiento")
-        mod_primera = str(
-            primero.get("modalidad_hist")
-            or primero.get("modalidad")
-            or ""
-        ).strip().upper()
-
-        if mod_primera in ["URBANO", "GRANJA"]:
-            modalidad = mod_primera
-
-        if _tipo_activa_v1698(tipo_primero):
-            # Ingreso o reingreso: antes de ese evento estaba fuera.
-            activo = False
-        elif _tipo_permiso_v1698(tipo_primero) or _tipo_salida_v1698(tipo_primero):
-            # Para poder salir, suspenderse o irse con permiso, estaba activo.
-            activo = True
-        else:
-            activo = estado_actual == "ACTIVO"
-
-        return activo, modalidad
-
-    def _estado_persona_en_fecha_v1698(doc, mov_doc, fecha_objetivo):
-        """
-        Reconstruye estado y modalidad al cierre del día indicado.
-        Los permisos mantienen activo=1 para efectos de canasta/cupo.
-        """
-        activo, modalidad = _estado_inicial_persona_v1698(doc, mov_doc)
-
-        if fecha_objetivo < FECHA_INICIO_APP_V1698:
-            return False, ""
-
-        eventos = mov_doc[
-            mov_doc["fecha_movimiento"].dt.date <= fecha_objetivo
-        ].sort_values(
-            ["fecha_movimiento", "id_movimiento"]
-        )
-
-        for _, ev in eventos.iterrows():
-            tipo = ev.get("tipo_movimiento")
-            mod = str(
-                ev.get("modalidad_hist")
-                or ev.get("modalidad")
-                or ""
-            ).strip().upper()
-
-            if mod in ["URBANO", "GRANJA"]:
-                modalidad = mod
-
-            if _tipo_activa_v1698(tipo):
-                activo = True
-            elif _tipo_permiso_v1698(tipo):
-                # Permiso cuenta como activo para garantizar cupo/canasta.
-                activo = True
-            elif _tipo_salida_v1698(tipo):
-                activo = False
-            else:
-                # Otros movimientos no alteran por sí solos la presencia.
-                pass
-
-        return activo, modalidad
-
-    # ========================================================
     # TAB 1 · ASISTENCIA POR DÍA
     # ========================================================
     with tab_dia:
@@ -20675,75 +20523,47 @@ def control_asistencia_albergue_v1613():
 
         diario = pd.DataFrame()
 
-        # Universo real: personas del maestro + personas con movimientos.
-        docs_universo = set()
-        if not maestro_asistencia.empty:
-            docs_universo.update(
-                maestro_asistencia["documento"].dropna().astype(str).str.strip().tolist()
-            )
         if not mov_asistencia.empty:
-            docs_universo.update(
-                mov_asistencia["documento"].dropna().astype(str).str.strip().tolist()
-            )
-
-        filas_dia = []
-        for doc in sorted(docs_universo):
-            if not doc:
-                continue
-
-            if mov_asistencia.empty:
-                mov_doc = pd.DataFrame()
-            else:
-                mov_doc = mov_asistencia[
-                    mov_asistencia["documento"] == doc
-                ].copy()
-
-            activo_dia, modalidad_dia = _estado_persona_en_fecha_v1698(
-                doc,
-                mov_doc,
-                fecha_asistencia
-            )
-
-            if not activo_dia or modalidad_dia not in ["URBANO", "GRANJA"]:
-                continue
-
-            doc_norm = _normalizar_documento_v1693(doc)
-            nombre = ""
-            if not maestro_asistencia.empty:
-                fm = maestro_asistencia[
-                    maestro_asistencia["documento_norm"] == doc_norm
-                ]
-                if not fm.empty:
-                    nombre = str(
-                        fm.iloc[0].get("nombre_completo") or ""
-                    ).strip()
-
-            ultimo_tipo = ""
-            observacion = ""
-            if not mov_doc.empty:
-                hasta = mov_doc[
-                    mov_doc["fecha_movimiento"].dt.date <= fecha_asistencia
-                ].sort_values(
-                    ["fecha_movimiento", "id_movimiento"]
+            ultimo_mov = (
+                mov_asistencia
+                .sort_values(
+                    ["documento", "fecha_movimiento", "id_movimiento"]
                 )
-                if not hasta.empty:
-                    ult = hasta.iloc[-1]
-                    ultimo_tipo = str(
-                        ult.get("tipo_norm") or ""
-                    ).strip()
-                    observacion = str(
-                        ult.get("observacion") or ""
-                    ).strip()
+                .groupby("documento", as_index=False)
+                .tail(1)
+                .copy()
+            )
 
-            filas_dia.append({
-                "documento": doc,
-                "nombre_completo": nombre or f"CC {doc}",
-                "modalidad": modalidad_dia,
-                "tipo_norm": ultimo_tipo or "ACTIVO AL INICIO DE LA APP",
-                "observacion": observacion,
-            })
+            ultimo_mov["estado_dia"] = ultimo_mov[
+                "tipo_movimiento"
+            ].apply(_estado_por_tipo_v1691)
 
-        diario = pd.DataFrame(filas_dia)
+            diario = ultimo_mov[
+                ultimo_mov["estado_dia"] == "ACTIVO"
+            ].copy()
+
+            if not maestro_asistencia.empty:
+                diario = diario.merge(
+                    maestro_asistencia[
+                        ["documento_norm", "nombre_completo"]
+                    ],
+                    on="documento_norm",
+                    how="left"
+                )
+            else:
+                diario["nombre_completo"] = ""
+
+            diario["modalidad"] = (
+                diario["modalidad_hist"]
+                .fillna(diario["modalidad"])
+                .fillna("")
+                .astype(str)
+                .str.upper()
+                .str.strip()
+            )
+            diario = diario[
+                diario["modalidad"].isin(["URBANO", "GRANJA"])
+            ].copy()
 
         if diario.empty:
             st.info(
@@ -20890,9 +20710,7 @@ def control_asistencia_albergue_v1613():
         st.caption(
             "**1 = activo para efectos de atención** · **0 = no activo**. "
             "Los permisos se contabilizan como 1 porque se mantiene la garantía "
-            "de cupo y de la canasta durante el permiso. "
-            f"Reconstrucción operativa desde el inicio de uso de la app: "
-            f"**{FECHA_INICIO_APP_V1698.strftime('%d/%m/%Y')}**."
+            "de cupo y de la canasta durante el permiso."
         )
 
         mes_base = st.date_input(
@@ -20914,265 +20732,125 @@ def control_asistencia_albergue_v1613():
 
         ultimo_dia = siguiente_mes - timedelta(days=1)
 
-        generar_consolidado = st.button(
-            "▶️ Generar consolidado mensual",
-            type="primary",
-            use_container_width=True,
-            key=f"v1699_generar_{primer_dia.strftime('%Y_%m')}"
+        mov_mes = _cargar_movimientos_hasta_v1691(
+            ultimo_dia
         )
 
-        clave_cache_mes = f"v1699_matrices_{primer_dia.strftime('%Y_%m')}"
+        if mov_mes.empty:
+            st.info(
+                "No hay movimientos suficientes para construir el consolidado."
+            )
+            return
 
-        if generar_consolidado:
-            with st.spinner("Reconstruyendo asistencia mensual..."):
-                mov_mes = _cargar_movimientos_hasta_v1691(
-                    ultimo_dia
+        dias_mes = pd.date_range(
+            primer_dia,
+            ultimo_dia,
+            freq="D"
+        )
+
+        maestro_map = {}
+        if not maestro_asistencia.empty:
+            maestro_map = dict(
+                zip(
+                    maestro_asistencia["documento_norm"],
+                    maestro_asistencia["nombre_completo"]
+                )
+            )
+
+        def _matriz_modalidad_v1691(modalidad_objetivo):
+            filas = []
+
+            for doc in mov_mes["documento"].dropna().unique().tolist():
+                mov_doc = mov_mes[
+                    mov_mes["documento"] == doc
+                ].sort_values(
+                    ["fecha_movimiento", "id_movimiento"]
                 )
 
-                dias_mes = pd.date_range(
-                    primer_dia,
-                    ultimo_dia,
-                    freq="D"
-                )
+                doc_norm = _normalizar_documento_v1693(doc)
+                nombre_encontrado = maestro_map.get(doc_norm, "")
+                if not nombre_encontrado:
+                    nombre_encontrado = f"CC {doc}"
 
-                maestro_map = {}
-                if not maestro_asistencia.empty:
-                    maestro_map = dict(
-                        zip(
-                            maestro_asistencia["documento_norm"],
-                            maestro_asistencia["nombre_completo"]
-                        )
-                    )
-
-                # ------------------------------------------------
-                # V16.99 - reconstrucción eficiente:
-                # una sola pasada por persona y por sus movimientos.
-                # Antes se filtraba todo el DataFrame por persona y por día,
-                # lo que hacía muy lento el módulo.
-                # ------------------------------------------------
-                docs_universo = set()
-                if not maestro_asistencia.empty:
-                    docs_universo.update(
-                        maestro_asistencia[
-                            "documento"
-                        ].dropna().astype(str).str.strip().tolist()
-                    )
-                if not mov_mes.empty:
-                    docs_universo.update(
-                        mov_mes[
-                            "documento"
-                        ].dropna().astype(str).str.strip().tolist()
-                    )
-
-                movimientos_por_doc = {}
-                if not mov_mes.empty:
-                    for doc_g, grupo in mov_mes.groupby("documento", sort=False):
-                        movimientos_por_doc[str(doc_g).strip()] = (
-                            grupo.sort_values(
-                                ["fecha_movimiento", "id_movimiento"]
-                            ).reset_index(drop=True)
-                        )
-
-                filas_urbano = []
-                filas_granja = []
-
-                for doc in sorted(docs_universo):
-                    if not doc:
-                        continue
-
-                    mov_doc = movimientos_por_doc.get(
-                        doc,
-                        pd.DataFrame()
-                    )
-
-                    doc_norm = _normalizar_documento_v1693(doc)
-                    nombre = maestro_map.get(doc_norm, "") or f"CC {doc}"
-
-                    # Estado inmediatamente anterior/inicial a la operación.
-                    activo, modalidad = _estado_inicial_persona_v1698(
-                        doc,
-                        mov_doc
-                    )
-
-                    eventos = []
-                    if not mov_doc.empty:
-                        for _, ev in mov_doc.iterrows():
-                            fecha_ev = pd.to_datetime(
-                                ev.get("fecha_movimiento"),
-                                errors="coerce"
-                            )
-                            if pd.isna(fecha_ev):
-                                continue
-                            eventos.append({
-                                "fecha": fecha_ev.date(),
-                                "tipo": ev.get("tipo_movimiento"),
-                                "modalidad": str(
-                                    ev.get("modalidad_hist")
-                                    or ev.get("modalidad")
-                                    or ""
-                                ).strip().upper()
-                            })
-
-                    idx_evento = 0
-                    fila_u = {
-                        "Documento": doc,
-                        "Nombre completo": nombre
-                    }
-                    fila_g = {
-                        "Documento": doc,
-                        "Nombre completo": nombre
-                    }
-                    total_u = 0
-                    total_g = 0
-                    relacionado_u = False
-                    relacionado_g = False
-
-                    for dia in dias_mes:
-                        fecha_dia = dia.date()
-
-                        if fecha_dia < FECHA_INICIO_APP_V1698:
-                            valor_u = 0
-                            valor_g = 0
-                        else:
-                            # Aplicar solo los movimientos que ocurrieron
-                            # hasta este día. Cada evento se procesa una sola vez.
-                            while (
-                                idx_evento < len(eventos)
-                                and eventos[idx_evento]["fecha"] <= fecha_dia
-                            ):
-                                ev = eventos[idx_evento]
-                                mod_ev = ev["modalidad"]
-
-                                if mod_ev in ["URBANO", "GRANJA"]:
-                                    modalidad = mod_ev
-
-                                if _tipo_activa_v1698(ev["tipo"]):
-                                    activo = True
-                                elif _tipo_permiso_v1698(ev["tipo"]):
-                                    activo = True
-                                elif _tipo_salida_v1698(ev["tipo"]):
-                                    activo = False
-
-                                idx_evento += 1
-
-                            if modalidad == "URBANO":
-                                relacionado_u = True
-                            elif modalidad == "GRANJA":
-                                relacionado_g = True
-
-                            valor_u = int(
-                                activo and modalidad == "URBANO"
-                            )
-                            valor_g = int(
-                                activo and modalidad == "GRANJA"
-                            )
-
-                        fila_u[str(dia.day)] = valor_u
-                        fila_g[str(dia.day)] = valor_g
-                        total_u += valor_u
-                        total_g += valor_g
-
-                    fila_u["TOTAL ATENCIONES"] = total_u
-                    fila_g["TOTAL ATENCIONES"] = total_g
-
-                    orden = (
-                        ["Documento", "Nombre completo", "TOTAL ATENCIONES"]
-                        + [str(d.day) for d in dias_mes]
-                    )
-
-                    if relacionado_u:
-                        filas_urbano.append({
-                            c: fila_u.get(
-                                c,
-                                0 if c.isdigit() else ""
-                            )
-                            for c in orden
-                        })
-
-                    if relacionado_g:
-                        filas_granja.append({
-                            c: fila_g.get(
-                                c,
-                                0 if c.isdigit() else ""
-                            )
-                            for c in orden
-                        })
-
-                def _cerrar_matriz_v1699(filas):
-                    matriz = pd.DataFrame(filas)
-
-                    if matriz.empty:
-                        return matriz
-
-                    fila_total = {
-                        "Documento": "",
-                        "Nombre completo": "TOTAL ATENCIONES DÍA",
-                        "TOTAL ATENCIONES": int(
-                            pd.to_numeric(
-                                matriz["TOTAL ATENCIONES"],
-                                errors="coerce"
-                            ).fillna(0).sum()
-                        )
-                    }
-
-                    for dia in dias_mes:
-                        col = str(dia.day)
-                        fila_total[col] = int(
-                            pd.to_numeric(
-                                matriz[col],
-                                errors="coerce"
-                            ).fillna(0).sum()
-                        )
-
-                    orden = (
-                        ["Documento", "Nombre completo", "TOTAL ATENCIONES"]
-                        + [str(d.day) for d in dias_mes]
-                    )
-                    fila_total = {
-                        c: fila_total.get(
-                            c,
-                            0 if c.isdigit() else ""
-                        )
-                        for c in orden
-                    }
-
-                    return pd.concat(
-                        [matriz, pd.DataFrame([fila_total])],
-                        ignore_index=True
-                    )
-
-                matriz_urbano = _cerrar_matriz_v1699(
-                    filas_urbano
-                )
-                matriz_granja = _cerrar_matriz_v1699(
-                    filas_granja
-                )
-
-                st.session_state[clave_cache_mes] = {
-                    "urbano": matriz_urbano,
-                    "granja": matriz_granja
+                fila = {
+                    "Documento": doc,
+                    "Nombre completo": nombre_encontrado
                 }
 
-        matrices_mes = st.session_state.get(
-            clave_cache_mes
-        )
+                relacionado = False
+                total = 0
 
-        if not matrices_mes:
-            st.info(
-                "Seleccione el mes y pulse «Generar consolidado mensual». "
-                "Así el módulo no hace cálculos pesados mientras consulta otra sección."
+                for dia in dias_mes:
+                    hasta = mov_doc[
+                        mov_doc["fecha_movimiento"].dt.date <= dia.date()
+                    ]
+
+                    valor = 0
+
+                    if not hasta.empty:
+                        ult = hasta.iloc[-1]
+                        estado = _estado_por_tipo_v1691(
+                            ult["tipo_movimiento"]
+                        )
+                        modalidad_dia = str(
+                            ult.get("modalidad_hist") or ""
+                        ).strip().upper()
+
+                        if modalidad_dia == modalidad_objetivo:
+                            relacionado = True
+                            valor = 1 if estado == "ACTIVO" else 0
+
+                    fila[str(dia.day)] = int(valor)
+                    total += int(valor)
+
+                # Mostrar el total junto al nombre, antes de los días.
+                fila["TOTAL ATENCIONES"] = int(total)
+
+                if relacionado:
+                    orden_columnas = (
+                        ["Documento", "Nombre completo", "TOTAL ATENCIONES"]
+                        + [str(d.day) for d in dias_mes]
+                    )
+                    fila = {c: fila.get(c, 0 if c.isdigit() else "") for c in orden_columnas}
+                    filas.append(fila)
+
+            matriz = pd.DataFrame(filas)
+
+            if matriz.empty:
+                return matriz
+
+            fila_total = {
+                "Documento": "",
+                "Nombre completo": "TOTAL ATENCIONES DÍA",
+                "TOTAL ATENCIONES": int(
+                    pd.to_numeric(
+                        matriz["TOTAL ATENCIONES"],
+                        errors="coerce"
+                    ).fillna(0).sum()
+                )
+            }
+
+            for dia in dias_mes:
+                col = str(dia.day)
+                fila_total[col] = int(
+                    pd.to_numeric(
+                        matriz[col], errors="coerce"
+                    ).fillna(0).sum()
+                )
+
+            orden_total = (
+                ["Documento", "Nombre completo", "TOTAL ATENCIONES"]
+                + [str(d.day) for d in dias_mes]
             )
-            matriz_urbano = pd.DataFrame()
-            matriz_granja = pd.DataFrame()
-        else:
-            matriz_urbano = matrices_mes.get(
-                "urbano",
-                pd.DataFrame()
+            fila_total = {c: fila_total.get(c, 0 if c.isdigit() else "") for c in orden_total}
+
+            return pd.concat(
+                [matriz, pd.DataFrame([fila_total])],
+                ignore_index=True
             )
-            matriz_granja = matrices_mes.get(
-                "granja",
-                pd.DataFrame()
-            )
+
+        matriz_urbano = _matriz_modalidad_v1691("URBANO")
+        matriz_granja = _matriz_modalidad_v1691("GRANJA")
 
         t_u, t_g = st.tabs([
             "🏢 URBANO",
@@ -21180,9 +20858,9 @@ def control_asistencia_albergue_v1613():
         ])
 
         with t_u:
-            if matriz_urbano.empty and matrices_mes:
+            if matriz_urbano.empty:
                 st.info("Sin registros reconstruidos para URBANO.")
-            elif not matriz_urbano.empty:
+            else:
                 st.dataframe(
                     matriz_urbano,
                     use_container_width=True,
@@ -21196,9 +20874,9 @@ def control_asistencia_albergue_v1613():
                 )
 
         with t_g:
-            if matriz_granja.empty and matrices_mes:
+            if matriz_granja.empty:
                 st.info("Sin registros reconstruidos para GRANJA.")
-            elif not matriz_granja.empty:
+            else:
                 st.dataframe(
                     matriz_granja,
                     use_container_width=True,
@@ -21211,9 +20889,7 @@ def control_asistencia_albergue_v1613():
                     )
                 )
 
-        if matrices_mes and (
-            not matriz_urbano.empty or not matriz_granja.empty
-        ):
+        if not matriz_urbano.empty or not matriz_granja.empty:
             partes = []
 
             if not matriz_urbano.empty:
