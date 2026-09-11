@@ -9578,15 +9578,26 @@ def control_turno_v13():
                 )
 
         # ----------------------------------------------------
-        # MATRIZ MENSUAL DE ASISTENCIA
+        # CONSOLIDADO MENSUAL DE ASISTENCIA
+        # V16.90:
+        # - separado por modalidad
+        # - 1 = presente / activo
+        # - 0 = no presente / fuera
+        # - permiso cuenta como 1 porque el cupo y la canasta se garantizan
+        # - total de atenciones = suma de días con valor 1
         # ----------------------------------------------------
         st.markdown("---")
-        st.markdown("##### 📆 Matriz mensual de asistencia")
+        st.markdown("##### 📆 Consolidado mensual de asistencia")
+        st.caption(
+            "Convención institucional: **1 = activo/presente para efectos de atención** "
+            "y **0 = no presente**. Las personas con permiso se contabilizan como **1**, "
+            "porque durante el permiso se mantiene la garantía de cupo y canasta."
+        )
 
         mes_base = st.date_input(
             "Seleccione un mes",
             value=fecha_asistencia.replace(day=1),
-            key="v1689_mes_asistencia"
+            key="v1690_mes_asistencia"
         )
         primer_dia = mes_base.replace(day=1)
 
@@ -9626,7 +9637,7 @@ def control_turno_v13():
 
         if mov_mes.empty:
             st.info(
-                "No hay movimientos suficientes para construir la matriz mensual."
+                "No hay movimientos suficientes para construir el consolidado mensual."
             )
         else:
             mov_mes = mov_mes.copy()
@@ -9659,10 +9670,6 @@ def control_turno_v13():
                 freq="D"
             )
 
-            filas_matriz = []
-
-            docs_mes = mov_mes["documento"].dropna().unique().tolist()
-
             maestro_map = {}
             if not maestro_asistencia.empty:
                 maestro_tmp = maestro_asistencia.drop_duplicates(
@@ -9680,82 +9687,181 @@ def control_turno_v13():
                     )
                 )
 
-            for doc_mes in docs_mes:
-                mov_doc = mov_mes[
-                    mov_mes["documento"] == doc_mes
-                ].sort_values(
-                    ["fecha_movimiento", "id_movimiento"]
+            def _construir_matriz_modalidad_v1690(modalidad_objetivo):
+                """
+                Reconstruye asistencia para UNA modalidad.
+                1 = presente/activo o con permiso.
+                0 = no presente/fuera.
+                Una persona puede aparecer en ambas modalidades si cambió de
+                albergue dentro del mismo mes.
+                """
+                filas = []
+
+                for doc_mes in mov_mes["documento"].dropna().unique().tolist():
+                    mov_doc = mov_mes[
+                        mov_mes["documento"] == doc_mes
+                    ].sort_values(
+                        ["fecha_movimiento", "id_movimiento"]
+                    )
+
+                    fila_m = {
+                        "Documento": doc_mes,
+                        "Nombre completo": maestro_map.get(doc_mes, "")
+                    }
+
+                    tuvo_relacion_modalidad = False
+                    total_atenciones = 0
+
+                    for dia in dias_mes:
+                        mov_hasta_dia = mov_doc[
+                            mov_doc["fecha_movimiento"].dt.date <= dia.date()
+                        ]
+
+                        if mov_hasta_dia.empty:
+                            valor = 0
+                        else:
+                            ult = mov_hasta_dia.iloc[-1]
+                            estado = _estado_por_tipo_v1689(
+                                ult["tipo_movimiento"]
+                            )
+                            mod = str(
+                                ult.get("modalidad_hist") or ""
+                            ).strip().upper()
+
+                            # Si ese día la persona está asociada a esta modalidad,
+                            # se evalúa su estado. El permiso cuenta como 1.
+                            if mod == modalidad_objetivo:
+                                tuvo_relacion_modalidad = True
+                                if estado in ["PRESENTE", "CON PERMISO"]:
+                                    valor = 1
+                                else:
+                                    valor = 0
+                            else:
+                                valor = 0
+
+                        fila_m[str(dia.day)] = int(valor)
+                        total_atenciones += int(valor)
+
+                    fila_m["TOTAL ATENCIONES"] = int(total_atenciones)
+
+                    # Incluir solo personas que tuvieron relación con la modalidad
+                    # durante el mes.
+                    if tuvo_relacion_modalidad:
+                        filas.append(fila_m)
+
+                matriz = pd.DataFrame(filas)
+
+                if matriz.empty:
+                    return matriz
+
+                # Total diario al final del consolidado.
+                total_dia = {
+                    "Documento": "",
+                    "Nombre completo": "TOTAL ATENCIONES DÍA"
+                }
+                for dia in dias_mes:
+                    col = str(dia.day)
+                    total_dia[col] = int(
+                        pd.to_numeric(matriz[col], errors="coerce")
+                        .fillna(0)
+                        .sum()
+                    )
+                total_dia["TOTAL ATENCIONES"] = int(
+                    pd.to_numeric(
+                        matriz["TOTAL ATENCIONES"],
+                        errors="coerce"
+                    ).fillna(0).sum()
                 )
 
-                fila_m = {
-                    "Documento": doc_mes,
-                    "Nombre completo": maestro_map.get(doc_mes, "")
-                }
+                matriz = pd.concat(
+                    [matriz, pd.DataFrame([total_dia])],
+                    ignore_index=True
+                )
 
-                estuvo_mes = False
+                return matriz
 
-                for dia in dias_mes:
-                    mov_hasta_dia = mov_doc[
-                        mov_doc["fecha_movimiento"].dt.date <= dia.date()
-                    ]
+            matriz_urbano = _construir_matriz_modalidad_v1690("URBANO")
+            matriz_granja = _construir_matriz_modalidad_v1690("GRANJA")
 
-                    if mov_hasta_dia.empty:
-                        fila_m[str(dia.day)] = ""
-                        continue
+            tab_u_mes, tab_g_mes = st.tabs([
+                "🏢 URBANO",
+                "🌱 GRANJA"
+            ])
 
-                    ult = mov_hasta_dia.iloc[-1]
-                    estado = _estado_por_tipo_v1689(
-                        ult["tipo_movimiento"]
+            with tab_u_mes:
+                if matriz_urbano.empty:
+                    st.info(
+                        "No se reconstruyó asistencia para URBANO en el mes seleccionado."
                     )
-                    mod = str(
-                        ult.get("modalidad_hist") or ""
-                    ).strip().upper()
+                else:
+                    st.dataframe(
+                        matriz_urbano,
+                        use_container_width=True,
+                        hide_index=True
+                    )
+                    total_u = int(
+                        matriz_urbano.iloc[-1]["TOTAL ATENCIONES"]
+                    )
+                    st.metric(
+                        "Total atenciones del mes · Urbano",
+                        total_u
+                    )
 
-                    if estado == "PRESENTE":
-                        marca = "U" if mod == "URBANO" else (
-                            "G" if mod == "GRANJA" else "P"
-                        )
-                        estuvo_mes = True
-                    elif estado == "CON PERMISO":
-                        marca = "PE"
-                        estuvo_mes = True
-                    else:
-                        marca = ""
+            with tab_g_mes:
+                if matriz_granja.empty:
+                    st.info(
+                        "No se reconstruyó asistencia para GRANJA en el mes seleccionado."
+                    )
+                else:
+                    st.dataframe(
+                        matriz_granja,
+                        use_container_width=True,
+                        hide_index=True
+                    )
+                    total_g = int(
+                        matriz_granja.iloc[-1]["TOTAL ATENCIONES"]
+                    )
+                    st.metric(
+                        "Total atenciones del mes · Granja",
+                        total_g
+                    )
 
-                    fila_m[str(dia.day)] = marca
-
-                if estuvo_mes:
-                    filas_matriz.append(fila_m)
-
-            matriz_mes = pd.DataFrame(filas_matriz)
-
-            if matriz_mes.empty:
+            if matriz_urbano.empty and matriz_granja.empty:
                 st.info(
-                    "No se reconstruyó asistencia para ese mes."
+                    "No se reconstruyó asistencia para el mes seleccionado."
                 )
             else:
-                st.caption(
-                    "Convenciones: U = Urbano · G = Granja · PE = Con permiso."
-                )
-                st.dataframe(
-                    matriz_mes,
-                    use_container_width=True,
-                    hide_index=True
+                st.markdown("##### 📥 Exportar consolidado mensual")
+                exm1, exm2 = st.columns(2)
+
+                # CSV general, con columna Modalidad.
+                partes_csv = []
+                if not matriz_urbano.empty:
+                    tmp_u = matriz_urbano.copy()
+                    tmp_u.insert(0, "Modalidad", "URBANO")
+                    partes_csv.append(tmp_u)
+                if not matriz_granja.empty:
+                    tmp_g = matriz_granja.copy()
+                    tmp_g.insert(0, "Modalidad", "GRANJA")
+                    partes_csv.append(tmp_g)
+
+                consolidado_csv = pd.concat(
+                    partes_csv,
+                    ignore_index=True
                 )
 
-                mx1, mx2 = st.columns(2)
-                mx1.download_button(
-                    "⬇️ Exportar matriz mensual CSV",
-                    matriz_mes.to_csv(
+                exm1.download_button(
+                    "⬇️ Exportar consolidado mensual CSV",
+                    consolidado_csv.to_csv(
                         index=False
                     ).encode("utf-8-sig"),
                     file_name=(
-                        f"matriz_asistencia_"
+                        f"asistencia_mensual_"
                         f"{primer_dia.strftime('%Y_%m')}.csv"
                     ),
                     mime="text/csv",
                     use_container_width=True,
-                    key="v1689_csv_mes"
+                    key="v1690_csv_mes"
                 )
 
                 try:
@@ -9764,17 +9870,47 @@ def control_turno_v13():
                         buffer_mes,
                         engine="openpyxl"
                     ) as writer:
-                        matriz_mes.to_excel(
+                        if not matriz_urbano.empty:
+                            matriz_urbano.to_excel(
+                                writer,
+                                sheet_name="URBANO",
+                                index=False
+                            )
+                        if not matriz_granja.empty:
+                            matriz_granja.to_excel(
+                                writer,
+                                sheet_name="GRANJA",
+                                index=False
+                            )
+
+                        # Resumen de totales por modalidad
+                        resumen_totales = []
+                        if not matriz_urbano.empty:
+                            resumen_totales.append({
+                                "Modalidad": "URBANO",
+                                "Total atenciones": int(
+                                    matriz_urbano.iloc[-1]["TOTAL ATENCIONES"]
+                                )
+                            })
+                        if not matriz_granja.empty:
+                            resumen_totales.append({
+                                "Modalidad": "GRANJA",
+                                "Total atenciones": int(
+                                    matriz_granja.iloc[-1]["TOTAL ATENCIONES"]
+                                )
+                            })
+
+                        pd.DataFrame(resumen_totales).to_excel(
                             writer,
-                            sheet_name="Matriz mensual",
+                            sheet_name="RESUMEN",
                             index=False
                         )
 
-                    mx2.download_button(
-                        "📗 Exportar matriz mensual Excel",
+                    exm2.download_button(
+                        "📗 Exportar consolidado mensual Excel",
                         data=buffer_mes.getvalue(),
                         file_name=(
-                            f"matriz_asistencia_"
+                            f"asistencia_mensual_"
                             f"{primer_dia.strftime('%Y_%m')}.xlsx"
                         ),
                         mime=(
@@ -9782,17 +9918,19 @@ def control_turno_v13():
                             "spreadsheetml.sheet"
                         ),
                         use_container_width=True,
-                        key="v1689_excel_mes"
+                        key="v1690_excel_mes"
                     )
                 except Exception as e:
-                    mx2.warning(
+                    exm2.warning(
                         f"No fue posible generar Excel: {e}"
                     )
 
         st.caption(
-            "Nota metodológica: este reporte reconstruye la presencia con los "
-            "movimientos registrados en la plataforma. Para fechas anteriores al "
-            "inicio del uso operativo del sistema puede existir información incompleta."
+            "Nota metodológica: este reporte reconstruye la asistencia con los "
+            "movimientos registrados en la plataforma. Para el consolidado mensual, "
+            "las personas con permiso se cuentan como 1 porque mantienen cupo y garantía "
+            "de canasta. Para fechas anteriores al inicio del registro operativo puede "
+            "existir información incompleta."
         )
 
     # --------------------------------------------------------
@@ -10587,7 +10725,7 @@ def tablero_contribucion_ods_v16():
         st.plotly_chart(fig_modalidad, use_container_width=True)
 
     # ========================================================
-    # V16.89 - EVIDENCIA COMPLEMENTARIA DE ENFERMERÍA PARA ODS 3
+    # V16.90 - EVIDENCIA COMPLEMENTARIA DE ENFERMERÍA PARA ODS 3
     # ========================================================
     st.markdown("### 🩺 Evidencia complementaria de Enfermería · ODS 3")
     st.caption(
@@ -15107,7 +15245,7 @@ def inicio_ejecutivo_v167():
         avance = pd.to_numeric(
             pai["porcentaje_avance"], errors="coerce"
         ).fillna(0)
-        # V16.89 - Normalización de fechas para evitar mezclar
+        # V16.90 - Normalización de fechas para evitar mezclar
         # timestamps con zona horaria de Supabase y fechas locales sin zona.
         fecha_meta = pd.to_datetime(
             pai["fecha_meta"], errors="coerce"
@@ -15573,7 +15711,7 @@ def modulo_reportes_institucionales_v169():
         df_gen_rep = pd.DataFrame()
 
     # ------------------------------------------------------------
-    # V16.89 - DATOS DE ENFERMERÍA PARA INFORME INSTITUCIONAL
+    # V16.90 - DATOS DE ENFERMERÍA PARA INFORME INSTITUCIONAL
     # ------------------------------------------------------------
     df_enf_rep = pd.DataFrame()
     try:
@@ -16505,7 +16643,7 @@ def modulo_reportes_institucionales_v169():
                 st.write("• " + inf_h)
 
         # ========================================================
-        # V16.89 - GESTIÓN DE SALUD Y ENFERMERÍA
+        # V16.90 - GESTIÓN DE SALUD Y ENFERMERÍA
         # ========================================================
         st.markdown("---")
         st.subheader("🩺 Gestión de Salud y Enfermería")
@@ -17827,7 +17965,7 @@ def modulo_reportes_institucionales_v169():
                         seccion += 1
 
                     # ==================================================
-                    # V16.89 - GESTIÓN DE SALUD Y ENFERMERÍA
+                    # V16.90 - GESTIÓN DE SALUD Y ENFERMERÍA
                     # ==================================================
                     if not df_enf_rep.empty or not df_enf_val_rep.empty:
                         contenido.append(PageBreak())
@@ -19243,7 +19381,7 @@ def caracterizacion_habitabilidad_v1611():
             index=_idx(opciones_relacion, _v("relacion_consumo_calle", ""))
         )
 
-    # V16.89 - Opciones comunes usadas por Redes y Salud integral.
+    # V16.90 - Opciones comunes usadas por Redes y Salud integral.
     # Se definen antes de las pestañas para evitar UnboundLocalError después
     # de convertir Consumo de SPA en una vista de solo lectura.
     si_no = ["", "Sí", "No", "No sabe / no responde"]
@@ -19612,7 +19750,7 @@ def caracterizacion_habitabilidad_v1611():
         type="primary",
         disabled=not confirmar
     ):
-        # V16.89 - trazabilidad explícita de la sesión que registra
+        # V16.90 - trazabilidad explícita de la sesión que registra
         nombre_sesion_hab = str(
             st.session_state.get("nombre_funcionario", "")
         ).strip() or str(st.session_state.get("usuario_actual", "Sistema")).strip()
@@ -20022,7 +20160,7 @@ def tablero_habitabilidad_v1611():
     k5.metric("10+ años en calle", f"{int(alta_cron.sum())}")
 
     # ============================================================
-    # V16.89 - TRAZABILIDAD DE QUIÉN REGISTRA LAS CARACTERIZACIONES
+    # V16.90 - TRAZABILIDAD DE QUIÉN REGISTRA LAS CARACTERIZACIONES
     # ============================================================
     st.markdown("### 👤 Trazabilidad de registros")
     st.caption(
@@ -21833,7 +21971,7 @@ def modulo_enfermeria_v1673():
                     type="primary"
                 )
 
-            # V16.89 - La foto permanece visible al FINAL del formulario.
+            # V16.90 - La foto permanece visible al FINAL del formulario.
             # Puede tomarse antes o después de guardar; es temporal y no se almacena.
             st.markdown("### 📷 Foto para el reporte de valoración")
             st.caption(
@@ -22095,7 +22233,7 @@ def modulo_enfermeria_v1673():
                         observacion=(observaciones or "")[:500]
                     )
 
-                    # V16.89 - Reporte operativo de valoración para WhatsApp
+                    # V16.90 - Reporte operativo de valoración para WhatsApp
                     try:
                         mov_ult = pd.read_sql(
                             text("""
