@@ -9,6 +9,7 @@ import base64
 from sqlalchemy import create_engine, text
 import os
 import unicodedata
+import re
 from difflib import SequenceMatcher
 import matplotlib.pyplot as plt
 
