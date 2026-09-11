@@ -8676,12 +8676,13 @@ def control_turno_v13():
     # --------------------------------------------------------
     # Tabs operativos
     # --------------------------------------------------------
-    tab1, tab2, tab3, tab4, tab5 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
         "🏠 Presentes",
         "🚪 Permisos",
         "📝 Novedades",
         "🤝 Entrega de turno",
-        "📲 Reporte WhatsApp"
+        "📲 Reporte WhatsApp",
+        "📅 Asistencia diaria"
     ])
 
     with tab1:
@@ -9233,6 +9234,565 @@ def control_turno_v13():
         _boton_whatsapp(
             reporte,
             "v13_reporte_turno_whatsapp"
+        )
+
+    with tab6:
+        st.markdown("#### 📅 Asistencia histórica por albergue")
+        st.caption(
+            "Reconstrucción operativa a partir de los movimientos registrados en el sistema. "
+            "Permite consultar una fecha del calendario y exportar el listado diario o la matriz mensual."
+        )
+
+        fecha_asistencia = st.date_input(
+            "Fecha a consultar",
+            value=ahora_colombia().date(),
+            key="v1689_fecha_asistencia"
+        )
+
+        # ----------------------------------------------------
+        # Cargar movimientos históricos hasta la fecha elegida
+        # ----------------------------------------------------
+        try:
+            mov_asistencia = pd.read_sql(
+                text("""
+                    SELECT
+                        id_movimiento,
+                        TRIM(CAST(numero_identificacion AS TEXT)) AS documento,
+                        UPPER(TRIM(COALESCE(tipo_movimiento,''))) AS tipo_movimiento,
+                        UPPER(TRIM(COALESCE(modalidad,''))) AS modalidad,
+                        fecha_movimiento,
+                        hora_movimiento,
+                        usuario_registra,
+                        observacion
+                    FROM movimientos_habitante
+                    WHERE CAST(fecha_movimiento AS DATE) <= :fecha
+                    ORDER BY
+                        numero_identificacion,
+                        fecha_movimiento,
+                        id_movimiento
+                """),
+                engine,
+                params={"fecha": fecha_asistencia}
+            )
+        except Exception as e:
+            mov_asistencia = pd.DataFrame()
+            st.error(f"No fue posible reconstruir la asistencia: {e}")
+
+        # Base de nombres
+        try:
+            maestro_asistencia = pd.read_sql(
+                text("""
+                    SELECT
+                        TRIM(CAST(numero_identificacion AS TEXT)) AS documento,
+                        COALESCE(nombres,'') AS nombres,
+                        COALESCE(apellidos,'') AS apellidos
+                    FROM habitante_de_calle
+                """),
+                engine
+            )
+        except Exception:
+            maestro_asistencia = pd.DataFrame(
+                columns=["documento", "nombres", "apellidos"]
+            )
+
+        def _norm_tipo_asistencia(valor):
+            v = str(valor or "").strip().upper()
+            v = (
+                v.replace("Á","A").replace("É","E").replace("Í","I")
+                 .replace("Ó","O").replace("Ú","U").replace("Ñ","N")
+            )
+            v = " ".join(v.replace("_", " ").split())
+            return v
+
+        def _estado_por_tipo_v1689(tipo):
+            t = _norm_tipo_asistencia(tipo)
+
+            if t in {
+                "INGRESO",
+                "REINGRESO",
+                "REGRESO PERMISO",
+                "REGRESO DE PERMISO"
+            }:
+                return "PRESENTE"
+
+            if t in {
+                "SALIDA PERMISO",
+                "SALIDA DE PERMISO"
+            }:
+                return "CON PERMISO"
+
+            if t in {
+                "SALIDA VOLUNTARIA",
+                "SUSPENSION",
+                "EXPULSION",
+                "EGRESO"
+            }:
+                return "FUERA DEL ALBERGUE"
+
+            return "OTRA NOVEDAD"
+
+        diario = pd.DataFrame()
+
+        if not mov_asistencia.empty:
+            mov_asistencia = mov_asistencia.copy()
+            mov_asistencia["documento"] = (
+                mov_asistencia["documento"]
+                .fillna("")
+                .astype(str)
+                .str.strip()
+            )
+            mov_asistencia["tipo_norm"] = mov_asistencia[
+                "tipo_movimiento"
+            ].apply(_norm_tipo_asistencia)
+
+            # Mantener la última modalidad conocida cuando un movimiento
+            # posterior no la trae diligenciada.
+            mov_asistencia["modalidad"] = (
+                mov_asistencia["modalidad"]
+                .replace("", pd.NA)
+            )
+            mov_asistencia["modalidad_hist"] = (
+                mov_asistencia
+                .groupby("documento")["modalidad"]
+                .ffill()
+            )
+
+            # Último movimiento conocido de cada persona al cierre del día.
+            ultimo_mov = (
+                mov_asistencia
+                .sort_values(
+                    ["documento", "fecha_movimiento", "id_movimiento"]
+                )
+                .groupby("documento", as_index=False)
+                .tail(1)
+                .copy()
+            )
+
+            ultimo_mov["estado_dia"] = ultimo_mov[
+                "tipo_movimiento"
+            ].apply(_estado_por_tipo_v1689)
+
+            # La planilla de asistencia muestra quienes ocupaban cupo o
+            # estaban temporalmente fuera con permiso ese día.
+            diario = ultimo_mov[
+                ultimo_mov["estado_dia"].isin(
+                    ["PRESENTE", "CON PERMISO"]
+                )
+            ].copy()
+
+            if not maestro_asistencia.empty:
+                maestro_asistencia = maestro_asistencia.copy()
+                maestro_asistencia["documento"] = (
+                    maestro_asistencia["documento"]
+                    .fillna("")
+                    .astype(str)
+                    .str.strip()
+                )
+                diario = diario.merge(
+                    maestro_asistencia.drop_duplicates(
+                        subset=["documento"], keep="first"
+                    ),
+                    on="documento",
+                    how="left"
+                )
+            else:
+                diario["nombres"] = ""
+                diario["apellidos"] = ""
+
+            diario["nombre_completo"] = (
+                diario["nombres"].fillna("").astype(str).str.strip()
+                + " "
+                + diario["apellidos"].fillna("").astype(str).str.strip()
+            ).str.strip()
+
+            diario["modalidad"] = (
+                diario["modalidad_hist"]
+                .fillna(diario["modalidad"])
+                .fillna("")
+                .astype(str)
+                .str.upper()
+                .str.strip()
+            )
+
+            diario["fecha_consulta"] = pd.to_datetime(
+                fecha_asistencia
+            ).strftime("%d/%m/%Y")
+
+            diario["movimiento_ultimo"] = diario["tipo_norm"]
+
+            # Hora legible cuando exista
+            diario["hora"] = diario["hora_movimiento"].astype(str)
+            diario.loc[
+                diario["hora"].isin(["NaT", "None", "nan", "<NA>"]),
+                "hora"
+            ] = ""
+
+        # ----------------------------------------------------
+        # Resumen y detalle diario
+        # ----------------------------------------------------
+        if diario.empty:
+            st.info(
+                "No se encontraron personas con presencia reconstruida para esa fecha. "
+                "Si la fecha es anterior al inicio del registro de movimientos en la plataforma, "
+                "la información puede ser incompleta."
+            )
+        else:
+            urbano_dia = diario[
+                diario["modalidad"] == "URBANO"
+            ].copy()
+            granja_dia = diario[
+                diario["modalidad"] == "GRANJA"
+            ].copy()
+            permisos_dia = diario[
+                diario["estado_dia"] == "CON PERMISO"
+            ].copy()
+
+            a1, a2, a3, a4 = st.columns(4)
+            a1.metric("Urbano", len(urbano_dia))
+            a2.metric("Granja", len(granja_dia))
+            a3.metric("Con permiso", len(permisos_dia))
+            a4.metric("Total en asistencia", len(diario))
+
+            def _vista_asistencia(df):
+                if df.empty:
+                    return pd.DataFrame(
+                        columns=[
+                            "Documento",
+                            "Nombre completo",
+                            "Estado del día",
+                            "Último movimiento",
+                            "Observación"
+                        ]
+                    )
+                out = df[
+                    [
+                        "documento",
+                        "nombre_completo",
+                        "estado_dia",
+                        "movimiento_ultimo",
+                        "observacion"
+                    ]
+                ].copy()
+                return out.rename(columns={
+                    "documento": "Documento",
+                    "nombre_completo": "Nombre completo",
+                    "estado_dia": "Estado del día",
+                    "movimiento_ultimo": "Último movimiento",
+                    "observacion": "Observación"
+                }).sort_values("Nombre completo")
+
+            st.markdown("##### 🏢 URBANO")
+            st.dataframe(
+                _vista_asistencia(urbano_dia),
+                use_container_width=True,
+                hide_index=True
+            )
+
+            st.markdown("##### 🌱 GRANJA")
+            st.dataframe(
+                _vista_asistencia(granja_dia),
+                use_container_width=True,
+                hide_index=True
+            )
+
+            # ------------------------------------------------
+            # Exportar asistencia del día
+            # ------------------------------------------------
+            export_diario = diario[
+                [
+                    "fecha_consulta",
+                    "documento",
+                    "nombre_completo",
+                    "modalidad",
+                    "estado_dia",
+                    "movimiento_ultimo",
+                    "observacion"
+                ]
+            ].copy().rename(columns={
+                "fecha_consulta": "Fecha",
+                "documento": "Documento",
+                "nombre_completo": "Nombre completo",
+                "modalidad": "Albergue",
+                "estado_dia": "Estado del día",
+                "movimiento_ultimo": "Último movimiento",
+                "observacion": "Observación"
+            }).sort_values(
+                ["Albergue", "Nombre completo"]
+            )
+
+            ex1, ex2 = st.columns(2)
+
+            ex1.download_button(
+                "⬇️ Exportar día en CSV",
+                export_diario.to_csv(
+                    index=False
+                ).encode("utf-8-sig"),
+                file_name=(
+                    f"asistencia_albergues_"
+                    f"{fecha_asistencia.strftime('%Y_%m_%d')}.csv"
+                ),
+                mime="text/csv",
+                use_container_width=True,
+                key="v1689_csv_dia"
+            )
+
+            try:
+                buffer_dia = BytesIO()
+                with pd.ExcelWriter(
+                    buffer_dia,
+                    engine="openpyxl"
+                ) as writer:
+                    export_diario.to_excel(
+                        writer,
+                        sheet_name="Asistencia general",
+                        index=False
+                    )
+                    _vista_asistencia(urbano_dia).to_excel(
+                        writer,
+                        sheet_name="Urbano",
+                        index=False
+                    )
+                    _vista_asistencia(granja_dia).to_excel(
+                        writer,
+                        sheet_name="Granja",
+                        index=False
+                    )
+
+                ex2.download_button(
+                    "📗 Exportar día en Excel",
+                    data=buffer_dia.getvalue(),
+                    file_name=(
+                        f"asistencia_albergues_"
+                        f"{fecha_asistencia.strftime('%Y_%m_%d')}.xlsx"
+                    ),
+                    mime=(
+                        "application/vnd.openxmlformats-officedocument."
+                        "spreadsheetml.sheet"
+                    ),
+                    use_container_width=True,
+                    key="v1689_excel_dia"
+                )
+            except Exception as e:
+                ex2.warning(
+                    f"No fue posible generar Excel: {e}"
+                )
+
+        # ----------------------------------------------------
+        # MATRIZ MENSUAL DE ASISTENCIA
+        # ----------------------------------------------------
+        st.markdown("---")
+        st.markdown("##### 📆 Matriz mensual de asistencia")
+
+        mes_base = st.date_input(
+            "Seleccione un mes",
+            value=fecha_asistencia.replace(day=1),
+            key="v1689_mes_asistencia"
+        )
+        primer_dia = mes_base.replace(day=1)
+
+        if primer_dia.month == 12:
+            siguiente_mes = primer_dia.replace(
+                year=primer_dia.year + 1,
+                month=1
+            )
+        else:
+            siguiente_mes = primer_dia.replace(
+                month=primer_dia.month + 1
+            )
+
+        ultimo_dia_mes = siguiente_mes - timedelta(days=1)
+
+        try:
+            mov_mes = pd.read_sql(
+                text("""
+                    SELECT
+                        id_movimiento,
+                        TRIM(CAST(numero_identificacion AS TEXT)) AS documento,
+                        UPPER(TRIM(COALESCE(tipo_movimiento,''))) AS tipo_movimiento,
+                        UPPER(TRIM(COALESCE(modalidad,''))) AS modalidad,
+                        fecha_movimiento
+                    FROM movimientos_habitante
+                    WHERE CAST(fecha_movimiento AS DATE) <= :fin_mes
+                    ORDER BY
+                        numero_identificacion,
+                        fecha_movimiento,
+                        id_movimiento
+                """),
+                engine,
+                params={"fin_mes": ultimo_dia_mes}
+            )
+        except Exception:
+            mov_mes = pd.DataFrame()
+
+        if mov_mes.empty:
+            st.info(
+                "No hay movimientos suficientes para construir la matriz mensual."
+            )
+        else:
+            mov_mes = mov_mes.copy()
+            mov_mes["documento"] = (
+                mov_mes["documento"]
+                .fillna("")
+                .astype(str)
+                .str.strip()
+            )
+            mov_mes["tipo_norm"] = mov_mes[
+                "tipo_movimiento"
+            ].apply(_norm_tipo_asistencia)
+            mov_mes["modalidad"] = (
+                mov_mes["modalidad"]
+                .replace("", pd.NA)
+            )
+            mov_mes["modalidad_hist"] = (
+                mov_mes
+                .groupby("documento")["modalidad"]
+                .ffill()
+            )
+            mov_mes["fecha_movimiento"] = pd.to_datetime(
+                mov_mes["fecha_movimiento"],
+                errors="coerce"
+            )
+
+            dias_mes = pd.date_range(
+                primer_dia,
+                ultimo_dia_mes,
+                freq="D"
+            )
+
+            filas_matriz = []
+
+            docs_mes = mov_mes["documento"].dropna().unique().tolist()
+
+            maestro_map = {}
+            if not maestro_asistencia.empty:
+                maestro_tmp = maestro_asistencia.drop_duplicates(
+                    subset=["documento"], keep="first"
+                ).copy()
+                maestro_tmp["nombre_completo"] = (
+                    maestro_tmp["nombres"].fillna("").astype(str).str.strip()
+                    + " "
+                    + maestro_tmp["apellidos"].fillna("").astype(str).str.strip()
+                ).str.strip()
+                maestro_map = dict(
+                    zip(
+                        maestro_tmp["documento"],
+                        maestro_tmp["nombre_completo"]
+                    )
+                )
+
+            for doc_mes in docs_mes:
+                mov_doc = mov_mes[
+                    mov_mes["documento"] == doc_mes
+                ].sort_values(
+                    ["fecha_movimiento", "id_movimiento"]
+                )
+
+                fila_m = {
+                    "Documento": doc_mes,
+                    "Nombre completo": maestro_map.get(doc_mes, "")
+                }
+
+                estuvo_mes = False
+
+                for dia in dias_mes:
+                    mov_hasta_dia = mov_doc[
+                        mov_doc["fecha_movimiento"].dt.date <= dia.date()
+                    ]
+
+                    if mov_hasta_dia.empty:
+                        fila_m[str(dia.day)] = ""
+                        continue
+
+                    ult = mov_hasta_dia.iloc[-1]
+                    estado = _estado_por_tipo_v1689(
+                        ult["tipo_movimiento"]
+                    )
+                    mod = str(
+                        ult.get("modalidad_hist") or ""
+                    ).strip().upper()
+
+                    if estado == "PRESENTE":
+                        marca = "U" if mod == "URBANO" else (
+                            "G" if mod == "GRANJA" else "P"
+                        )
+                        estuvo_mes = True
+                    elif estado == "CON PERMISO":
+                        marca = "PE"
+                        estuvo_mes = True
+                    else:
+                        marca = ""
+
+                    fila_m[str(dia.day)] = marca
+
+                if estuvo_mes:
+                    filas_matriz.append(fila_m)
+
+            matriz_mes = pd.DataFrame(filas_matriz)
+
+            if matriz_mes.empty:
+                st.info(
+                    "No se reconstruyó asistencia para ese mes."
+                )
+            else:
+                st.caption(
+                    "Convenciones: U = Urbano · G = Granja · PE = Con permiso."
+                )
+                st.dataframe(
+                    matriz_mes,
+                    use_container_width=True,
+                    hide_index=True
+                )
+
+                mx1, mx2 = st.columns(2)
+                mx1.download_button(
+                    "⬇️ Exportar matriz mensual CSV",
+                    matriz_mes.to_csv(
+                        index=False
+                    ).encode("utf-8-sig"),
+                    file_name=(
+                        f"matriz_asistencia_"
+                        f"{primer_dia.strftime('%Y_%m')}.csv"
+                    ),
+                    mime="text/csv",
+                    use_container_width=True,
+                    key="v1689_csv_mes"
+                )
+
+                try:
+                    buffer_mes = BytesIO()
+                    with pd.ExcelWriter(
+                        buffer_mes,
+                        engine="openpyxl"
+                    ) as writer:
+                        matriz_mes.to_excel(
+                            writer,
+                            sheet_name="Matriz mensual",
+                            index=False
+                        )
+
+                    mx2.download_button(
+                        "📗 Exportar matriz mensual Excel",
+                        data=buffer_mes.getvalue(),
+                        file_name=(
+                            f"matriz_asistencia_"
+                            f"{primer_dia.strftime('%Y_%m')}.xlsx"
+                        ),
+                        mime=(
+                            "application/vnd.openxmlformats-officedocument."
+                            "spreadsheetml.sheet"
+                        ),
+                        use_container_width=True,
+                        key="v1689_excel_mes"
+                    )
+                except Exception as e:
+                    mx2.warning(
+                        f"No fue posible generar Excel: {e}"
+                    )
+
+        st.caption(
+            "Nota metodológica: este reporte reconstruye la presencia con los "
+            "movimientos registrados en la plataforma. Para fechas anteriores al "
+            "inicio del uso operativo del sistema puede existir información incompleta."
         )
 
     # --------------------------------------------------------
@@ -10027,7 +10587,7 @@ def tablero_contribucion_ods_v16():
         st.plotly_chart(fig_modalidad, use_container_width=True)
 
     # ========================================================
-    # V16.88 - EVIDENCIA COMPLEMENTARIA DE ENFERMERÍA PARA ODS 3
+    # V16.89 - EVIDENCIA COMPLEMENTARIA DE ENFERMERÍA PARA ODS 3
     # ========================================================
     st.markdown("### 🩺 Evidencia complementaria de Enfermería · ODS 3")
     st.caption(
@@ -14547,7 +15107,7 @@ def inicio_ejecutivo_v167():
         avance = pd.to_numeric(
             pai["porcentaje_avance"], errors="coerce"
         ).fillna(0)
-        # V16.88 - Normalización de fechas para evitar mezclar
+        # V16.89 - Normalización de fechas para evitar mezclar
         # timestamps con zona horaria de Supabase y fechas locales sin zona.
         fecha_meta = pd.to_datetime(
             pai["fecha_meta"], errors="coerce"
@@ -15013,7 +15573,7 @@ def modulo_reportes_institucionales_v169():
         df_gen_rep = pd.DataFrame()
 
     # ------------------------------------------------------------
-    # V16.88 - DATOS DE ENFERMERÍA PARA INFORME INSTITUCIONAL
+    # V16.89 - DATOS DE ENFERMERÍA PARA INFORME INSTITUCIONAL
     # ------------------------------------------------------------
     df_enf_rep = pd.DataFrame()
     try:
@@ -15945,7 +16505,7 @@ def modulo_reportes_institucionales_v169():
                 st.write("• " + inf_h)
 
         # ========================================================
-        # V16.88 - GESTIÓN DE SALUD Y ENFERMERÍA
+        # V16.89 - GESTIÓN DE SALUD Y ENFERMERÍA
         # ========================================================
         st.markdown("---")
         st.subheader("🩺 Gestión de Salud y Enfermería")
@@ -17267,7 +17827,7 @@ def modulo_reportes_institucionales_v169():
                         seccion += 1
 
                     # ==================================================
-                    # V16.88 - GESTIÓN DE SALUD Y ENFERMERÍA
+                    # V16.89 - GESTIÓN DE SALUD Y ENFERMERÍA
                     # ==================================================
                     if not df_enf_rep.empty or not df_enf_val_rep.empty:
                         contenido.append(PageBreak())
@@ -18683,7 +19243,7 @@ def caracterizacion_habitabilidad_v1611():
             index=_idx(opciones_relacion, _v("relacion_consumo_calle", ""))
         )
 
-    # V16.88 - Opciones comunes usadas por Redes y Salud integral.
+    # V16.89 - Opciones comunes usadas por Redes y Salud integral.
     # Se definen antes de las pestañas para evitar UnboundLocalError después
     # de convertir Consumo de SPA en una vista de solo lectura.
     si_no = ["", "Sí", "No", "No sabe / no responde"]
@@ -19052,7 +19612,7 @@ def caracterizacion_habitabilidad_v1611():
         type="primary",
         disabled=not confirmar
     ):
-        # V16.88 - trazabilidad explícita de la sesión que registra
+        # V16.89 - trazabilidad explícita de la sesión que registra
         nombre_sesion_hab = str(
             st.session_state.get("nombre_funcionario", "")
         ).strip() or str(st.session_state.get("usuario_actual", "Sistema")).strip()
@@ -19462,7 +20022,7 @@ def tablero_habitabilidad_v1611():
     k5.metric("10+ años en calle", f"{int(alta_cron.sum())}")
 
     # ============================================================
-    # V16.88 - TRAZABILIDAD DE QUIÉN REGISTRA LAS CARACTERIZACIONES
+    # V16.89 - TRAZABILIDAD DE QUIÉN REGISTRA LAS CARACTERIZACIONES
     # ============================================================
     st.markdown("### 👤 Trazabilidad de registros")
     st.caption(
@@ -21273,7 +21833,7 @@ def modulo_enfermeria_v1673():
                     type="primary"
                 )
 
-            # V16.88 - La foto permanece visible al FINAL del formulario.
+            # V16.89 - La foto permanece visible al FINAL del formulario.
             # Puede tomarse antes o después de guardar; es temporal y no se almacena.
             st.markdown("### 📷 Foto para el reporte de valoración")
             st.caption(
@@ -21535,7 +22095,7 @@ def modulo_enfermeria_v1673():
                         observacion=(observaciones or "")[:500]
                     )
 
-                    # V16.88 - Reporte operativo de valoración para WhatsApp
+                    # V16.89 - Reporte operativo de valoración para WhatsApp
                     try:
                         mov_ult = pd.read_sql(
                             text("""
