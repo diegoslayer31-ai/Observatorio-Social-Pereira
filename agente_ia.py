@@ -23368,6 +23368,12 @@ if st.session_state.get("autenticado"):
     _v1634_tocar_sesion()
 
 
+# V16.92 - Rol de la sesión para el enrutador principal.
+# Se define aquí de forma independiente para que no dependa de ningún módulo anterior.
+rol_router = str(
+    st.session_state.get("rol_actual", "")
+).upper().strip()
+
 if st.session_state.page == "informe_mensual_profesional_v1627":
     modulo_informe_mensual_profesional_piloto_v1627()
     st.stop()
