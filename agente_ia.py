@@ -5616,6 +5616,7 @@ def gestion_usuarios_movil():
         "regresos de permiso, sanciones, expulsiones y control de turno."
     )
 
+    # V16.97 - Ajuste visual de medidas vencidas/reingresadas.
     # V16.39 - Unificación operativa.
     # Control de Turno deja de ser un módulo separado del menú lateral.
     seccion_movil = st.radio(
@@ -6178,10 +6179,66 @@ def gestion_usuarios_movil():
         )
         if not medida_activa.empty:
             m = medida_activa.iloc[0]
-            st.error(
-                f"⛔ Medida activa: {m['tipo_medida']} · "
-                f"desde {m['fecha_inicio']}"
+
+            fecha_fin_medida = pd.to_datetime(
+                m.get("fecha_fin"),
+                errors="coerce"
             )
+            hoy_medida = ahora_colombia().date()
+
+            # V16.97 - La alerta visual distingue entre una medida realmente
+            # vigente y una medida cuya fecha de reingreso ya se cumplió.
+            # Si ya existe un REINGRESO posterior al vencimiento, no se muestra
+            # ninguna alerta de suspensión aunque el registro histórico aún
+            # conserve estado_medida='ACTIVA'.
+            reingreso_posterior = False
+
+            if pd.notna(fecha_fin_medida):
+                try:
+                    df_reingreso_post = pd.read_sql(
+                        text("""
+                            SELECT 1
+                            FROM movimientos_habitante
+                            WHERE TRIM(CAST(numero_identificacion AS TEXT)) = :doc
+                              AND UPPER(TRIM(COALESCE(tipo_movimiento,''))) = 'REINGRESO'
+                              AND CAST(fecha_movimiento AS DATE) >= :fecha_fin
+                            LIMIT 1
+                        """),
+                        engine,
+                        params={
+                            "doc": documento,
+                            "fecha_fin": fecha_fin_medida.date()
+                        }
+                    )
+                    reingreso_posterior = not df_reingreso_post.empty
+                except Exception:
+                    reingreso_posterior = False
+
+            if reingreso_posterior:
+                pass
+            elif pd.notna(fecha_fin_medida) and fecha_fin_medida.date() <= hoy_medida:
+                st.success(
+                    f"🟢 {m['tipo_medida']} cumplida · "
+                    f"Puede solicitar reingreso desde "
+                    f"{fecha_fin_medida.strftime('%d/%m/%Y')}."
+                )
+            else:
+                if pd.notna(fecha_fin_medida):
+                    dias_restantes = max(
+                        0,
+                        (fecha_fin_medida.date() - hoy_medida).days
+                    )
+                    st.error(
+                        f"⛔ Medida vigente: {m['tipo_medida']} · "
+                        f"puede solicitar reingreso desde "
+                        f"{fecha_fin_medida.strftime('%d/%m/%Y')} "
+                        f"({dias_restantes} día(s))."
+                    )
+                else:
+                    st.error(
+                        f"⛔ Medida vigente: {m['tipo_medida']} · "
+                        f"desde {m['fecha_inicio']}."
+                    )
     except Exception:
         pass
 
