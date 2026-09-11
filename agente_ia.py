@@ -5418,15 +5418,17 @@ def panel_inspirador_simple_v14():
                     text("""
                         UPDATE permisos_usuarios
                         SET estado_permiso='CERRADO',
-                            fecha_regreso_real=CURRENT_DATE,
-                            hora_regreso_real=CURRENT_TIME,
+                            fecha_regreso_real=:fecha_regreso,
+                            hora_regreso_real=:hora_regreso,
                             observacion_regreso='REGRESA AL ALBERGUE',
                             cerrado_en=NOW()
                         WHERE id=:id
                           AND UPPER(TRIM(COALESCE(estado_permiso,'')))='ABIERTO'
                     """),
                     {
-                        "id": int(permiso_id)
+                        "id": int(permiso_id),
+                        "fecha_regreso": ahora_colombia().date(),
+                        "hora_regreso": ahora_colombia().time().replace(microsecond=0)
                     }
                 )
 
@@ -6925,13 +6927,15 @@ def gestion_usuarios_movil():
             )
 
             c1, c2 = st.columns(2)
+            ahora_regreso_colombia = ahora_colombia()
             fecha_regreso_real = c1.date_input(
                 "Fecha de regreso",
-                value=date.today(),
+                value=ahora_regreso_colombia.date(),
                 key=f"perm_fecha_reg_real_{documento}"
             )
             hora_regreso_real = c2.time_input(
                 "Hora de regreso",
+                value=ahora_regreso_colombia.time().replace(second=0, microsecond=0),
                 key=f"perm_hora_reg_real_{documento}"
             )
 
@@ -8859,8 +8863,8 @@ def control_turno_v13():
                             text("""
                                 UPDATE permisos_usuarios
                                 SET estado_permiso='CERRADO',
-                                    fecha_regreso_real=CURRENT_DATE,
-                                    hora_regreso_real=CURRENT_TIME,
+                                    fecha_regreso_real=:fecha_regreso,
+                                    hora_regreso_real=:hora_regreso,
                                     observacion_regreso=:observacion,
                                     cerrado_en=NOW()
                                 WHERE id=:id
@@ -8868,7 +8872,9 @@ def control_turno_v13():
                             """),
                             {
                                 "observacion": obs_regreso_rapido.strip(),
-                                "id": int(permiso_id_regreso)
+                                "id": int(permiso_id_regreso),
+                                "fecha_regreso": ahora_colombia().date(),
+                                "hora_regreso": ahora_colombia().time().replace(microsecond=0)
                             }
                         )
 
