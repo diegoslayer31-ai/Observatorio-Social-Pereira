@@ -20889,7 +20889,33 @@ def control_asistencia_albergue_v1613():
                 use_container_width=True
             )
 
+# ============================================================
+# V16.104 - CATÁLOGO INSTITUCIONAL DE ATENCIONES DE ENFERMERÍA
+# Se define de forma global para que esté disponible tanto en
+# registro de atenciones como en reportes y consolidados.
+# ============================================================
+CATEGORIAS_ENFERMERIA_V1671 = [
+    "ACOMPAÑAMIENTOS A CITAS MÉDICAS",
+    "ATENCIÓN EN LA MÓVIL POR MEDICINA GENERAL",
+    "ATENCIÓN EN LA MÓVIL POR ODONTOLOGÍA",
+    "ATENCIÓN REALIZADA",
+    "GESTIONES",
+    "PRUEBAS DE EMBARAZO",
+    "SEGUIMIENTO A USUARIO HOSPITALIZADO",
+    "TRASLADO A URGENCIAS",
+    "USUARIO CON ADHERENCIA AL TRATAMIENTO TB",
+    "USUARIO CON ADHERENCIA EN EL TRATAMIENTO DE SPA",
+    "USUARIO CON ADHERENCIA EN EL TRATAMIENTO ITS",
+    "USUARIO CON ADHERENCIA EN EL TRATAMIENTO VIH",
+    "USUARIO HOSPITALIZADO",
+    "VALORACIÓN DE INGRESO",
+]
+
 def modulo_enfermeria_v1673():
+    categorias_enfermeria_reporte = globals().get(
+        "CATEGORIAS_ENFERMERIA_V1671",
+        []
+    )
     rol = str(st.session_state.get("rol_actual", "")).strip().upper()
     if rol not in [
         "ENFERMERA",
@@ -21922,7 +21948,7 @@ def modulo_enfermeria_v1673():
         )
 
         base_cat = pd.DataFrame({
-            "ATENCIONES REALIZADAS": CATEGORIAS_ENFERMERIA_V1671
+            "ATENCIONES REALIZADAS": categorias_enfermeria_reporte
         })
         mapa = (
             dict(zip(rep["tipo_atencion"], rep["total"]))
