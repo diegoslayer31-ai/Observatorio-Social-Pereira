@@ -20328,49 +20328,75 @@ def control_asistencia_albergue_v1613():
         return txt.upper()
 
     def _cargar_maestro_v1691():
+        # V16.94 - La fuente principal de nombres es SIEMPRE habitante_de_calle.
+        # personas_caracterizacion se consulta aparte como respaldo para que,
+        # si su estructura cambia, no deje vacía toda la base de nombres.
+        partes = []
+
         try:
-            maestro = pd.read_sql(
+            maestro_hdc = pd.read_sql(
                 text("""
                     SELECT
                         TRIM(CAST(numero_identificacion AS TEXT)) AS documento,
                         COALESCE(nombres,'') AS nombres,
-                        COALESCE(apellidos,'') AS apellidos,
-                        1 AS prioridad
+                        COALESCE(apellidos,'') AS apellidos
                     FROM habitante_de_calle
+                """),
+                engine
+            )
+            if not maestro_hdc.empty:
+                maestro_hdc["prioridad"] = 1
+                partes.append(maestro_hdc)
+        except Exception:
+            pass
 
-                    UNION ALL
-
+        try:
+            maestro_egr = pd.read_sql(
+                text("""
                     SELECT
                         TRIM(CAST(numero_identificacion AS TEXT)) AS documento,
                         COALESCE(nombres,'') AS nombres,
-                        COALESCE(apellidos,'') AS apellidos,
-                        2 AS prioridad
+                        COALESCE(apellidos,'') AS apellidos
                     FROM personas_caracterizacion
                 """),
                 engine
             )
+            if not maestro_egr.empty:
+                maestro_egr["prioridad"] = 2
+                partes.append(maestro_egr)
         except Exception:
-            maestro = pd.DataFrame(
-                columns=["documento", "nombres", "apellidos", "prioridad"]
+            pass
+
+        if not partes:
+            return pd.DataFrame(
+                columns=[
+                    "documento", "nombres", "apellidos",
+                    "prioridad", "documento_norm", "nombre_completo"
+                ]
             )
 
-        if not maestro.empty:
-            maestro["documento"] = (
-                maestro["documento"].fillna("").astype(str).str.strip()
-            )
-            maestro["documento_norm"] = maestro["documento"].apply(
-                _normalizar_documento_v1693
-            )
-            maestro["nombre_completo"] = (
-                maestro["nombres"].fillna("").astype(str).str.strip()
-                + " "
-                + maestro["apellidos"].fillna("").astype(str).str.strip()
-            ).str.replace(r"\s+", " ", regex=True).str.strip()
+        maestro = pd.concat(partes, ignore_index=True, sort=False)
 
-            maestro = (
-                maestro.sort_values(["documento_norm", "prioridad"])
-                .drop_duplicates(subset=["documento_norm"], keep="first")
+        maestro["documento"] = (
+            maestro["documento"].fillna("").astype(str).str.strip()
+        )
+        maestro["documento_norm"] = maestro["documento"].apply(
+            _normalizar_documento_v1693
+        )
+        maestro["nombre_completo"] = (
+            maestro["nombres"].fillna("").astype(str).str.strip()
+            + " "
+            + maestro["apellidos"].fillna("").astype(str).str.strip()
+        ).str.replace(r"\s+", " ", regex=True).str.strip()
+
+        # Preferir registros que efectivamente tengan nombre.
+        maestro["sin_nombre"] = maestro["nombre_completo"].eq("")
+        maestro = (
+            maestro.sort_values(
+                ["documento_norm", "sin_nombre", "prioridad"]
             )
+            .drop_duplicates(subset=["documento_norm"], keep="first")
+        )
 
         return maestro
 
@@ -20687,7 +20713,7 @@ def control_asistencia_albergue_v1613():
                 doc_norm = _normalizar_documento_v1693(doc)
                 nombre_encontrado = maestro_map.get(doc_norm, "")
                 if not nombre_encontrado:
-                    nombre_encontrado = "⚠️ NOMBRE NO ENCONTRADO EN BASE MAESTRA"
+                    nombre_encontrado = f"CC {doc}"
 
                 fila = {
                     "Documento": doc,
@@ -23410,7 +23436,7 @@ if st.session_state.get("autenticado"):
     _v1634_tocar_sesion()
 
 
-# V16.93 - Rol de la sesión para el enrutador principal.
+# V16.94 - Rol de la sesión para el enrutador principal.
 # Se define aquí de forma independiente para que no dependa de ningún módulo anterior.
 rol_router = str(
     st.session_state.get("rol_actual", "")
