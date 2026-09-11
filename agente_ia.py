@@ -1018,6 +1018,7 @@ def _panel_medidas_activas_v1647(clave="medidas_activas"):
                     s.motivo,
                     s.fecha_inicio,
                     s.fecha_fin,
+                    COALESCE(s.remitido_comite, FALSE) AS remitido_comite,
                     s.estado_medida,
                     s.observacion,
                     s.usuario_registra
@@ -1065,7 +1066,10 @@ def _panel_medidas_activas_v1647(clave="medidas_activas"):
         + df_medidas["apellidos"].fillna("").astype(str).str.strip()
     ).str.strip()
 
-    def _estado_medida_visual(f):
+    def _estado_medida_visual(row):
+        if bool(row.get("remitido_comite", False)):
+            return "🟠 CASO REMITIDO A COMITÉ"
+        f = row.get("fecha_fin")
         if pd.isna(f):
             return "🔴 VIGENTE"
         fecha = f.date()
@@ -1074,15 +1078,24 @@ def _panel_medidas_activas_v1647(clave="medidas_activas"):
         dias = (fecha - hoy).days
         return f"🔴 VIGENTE · {dias} día(s)"
 
-    df_medidas["Estado"] = df_medidas["fecha_fin"].apply(
-        _estado_medida_visual
+    df_medidas["Estado"] = df_medidas.apply(
+        _estado_medida_visual, axis=1
     )
 
     df_medidas["Fecha salida"] = df_medidas["fecha_inicio"].apply(
         lambda x: x.strftime("%d/%m/%Y") if pd.notna(x) else "—"
     )
-    df_medidas["Puede solicitar reingreso desde"] = df_medidas["fecha_fin"].apply(
-        lambda x: x.strftime("%d/%m/%Y") if pd.notna(x) else "—"
+    df_medidas["Puede solicitar reingreso desde"] = df_medidas.apply(
+        lambda r: (
+            "CASO REMITIDO A COMITÉ"
+            if bool(r.get("remitido_comite", False))
+            else (
+                r["fecha_fin"].strftime("%d/%m/%Y")
+                if pd.notna(r.get("fecha_fin"))
+                else "—"
+            )
+        ),
+        axis=1
     )
 
     mostrar = df_medidas[
@@ -1112,7 +1125,10 @@ def _panel_medidas_activas_v1647(clave="medidas_activas"):
     )
 
     pendientes_cierre = int(
-        df_medidas["Estado"].eq("🟢 PUEDE REINGRESAR").sum()
+        (
+            df_medidas["Estado"].eq("🟢 PUEDE REINGRESAR")
+            & ~df_medidas["remitido_comite"].fillna(False).astype(bool)
+        ).sum()
     )
     if pendientes_cierre:
         st.warning(
@@ -1999,6 +2015,7 @@ def gestion_usuarios():
                             motivo,
                             fecha_inicio,
                             fecha_fin,
+                            COALESCE(remitido_comite, FALSE) AS remitido_comite,
                             estado_medida,
                             observacion,
                             usuario_registra,
@@ -2038,7 +2055,7 @@ def gestion_usuarios():
 
             with st.form(f"medida_v9_{documento}"):
 
-                s1, s2, s3 = st.columns(3)
+                s1, s2 = st.columns(2)
 
                 tipo_medida = s1.selectbox(
                     "Medida",
@@ -2047,17 +2064,28 @@ def gestion_usuarios():
 
                 fecha_inicio_medida = s2.date_input(
                     "Fecha de inicio",
-                    value=date.today()
+                    value=ahora_colombia().date()
                 )
 
-                fecha_fin_medida = s3.date_input(
-                    "Fecha de finalización",
-                    value=date.today() + timedelta(days=3),
+                remitido_comite = st.checkbox(
+                    "🟠 Caso remitido a Comité",
                     help=(
-                        "Para expulsión puede usarse como fecha de revisión "
-                        "si la medida no tiene término definido."
+                        "Si se marca, no se asigna fecha estimada de reingreso. "
+                        "El reingreso dependerá de la decisión del Comité de Casos."
                     )
                 )
+
+                if remitido_comite:
+                    fecha_fin_medida = None
+                    st.info(
+                        "🟠 CASO REMITIDO A COMITÉ · "
+                        "No se registrará fecha estimada de reingreso."
+                    )
+                else:
+                    fecha_fin_medida = st.date_input(
+                        "Fecha de finalización",
+                        value=ahora_colombia().date() + timedelta(days=3)
+                    )
 
                 motivo_medida = st.text_area(
                     "Motivo de la medida *",
@@ -2082,7 +2110,11 @@ def gestion_usuarios():
                     st.error("Debe registrar el motivo de la medida.")
                 elif not confirmar_medida:
                     st.error("Debe confirmar la aplicación de la medida.")
-                elif fecha_fin_medida < fecha_inicio_medida:
+                elif (
+                    not remitido_comite
+                    and fecha_fin_medida is not None
+                    and fecha_fin_medida < fecha_inicio_medida
+                ):
                     st.error(
                         "La fecha final no puede ser anterior a la fecha inicial."
                     )
@@ -2100,6 +2132,7 @@ def gestion_usuarios():
                                     motivo,
                                     fecha_inicio,
                                     fecha_fin,
+                                    remitido_comite,
                                     estado_medida,
                                     observacion,
                                     usuario_registra
@@ -2110,6 +2143,7 @@ def gestion_usuarios():
                                     :motivo,
                                     :inicio,
                                     :fin,
+                                    :remitido_comite,
                                     'ACTIVA',
                                     :observacion,
                                     :usuario
@@ -2120,7 +2154,8 @@ def gestion_usuarios():
                                 "tipo": tipo_medida,
                                 "motivo": motivo_medida.strip(),
                                 "inicio": fecha_inicio_medida,
-                                "fin": fecha_fin_medida,
+                                "fin": None if remitido_comite else fecha_fin_medida,
+                                "remitido_comite": bool(remitido_comite),
                                 "observacion": observacion_medida.strip(),
                                 "usuario": usuario_registra
                             }
@@ -2175,7 +2210,13 @@ def gestion_usuarios():
                         documento=documento,
                         modulo="Gestión Usuarios",
                         valor_nuevo=tipo_medida,
-                        observacion=motivo_medida.strip()[:500]
+                        observacion=(
+                            (
+                                "CASO REMITIDO A COMITÉ | "
+                                if remitido_comite else ""
+                            )
+                            + motivo_medida.strip()
+                        )[:500]
                     )
 
                     invalidar_cache_datos()
@@ -4431,6 +4472,28 @@ def _es_reingreso_operativo_v1667(documento, estado_anterior=""):
     except Exception:
         return False
 
+
+def _caso_remitido_comite_activo_v16106(documento):
+    """True si la persona tiene una medida ACTIVA remitida a Comité."""
+    try:
+        df = pd.read_sql(
+            text("""
+                SELECT 1
+                FROM sanciones_usuarios
+                WHERE TRIM(CAST(numero_identificacion AS TEXT)) = :doc
+                  AND UPPER(TRIM(COALESCE(estado_medida,''))) = 'ACTIVA'
+                  AND COALESCE(remitido_comite, FALSE) = TRUE
+                ORDER BY creado_en DESC
+                LIMIT 1
+            """),
+            engine,
+            params={"doc": str(documento or "").strip()}
+        )
+        return not df.empty
+    except Exception:
+        return False
+
+
 def _restriccion_reingreso_v1670(documento):
     """
     Devuelve (fecha, causal) de una restricción REALMENTE vigente.
@@ -4526,6 +4589,7 @@ def _restriccion_reingreso_v1670(documento):
                 FROM sanciones_usuarios
                 WHERE TRIM(CAST(numero_identificacion AS TEXT)) = :doc
                   AND fecha_fin IS NOT NULL
+                  AND COALESCE(remitido_comite, FALSE) = FALSE
                   AND UPPER(TRIM(COALESCE(estado_medida,''))) = 'ACTIVA'
                 ORDER BY creado_en DESC
                 LIMIT 1
@@ -4573,7 +4637,8 @@ def _texto_whatsapp_movimiento(
     hora=None,
     detalle="",
     responsable="",
-    fecha_posible_reingreso=None
+    fecha_posible_reingreso=None,
+    caso_remitido_comite=False
 ):
     """Construye un reporte corto para compartir por WhatsApp."""
     fecha_txt = (
@@ -4601,7 +4666,9 @@ def _texto_whatsapp_movimiento(
         lineas.append(f"*HORA:* {hora_txt}")
     if detalle:
         lineas.append(f"*OBSERVACIÓN:* {str(detalle).strip()}")
-    if fecha_posible_reingreso:
+    if caso_remitido_comite:
+        lineas.append("*CASO REMITIDO A COMITÉ*")
+    elif fecha_posible_reingreso:
         fecha_reingreso_txt = (
             fecha_posible_reingreso.strftime("%d/%m/%Y")
             if hasattr(fecha_posible_reingreso, "strftime")
@@ -5568,7 +5635,8 @@ def _medida_activa_duplicada_v1655(
     tipo_medida,
     causal,
     fecha_inicio,
-    fecha_fin
+    fecha_fin,
+    remitido_comite=False
 ):
     """Devuelve la medida activa idéntica ya existente, si la hay."""
     try:
@@ -5589,7 +5657,8 @@ def _medida_activa_duplicada_v1655(
                   AND UPPER(TRIM(COALESCE(tipo_medida,''))) = :tipo
                   AND UPPER(TRIM(COALESCE(motivo,''))) = :causal
                   AND fecha_inicio = :inicio
-                  AND fecha_fin = :fin
+                  AND fecha_fin IS NOT DISTINCT FROM :fin
+                  AND COALESCE(remitido_comite, FALSE) = :remitido_comite
                   AND UPPER(TRIM(COALESCE(estado_medida,''))) = 'ACTIVA'
                 ORDER BY id
                 LIMIT 1
@@ -5601,6 +5670,7 @@ def _medida_activa_duplicada_v1655(
                 "causal": str(causal or "").strip().upper(),
                 "inicio": fecha_inicio,
                 "fin": fecha_fin,
+                "remitido_comite": bool(remitido_comite),
             }
         )
     except Exception:
@@ -6170,7 +6240,12 @@ def gestion_usuarios_movil():
     try:
         medida_activa = pd.read_sql(
             text("""
-                SELECT tipo_medida, fecha_inicio, fecha_fin, motivo
+                SELECT
+                    tipo_medida,
+                    fecha_inicio,
+                    fecha_fin,
+                    motivo,
+                    COALESCE(remitido_comite, FALSE) AS remitido_comite
                 FROM sanciones_usuarios
                 WHERE TRIM(CAST(numero_identificacion AS TEXT)) = :doc
                   AND UPPER(TRIM(COALESCE(estado_medida,''))) = 'ACTIVA'
@@ -6189,14 +6264,18 @@ def gestion_usuarios_movil():
             )
             hoy_medida = ahora_colombia().date()
 
-            # V16.97 - La alerta visual distingue entre una medida realmente
-            # vigente y una medida cuya fecha de reingreso ya se cumplió.
-            # Si ya existe un REINGRESO posterior al vencimiento, no se muestra
-            # ninguna alerta de suspensión aunque el registro histórico aún
-            # conserve estado_medida='ACTIVA'.
-            reingreso_posterior = False
+            # V16.106 - Un caso remitido a Comité NO tiene fecha estimada
+            # de reingreso y permanece bloqueado hasta decisión institucional.
+            if bool(m.get("remitido_comite", False)):
+                st.warning(
+                    f"🟠 CASO REMITIDO A COMITÉ · {m['tipo_medida']} · "
+                    f"Causal: {m.get('motivo') or 'Sin causal'}."
+                )
+                reingreso_posterior = None
+            else:
+                reingreso_posterior = False
 
-            if pd.notna(fecha_fin_medida):
+            if reingreso_posterior is not None and pd.notna(fecha_fin_medida):
                 try:
                     df_reingreso_post = pd.read_sql(
                         text("""
@@ -6217,7 +6296,9 @@ def gestion_usuarios_movil():
                 except Exception:
                     reingreso_posterior = False
 
-            if reingreso_posterior:
+            if reingreso_posterior is None:
+                pass
+            elif reingreso_posterior:
                 pass
             elif pd.notna(fecha_fin_medida) and fecha_fin_medida.date() <= hoy_medida:
                 st.success(
@@ -6381,6 +6462,17 @@ def gestion_usuarios_movil():
                 # V16.78 - Este flujo parte de "Buscar usuario existente".
                 # Por definición, si ya está en habitante_de_calle, es REINGRESO.
                 tipo_mov = "REINGRESO"
+
+                if (
+                    tipo_mov == "REINGRESO"
+                    and _caso_remitido_comite_activo_v16106(documento)
+                ):
+                    st.error(
+                        "⛔ Reingreso no permitido. "
+                        "CASO REMITIDO A COMITÉ. "
+                        "La posibilidad de reingreso depende de la decisión del Comité de Casos."
+                    )
+                    st.stop()
 
                 fecha_restriccion, causal_restriccion = _restriccion_reingreso_v1670(documento)
                 if (
@@ -7071,12 +7163,25 @@ def gestion_usuarios_movil():
             ],
             key=f"movil_causal_medida_{documento}"
         )
-        fin = _fecha_posible_reingreso_v1641(inicio, causal_medida)
-        regla_txt = CRITERIOS_REINGRESO_V1641[causal_medida][2]
-        st.info(
-            f"📅 Puede solicitar reingreso desde: **{fin.strftime('%d/%m/%Y')}** "
-            f"({regla_txt})."
+        remitido_comite = st.checkbox(
+            "🟠 Caso remitido a Comité",
+            key=f"movil_comite_medida_{documento}",
+            help=(
+                "No se asignará fecha estimada de reingreso. "
+                "El reingreso dependerá de la decisión del Comité de Casos."
+            )
         )
+
+        if remitido_comite:
+            fin = None
+            st.warning("🟠 CASO REMITIDO A COMITÉ")
+        else:
+            fin = _fecha_posible_reingreso_v1641(inicio, causal_medida)
+            regla_txt = CRITERIOS_REINGRESO_V1641[causal_medida][2]
+            st.info(
+                f"📅 Puede solicitar reingreso desde: **{fin.strftime('%d/%m/%Y')}** "
+                f"({regla_txt})."
+            )
 
         motivo = st.text_area(
             "Detalle / observación del hecho *",
@@ -7111,7 +7216,11 @@ def gestion_usuarios_movil():
                 st.error("Debe registrar el motivo.")
             elif not conf:
                 st.error("Debe confirmar la medida.")
-            elif fin < inicio:
+            elif (
+                not remitido_comite
+                and fin is not None
+                and fin < inicio
+            ):
                 st.error("La fecha final no puede ser anterior al inicio.")
             else:
                 medida_existente = _medida_activa_duplicada_v1655(
@@ -7119,7 +7228,8 @@ def gestion_usuarios_movil():
                     tipo,
                     causal_medida,
                     inicio,
-                    fin
+                    fin,
+                    remitido_comite=remitido_comite
                 )
 
                 if medida_existente:
@@ -7132,11 +7242,19 @@ def gestion_usuarios_movil():
                         "No se creó un segundo registro. "
                         f"Registro existente por: {registrado_por}."
                     )
-                    st.info(
-                        f"{tipo} · {causal_medida} · "
-                        f"{inicio.strftime('%d/%m/%Y')} → "
-                        f"{fin.strftime('%d/%m/%Y')}"
-                    )
+                    if remitido_comite:
+                        st.info(
+                            f"{tipo} · {causal_medida} · "
+                            f"{inicio.strftime('%d/%m/%Y')} · "
+                            "CASO REMITIDO A COMITÉ"
+                        )
+                    else:
+                        st.info(
+                            f"{tipo} · {causal_medida} · "
+                            f"{inicio.strftime('%d/%m/%Y')} → "
+                            f"{fin.strftime('%d/%m/%Y')}"
+                        )
+
                 else:
                     usuario = st.session_state.get(
                         "usuario_actual", "inspirador"
@@ -7151,12 +7269,14 @@ def gestion_usuarios_movil():
                                     motivo,
                                     fecha_inicio,
                                     fecha_fin,
+                                    remitido_comite,
                                     estado_medida,
                                     observacion,
                                     usuario_registra
                                 )
                                 VALUES (
                                     :doc, :tipo, :motivo, :inicio, :fin,
+                                    :remitido_comite,
                                     'ACTIVA', :obs, :usuario
                                 )
                             """),
@@ -7165,7 +7285,8 @@ def gestion_usuarios_movil():
                                 "tipo": tipo,
                                 "motivo": causal_medida,
                                 "inicio": inicio,
-                                "fin": fin,
+                                "fin": None if remitido_comite else fin,
+                                "remitido_comite": bool(remitido_comite),
                                 "obs": obs.strip(),
                                 "usuario": usuario
                             }
@@ -7243,7 +7364,13 @@ def gestion_usuarios_movil():
                         documento=documento,
                         modulo="Gestión Móvil",
                         valor_nuevo=tipo,
-                        observacion=f"{causal_medida}: {motivo.strip()}"[:500]
+                        observacion=(
+                            (
+                                "CASO REMITIDO A COMITÉ | "
+                                if remitido_comite else ""
+                            )
+                            + f"{causal_medida}: {motivo.strip()}"
+                        )[:500]
                     )
                     invalidar_cache_datos()
 
@@ -7261,7 +7388,8 @@ def gestion_usuarios_movil():
                         fecha=inicio,
                         detalle=detalle_reporte,
                         responsable=usuario,
-                        fecha_posible_reingreso=fin
+                        fecha_posible_reingreso=None if remitido_comite else fin,
+                        caso_remitido_comite=remitido_comite
                     )
                     st.session_state[f"reporte_whatsapp_{documento}"] = reporte
 
