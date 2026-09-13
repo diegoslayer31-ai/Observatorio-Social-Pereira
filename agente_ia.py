@@ -8066,6 +8066,24 @@ def historia_integral_v12():
         if pd.isna(fecha_pd):
             return
 
+        # V16.110 - Historia Integral: normalizar todas las fechas a un mismo
+        # tipo antes de ordenar. PostgreSQL puede entregar algunos TIMESTAMPTZ
+        # con zona horaria y otros campos DATE/TIMESTAMP sin zona; Pandas no
+        # permite ordenar una mezcla de timestamps aware y naive.
+        #
+        # Si la fecha trae zona horaria, se muestra en hora Colombia y se
+        # elimina la zona solo para que toda la columna sea comparable. Las
+        # fechas sin zona (por ejemplo DATE) se conservan tal como vienen.
+        try:
+            if isinstance(fecha_pd, pd.Timestamp) and fecha_pd.tzinfo is not None:
+                fecha_pd = (
+                    fecha_pd
+                    .tz_convert("America/Bogota")
+                    .tz_localize(None)
+                )
+        except Exception:
+            pass
+
         eventos.append({
             "Fecha": fecha_pd,
             "Evento": evento,
@@ -8315,6 +8333,23 @@ def historia_integral_v12():
         return
 
     timeline = pd.DataFrame(eventos)
+
+    # V16.110 - Protección adicional: convertir cualquier fecha residual a
+    # Timestamp naive antes de ordenar la línea de tiempo.
+    def _normalizar_fecha_historia_v16110(valor):
+        ts = pd.to_datetime(valor, errors="coerce")
+        if pd.isna(ts):
+            return pd.NaT
+        try:
+            if isinstance(ts, pd.Timestamp) and ts.tzinfo is not None:
+                ts = ts.tz_convert("America/Bogota").tz_localize(None)
+        except Exception:
+            pass
+        return ts
+
+    timeline["Fecha"] = timeline["Fecha"].apply(
+        _normalizar_fecha_historia_v16110
+    )
     timeline = timeline.dropna(
         subset=["Fecha"]
     ).sort_values(
