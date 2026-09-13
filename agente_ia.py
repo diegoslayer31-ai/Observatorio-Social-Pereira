@@ -8454,8 +8454,13 @@ def control_turno_v13():
     if not permisos.empty:
         docs_fuera = set(permisos["documento"].astype(str).str.strip())
 
-    # V16.40.16-CAMBIO-ESTADO-ROBUSTO - Presencia física según última salida voluntaria
+    # V16.109 - Presencia física según última salida voluntaria
     # versus último ingreso/reingreso.
+    # IMPORTANTE: movimientos_habitante.fecha_movimiento puede ser DATE (sin hora),
+    # mientras salidas_voluntarias_albergue.fecha_hora es TIMESTAMP.
+    # Para evitar falsos "fuera" cuando ambos eventos ocurren el mismo día,
+    # solo se considera fuera si la salida voluntaria ocurrió en una FECHA posterior
+    # al último ingreso/reingreso (o si nunca existe ingreso/reingreso).
     try:
         estado_salida_vol = pd.read_sql(
             text("""
@@ -8485,7 +8490,7 @@ def control_turno_v13():
                   ON i.documento=s.documento
                 WHERE
                     i.fecha_ingreso IS NULL
-                    OR s.fecha_salida_vol > i.fecha_ingreso
+                    OR CAST(s.fecha_salida_vol AS DATE) > CAST(i.fecha_ingreso AS DATE)
             """),
             engine
         )
@@ -23764,6 +23769,89 @@ def modulo_auditoria_sesiones_v1634():
                 ]],
                 use_container_width=True,
                 hide_index=True
+            )
+
+        # V16.108 - Mostrar también al personal activo que no registró sesión
+        # dentro del período seleccionado. Se conserva intacta la tabla principal
+        # de sesiones y se agrega esta sección de cobertura debajo.
+        try:
+            funcionarios_activos = pd.read_sql(
+                text("""
+                    SELECT
+                        TRIM(CAST(cedula AS TEXT)) AS cedula,
+                        nombre,
+                        rol,
+                        ultimo_acceso
+                    FROM public.funcionarios_sistema
+                    WHERE activo = TRUE
+                    ORDER BY nombre
+                """),
+                engine
+            )
+
+            if not funcionarios_activos.empty:
+                docs_con_sesion = set(
+                    sesiones["cedula_usuario"]
+                    .fillna("")
+                    .astype(str)
+                    .str.strip()
+                    .tolist()
+                ) if not sesiones.empty else set()
+
+                sin_sesion = funcionarios_activos[
+                    ~funcionarios_activos["cedula"].astype(str).isin(docs_con_sesion)
+                ].copy()
+
+                st.markdown("### 👥 Personal activo sin sesión en el período")
+
+                if sin_sesion.empty:
+                    st.success(
+                        "✅ Todo el personal activo registra al menos una sesión "
+                        "en el período seleccionado."
+                    )
+                else:
+                    sin_sesion["ultimo_acceso"] = pd.to_datetime(
+                        sin_sesion["ultimo_acceso"],
+                        errors="coerce",
+                        utc=True
+                    ).dt.tz_convert("America/Bogota")
+
+                    sin_sesion["Último acceso registrado"] = (
+                        sin_sesion["ultimo_acceso"].apply(
+                            lambda x: x.strftime("%d/%m/%Y %I:%M:%S %p")
+                            if pd.notna(x) else "—"
+                        )
+                    )
+                    sin_sesion["Estado"] = "🔴 Sin sesión en el período"
+
+                    st.caption(
+                        f"{len(sin_sesion)} funcionario(s) activo(s) no registran "
+                        f"inicio de sesión entre {desde.strftime('%d/%m/%Y')} "
+                        f"y {hasta.strftime('%d/%m/%Y')}."
+                    )
+
+                    st.dataframe(
+                        sin_sesion[[
+                            "nombre",
+                            "cedula",
+                            "rol",
+                            "Último acceso registrado",
+                            "Estado"
+                        ]].rename(columns={
+                            "nombre": "nombre_usuario",
+                            "cedula": "cedula_usuario",
+                            "rol": "rol_usuario"
+                        }),
+                        use_container_width=True,
+                        hide_index=True
+                    )
+            else:
+                st.info("No hay funcionarios activos registrados en el sistema.")
+
+        except Exception as e:
+            st.warning(
+                "No fue posible consultar el personal activo sin sesión: "
+                f"{e}"
             )
 
     with tab_acc:
