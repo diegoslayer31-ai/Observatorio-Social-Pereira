@@ -23218,6 +23218,25 @@ def modulo_politica_publica_v1678():
     ])
 
     with tabs[0]:
+        # V16.121: mensaje persistente después del rerun para que el usuario
+        # tenga confirmación inequívoca de que el registro sí quedó guardado.
+        flash_guardado = st.session_state.pop("pp78_flash_guardado", None)
+        if flash_guardado:
+            st.success(
+                f"✅ **REGISTRO GUARDADO CORRECTAMENTE** — Acción {flash_guardado['codigo']} "
+                f"con **{flash_guardado['participantes']} participante(s)**. "
+                f"ID de registro: **{flash_guardado['id']}**."
+            )
+            st.info("ℹ️ El registro ya quedó almacenado. **No es necesario volver a presionar Guardar.**")
+
+        flash_duplicado = st.session_state.pop("pp78_flash_duplicado", None)
+        if flash_duplicado:
+            st.warning(
+                f"⚠️ **NO SE CREÓ OTRO REGISTRO.** Esta misma acción ya había sido guardada "
+                f"hace pocos minutos (ID **{flash_duplicado['id']}**)."
+            )
+            st.info("La plataforma bloqueó el segundo clic para evitar duplicados.")
+
         if rol in roles_supervision:
             st.info(
                 "Coordinación/Manager puede consultar y probar el módulo. "
@@ -23242,18 +23261,29 @@ def modulo_politica_publica_v1678():
         # V16.119: excepción operativa solicitada para Samara en la acción 2.1.9.
         # Para ella esta acción puede registrarse tanto de forma individual como grupal,
         # sin ampliar esa posibilidad al resto de responsables de la 2.1.9.
+        # V16.120: Samara puede registrar la 2.1.9 en modalidad individual o grupal.
+        # Coordinación/Manager también ve ambas opciones cuando prueba esa acción,
+        # sin ampliar el permiso grupal a los demás roles operativos responsables de 2.1.9.
         samara_219_individual_grupal = (
             codigo == "2.1.9"
             and _responsable_pp_v1678(nombre_func, "SAMARA HINESTROZA AGUILAR")
         )
+        supervision_prueba_219 = (
+            codigo == "2.1.9"
+            and rol in roles_supervision
+        )
+        habilitar_grupal_219 = samara_219_individual_grupal or supervision_prueba_219
+
         tipo_permitido = (
             "INDIVIDUAL/ACTIVIDAD"
-            if samara_219_individual_grupal
+            if habilitar_grupal_219
             else cfg["tipo"]
         )
 
         if samara_219_individual_grupal:
             st.caption("Tipo permitido para Samara en la acción 2.1.9: **INDIVIDUAL / ACTIVIDAD GRUPAL**")
+        elif supervision_prueba_219:
+            st.caption("Modo de prueba de Coordinación/Manager para la acción 2.1.9 de Samara: **INDIVIDUAL / ACTIVIDAD GRUPAL**")
         else:
             st.caption(
                 f"Tipo permitido según matriz: **{cfg['tipo']}**"
@@ -23357,7 +23387,67 @@ def modulo_politica_publica_v1678():
             else:
                 participantes = base.loc[seleccionados].copy()
 
+                # V16.121: protección contra doble clic / doble guardado.
+                # Consideramos duplicado el mismo formulario, del mismo funcionario,
+                # con los mismos participantes, guardado dentro de los últimos 10 minutos.
+                docs_seleccionados = sorted(
+                    participantes["documento"].astype(str).str.strip().tolist()
+                )
+                duplicado_id = None
+
                 with engine.begin() as conn:
+                    candidatos = conn.execute(
+                        text("""
+                            SELECT
+                                r.id,
+                                ARRAY_REMOVE(
+                                    ARRAY_AGG(
+                                        TRIM(CAST(p.documento_usuario AS TEXT))
+                                        ORDER BY TRIM(CAST(p.documento_usuario AS TEXT))
+                                    ),
+                                    NULL
+                                ) AS documentos
+                            FROM politica_publica_registros r
+                            LEFT JOIN politica_publica_participantes p
+                              ON p.registro_id = r.id
+                            WHERE TRIM(CAST(r.registrado_por_cc AS TEXT)) = :cc
+                              AND r.codigo_accion = :codigo
+                              AND r.tipo_registro = :tipo
+                              AND r.fecha_accion = :fecha
+                              AND COALESCE(TRIM(r.nombre_actividad), '') = :nombre_actividad
+                              AND COALESCE(TRIM(r.lugar), '') = :lugar
+                              AND COALESCE(TRIM(r.descripcion), '') = :descripcion
+                              AND COALESCE(TRIM(r.observacion), '') = :observacion
+                              AND r.creado_en >= NOW() - INTERVAL '10 minutes'
+                            GROUP BY r.id, r.creado_en
+                            ORDER BY r.creado_en DESC, r.id DESC
+                        """),
+                        {
+                            "cc": doc_func,
+                            "codigo": codigo,
+                            "tipo": modalidad_registro,
+                            "fecha": fecha_reg,
+                            "nombre_actividad": nombre_actividad.strip(),
+                            "lugar": lugar.strip(),
+                            "descripcion": descripcion.strip(),
+                            "observacion": observacion.strip(),
+                        }
+                    ).mappings().all()
+
+                    for cand in candidatos:
+                        docs_guardados = sorted(
+                            str(x).strip()
+                            for x in (cand.get("documentos") or [])
+                            if str(x).strip()
+                        )
+                        if docs_guardados == docs_seleccionados:
+                            duplicado_id = int(cand["id"])
+                            break
+
+                    if duplicado_id is not None:
+                        st.session_state["pp78_flash_duplicado"] = {"id": duplicado_id}
+                        st.rerun()
+
                     reg_id = conn.execute(
                         text("""
                             INSERT INTO politica_publica_registros (
@@ -23437,10 +23527,13 @@ def modulo_politica_publica_v1678():
                     )[:500]
                 )
 
-                st.success(
-                    f"✅ Acción {codigo} registrada por **{nombre_func}** "
-                    f"con **{len(seleccionados)}** participante(s)."
-                )
+                # V16.121: el mensaje se guarda en session_state porque st.rerun()
+                # borra los mensajes renderizados en la ejecución actual.
+                st.session_state["pp78_flash_guardado"] = {
+                    "id": int(reg_id),
+                    "codigo": codigo,
+                    "participantes": int(len(seleccionados)),
+                }
                 st.rerun()
 
     with tabs[1]:
