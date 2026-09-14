@@ -23510,6 +23510,59 @@ def modulo_politica_publica_v1678():
         "reportadas a la Alcaldía. Cada registro conserva automáticamente quién lo realizó."
     )
 
+    # V16.125: si el usuario llega desde el Informe Mensual, mostrar la evidencia exacta.
+    _rid_resaltar = st.session_state.pop("pp78_resaltar_registro", None)
+    if _rid_resaltar:
+        try:
+            _ev = pd.read_sql(
+                text("""
+                    SELECT
+                        r.id,
+                        r.fecha_accion,
+                        r.codigo_accion,
+                        r.accion,
+                        r.tipo_registro,
+                        r.nombre_actividad,
+                        r.lugar,
+                        r.descripcion,
+                        r.observacion,
+                        r.registrado_por_nombre,
+                        r.registrado_por_cc,
+                        TO_CHAR(
+                            (r.creado_en AT TIME ZONE 'America/Bogota'),
+                            'DD/MM/YYYY HH12:MI:SS AM'
+                        ) AS fecha_hora_registro,
+                        COUNT(p.id)::int AS participantes
+                    FROM politica_publica_registros r
+                    LEFT JOIN politica_publica_participantes p
+                      ON p.registro_id=r.id
+                    WHERE r.id=:rid
+                    GROUP BY r.id
+                """),
+                engine,
+                params={"rid": int(_rid_resaltar)}
+            )
+            if not _ev.empty:
+                st.success(f"🔎 Evidencia #{int(_rid_resaltar)} abierta desde el Informe Mensual")
+                st.dataframe(_ev, use_container_width=True, hide_index=True)
+                with st.expander("👥 Participantes de esta evidencia", expanded=False):
+                    _part = pd.read_sql(
+                        text("""
+                            SELECT
+                                p.documento_usuario AS documento,
+                                p.nombre_usuario AS nombre,
+                                p.modalidad_usuario AS modalidad
+                            FROM politica_publica_participantes p
+                            WHERE p.registro_id=:rid
+                            ORDER BY p.nombre_usuario
+                        """),
+                        engine,
+                        params={"rid": int(_rid_resaltar)}
+                    )
+                    st.dataframe(_part, use_container_width=True, hide_index=True)
+        except Exception as _e:
+            st.warning("No fue posible abrir el detalle de la evidencia: " + str(_e))
+
     acciones_asignadas = []
     if rol in roles_supervision:
         acciones_asignadas = list(POLITICA_PUBLICA_CATALOGO_V1678.keys())
@@ -24509,6 +24562,189 @@ def _contrato_individual_v16124(documento, nombre=""):
     return None
 
 
+
+# ============================================================
+# V16.125 - EVIDENCIA AUTOMÁTICA PARA INFORME MENSUAL
+# ============================================================
+def _pp_codigos_desde_obligacion_v16125(texto_obligacion):
+    import re
+    codigos = re.findall(r"\b2\.1\.\d+\b", str(texto_obligacion or ""))
+    # conservar orden sin duplicados
+    vistos = set()
+    salida = []
+    for c in codigos:
+        if c not in vistos:
+            vistos.add(c)
+            salida.append(c)
+    return salida
+
+
+def _evidencia_pp_profesional_v16125(documento, fecha_inicio, fecha_fin, codigos=None):
+    """Devuelve los registros de Política Pública hechos por el profesional en el período."""
+    doc = _solo_digitos_v16124(documento)
+    if not doc:
+        return pd.DataFrame()
+    filtros_codigo = ""
+    params = {"doc": doc, "fi": fecha_inicio, "ff": fecha_fin}
+    if codigos:
+        filtros_codigo = " AND r.codigo_accion = ANY(:codigos) "
+        params["codigos"] = list(codigos)
+    try:
+        return pd.read_sql(
+            text(f"""
+                SELECT
+                    r.id AS "ID evidencia",
+                    r.fecha_accion AS "Fecha actividad",
+                    TO_CHAR(
+                        (r.creado_en AT TIME ZONE 'America/Bogota'),
+                        'DD/MM/YYYY HH12:MI:SS AM'
+                    ) AS "Fecha y hora de registro",
+                    r.codigo_accion AS "Código",
+                    r.tipo_registro AS "Tipo",
+                    COALESCE(NULLIF(TRIM(r.nombre_actividad),''), r.accion) AS "Actividad / acción",
+                    COALESCE(r.lugar,'') AS "Lugar",
+                    COUNT(p.id)::int AS "Participantes",
+                    COALESCE(r.descripcion,'') AS "Descripción",
+                    COALESCE(r.observacion,'') AS "Observación"
+                FROM politica_publica_registros r
+                LEFT JOIN politica_publica_participantes p
+                  ON p.registro_id = r.id
+                WHERE REGEXP_REPLACE(COALESCE(CAST(r.registrado_por_cc AS TEXT),''),'[^0-9]','','g') = :doc
+                  AND r.fecha_accion BETWEEN :fi AND :ff
+                  {filtros_codigo}
+                GROUP BY r.id
+                ORDER BY r.fecha_accion DESC, r.creado_en DESC, r.id DESC
+            """),
+            engine,
+            params=params
+        )
+    except Exception:
+        return pd.DataFrame()
+
+
+def _evidencia_caracterizaciones_profesional_v16125(documento, fecha_inicio, fecha_fin):
+    """Historial inmutable de caracterizaciones guardadas por el profesional."""
+    doc = _solo_digitos_v16124(documento)
+    if not doc:
+        return pd.DataFrame()
+    try:
+        return pd.read_sql(
+            text("""
+                SELECT
+                    a.numero_identificacion AS "Documento usuario",
+                    TRIM(COALESCE(h.nombres,'') || ' ' || COALESCE(h.apellidos,'')) AS "Usuario",
+                    a.accion AS "Acción",
+                    TO_CHAR(
+                        (a.fecha_hora AT TIME ZONE 'America/Bogota'),
+                        'DD/MM/YYYY HH12:MI:SS AM'
+                    ) AS "Fecha y hora",
+                    COALESCE(a.funcionario_nombre,'') AS "Profesional"
+                FROM caracterizacion_habitabilidad_auditoria a
+                LEFT JOIN habitante_de_calle h
+                  ON TRIM(CAST(h.numero_identificacion AS TEXT))
+                   = TRIM(CAST(a.numero_identificacion AS TEXT))
+                WHERE REGEXP_REPLACE(COALESCE(CAST(a.funcionario_cedula AS TEXT),''),'[^0-9]','','g') = :doc
+                  AND ((a.fecha_hora AT TIME ZONE 'America/Bogota')::date BETWEEN :fi AND :ff)
+                ORDER BY a.fecha_hora DESC
+            """),
+            engine,
+            params={"doc": doc, "fi": fecha_inicio, "ff": fecha_fin}
+        )
+    except Exception:
+        return pd.DataFrame()
+
+
+def _resumen_evidencia_v16125(tipo, df, codigos=None):
+    if df is None or df.empty:
+        return ""
+    if tipo == "politica":
+        regs = int(len(df))
+        participantes = 0
+        try:
+            participantes = int(pd.to_numeric(df["Participantes"], errors="coerce").fillna(0).sum())
+        except Exception:
+            pass
+        cod_txt = ", ".join(codigos or [])
+        detalle = f"Registros automáticos encontrados: {regs}"
+        if cod_txt:
+            detalle += f" para {cod_txt}"
+        detalle += f"; participantes registrados: {participantes}."
+        return detalle
+    if tipo == "caracterizaciones":
+        total = int(len(df))
+        unicos = 0
+        creadas = 0
+        actualizadas = 0
+        try:
+            unicos = int(df["Documento usuario"].astype(str).nunique())
+            acciones = df["Acción"].fillna("").astype(str).str.upper()
+            creadas = int((acciones == "CREACION").sum())
+            actualizadas = int((acciones == "ACTUALIZACION").sum())
+        except Exception:
+            pass
+        return (
+            f"Caracterizaciones registradas en el período: {total}; "
+            f"personas únicas: {unicos}; creaciones: {creadas}; actualizaciones: {actualizadas}."
+        )
+    if tipo == "pai":
+        return f"Registros automáticos PAI/seguimiento asociados al profesional: {int(len(df))}."
+    return ""
+
+
+def _evidencia_automatica_obligacion_v16125(
+    obligacion, documento, fecha_inicio, fecha_fin, df_pai=None, df_seg=None
+):
+    """
+    Retorna dict con tipo, dataframe y resumen. Solo atribuye evidencia que puede
+    asociarse al profesional por su cédula o por los filtros ya aplicados.
+    """
+    texto_ob = str(obligacion or "")
+    texto_norm = texto_ob.upper()
+    codigos = _pp_codigos_desde_obligacion_v16125(texto_ob)
+
+    if codigos:
+        df = _evidencia_pp_profesional_v16125(
+            documento, fecha_inicio, fecha_fin, codigos=codigos
+        )
+        return {
+            "tipo": "politica",
+            "df": df,
+            "resumen": _resumen_evidencia_v16125("politica", df, codigos),
+            "codigos": codigos,
+        }
+
+    if "CARACTERIZ" in texto_norm:
+        df = _evidencia_caracterizaciones_profesional_v16125(
+            documento, fecha_inicio, fecha_fin
+        )
+        return {
+            "tipo": "caracterizaciones",
+            "df": df,
+            "resumen": _resumen_evidencia_v16125("caracterizaciones", df),
+            "codigos": [],
+        }
+
+    if "PAI" in texto_norm or "ESTUDIO DE CASO" in texto_norm:
+        partes = []
+        if isinstance(df_pai, pd.DataFrame) and not df_pai.empty:
+            p = df_pai.copy()
+            p.insert(0, "Fuente automática", "PAI")
+            partes.append(p)
+        if isinstance(df_seg, pd.DataFrame) and not df_seg.empty:
+            s = df_seg.copy()
+            s.insert(0, "Fuente automática", "Seguimiento")
+            partes.append(s)
+        df = pd.concat(partes, ignore_index=True, sort=False) if partes else pd.DataFrame()
+        return {
+            "tipo": "pai",
+            "df": df,
+            "resumen": _resumen_evidencia_v16125("pai", df),
+            "codigos": [],
+        }
+
+    return {"tipo": "", "df": pd.DataFrame(), "resumen": "", "codigos": []}
+
+
 def modulo_informe_mensual_profesional_piloto_v1627():
     st.title("📄 Informe Mensual Profesional")
     st.caption("Piloto para consolidar PAI, seguimientos y gestión mensual del profesional.")
@@ -24743,9 +24979,96 @@ def modulo_informe_mensual_profesional_piloto_v1627():
     filas = []
     for i, ob in enumerate(obligaciones, 1):
         with st.expander(f"{i}. {ob}", expanded=(i==1)):
-            act = st.text_area("Actividades ejecutadas", key=f"imp_act_{_solo_digitos_v16124(documento)}_{i}")
-            sop = st.text_area("Evidencias / soportes", key=f"imp_sop_{_solo_digitos_v16124(documento)}_{i}")
-            log = st.text_area("Logros / resultados", key=f"imp_log_{_solo_digitos_v16124(documento)}_{i}")
+            ev_auto = _evidencia_automatica_obligacion_v16125(
+                ob,
+                documento,
+                fecha_inicio,
+                fecha_fin,
+                df_pai=df_pai,
+                df_seg=df_seg,
+            )
+
+            if ev_auto.get("tipo"):
+                st.markdown("#### 🔗 Evidencia automática del Observatorio")
+                if ev_auto.get("resumen"):
+                    st.success(ev_auto["resumen"])
+
+                df_ev = ev_auto.get("df")
+                if isinstance(df_ev, pd.DataFrame) and not df_ev.empty:
+                    st.dataframe(df_ev, use_container_width=True, hide_index=True)
+
+                    if ev_auto["tipo"] == "politica":
+                        st.caption(
+                            "Cada fila corresponde a un registro real de Acciones de Política Pública. "
+                            "La columna **ID evidencia** permite rastrear exactamente el soporte y "
+                            "**Fecha y hora de registro** corresponde a hora Colombia."
+                        )
+                        ids_ev = []
+                        try:
+                            ids_ev = [
+                                int(x) for x in df_ev["ID evidencia"].dropna().tolist()
+                            ]
+                        except Exception:
+                            ids_ev = []
+                        if ids_ev:
+                            id_abrir = st.selectbox(
+                                "Evidencia para abrir en el módulo",
+                                ids_ev,
+                                key=f"imp_ev_pp_sel_{_solo_digitos_v16124(documento)}_{i}"
+                            )
+                            if st.button(
+                                f"📋 Abrir evidencia #{id_abrir} en Acciones de Política Pública",
+                                key=f"imp_ev_pp_btn_{_solo_digitos_v16124(documento)}_{i}"
+                            ):
+                                st.session_state["pp78_resaltar_registro"] = int(id_abrir)
+                                st.session_state.page = "politica_publica_v1678"
+                                st.rerun()
+                else:
+                    st.info(
+                        "No se encontraron registros automáticos asociados a esta obligación "
+                        "para el profesional y período seleccionados."
+                    )
+
+            act = st.text_area(
+                "Actividades ejecutadas",
+                key=f"imp_act_{_solo_digitos_v16124(documento)}_{i}"
+            )
+            sop_manual = st.text_area(
+                "Evidencias / soportes adicionales",
+                key=f"imp_sop_{_solo_digitos_v16124(documento)}_{i}"
+            )
+            log = st.text_area(
+                "Logros / resultados",
+                key=f"imp_log_{_solo_digitos_v16124(documento)}_{i}"
+            )
+
+            partes_sop = []
+            if ev_auto.get("resumen"):
+                partes_sop.append("EVIDENCIA AUTOMÁTICA: " + ev_auto["resumen"])
+                df_ev = ev_auto.get("df")
+                if isinstance(df_ev, pd.DataFrame) and not df_ev.empty:
+                    # Para el PDF dejar una traza compacta y auditable.
+                    if ev_auto["tipo"] == "politica":
+                        for _, _r in df_ev.head(25).iterrows():
+                            partes_sop.append(
+                                f"ID {_r.get('ID evidencia','')} | "
+                                f"{_r.get('Código','')} | "
+                                f"{_r.get('Fecha actividad','')} | "
+                                f"registro {_r.get('Fecha y hora de registro','')} | "
+                                f"{_r.get('Tipo','')} | "
+                                f"{_r.get('Participantes',0)} participante(s)"
+                            )
+                    elif ev_auto["tipo"] == "caracterizaciones":
+                        for _, _r in df_ev.head(25).iterrows():
+                            partes_sop.append(
+                                f"{_r.get('Acción','')} | "
+                                f"{_r.get('Documento usuario','')} | "
+                                f"{_r.get('Usuario','')} | "
+                                f"{_r.get('Fecha y hora','')}"
+                            )
+            if sop_manual.strip():
+                partes_sop.append("SOPORTE ADICIONAL: " + sop_manual.strip())
+            sop = "\n".join(partes_sop)
             filas.append([ob, act, sop, log])
 
     st.markdown("### 🧠 Síntesis profesional")
