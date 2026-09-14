@@ -353,6 +353,199 @@ def registrar_auditoria(
         pass
 
 
+# ============================================================
+# V16.128 - SALIDA POR FALLECIMIENTO
+# ============================================================
+def registrar_salida_fallecimiento_v16128(
+    documento,
+    persona=None,
+    fecha_fallecimiento=None,
+    observacion="",
+    modulo="Gestión Usuarios",
+):
+    """
+    Registra una salida por fallecimiento sin borrar el expediente.
+
+    Decisión operativa:
+    - estado_caso pasa a EGRESADO para conservar compatibilidad con reportes
+      y filtros existentes.
+    - modalidad queda NULL para liberar cupo.
+    - la causa se conserva de forma inequívoca en movimientos y auditoría
+      como SALIDA POR FALLECIMIENTO.
+    - intenta guardar también un registro de egreso en
+      personas_caracterizacion cuando la estructura disponible lo permite.
+
+    La función es idempotente: si ya existe un movimiento marcado como
+    fallecimiento para la misma persona, no crea un segundo registro.
+    """
+    documento = limpiar_documento(documento)
+    fecha_fallecimiento = fecha_fallecimiento or ahora_colombia().date()
+    usuario = st.session_state.get("usuario_actual", "sistema")
+    persona = persona or {}
+
+    obs_libre = str(observacion or "").strip()
+    obs_mov = (
+        f"[FALLECIMIENTO] Fecha de fallecimiento: {fecha_fallecimiento}. "
+        f"{obs_libre}"
+    ).strip()
+
+    try:
+        with engine.begin() as conn:
+            # Evitar duplicidad por clic repetido o rerun.
+            try:
+                existe = conn.execute(
+                    text("""
+                        SELECT 1
+                        FROM movimientos_habitante
+                        WHERE REGEXP_REPLACE(
+                                UPPER(TRIM(CAST(numero_identificacion AS TEXT))),
+                                '[^A-Z0-9]', '', 'g'
+                              ) = REGEXP_REPLACE(
+                                UPPER(TRIM(CAST(:doc AS TEXT))),
+                                '[^A-Z0-9]', '', 'g'
+                              )
+                          AND UPPER(COALESCE(observacion,'')) LIKE '%[FALLECIMIENTO]%'
+                        LIMIT 1
+                    """),
+                    {"doc": documento},
+                ).first()
+            except Exception:
+                existe = None
+
+            if existe:
+                return {"ok": True, "duplicado": True, "mensaje": "La salida por fallecimiento ya estaba registrada."}
+
+            # Leer columnas reales de la base principal.
+            cols_h = set(
+                r[0] for r in conn.execute(
+                    text("""
+                        SELECT column_name
+                        FROM information_schema.columns
+                        WHERE table_schema='public'
+                          AND table_name='habitante_de_calle'
+                    """)
+                ).fetchall()
+            )
+
+            sets = ["estado_caso = 'EGRESADO'", "modalidad = NULL"]
+            params = {"doc": documento, "fecha": fecha_fallecimiento}
+            if "fecha_ultimo_egreso" in cols_h:
+                sets.append("fecha_ultimo_egreso = :fecha")
+
+            conn.execute(
+                text(
+                    "UPDATE habitante_de_calle SET "
+                    + ", ".join(sets)
+                    + " WHERE REGEXP_REPLACE(UPPER(TRIM(CAST(numero_identificacion AS TEXT))), '[^A-Z0-9]', '', 'g') = REGEXP_REPLACE(UPPER(TRIM(CAST(:doc AS TEXT))), '[^A-Z0-9]', '', 'g')"
+                ),
+                params,
+            )
+
+            # Trazabilidad en movimientos. Usamos EGRESO como tipo compatible
+            # y dejamos la causa específica en la observación.
+            try:
+                with conn.begin_nested():
+                    conn.execute(
+                        text("""
+                            INSERT INTO movimientos_habitante (
+                                numero_identificacion,
+                                tipo_movimiento,
+                                modalidad,
+                                usuario_registra,
+                                observacion
+                            ) VALUES (
+                                :doc, 'EGRESO', NULL, :usuario, :obs
+                            )
+                        """),
+                        {"doc": documento, "usuario": usuario, "obs": obs_mov},
+                    )
+            except Exception:
+                pass
+
+            # Intento no bloqueante de llevarlo también a la base de egresos.
+            try:
+                cols_e = set(
+                    r[0] for r in conn.execute(
+                        text("""
+                            SELECT column_name
+                            FROM information_schema.columns
+                            WHERE table_schema='public'
+                              AND table_name='personas_caracterizacion'
+                        """)
+                    ).fetchall()
+                )
+                if cols_e:
+                    def pv(*keys, default=None):
+                        for k in keys:
+                            try:
+                                v = persona.get(k)
+                            except Exception:
+                                v = None
+                            if v is not None and str(v).strip().lower() not in ('', 'nan', 'none'):
+                                return v
+                        return default
+
+                    candidatos = {
+                        "nombres": pv("nombres", default=""),
+                        "apellidos": pv("apellidos", default=""),
+                        "numero_identidad": documento,
+                        "numero_identificacion": documento,
+                        "sexo_nacer": pv("sexo_al_nacer", "sexo_nacer", default=""),
+                        "sexo_al_nacer": pv("sexo_al_nacer", "sexo_nacer", default=""),
+                        "edad": pv("edad"),
+                        "fecha_nacimiento": pv("fecha_nacimiento", "fecha_de_nacimiento_dd_mm_aa"),
+                        "estado_caso": "EGRESADO",
+                        "fecha_egreso": fecha_fallecimiento,
+                        "observaciones_egreso": obs_mov,
+                        "funcionario_egreso": str(usuario),
+                    }
+                    datos = {k:v for k,v in candidatos.items() if k in cols_e and v is not None}
+                    # No duplicar en personas_caracterizacion si ya existe la misma causa.
+                    doc_col = "numero_identidad" if "numero_identidad" in cols_e else ("numero_identificacion" if "numero_identificacion" in cols_e else None)
+                    ya_egreso = None
+                    if doc_col and "observaciones_egreso" in cols_e:
+                        ya_egreso = conn.execute(
+                            text(f"""
+                                SELECT 1 FROM personas_caracterizacion
+                                WHERE TRIM(CAST("{doc_col}" AS TEXT)) = :doc
+                                  AND UPPER(COALESCE(observaciones_egreso,'')) LIKE '%[FALLECIMIENTO]%'
+                                LIMIT 1
+                            """),
+                            {"doc": documento},
+                        ).first()
+                    if datos and not ya_egreso:
+                        cols = list(datos)
+                        params_i = {f"v{i}": datos[c] for i,c in enumerate(cols)}
+                        conn.execute(
+                            text(
+                                "INSERT INTO personas_caracterizacion ("
+                                + ", ".join(f'\"{c}\"' for c in cols)
+                                + ") VALUES ("
+                                + ", ".join(f":v{i}" for i in range(len(cols)))
+                                + ")"
+                            ),
+                            params_i,
+                        )
+            except Exception:
+                # La tabla histórica de egresos puede tener restricciones propias.
+                # Esto no debe impedir registrar el fallecimiento en la base principal.
+                pass
+
+        registrar_auditoria(
+            "SALIDA_FALLECIMIENTO",
+            documento=documento,
+            modulo=modulo,
+            valor_anterior=str(getattr(persona, 'get', lambda *_: '')('estado_caso', '') or ''),
+            valor_nuevo="EGRESADO - FALLECIMIENTO",
+            observacion=obs_mov[:500],
+        )
+        try:
+            invalidar_cache_datos()
+        except Exception:
+            pass
+        return {"ok": True, "duplicado": False, "mensaje": "Salida por fallecimiento registrada correctamente."}
+    except Exception as e:
+        return {"ok": False, "duplicado": False, "mensaje": f"No fue posible registrar la salida por fallecimiento: {e}"}
 
 
 def normalizar_texto_ingreso_v16193(valor):
@@ -1618,6 +1811,58 @@ def gestion_usuarios():
                 invalidar_cache_datos()
                 st.success("✅ Usuario actualizado.")
                 st.rerun()
+
+        # ----------------------------------------------------
+        # SALIDA POR FALLECIMIENTO - V16.128
+        # ----------------------------------------------------
+        st.divider()
+        st.markdown("### 🕊️ Salida por fallecimiento")
+        st.caption(
+            "Registra el fallecimiento como una salida definitiva, libera el cupo y conserva "
+            "todo el expediente e historial. El estado queda EGRESADO para mantener compatibilidad "
+            "con los reportes, pero la causa queda identificada expresamente como FALLECIMIENTO."
+        )
+
+        with st.expander("🕊️ Registrar salida por fallecimiento", expanded=False):
+            fecha_fallecimiento_g = st.date_input(
+                "Fecha de fallecimiento",
+                value=ahora_colombia().date(),
+                max_value=ahora_colombia().date(),
+                key=f"gestion_fecha_fallecimiento_{documento}",
+            )
+            obs_fallecimiento_g = st.text_area(
+                "Observación / soporte de la novedad",
+                placeholder="Ej.: Información recibida de familiar, institución de salud o autoridad competente.",
+                key=f"gestion_obs_fallecimiento_{documento}",
+            )
+            conf_fallecimiento_g = st.checkbox(
+                "Confirmo que la información corresponde a este usuario y que se registrará una salida definitiva por fallecimiento.",
+                key=f"gestion_conf_fallecimiento_{documento}",
+            )
+            if st.button(
+                "🕊️ Confirmar salida por fallecimiento",
+                type="primary",
+                use_container_width=True,
+                key=f"gestion_guardar_fallecimiento_{documento}",
+            ):
+                if not conf_fallecimiento_g:
+                    st.error("Debe confirmar expresamente la salida por fallecimiento antes de guardar.")
+                else:
+                    res_f = registrar_salida_fallecimiento_v16128(
+                        documento,
+                        persona=persona,
+                        fecha_fallecimiento=fecha_fallecimiento_g,
+                        observacion=obs_fallecimiento_g,
+                        modulo="Gestión Usuarios",
+                    )
+                    if res_f.get("ok"):
+                        if res_f.get("duplicado"):
+                            st.warning("⚠️ " + res_f.get("mensaje", "La salida ya estaba registrada."))
+                        else:
+                            st.success("✅ " + res_f.get("mensaje", "Salida por fallecimiento registrada."))
+                        st.rerun()
+                    else:
+                        st.error(res_f.get("mensaje", "No fue posible registrar la salida."))
 
         # ----------------------------------------------------
         # EGRESO ESTRUCTURADO
@@ -6377,6 +6622,7 @@ def gestion_usuarios_movil():
         acciones = [
             "➕ Ingreso / Reingreso",
             "🚶 Salida voluntaria",
+            "🕊️ Salida por fallecimiento",
             "🚪 Salida de permiso",
             "↩️ Regreso de permiso",
             "⛔ Sanción / Expulsión",
@@ -6386,6 +6632,7 @@ def gestion_usuarios_movil():
     elif rol_visible == "PROFESIONAL":
         acciones = [
             "🏆 Registrar egreso",
+            "🕊️ Salida por fallecimiento",
             "🎯 PAI / Seguimiento",
             "🧾 Consultar información",
             "📚 Ver historia"
@@ -6395,6 +6642,7 @@ def gestion_usuarios_movil():
         acciones = [
             "➕ Ingreso / Reingreso",
             "🚶 Salida voluntaria",
+            "🕊️ Salida por fallecimiento",
             "🚪 Salida de permiso",
             "↩️ Regreso de permiso",
             "🏆 Registrar egreso",
@@ -6718,6 +6966,73 @@ def gestion_usuarios_movil():
             documento,
             "salida_voluntaria"
         )
+
+    # --------------------------------------------------------
+    # Salida por fallecimiento - V16.128
+    # --------------------------------------------------------
+    elif accion == "🕊️ Salida por fallecimiento":
+
+        st.markdown("#### 🕊️ Salida por fallecimiento")
+        st.warning(
+            "Esta acción registra una salida definitiva por fallecimiento. "
+            "El expediente no se elimina: queda EGRESADO, sin modalidad y con trazabilidad en auditoría e historial."
+        )
+
+        fecha_fallecimiento_m = st.date_input(
+            "Fecha de fallecimiento",
+            value=ahora_colombia().date(),
+            max_value=ahora_colombia().date(),
+            key=f"movil_fecha_fallecimiento_{documento}",
+        )
+        obs_fallecimiento_m = st.text_area(
+            "Observación / fuente de la novedad",
+            placeholder="Ej.: Reportado por familiar, institución de salud o autoridad competente.",
+            key=f"movil_obs_fallecimiento_{documento}",
+        )
+        confirmar_fallecimiento_m = st.checkbox(
+            "Confirmo que corresponde a este usuario y que debo registrar la salida por fallecimiento.",
+            key=f"movil_conf_fallecimiento_{documento}",
+        )
+
+        if st.button(
+            "🕊️ Registrar salida por fallecimiento",
+            type="primary",
+            use_container_width=True,
+            key=f"movil_guardar_fallecimiento_{documento}",
+        ):
+            if not confirmar_fallecimiento_m:
+                st.error("Debe confirmar expresamente el fallecimiento antes de guardar.")
+            else:
+                res_f = registrar_salida_fallecimiento_v16128(
+                    documento,
+                    persona=u,
+                    fecha_fallecimiento=fecha_fallecimiento_m,
+                    observacion=obs_fallecimiento_m,
+                    modulo="Gestión Móvil",
+                )
+                if res_f.get("ok"):
+                    if res_f.get("duplicado"):
+                        st.warning("⚠️ " + res_f.get("mensaje", "La salida ya estaba registrada."))
+                    else:
+                        st.success("✅ " + res_f.get("mensaje", "Salida por fallecimiento registrada."))
+                        ahora_f = ahora_colombia()
+                        reporte_f = _texto_whatsapp_movimiento(
+                            "SALIDA POR FALLECIMIENTO",
+                            u.get("nombres"),
+                            u.get("apellidos"),
+                            documento,
+                            modalidad=str(u.get("modalidad") or ""),
+                            fecha=fecha_fallecimiento_m,
+                            hora=ahora_f.time(),
+                            detalle=obs_fallecimiento_m.strip() or "Fallecimiento reportado",
+                            responsable=st.session_state.get("usuario_actual", "sistema"),
+                        )
+                        st.session_state[f"reporte_whatsapp_{documento}"] = reporte_f
+                    st.rerun()
+                else:
+                    st.error(res_f.get("mensaje", "No fue posible registrar la salida por fallecimiento."))
+
+        _mostrar_reporte_movimiento_v1636(documento, "salida_fallecimiento")
 
     # --------------------------------------------------------
     # Salida de permiso
