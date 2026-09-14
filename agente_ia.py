@@ -10282,84 +10282,264 @@ def comite_casos_v16():
 
     st.dataframe(comites, use_container_width=True, hide_index=True)
 
+    # ============================================================
+    # V16.112 - RESOLUCIÓN INTERNA DE LA DECISIÓN DEL COMITÉ
+    # Reemplaza el antiguo bloque de compromisos. La resolución se
+    # genera directamente desde la decisión ya registrada en el comité,
+    # sin modificar el contenido histórico del caso.
+    # ============================================================
     ids = comites["id"].astype(int).tolist()
     comite_sel = st.selectbox(
-        "Comité para agregar compromiso",
+        "Comité para generar resolución",
         ids,
-        key="v16107_comite_sel_compromiso",
+        key="v16112_comite_sel_resolucion",
+        format_func=lambda cid: (
+            f"Comité #{cid} · "
+            + str(
+                comites.loc[
+                    comites["id"].astype(int) == int(cid),
+                    "fecha_comite",
+                ].iloc[0]
+            )
+            + " · "
+            + str(
+                comites.loc[
+                    comites["id"].astype(int) == int(cid),
+                    "nombres",
+                ].iloc[0]
+                or ""
+            )
+            + " "
+            + str(
+                comites.loc[
+                    comites["id"].astype(int) == int(cid),
+                    "apellidos",
+                ].iloc[0]
+                or ""
+            )
+        ),
     )
 
+    fila_res = comites.loc[
+        comites["id"].astype(int) == int(comite_sel)
+    ].iloc[0]
+
+    st.markdown("### 📄 Resolución de la decisión del Comité")
+    st.caption(
+        "Genera una resolución interna a partir de la situación y la decisión "
+        "ya registradas en el Comité. El documento no altera el histórico del caso."
+    )
+
+    anio_res = pd.to_datetime(
+        fila_res.get("fecha_comite"), errors="coerce"
+    )
+    anio_res = int(anio_res.year) if pd.notna(anio_res) else ahora_colombia().year
+    numero_res_default = f"CE-{anio_res}-{int(comite_sel):04d}"
+
+    r1, r2 = st.columns(2)
+    with r1:
+        numero_res = st.text_input(
+            "Número de resolución",
+            value=numero_res_default,
+            key=f"v16112_num_res_{comite_sel}",
+        )
+    with r2:
+        fecha_resolucion = st.date_input(
+            "Fecha de resolución",
+            value=ahora_colombia().date(),
+            key=f"v16112_fecha_res_{comite_sel}",
+        )
+
+    consideraciones_adicionales = st.text_area(
+        "Consideraciones adicionales (opcional)",
+        placeholder=(
+            "Puede registrar aquí antecedentes o precisiones que deban quedar "
+            "en la resolución. La decisión del Comité no se modifica."
+        ),
+        key=f"v16112_consideraciones_{comite_sel}",
+    )
+
+    nombre_benef = " ".join(
+        x for x in [
+            str(fila_res.get("nombres") or "").strip(),
+            str(fila_res.get("apellidos") or "").strip(),
+        ]
+        if x
+    ).strip() or "PERSONA BENEFICIARIA"
+    doc_benef = str(fila_res.get("documento_usuario") or "").strip()
+    situacion_res = str(fila_res.get("situacion_analizada") or "").strip()
+    decision_res = str(fila_res.get("decisiones") or "").strip()
+    participantes_res = str(fila_res.get("participantes") or "").strip()
+    registrado_por_res = str(fila_res.get("registrado_por") or "").strip()
+
+    with st.expander("👁️ Vista previa de la resolución", expanded=True):
+        st.markdown(
+            f"**RESOLUCIÓN INTERNA No. {numero_res or numero_res_default}**  \n"
+            f"**Fecha:** {fecha_resolucion.strftime('%d/%m/%Y')}  \n"
+            f"**Comité relacionado:** #{int(comite_sel)}  \n"
+            f"**Persona:** {nombre_benef} · CC {doc_benef}"
+        )
+        st.markdown("**CONSIDERANDO**")
+        st.write(situacion_res or "Sin situación analizada registrada.")
+        if consideraciones_adicionales.strip():
+            st.write(consideraciones_adicionales.strip())
+        st.markdown("**RESUELVE**")
+        st.markdown("**ARTÍCULO PRIMERO. Decisión del Comité.**")
+        st.write(decision_res or "Sin decisión registrada.")
+        st.markdown("**ARTÍCULO SEGUNDO. Comunicación y cumplimiento.**")
+        st.write(
+            "Comunicar la presente decisión a la persona interesada y al equipo "
+            "responsable de su ejecución, dejando constancia en el sistema de información."
+        )
+        st.markdown("**ARTÍCULO TERCERO. Vigencia.**")
+        st.write(
+            "La presente resolución interna rige a partir de la fecha de su expedición, "
+            "sin perjuicio de las actuaciones posteriores que correspondan."
+        )
+
+    def _pdf_resolucion_comite_v16112():
+        from xml.sax.saxutils import escape as _xml_escape
+        from reportlab.lib.enums import TA_CENTER
+        from reportlab.lib.styles import ParagraphStyle
+        from reportlab.lib.units import cm
+
+        buffer = BytesIO()
+        doc_pdf = SimpleDocTemplate(
+            buffer,
+            pagesize=letter,
+            rightMargin=2.2 * cm,
+            leftMargin=2.2 * cm,
+            topMargin=2.0 * cm,
+            bottomMargin=2.0 * cm,
+        )
+        styles = getSampleStyleSheet()
+        titulo = ParagraphStyle(
+            "ResolucionTituloV16112",
+            parent=styles["Title"],
+            alignment=TA_CENTER,
+            fontSize=14,
+            leading=18,
+            spaceAfter=10,
+        )
+        subtitulo = ParagraphStyle(
+            "ResolucionSubtituloV16112",
+            parent=styles["Heading2"],
+            alignment=TA_CENTER,
+            fontSize=11,
+            leading=14,
+            spaceAfter=8,
+        )
+        cuerpo = ParagraphStyle(
+            "ResolucionCuerpoV16112",
+            parent=styles["BodyText"],
+            fontSize=10,
+            leading=15,
+            spaceAfter=8,
+        )
+        articulo = ParagraphStyle(
+            "ResolucionArticuloV16112",
+            parent=cuerpo,
+            spaceBefore=6,
+            spaceAfter=8,
+        )
+
+        def P(txt, style=cuerpo):
+            txt = _xml_escape(str(txt or "")).replace("\n", "<br/>")
+            return Paragraph(txt, style)
+
+        elems = []
+        elems.append(P("ASOCIACIÓN CIUDAD FUTURO", titulo))
+        elems.append(P("COMITÉ DE CASOS", subtitulo))
+        elems.append(P(
+            f"RESOLUCIÓN INTERNA No. {_xml_escape(numero_res or numero_res_default)}",
+            titulo,
+        ))
+        elems.append(P(
+            f"Por medio de la cual se formaliza la decisión adoptada en el Comité "
+            f"No. {int(comite_sel)} respecto de {nombre_benef}, identificado(a) con "
+            f"documento No. {doc_benef}.",
+            cuerpo,
+        ))
+        elems.append(Spacer(1, 8))
+        elems.append(P("CONSIDERANDO", subtitulo))
+        elems.append(P(
+            f"1. Que el día {pd.to_datetime(fila_res.get('fecha_comite'), errors='coerce').strftime('%d/%m/%Y') if pd.notna(pd.to_datetime(fila_res.get('fecha_comite'), errors='coerce')) else '—'} "
+            f"se reunió el Comité de Casos para analizar la situación de {nombre_benef}.",
+            cuerpo,
+        ))
+        elems.append(P(
+            f"2. Que la situación analizada quedó registrada así: {situacion_res or 'Sin descripción registrada.'}",
+            cuerpo,
+        ))
+        if participantes_res:
+            elems.append(P(
+                f"3. Que participaron en el Comité: {participantes_res}.",
+                cuerpo,
+            ))
+        if consideraciones_adicionales.strip():
+            elems.append(P(
+                f"4. Consideraciones adicionales: {consideraciones_adicionales.strip()}",
+                cuerpo,
+            ))
+
+        elems.append(Spacer(1, 8))
+        elems.append(P("RESUELVE", subtitulo))
+        elems.append(P(
+            f"<b>ARTÍCULO PRIMERO. Decisión del Comité.</b> {decision_res or 'Sin decisión registrada.'}",
+            articulo,
+        ))
+        elems.append(P(
+            "<b>ARTÍCULO SEGUNDO. Comunicación y cumplimiento.</b> Comunicar la presente "
+            "decisión a la persona interesada y al equipo responsable de su ejecución, "
+            "dejando constancia de las actuaciones que se deriven de ella en el sistema "
+            "de información institucional.",
+            articulo,
+        ))
+        elems.append(P(
+            "<b>ARTÍCULO TERCERO. Vigencia.</b> La presente resolución interna rige a partir "
+            "de la fecha de su expedición, sin perjuicio de las actuaciones posteriores "
+            "que correspondan conforme a la decisión del Comité.",
+            articulo,
+        ))
+        elems.append(Spacer(1, 18))
+        elems.append(P(
+            f"Expedida el {fecha_resolucion.strftime('%d/%m/%Y')}.",
+            cuerpo,
+        ))
+        elems.append(Spacer(1, 24))
+        elems.append(P("________________________________________", cuerpo))
+        elems.append(P("Coordinación / Comité de Casos", cuerpo))
+        if registrado_por_res:
+            elems.append(P(
+                f"Registro en sistema: {registrado_por_res}",
+                cuerpo,
+            ))
+        elems.append(P(
+            f"Documento generado con base en el registro del Comité #{int(comite_sel)}. "
+            "La generación de este PDF no modifica la decisión almacenada en la base de datos.",
+            cuerpo,
+        ))
+
+        doc_pdf.build(elems)
+        buffer.seek(0)
+        return buffer.getvalue()
+
     try:
-        funcionarios = pd.read_sql(
-            text("""
-                SELECT cedula, nombre
-                FROM funcionarios_sistema
-                WHERE activo=TRUE
-                ORDER BY nombre
-            """),
-            engine,
+        pdf_resolucion = _pdf_resolucion_comite_v16112()
+        nombre_archivo_res = (
+            f"resolucion_comite_{int(comite_sel)}_"
+            f"{str(doc_benef).replace(' ', '_')}.pdf"
         )
-    except Exception:
-        funcionarios = pd.DataFrame()
-
-    if funcionarios.empty:
-        st.info("No hay funcionarios activos disponibles para asignar compromisos.")
-        return
-
-    with st.form("v16107_compromiso"):
-        responsable = st.selectbox(
-            "Responsable",
-            funcionarios["cedula"].astype(str).tolist(),
-            format_func=lambda c: (
-                funcionarios.loc[
-                    funcionarios["cedula"].astype(str) == str(c),
-                    "nombre",
-                ].iloc[0]
-                + f" · CC {c}"
-            ),
-        )
-        compromiso = st.text_area("Compromiso *")
-        fecha_limite = st.date_input(
-            "Fecha límite",
-            value=ahora_colombia().date() + timedelta(days=15),
-            key="v16107_fecha_compromiso",
-        )
-        guardar = st.form_submit_button(
-            "➕ Agregar compromiso",
+        st.download_button(
+            "⬇️ Descargar resolución en PDF",
+            data=pdf_resolucion,
+            file_name=nombre_archivo_res,
+            mime="application/pdf",
             use_container_width=True,
+            key=f"v16112_descargar_res_{comite_sel}",
         )
-
-    if guardar:
-        if not compromiso.strip():
-            st.error("Debe registrar el compromiso.")
-        else:
-            with engine.begin() as conn:
-                conn.execute(
-                    text("""
-                        INSERT INTO compromisos_comite(
-                            comite_id,
-                            compromiso,
-                            responsable_cedula,
-                            fecha_limite,
-                            estado
-                        )
-                        VALUES(
-                            :comite,
-                            :compromiso,
-                            :responsable,
-                            :fecha,
-                            'PENDIENTE'
-                        )
-                    """),
-                    {
-                        "comite": int(comite_sel),
-                        "compromiso": compromiso.strip(),
-                        "responsable": str(responsable),
-                        "fecha": fecha_limite,
-                    },
-                )
-            st.success("✅ Compromiso agregado.")
-            st.rerun()
+    except Exception as e:
+        st.error(f"No fue posible generar la resolución en PDF: {e}")
 
 def tablero_contribucion_ods_v16():
     """Tablero institucional de contribución del programa a los ODS."""
