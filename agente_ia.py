@@ -10000,127 +10000,160 @@ def comite_casos_v16():
                 )
 
                 try:
+                    comite_duplicado = False
                     with engine.begin() as conn:
-                        res = conn.execute(
+                        params_comite = {
+                            "doc": doc_caso,
+                            "fecha": fecha_comite,
+                            "situacion": situacion.strip(),
+                            "decision": decision_integral,
+                            "participantes": participantes.strip(),
+                            "usuario": usuario_actual,
+                        }
+
+                        # V16.114 - Evitar doble registro del mismo Comité.
+                        # Se considera duplicado cuando coinciden persona, fecha,
+                        # situación y decisión formal. En ese caso se reutiliza el
+                        # registro existente y NO se repiten efectos operativos.
+                        existente = conn.execute(
                             text("""
-                                INSERT INTO comites_casos(
-                                    documento_usuario,
-                                    fecha_comite,
-                                    situacion_analizada,
-                                    decisiones,
-                                    participantes,
-                                    registrado_por
-                                )
-                                VALUES(
-                                    :doc,
-                                    :fecha,
-                                    :situacion,
-                                    :decision,
-                                    :participantes,
-                                    :usuario
-                                )
-                                RETURNING id
+                                SELECT id
+                                FROM comites_casos
+                                WHERE TRIM(CAST(documento_usuario AS TEXT)) = TRIM(CAST(:doc AS TEXT))
+                                  AND fecha_comite = :fecha
+                                  AND TRIM(COALESCE(situacion_analizada,'')) = TRIM(COALESCE(:situacion,''))
+                                  AND TRIM(COALESCE(decisiones,'')) = TRIM(COALESCE(:decision,''))
+                                ORDER BY id DESC
+                                LIMIT 1
                             """),
-                            {
-                                "doc": doc_caso,
-                                "fecha": fecha_comite,
-                                "situacion": situacion.strip(),
-                                "decision": decision_integral,
-                                "participantes": participantes.strip(),
-                                "usuario": usuario_actual,
-                            },
-                        )
-                        comite_id = int(res.scalar())
+                            params_comite,
+                        ).scalar()
 
-                        if resultado == "LEVANTAR MEDIDA Y HABILITAR REINGRESO":
-                            conn.execute(
-                                text("""
-                                    UPDATE sanciones_usuarios
-                                    SET estado_medida = 'LEVANTADA_COMITE',
-                                        cerrado_en = NOW(),
-                                        observacion = CONCAT_WS(
-                                            ' | ',
-                                            NULLIF(TRIM(COALESCE(observacion,'')), ''),
-                                            :obs_comite
-                                        )
-                                    WHERE id = :id_medida
-                                      AND UPPER(TRIM(COALESCE(estado_medida,''))) = 'ACTIVA'
-                                """),
-                                {
-                                    "id_medida": int(id_medida_sel),
-                                    "obs_comite": (
-                                        f"COMITÉ #{comite_id}: medida levantada; "
-                                        "persona habilitada para solicitar reingreso."
-                                    ),
-                                },
-                            )
-
-                        elif resultado == "FIJAR NUEVA FECHA DE POSIBLE REINGRESO":
-                            conn.execute(
-                                text("""
-                                    UPDATE sanciones_usuarios
-                                    SET fecha_fin = :fecha_fin,
-                                        remitido_comite = FALSE,
-                                        observacion = CONCAT_WS(
-                                            ' | ',
-                                            NULLIF(TRIM(COALESCE(observacion,'')), ''),
-                                            :obs_comite
-                                        )
-                                    WHERE id = :id_medida
-                                      AND UPPER(TRIM(COALESCE(estado_medida,''))) = 'ACTIVA'
-                                """),
-                                {
-                                    "id_medida": int(id_medida_sel),
-                                    "fecha_fin": nueva_fecha,
-                                    "obs_comite": (
-                                        f"COMITÉ #{comite_id}: fija posible reingreso "
-                                        f"desde {nueva_fecha.strftime('%d/%m/%Y')}. "
-                                        "El antecedente de remisión queda documentado en el Comité."
-                                    ),
-                                },
-                            )
-
+                        if existente is not None:
+                            comite_id = int(existente)
+                            comite_duplicado = True
                         else:
-                            # Se mantiene ACTIVA + remitido_comite=TRUE para conservar
-                            # el bloqueo institucional hasta una nueva decisión formal.
-                            conn.execute(
+                            res = conn.execute(
                                 text("""
-                                    UPDATE sanciones_usuarios
-                                    SET observacion = CONCAT_WS(
-                                            ' | ',
-                                            NULLIF(TRIM(COALESCE(observacion,'')), ''),
-                                            :obs_comite
-                                        )
-                                    WHERE id = :id_medida
-                                      AND UPPER(TRIM(COALESCE(estado_medida,''))) = 'ACTIVA'
+                                    INSERT INTO comites_casos(
+                                        documento_usuario,
+                                        fecha_comite,
+                                        situacion_analizada,
+                                        decisiones,
+                                        participantes,
+                                        registrado_por
+                                    )
+                                    VALUES(
+                                        :doc,
+                                        :fecha,
+                                        :situacion,
+                                        :decision,
+                                        :participantes,
+                                        :usuario
+                                    )
+                                    RETURNING id
                                 """),
-                                {
-                                    "id_medida": int(id_medida_sel),
-                                    "obs_comite": (
-                                        f"COMITÉ #{comite_id}: se mantiene la medida; "
-                                        "reingreso no autorizado por ahora."
-                                    ),
-                                },
+                                params_comite,
                             )
+                            comite_id = int(res.scalar())
 
-                    registrar_auditoria(
-                        "DECISION_COMITE_CASOS",
-                        documento=doc_caso,
-                        modulo="Comité de Casos",
-                        valor_anterior=(
-                            f"Medida #{id_medida_sel} ACTIVA · "
-                            f"{caso['tipo_medida']} · {caso['motivo']}"
-                        ),
-                        valor_nuevo=resultado,
-                        observacion=(
-                            f"Comité #{comite_id}. {decision.strip()}"
-                        )[:500],
-                    )
+                        if not comite_duplicado:
+
+                            if resultado == "LEVANTAR MEDIDA Y HABILITAR REINGRESO":
+                                conn.execute(
+                                    text("""
+                                        UPDATE sanciones_usuarios
+                                        SET estado_medida = 'LEVANTADA_COMITE',
+                                            cerrado_en = NOW(),
+                                            observacion = CONCAT_WS(
+                                                ' | ',
+                                                NULLIF(TRIM(COALESCE(observacion,'')), ''),
+                                                :obs_comite
+                                            )
+                                        WHERE id = :id_medida
+                                          AND UPPER(TRIM(COALESCE(estado_medida,''))) = 'ACTIVA'
+                                    """),
+                                    {
+                                        "id_medida": int(id_medida_sel),
+                                        "obs_comite": (
+                                            f"COMITÉ #{comite_id}: medida levantada; "
+                                            "persona habilitada para solicitar reingreso."
+                                        ),
+                                    },
+                                )
+
+                            elif resultado == "FIJAR NUEVA FECHA DE POSIBLE REINGRESO":
+                                conn.execute(
+                                    text("""
+                                        UPDATE sanciones_usuarios
+                                        SET fecha_fin = :fecha_fin,
+                                            remitido_comite = FALSE,
+                                            observacion = CONCAT_WS(
+                                                ' | ',
+                                                NULLIF(TRIM(COALESCE(observacion,'')), ''),
+                                                :obs_comite
+                                            )
+                                        WHERE id = :id_medida
+                                          AND UPPER(TRIM(COALESCE(estado_medida,''))) = 'ACTIVA'
+                                    """),
+                                    {
+                                        "id_medida": int(id_medida_sel),
+                                        "fecha_fin": nueva_fecha,
+                                        "obs_comite": (
+                                            f"COMITÉ #{comite_id}: fija posible reingreso "
+                                            f"desde {nueva_fecha.strftime('%d/%m/%Y')}. "
+                                            "El antecedente de remisión queda documentado en el Comité."
+                                        ),
+                                    },
+                                )
+
+                            else:
+                                # Se mantiene ACTIVA + remitido_comite=TRUE para conservar
+                                # el bloqueo institucional hasta una nueva decisión formal.
+                                conn.execute(
+                                    text("""
+                                        UPDATE sanciones_usuarios
+                                        SET observacion = CONCAT_WS(
+                                                ' | ',
+                                                NULLIF(TRIM(COALESCE(observacion,'')), ''),
+                                                :obs_comite
+                                            )
+                                        WHERE id = :id_medida
+                                          AND UPPER(TRIM(COALESCE(estado_medida,''))) = 'ACTIVA'
+                                    """),
+                                    {
+                                        "id_medida": int(id_medida_sel),
+                                        "obs_comite": (
+                                            f"COMITÉ #{comite_id}: se mantiene la medida; "
+                                            "reingreso no autorizado por ahora."
+                                        ),
+                                    },
+                                )
+
+                    if not comite_duplicado:
+                        registrar_auditoria(
+                            "DECISION_COMITE_CASOS",
+                            documento=doc_caso,
+                            modulo="Comité de Casos",
+                            valor_anterior=(
+                                f"Medida #{id_medida_sel} ACTIVA · "
+                                f"{caso['tipo_medida']} · {caso['motivo']}"
+                            ),
+                            valor_nuevo=resultado,
+                            observacion=(
+                                f"Comité #{comite_id}. {decision.strip()}"
+                            )[:500],
+                        )
 
                     invalidar_cache_datos()
                     st.session_state["v16_comite_id"] = comite_id
 
-                    if resultado == "LEVANTAR MEDIDA Y HABILITAR REINGRESO":
+                    if comite_duplicado:
+                        st.warning(
+                            f"⚠️ Este Comité ya estaba registrado como #{comite_id}. "
+                            "No se creó un duplicado ni se repitieron efectos sobre la medida."
+                        )
+                    elif resultado == "LEVANTAR MEDIDA Y HABILITAR REINGRESO":
                         st.success(
                             "✅ Decisión registrada. La medida fue levantada y la persona "
                             "quedó habilitada para solicitar reingreso. NO fue reactivada "
@@ -10214,37 +10247,65 @@ def comite_casos_v16():
                 if not situacion_extra.strip() or not decision_extra.strip():
                     st.error("Situación y decisiones son obligatorias.")
                 else:
+                    comite_extra_duplicado = False
                     with engine.begin() as conn:
-                        res = conn.execute(
+                        params_extra = {
+                            "doc": doc_extra,
+                            "fecha": fecha_extra,
+                            "situacion": situacion_extra.strip(),
+                            "decision": decision_extra.strip(),
+                            "participantes": participantes_extra.strip(),
+                            "usuario": st.session_state.get(
+                                "usuario_actual", "coordinacion"
+                            ),
+                        }
+
+                        existente_extra = conn.execute(
                             text("""
-                                INSERT INTO comites_casos(
-                                    documento_usuario,
-                                    fecha_comite,
-                                    situacion_analizada,
-                                    decisiones,
-                                    participantes,
-                                    registrado_por
-                                )
-                                VALUES(
-                                    :doc, :fecha, :situacion, :decision,
-                                    :participantes, :usuario
-                                )
-                                RETURNING id
+                                SELECT id
+                                FROM comites_casos
+                                WHERE TRIM(CAST(documento_usuario AS TEXT)) = TRIM(CAST(:doc AS TEXT))
+                                  AND fecha_comite = :fecha
+                                  AND TRIM(COALESCE(situacion_analizada,'')) = TRIM(COALESCE(:situacion,''))
+                                  AND TRIM(COALESCE(decisiones,'')) = TRIM(COALESCE(:decision,''))
+                                ORDER BY id DESC
+                                LIMIT 1
                             """),
-                            {
-                                "doc": doc_extra,
-                                "fecha": fecha_extra,
-                                "situacion": situacion_extra.strip(),
-                                "decision": decision_extra.strip(),
-                                "participantes": participantes_extra.strip(),
-                                "usuario": st.session_state.get(
-                                    "usuario_actual", "coordinacion"
-                                ),
-                            },
-                        )
-                        comite_extra_id = int(res.scalar())
+                            params_extra,
+                        ).scalar()
+
+                        if existente_extra is not None:
+                            comite_extra_id = int(existente_extra)
+                            comite_extra_duplicado = True
+                        else:
+                            res = conn.execute(
+                                text("""
+                                    INSERT INTO comites_casos(
+                                        documento_usuario,
+                                        fecha_comite,
+                                        situacion_analizada,
+                                        decisiones,
+                                        participantes,
+                                        registrado_por
+                                    )
+                                    VALUES(
+                                        :doc, :fecha, :situacion, :decision,
+                                        :participantes, :usuario
+                                    )
+                                    RETURNING id
+                                """),
+                                params_extra,
+                            )
+                            comite_extra_id = int(res.scalar())
+
                     st.session_state["v16_comite_id"] = comite_extra_id
-                    st.success("✅ Comité extraordinario registrado.")
+                    if comite_extra_duplicado:
+                        st.warning(
+                            f"⚠️ Este Comité extraordinario ya estaba registrado como "
+                            f"#{comite_extra_id}. No se creó un duplicado."
+                        )
+                    else:
+                        st.success("✅ Comité extraordinario registrado.")
                     st.rerun()
 
     # ============================================================
