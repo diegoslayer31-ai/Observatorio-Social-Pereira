@@ -23239,11 +23239,27 @@ def modulo_politica_publica_v1678():
         codigo = opciones[etiqueta_accion]
         cfg = POLITICA_PUBLICA_CATALOGO_V1678[codigo]
 
-        st.caption(
-            f"Tipo permitido según matriz: **{cfg['tipo']}**"
+        # V16.119: excepción operativa solicitada para Samara en la acción 2.1.9.
+        # Para ella esta acción puede registrarse tanto de forma individual como grupal,
+        # sin ampliar esa posibilidad al resto de responsables de la 2.1.9.
+        samara_219_individual_grupal = (
+            codigo == "2.1.9"
+            and _responsable_pp_v1678(nombre_func, "SAMARA HINESTROZA AGUILAR")
+        )
+        tipo_permitido = (
+            "INDIVIDUAL/ACTIVIDAD"
+            if samara_219_individual_grupal
+            else cfg["tipo"]
         )
 
-        if cfg["tipo"] == "INDIVIDUAL/ACTIVIDAD":
+        if samara_219_individual_grupal:
+            st.caption("Tipo permitido para Samara en la acción 2.1.9: **INDIVIDUAL / ACTIVIDAD GRUPAL**")
+        else:
+            st.caption(
+                f"Tipo permitido según matriz: **{cfg['tipo']}**"
+            )
+
+        if tipo_permitido == "INDIVIDUAL/ACTIVIDAD":
             modalidad_registro = st.radio(
                 "Forma de registro",
                 ["INDIVIDUAL", "ACTIVIDAD GRUPAL"],
