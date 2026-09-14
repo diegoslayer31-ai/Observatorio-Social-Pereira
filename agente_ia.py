@@ -9627,9 +9627,27 @@ def _semaforo_integral_usuario_v16(documento):
         objs["porcentaje_avance"] = pd.to_numeric(
             objs["porcentaje_avance"], errors="coerce"
         ).fillna(0)
-        objs["fecha_meta"] = pd.to_datetime(objs["fecha_meta"], errors="coerce")
-        objs["fecha_ultimo_seguimiento"] = pd.to_datetime(
-            objs["fecha_ultimo_seguimiento"], errors="coerce"
+        # V16.117 - Normalizar fechas PAI para evitar mezclar timestamps
+        # con zona horaria y sin zona horaria. Esto podía romper el panel
+        # profesional (incluido Enfermería) al hacer rerun después de subir
+        # una foto o modificar información.
+        def _normalizar_fecha_pai_v16117(valor):
+            ts = pd.to_datetime(valor, errors="coerce")
+            if pd.isna(ts):
+                return pd.NaT
+            try:
+                if isinstance(ts, pd.Timestamp) and ts.tzinfo is not None:
+                    ts = ts.tz_convert("America/Bogota").tz_localize(None)
+            except Exception:
+                try:
+                    ts = pd.Timestamp(ts).tz_localize(None)
+                except Exception:
+                    return pd.NaT
+            return ts
+
+        objs["fecha_meta"] = objs["fecha_meta"].apply(_normalizar_fecha_pai_v16117)
+        objs["fecha_ultimo_seguimiento"] = objs["fecha_ultimo_seguimiento"].apply(
+            _normalizar_fecha_pai_v16117
         )
 
         cumplido = (
