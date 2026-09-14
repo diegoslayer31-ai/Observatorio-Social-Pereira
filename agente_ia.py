@@ -23278,6 +23278,33 @@ def _excel_alcaldia_politica_publica_v16122(mes, anio):
         """), engine, params=params
     )
 
+    participantes_grupales = pd.read_sql(
+        text("""
+            SELECT
+                r.id AS registro_id,
+                r.fecha_accion,
+                r.codigo_accion,
+                r.accion,
+                r.nombre_actividad,
+                r.lugar,
+                r.registrado_por_nombre AS responsable,
+                p.documento_usuario AS documento,
+                COALESCE(NULLIF(TRIM(p.nombre_usuario), ''),
+                         TRIM(COALESCE(h.nombres,'') || ' ' || COALESCE(h.apellidos,''))) AS participante,
+                COALESCE(NULLIF(TRIM(p.modalidad_usuario), ''), h.modalidad, '') AS modalidad,
+                COALESCE(h.sexo_al_nacer, '') AS sexo_al_nacer
+            FROM politica_publica_registros r
+            JOIN politica_publica_participantes p ON p.registro_id = r.id
+            LEFT JOIN habitante_de_calle h
+              ON TRIM(CAST(h.numero_identificacion AS TEXT))
+               = TRIM(CAST(p.documento_usuario AS TEXT))
+            WHERE UPPER(TRIM(COALESCE(r.tipo_registro,''))) = 'ACTIVIDAD GRUPAL'
+              AND EXTRACT(MONTH FROM r.fecha_accion)=:mes
+              AND EXTRACT(YEAR FROM r.fecha_accion)=:anio
+            ORDER BY r.fecha_accion, r.id, participante
+        """), engine, params=params
+    )
+
     def _limpio(v):
         if v is None:
             return ""
@@ -23308,6 +23335,7 @@ def _excel_alcaldia_politica_publica_v16122(mes, anio):
     ws1 = wb.active
     ws1.title = "REGISTROS USUARIOS"
     ws2 = wb.create_sheet("REGISTR ACTIVI ART Y MASIVAS")
+    ws3 = wb.create_sheet("PARTICIPANTES GRUPALES")
 
     azul = PatternFill("solid", fgColor="D9E2F3")
     gris = PatternFill("solid", fgColor="E7E6E6")
@@ -23419,9 +23447,33 @@ def _excel_alcaldia_politica_publica_v16122(mes, anio):
             c=ws2.cell(rr,j,_limpio(v)); c.border=borde; c.alignment=wrap; c.font=Font(size=9)
         ws2.cell(rr,3).number_format="DD/MM/YYYY"
 
+    # ---------------- PESTAÑA 3: SOPORTE NOMINAL GRUPALES ----------------
+    headers_part = [
+        "ID ACTIVIDAD", "FECHA", "CÓDIGO ACCIÓN", "ACCIÓN", "NOMBRE ACTIVIDAD",
+        "LUGAR", "RESPONSABLE", "DOCUMENTO PARTICIPANTE", "NOMBRE PARTICIPANTE",
+        "SEXO AL NACER", "MODALIDAD"
+    ]
+    ws3.merge_cells(start_row=1, start_column=1, end_row=1, end_column=len(headers_part))
+    t3 = ws3.cell(1, 1, "SOPORTE NOMINAL DE PARTICIPANTES - ACTIVIDADES GRUPALES")
+    t3.font = Font(bold=True, size=12); t3.alignment = centro
+    for j, h in enumerate(headers_part, start=1):
+        c = ws3.cell(3, j, h); c.fill = azul; c.font = Font(bold=True, size=9); c.border = borde; c.alignment = centro
+    ws3.row_dimensions[3].height = 42
+    for i, (_, row) in enumerate(participantes_grupales.iterrows(), start=1):
+        vals = [
+            _r(row,"registro_id"), _r(row,"fecha_accion"), _r(row,"codigo_accion"),
+            _r(row,"accion"), _r(row,"nombre_actividad"), _r(row,"lugar"),
+            _r(row,"responsable"), _r(row,"documento"), _r(row,"participante"),
+            _r(row,"sexo_al_nacer"), _r(row,"modalidad")
+        ]
+        rr = 3 + i
+        for j, v in enumerate(vals, start=1):
+            c = ws3.cell(rr, j, _limpio(v)); c.border = borde; c.alignment = wrap; c.font = Font(size=9)
+        ws3.cell(rr, 2).number_format = "DD/MM/YYYY"
+
     # Presentación semejante al archivo institucional suministrado.
-    for ws, start_col, end_col in [(ws1,3,2+len(headers_ind)), (ws2,2,1+len(headers_grp))]:
-        ws.freeze_panes = ws.cell(9 if ws is ws1 else 5, start_col)
+    for ws, start_col, end_col in [(ws1,3,2+len(headers_ind)), (ws2,2,1+len(headers_grp)), (ws3,1,len(headers_part))]:
+        ws.freeze_panes = ws.cell(9 if ws is ws1 else (5 if ws is ws2 else 4), start_col)
         widths={}
         for col in range(start_col,end_col+1):
             max_len=0
@@ -23926,12 +23978,17 @@ def modulo_politica_publica_v1678():
         if rep.empty:
             st.info("No hay registros para el periodo seleccionado.")
         else:
-            st.dataframe(rep, use_container_width=True, hide_index=True)
+            rep_vista = rep.rename(columns={
+                "codigo_accion": "Código", "accion": "Acción", "responsable": "Responsable",
+                "registros": "Registros", "beneficiarios_registrados": "Beneficiarios registrados"
+            })
+            st.dataframe(rep_vista, use_container_width=True, hide_index=True)
 
-            st.markdown("#### Detalle de actividades grupales")
+            st.markdown("#### 👥 Detalle de actividades grupales")
             grupales = pd.read_sql(
                 text("""
                     SELECT
+                        r.id AS registro_id,
                         r.fecha_accion,
                         r.codigo_accion,
                         r.nombre_actividad,
@@ -23939,24 +23996,53 @@ def modulo_politica_publica_v1678():
                         r.registrado_por_nombre AS responsable,
                         COUNT(p.id)::int AS participantes
                     FROM politica_publica_registros r
-                    LEFT JOIN politica_publica_participantes p
-                      ON p.registro_id=r.id
-                    WHERE r.tipo_registro='ACTIVIDAD GRUPAL'
+                    LEFT JOIN politica_publica_participantes p ON p.registro_id=r.id
+                    WHERE UPPER(TRIM(COALESCE(r.tipo_registro,'')))='ACTIVIDAD GRUPAL'
                       AND EXTRACT(MONTH FROM r.fecha_accion)=:mes
                       AND EXTRACT(YEAR FROM r.fecha_accion)=:anio
                     GROUP BY r.id
                     ORDER BY r.fecha_accion DESC, r.id DESC
-                """),
-                engine,
-                params={"mes": int(mes), "anio": int(anio)}
+                """), engine, params={"mes": int(mes), "anio": int(anio)}
             )
-            st.dataframe(grupales, use_container_width=True, hide_index=True)
+            if grupales.empty:
+                st.info("No hay actividades grupales en el periodo seleccionado.")
+            else:
+                vista_grp = grupales[["fecha_accion","codigo_accion","nombre_actividad","lugar","responsable","participantes"]].rename(columns={
+                    "fecha_accion":"Fecha", "codigo_accion":"Código", "nombre_actividad":"Actividad",
+                    "lugar":"Lugar", "responsable":"Responsable", "participantes":"N.º participantes"
+                })
+                st.dataframe(vista_grp, use_container_width=True, hide_index=True)
+
+                st.caption("Abre cada actividad para consultar el soporte nominal de sus participantes.")
+                for _, g in grupales.iterrows():
+                    rid = int(g["registro_id"])
+                    etiqueta = (f"👥 Ver participantes ({int(g['participantes'])}) · "
+                                f"{g['codigo_accion']} · {g['nombre_actividad']} · {g['fecha_accion']}")
+                    with st.expander(etiqueta, expanded=False):
+                        part = pd.read_sql(
+                            text("""
+                                SELECT
+                                    COALESCE(NULLIF(TRIM(p.nombre_usuario), ''),
+                                             TRIM(COALESCE(h.nombres,'') || ' ' || COALESCE(h.apellidos,''))) AS nombre,
+                                    p.documento_usuario AS documento,
+                                    COALESCE(h.sexo_al_nacer, '') AS sexo,
+                                    COALESCE(NULLIF(TRIM(p.modalidad_usuario), ''), h.modalidad, '') AS modalidad
+                                FROM politica_publica_participantes p
+                                LEFT JOIN habitante_de_calle h
+                                  ON TRIM(CAST(h.numero_identificacion AS TEXT))
+                                   = TRIM(CAST(p.documento_usuario AS TEXT))
+                                WHERE p.registro_id=:rid
+                                ORDER BY nombre
+                            """), engine, params={"rid": rid}
+                        )
+                        part = part.rename(columns={"nombre":"Nombre completo", "documento":"Documento", "sexo":"Sexo", "modalidad":"Modalidad"})
+                        st.dataframe(part, use_container_width=True, hide_index=True)
 
             st.markdown("#### 📥 Exportación oficial para Alcaldía")
             st.caption(
-                "Genera un Excel con las dos pestañas del formato suministrado: "
+                "Genera un Excel con las dos pestañas oficiales del formato suministrado y una tercera pestaña auxiliar con el soporte nominal: "
                 "**REGISTROS USUARIOS** para registros individuales y "
-                "**REGISTR ACTIVI ART Y MASIVAS** para actividades grupales."
+                "**REGISTR ACTIVI ART Y MASIVAS** para actividades grupales y **PARTICIPANTES GRUPALES** con el detalle nominal."
             )
             try:
                 excel_alcaldia, n_ind, n_grp = _excel_alcaldia_politica_publica_v16122(mes, anio)
