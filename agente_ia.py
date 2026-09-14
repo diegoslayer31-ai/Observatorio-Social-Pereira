@@ -23684,13 +23684,24 @@ def modulo_politica_publica_v1678():
         # V16.126: excepciones operativas de la acción 2.1.9.
         # Samara y Yuci Marcela pueden registrarla tanto de forma individual como grupal,
         # de acuerdo con el alcance contractual reportado para cada una.
+        _doc_func_norm_219 = "".join(ch for ch in str(doc_func or "") if ch.isdigit())
         samara_219_individual_grupal = (
             codigo == "2.1.9"
-            and _responsable_pp_v1678(nombre_func, "SAMARA HINESTROZA AGUILAR")
+            and (
+                _doc_func_norm_219 == "1129044593"
+                or _responsable_pp_v1678(nombre_func, "SAMARA HINESTROZA AGUILAR")
+            )
         )
+        # V16.127: identificar a Yuci/Yucy por cédula, no por ortografía del nombre.
+        # En funcionarios_sistema aparece como YUCY MARCELA..., mientras el contrato
+        # fue parametrizado como YUCI MARCELA.... La cédula es la llave confiable.
         yuci_219_individual_grupal = (
             codigo == "2.1.9"
-            and _responsable_pp_v1678(nombre_func, "YUCI MARCELA MOSQUERA MOSQUERA")
+            and (
+                _doc_func_norm_219 == "1076382393"
+                or _responsable_pp_v1678(nombre_func, "YUCI MARCELA MOSQUERA MOSQUERA")
+                or _responsable_pp_v1678(nombre_func, "YUCY MARCELA MOSQUERA MOSQUERA")
+            )
         )
         supervision_prueba_219 = (
             codigo == "2.1.9"
