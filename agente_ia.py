@@ -12128,54 +12128,191 @@ def panel_profesional_v15(doc_forzado=None, incrustado=False):
             except Exception:
                 avance = []
 
-            completos = st.multiselect(
-                "Hitos completados",
-                acts,
-                default=[x for x in avance if x in acts],
-                key=f"v16_2_hitos_{doc_sel}_{obj_id}"
+            # V16.111 - Los objetivos operativos conservan el avance por hitos.
+            # Los objetivos históricos migrados que no tienen hitos permiten
+            # registrar avance manual con observación obligatoria.
+            origen_obj = str(obj_row.get("origen_registro") or "").strip().upper()
+            es_historico = (
+                origen_obj == "MIGRADO PAI 2026"
+                or str(obj_row.get("estado") or "").strip().upper() == "HISTORICO"
             )
 
-            pct = round((len(completos) / len(acts)) * 100) if acts else 0
-            st.progress(pct / 100 if pct else 0)
-            st.caption(f"Avance calculado: {pct}%")
-
-            if st.button(
-                f"💾 Guardar avance de {nombre_usuario}",
-                use_container_width=True,
-                key=f"v16_2_guardar_avance_{doc_sel}_{obj_id}"
-            ):
-                with engine.begin() as conn:
-                    conn.execute(
-                        text("""
-                            UPDATE pai_objetivos
-                            SET
-                                avance_hitos=CAST(:avance AS JSON),
-                                porcentaje_avance=:pct,
-                                estado=CASE
-                                    WHEN :pct >= 100 THEN 'CUMPLIDO'
-                                    ELSE 'Activo'
-                                END,
-                                fecha_cumplimiento_real=CASE
-                                    WHEN :pct >= 100 THEN NOW()
-                                    ELSE NULL
-                                END
-                            WHERE id=:id
-                              AND TRIM(CAST(documento_usuario AS TEXT))=:doc
-                        """),
-                        {
-                            "avance": json.dumps(
-                                completos, ensure_ascii=False
-                            ),
-                            "pct": pct,
-                            "id": int(obj_id),
-                            "doc": str(doc_sel),
-                            "prof": prof_id
-                        }
-                    )
-                st.success(
-                    f"✅ Avance actualizado para {nombre_usuario}."
+            if acts:
+                completos = st.multiselect(
+                    "Hitos completados",
+                    acts,
+                    default=[x for x in avance if x in acts],
+                    key=f"v16_2_hitos_{doc_sel}_{obj_id}"
                 )
-                st.rerun()
+
+                pct = round((len(completos) / len(acts)) * 100)
+                st.progress(pct / 100 if pct else 0)
+                st.caption(f"Avance calculado: {pct}%")
+
+                if st.button(
+                    f"💾 Guardar avance de {nombre_usuario}",
+                    use_container_width=True,
+                    key=f"v16_2_guardar_avance_{doc_sel}_{obj_id}"
+                ):
+                    with engine.begin() as conn:
+                        conn.execute(
+                            text("""
+                                UPDATE pai_objetivos
+                                SET
+                                    avance_hitos=CAST(:avance AS JSON),
+                                    porcentaje_avance=:pct,
+                                    estado=CASE
+                                        WHEN :pct >= 100 THEN 'CUMPLIDO'
+                                        ELSE 'Activo'
+                                    END,
+                                    fecha_ultimo_seguimiento=NOW(),
+                                    fecha_cumplimiento_real=CASE
+                                        WHEN :pct >= 100 THEN NOW()
+                                        ELSE NULL
+                                    END
+                                WHERE id=:id
+                                  AND TRIM(CAST(documento_usuario AS TEXT))=:doc
+                            """),
+                            {
+                                "avance": json.dumps(
+                                    completos, ensure_ascii=False
+                                ),
+                                "pct": pct,
+                                "id": int(obj_id),
+                                "doc": str(doc_sel)
+                            }
+                        )
+                    st.success(
+                        f"✅ Avance actualizado para {nombre_usuario}."
+                    )
+                    st.rerun()
+
+            elif es_historico:
+                st.info(
+                    "📚 Este objetivo proviene del PAI histórico 2026 y no tiene "
+                    "hitos estructurados. Puede continuar su gestión registrando "
+                    "el porcentaje de avance manualmente."
+                )
+
+                pct_actual = pd.to_numeric(
+                    pd.Series([obj_row.get("porcentaje_avance")]),
+                    errors="coerce"
+                ).fillna(0).iloc[0]
+                pct_actual = int(max(0, min(100, round(float(pct_actual)))))
+
+                pct_manual = st.slider(
+                    "Avance del objetivo (%)",
+                    min_value=0,
+                    max_value=100,
+                    value=pct_actual,
+                    step=5,
+                    key=f"v16_111_pct_hist_{doc_sel}_{obj_id}"
+                )
+                st.progress(pct_manual / 100 if pct_manual else 0)
+                st.caption(f"Avance a registrar: {pct_manual}%")
+
+                observacion_hist = st.text_area(
+                    "Observación del seguimiento *",
+                    placeholder=(
+                        "Describa el avance verificado, las acciones realizadas "
+                        "y la situación actual del objetivo histórico."
+                    ),
+                    key=f"v16_111_obs_hist_{doc_sel}_{obj_id}"
+                )
+
+                if st.button(
+                    f"💾 Guardar avance histórico de {nombre_usuario}",
+                    use_container_width=True,
+                    key=f"v16_111_guardar_hist_{doc_sel}_{obj_id}"
+                ):
+                    if not observacion_hist.strip():
+                        st.error(
+                            "La observación del seguimiento es obligatoria para "
+                            "actualizar un objetivo histórico."
+                        )
+                    else:
+                        with engine.begin() as conn:
+                            conn.execute(
+                                text("""
+                                    UPDATE pai_objetivos
+                                    SET
+                                        porcentaje_avance=:pct,
+                                        estado=CASE
+                                            WHEN :pct >= 100 THEN 'CUMPLIDO'
+                                            ELSE 'HISTORICO'
+                                        END,
+                                        fecha_ultimo_seguimiento=NOW(),
+                                        fecha_cumplimiento_real=CASE
+                                            WHEN :pct >= 100 THEN NOW()
+                                            ELSE NULL
+                                        END
+                                    WHERE id=:id
+                                      AND TRIM(CAST(documento_usuario AS TEXT))=:doc
+                                """),
+                                {
+                                    "pct": int(pct_manual),
+                                    "id": int(obj_id),
+                                    "doc": str(doc_sel)
+                                }
+                            )
+
+                            # Dejar trazabilidad del seguimiento sobre el objetivo
+                            # histórico sin modificar su texto original migrado.
+                            conn.execute(
+                                text("""
+                                    INSERT INTO pai_novedades(
+                                        id_objetivo,
+                                        fecha,
+                                        profesional,
+                                        tipo_novedad,
+                                        descripcion,
+                                        avance_generado,
+                                        evidencia
+                                    )
+                                    VALUES(
+                                        :id_obj,
+                                        NOW(),
+                                        :profesional,
+                                        'SEGUIMIENTO OBJETIVO HISTORICO',
+                                        :descripcion,
+                                        :avance,
+                                        ''
+                                    )
+                                """),
+                                {
+                                    "id_obj": int(obj_id),
+                                    "profesional": str(prof_nombre),
+                                    "descripcion": observacion_hist.strip(),
+                                    "avance": int(pct_manual)
+                                }
+                            )
+
+                        try:
+                            registrar_auditoria(
+                                "PAI",
+                                "ACTUALIZAR_OBJETIVO_HISTORICO",
+                                numero_identificacion=str(doc_sel),
+                                valor_anterior=str(pct_actual),
+                                valor_nuevo=str(pct_manual),
+                                observacion=(
+                                    f"Objetivo PAI #{obj_id} · "
+                                    f"{observacion_hist.strip()}"
+                                )
+                            )
+                        except Exception:
+                            pass
+
+                        st.success(
+                            f"✅ Avance histórico actualizado a {pct_manual}% "
+                            f"para {nombre_usuario}."
+                        )
+                        st.rerun()
+
+            else:
+                st.warning(
+                    "Este objetivo no tiene hitos configurados. Agregue actividades "
+                    "al objetivo antes de registrar avance."
+                )
 
     # ============================================================
     # SEGUIMIENTOS
