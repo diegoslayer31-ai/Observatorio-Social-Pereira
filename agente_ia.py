@@ -23092,11 +23092,34 @@ def _norm_nombre_pp_v1678(valor):
 
 
 def _responsable_pp_v1678(nombre_sesion, nombre_referencia):
+    """Compara el nombre completo de sesión con el nombre usado en el catálogo.
+
+    El catálogo puede guardar un nombre corto (p. ej. ``MARCELA MOSQUERA``)
+    mientras funcionarios_sistema/session_state conserva el nombre completo
+    (p. ej. ``YUCY MARCELA MOSQUERA MOSQUERA``).
+    """
     a = _norm_nombre_pp_v1678(nombre_sesion)
     b = _norm_nombre_pp_v1678(nombre_referencia)
     if not a or not b:
         return False
-    return a == b or a.startswith(b + " ") or b.startswith(a + " ")
+
+    # Coincidencias simples ya soportadas históricamente.
+    if a == b or a.startswith(b + " ") or b.startswith(a + " "):
+        return True
+
+    # V16.118: permitir que el nombre de referencia del catálogo sea una
+    # parte inequívoca del nombre completo del funcionario.  Se trabaja por
+    # tokens para no depender de que el nombre corto esté al principio.
+    tokens_a = a.split()
+    tokens_b = b.split()
+    if len(tokens_b) >= 2 and all(tok in tokens_a for tok in tokens_b):
+        return True
+
+    # También cubre el caso inverso si la sesión trae un nombre abreviado.
+    if len(tokens_a) >= 2 and all(tok in tokens_b for tok in tokens_a):
+        return True
+
+    return False
 
 
 def modulo_politica_publica_v1678():
