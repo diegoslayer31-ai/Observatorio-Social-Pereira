@@ -10289,6 +10289,21 @@ def comite_casos_v16():
     # sin modificar el contenido histórico del caso.
     # ============================================================
     ids = comites["id"].astype(int).tolist()
+
+    # V16.113 - Autoseleccionar el comité recién registrado.
+    # Los flujos de decisión formal y comité extraordinario guardan el id
+    # recién creado en v16_comite_id antes de ejecutar st.rerun(). Aquí se
+    # consume una sola vez para llevar al usuario directamente a su resolución,
+    # sin impedir que después seleccione manualmente otro comité.
+    comite_recien_creado = st.session_state.pop("v16_comite_id", None)
+    if comite_recien_creado is not None:
+        try:
+            comite_recien_creado = int(comite_recien_creado)
+            if comite_recien_creado in ids:
+                st.session_state["v16112_comite_sel_resolucion"] = comite_recien_creado
+        except (TypeError, ValueError):
+            pass
+
     comite_sel = st.selectbox(
         "Comité para generar resolución",
         ids,
