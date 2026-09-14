@@ -24134,6 +24134,381 @@ if st.session_state.page == "egresos_impacto_v168":
     st.stop()
 
 
+
+# ============================================================
+# V16.124 - MATRIZ INDIVIDUAL DE OBLIGACIONES CONTRACTUALES
+# Fuente: contratos CPS vigencia 11/09/2026 a 10/11/2026.
+# La llave principal es la cédula normalizada (solo dígitos).
+# ============================================================
+CONTRATOS_INFORME_MENSUAL_V16124 = {
+    "1004681975": {
+        "nombre": "VALERIA MARTINEZ GARCIA",
+        "cargo": "TRABAJADORA SOCIAL",
+        "contrato": "CPS 11/09/2026 - 10/11/2026",
+        "obligaciones": [
+            "Realizar reporte del cronograma semanal de las actividades grupales y atenciones individuales de acuerdo a la disponibilidad de espacios asignados por Dirección.",
+            "Entregar mensualmente las bases de datos correspondientes a las acciones 2.1.5, 2.1.6 y 2.1.9, con los soportes exigidos para actividades grupales: metodología, formatos SPP en PDF y fotos.",
+            "Participar de reuniones en pro del funcionamiento, revisión de novedades y retos a desarrollar desde el área de trabajo social y el equipo interdisciplinario del Programa de Albergues para Habitantes de Calle de Pereira.",
+            "Identificar, orientar y acompañar, con remisión al enlace municipal de habitante de calle, los casos que requieran activación de rutas: hogar adulto mayor, tratamiento para conductas adictivas, Plan Retorno, vinculación familiar, restablecimiento de derechos y proceso de identificación plena.",
+            "Realizar dos (2) reuniones mensuales con el área de Enfermería para revisar casos que requieran portabilidad, afiliación, barreras en salud u otros trámites que puedan acompañarse desde Trabajo Social.",
+            "Presentar informe mensual de acuerdo con las funciones del área de Trabajo Social, junto con los reportes del Observatorio Social ASCF, dentro de los tiempos determinados por la Asociación; fecha límite de actividades y fotos: 25 de cada mes.",
+            "Realizar vinculación de redes familiares o de apoyo en el ejercicio de restablecimiento de derechos, garantizando mínimo dos (2) encuentros semanales con grupos o redes de apoyo de usuarios del centro día-noche.",
+            "Participar mínimo en dos (2) salidas restaurativas al mes.",
+            "Realizar un (1) espacio semanal, en articulación con Psicología y Pedagogía, para estudios de caso o elaboración de PAI de usuarios de centro día-noche urbano o rural, reportándolo en el Observatorio Social ASCF.",
+            "Apoyar la apertura del buzón de sugerencias dos (2) veces al mes y dar respuesta a las PQR de acuerdo con las necesidades de los usuarios del centro día-noche urbano.",
+            "Realizar asesoría y acompañamiento a usuarios de urbano en procesos de empleabilidad que se considere puedan acompañarse, reportándolo en el Observatorio Social ASCF.",
+            "Aportar una (1) certificación actualizada, vigencia 2026, relacionada con la atención a población inmersa en el fenómeno social de consumo de sustancias psicoactivas.",
+            "Reportar los logros desarrollados desde el área de Trabajo Social en la plataforma Observatorio Social de la Asociación Ciudad Futuro.",
+            "Realizar caracterizaciones psicosociales en las jornadas de atención al interior de las sedes del Programa de Albergues para Habitantes de Calle de Pereira, reportándolas en el Observatorio Social ASCF.",
+            "Realizar las demás actividades que contribuyan al correcto funcionamiento del modelo de atención integral a la población habitante de calle."
+        ]
+    },
+    "1192762958": {
+        "nombre": "KAREN POSADA GONZALEZ",
+        "cargo": "PROFESIONAL EN NUTRICIÓN",
+        "contrato": "CPS 11/09/2026 - 10/11/2026",
+        "obligaciones": [
+            "Realizar reporte del cronograma semanal de las actividades grupales y atenciones individuales de acuerdo a la disponibilidad de espacios asignados por Dirección.",
+            "Entregar mensualmente las bases de datos correspondientes a la acción 2.1.9 - Registro de beneficiarios de actividades de sana convivencia, con soportes de metodología, formatos SPP en PDF y fotos para actividades grupales.",
+            "Participar de reuniones en pro del funcionamiento, revisión de novedades, estudios de caso con la administración municipal y retos a desarrollar desde Nutrición y el equipo interdisciplinario.",
+            "Realizar evaluación nutricional completa, con particularidades antropométricas y seguimiento cada tres meses, en el formato de evaluación nutricional; reportar mínimo 30 usuarios al mes en el Observatorio Social ASCF.",
+            "Diseñar y hacer seguimiento al Manual de Buenas Prácticas de Manufactura, incluyendo capacitaciones a manipuladoras de alimentos, indumentaria y formatos de control de temperaturas, recepción de materias primas, PEPS, rotulación y demás controles.",
+            "Presentar informe mensual de acuerdo con las funciones del área de Nutrición, junto con los reportes del Observatorio Social ASCF, dentro de los tiempos determinados por la Asociación; fecha límite de actividades y fotos: 25 de cada mes.",
+            "Mantener actualizada una cartelera en el área del comedor de urbano y rural con el ciclo de menús e información alimentaria y nutricional.",
+            "Participar mínimo en una (1) salida restaurativa al mes relacionada con sensibilización en reducción de riesgos y daños, acompañada de brigadas de alcance, trabajo comunitario y acciones en calle.",
+            "Realizar un (1) espacio semanal, en articulación con Psicología, Trabajo Social o ciencias sociales, humanas o de la salud, para estudios de caso, elaboración o seguimiento del PAI; reportarlo en el Observatorio Social ASCF.",
+            "Diseñar y hacer seguimiento al Plan de Saneamiento Básico del servicio de alimentación o punto de servido, con diligenciamiento diario de los formatos del PSB.",
+            "Aportar una (1) certificación actualizada, vigencia 2026, relacionada con la atención a población inmersa en el fenómeno social de consumo de sustancias psicoactivas.",
+            "Reportar los logros desarrollados desde el área de ciencias sociales, humanas o de la salud en la plataforma Observatorio Social de la Asociación Ciudad Futuro.",
+            "Aportar en la construcción de planes y programas de prevención que reduzcan riesgos en salud y aumenten las probabilidades de éxito al interior de los albergues.",
+            "Realizar las demás actividades que contribuyan al correcto funcionamiento del modelo de atención integral a la población habitante de calle."
+        ]
+    },
+    "16225865": {
+        "nombre": "IVAN RENDON GIRALDO",
+        "cargo": "DIRECTOR",
+        "contrato": "CPS 11/09/2026 - 10/11/2026",
+        "obligaciones": [
+            "Asistir a todos los Consejos Municipales de Política Pública de Habitante de Calle del Municipio de Pereira.",
+            "Asistir y participar activamente en reuniones, capacitaciones, comités convocados por la administración, mesas de trabajo, estudios de caso, mesas de articulación y demás reuniones requeridas para la adecuada ejecución del contrato.",
+            "Realizar seguimiento al programa y velar por la cabal ejecución de cada una de las actividades del programa.",
+            "Elaborar y poner en funcionamiento un tablero de control y seguimiento de los indicadores del programa, con entrega periódica para ajustes y correctivos, apoyado en el Observatorio Social ASCF.",
+            "Suministrar al equipo de trabajo los insumos administrativos para el registro de las diferentes actividades desarrolladas en el programa.",
+            "Presentar informe mensual de acuerdo con las funciones del área de Dirección, junto con los reportes del Observatorio Social ASCF; fecha límite de actividades y fotos: 25 de cada mes.",
+            "Presentar los mecanismos necesarios para atender quejas o reclamos y dar respuesta a los usuarios o terceros frente al programa, mediante la apertura del buzón de sugerencias de los albergues.",
+            "Liderar la consolidación y actualización de las bases de datos del programa para su articulación con la Administración Municipal.",
+            "Hacer seguimiento y controlar la ejecución del presupuesto de acuerdo con las actividades planteadas, la propuesta y la minuta.",
+            "Socializar al talento humano los documentos que hacen parte del contrato, dejando registro en acta de actualización del talento humano y de los temas trabajados.",
+            "Mantener a disposición del talento humano los documentos propios de la contratación y verificar el conocimiento y adecuado manejo de sus contenidos.",
+            "Reportar los logros desarrollados desde el área de Dirección en la plataforma Observatorio Social de la Asociación Ciudad Futuro.",
+            "Garantizar la implementación de los lineamientos técnicos y operativos orientados a la prestación del servicio social, adoptando procedimientos técnicos y administrativos y liderando la gestión adecuada de recursos humanos, físicos y materiales.",
+            "Realizar las demás actividades que contribuyan al correcto funcionamiento del modelo de atención integral a la población habitante de calle."
+        ]
+    },
+    "1088243215": {
+        "nombre": "ELIZABETH MANSO OSPINA",
+        "cargo": "TECNÓLOGA EN INGENIERÍA / TECNOLOGÍA",
+        "contrato": "CPS 11/09/2026 - 10/11/2026",
+        "obligaciones": [
+            "Realizar apoyo en los albergues urbano y rural de acuerdo a la disponibilidad de espacios asignados por Dirección.",
+            "Consolidar mensualmente las bases de datos correspondientes a la política pública y suministrarlas al programa de habitante de calle adscrito a la Secretaría de Desarrollo Social y Político, de acuerdo con la información del Observatorio Social ASCF.",
+            "Participar de reuniones en pro del funcionamiento, revisión de novedades, estudios de caso con la administración municipal y retos a desarrollar con el equipo interdisciplinario.",
+            "Verificar, consolidar y entregar las evidencias que soportan el plan de acción de la política pública de habitante de calle al programa adscrito a la Secretaría de Desarrollo Social y Político, de acuerdo con el Observatorio Social ASCF.",
+            "Participar como enlace de políticas públicas ante la Secretaría de Desarrollo Social y Político.",
+            "Presentar informe mensual de acuerdo con las funciones del área de Tecnología, junto con los reportes del Observatorio Social ASCF; fecha límite de actividades y fotos: 25 de cada mes.",
+            "Aportar una (1) certificación actualizada, vigencia 2026, relacionada con la atención a población inmersa en el fenómeno social de consumo de sustancias psicoactivas.",
+            "Consolidar los logros desarrollados desde las áreas de ciencias sociales, humanas o de la salud en la plataforma Observatorio Social de la Asociación Ciudad Futuro.",
+            "Brindar retroalimentación al equipo mixto de profesionales cuando sea necesario desde el área de Tecnología.",
+            "Realizar las demás actividades que contribuyan al correcto funcionamiento del modelo de atención integral a la población habitante de calle."
+        ]
+    },
+    "1076382393": {
+        "nombre": "YUCI MARCELA MOSQUERA MOSQUERA",
+        "cargo": "TRABAJADORA SOCIAL",
+        "contrato": "CPS 11/09/2026 - 10/11/2026",
+        "obligaciones": [
+            "Realizar reporte del cronograma semanal de las actividades grupales y atenciones individuales de acuerdo a la disponibilidad de espacios asignados por Dirección.",
+            "Entregar mensualmente las bases de datos correspondientes a las acciones 2.1.5, 2.1.9 y 2.1.4, con soportes de metodología, formatos SPP en PDF y fotos para actividades grupales.",
+            "Participar de reuniones en pro del funcionamiento, revisión de novedades y retos a desarrollar desde el área de Trabajo Social y el equipo interdisciplinario.",
+            "Identificar, orientar y acompañar, con remisión al enlace municipal de habitante de calle, los casos que requieran activación de rutas: hogar adulto mayor, tratamiento para conductas adictivas, Plan Retorno, vinculación familiar, restablecimiento de derechos e identificación plena.",
+            "Realizar un (1) espacio semanal, en articulación con Psicología y Pedagogía, para estudios de caso o elaboración o seguimiento al PAI de usuarios de centro día-noche urbano o rural, reportándolo en el Observatorio Social ASCF.",
+            "Presentar informe mensual de acuerdo con las funciones del área de Trabajo Social, junto con los reportes del Observatorio Social ASCF; fecha límite de actividades y fotos: 25 de cada mes.",
+            "Participar mínimo en dos (2) jornadas de dignificación.",
+            "Realizar un (1) espacio semanal, en articulación con Psicología y Pedagogía, para estudios de caso o elaboración de PAI, reportándolo en el Observatorio Social ASCF.",
+            "Apoyar la apertura del buzón de sugerencias dos (2) veces al mes y dar respuesta a las PQR de acuerdo con las necesidades de los usuarios del centro día-noche urbano.",
+            "Realizar asesoría y acompañamiento a usuarios de rural en procesos de empleabilidad que se considere puedan acompañarse, reportándolo en el Observatorio Social ASCF.",
+            "Aportar una (1) certificación actualizada, vigencia 2026, relacionada con la atención a población inmersa en el fenómeno social de consumo de sustancias psicoactivas.",
+            "Reportar los logros desarrollados desde el área de Trabajo Social en la plataforma Observatorio Social de la Asociación Ciudad Futuro.",
+            "Realizar caracterizaciones psicosociales en las jornadas de atención al interior de las sedes del Programa de Albergues para Habitantes de Calle de Pereira, reportándolas en el Observatorio Social ASCF.",
+            "Realizar las demás actividades que contribuyan al correcto funcionamiento del modelo de atención integral a la población habitante de calle."
+        ]
+    },
+    "1088343873": {
+        "nombre": "ESTEFANY SCARPETTA TORRES",
+        "cargo": "PSICÓLOGA",
+        "contrato": "CPS 11/09/2026 - 10/11/2026",
+        "obligaciones": [
+            "Realizar reporte del cronograma semanal de las actividades grupales y atenciones individuales de acuerdo a la disponibilidad de espacios asignados por Dirección.",
+            "Entregar mensualmente las bases de datos correspondientes a las acciones 2.1.1 y 2.1.9, con soportes de metodología, formatos SPP en PDF y fotos para actividades grupales.",
+            "Participar de reuniones en pro del funcionamiento, revisión de novedades, estudios de caso con el programa de habitante de calle y reuniones del equipo interdisciplinario.",
+            "Presentar informe mensual de acuerdo con las funciones del área de Psicología, junto con los reportes del Observatorio Social ASCF; fecha límite de actividades y fotos: 25 de cada mes.",
+            "Propiciar mínimo un (1) encuentro semanal con al menos 5 usuarios para trabajar prevención selectiva o reducción de riesgos y daños frente al consumo de SPA, mediante estrategias como meditación, reflexión colectiva, cine foros o construcciones colectivas.",
+            "Reportar a Dirección los formatos diligenciados y registro fotográfico de las secretarías o descentralizados que visitan los centros día-noche para seguimiento a actividades transversales e indicadores de política pública, correspondiente a Desarrollo Social urbano.",
+            "Realizar un (1) espacio semanal, en articulación con Psicología, Trabajo Social y Pedagogía, para estudios de caso o elaboración y seguimiento al PAI, reportándolo en el Observatorio Social ASCF.",
+            "Participar mínimo en dos (2) jornadas de dignificación.",
+            "Reportar y sensibilizar a los usuarios que por sus procesos individuales serán trasladados al centro día-noche rural, una (1) vez a la semana, mediante socialización del acuerdo de voluntades.",
+            "Aplicar encuestas de satisfacción a usuarios de los albergues, programadas en promedio cada tres meses, para evaluar los servicios prestados al interior del centro día-noche urbano.",
+            "Aportar una (1) certificación actualizada, vigencia 2026, relacionada con la atención a población inmersa en el fenómeno social de consumo de sustancias psicoactivas.",
+            "Reportar los logros desarrollados desde el área de Psicología en la plataforma Observatorio Social de la Asociación Ciudad Futuro.",
+            "Realizar las demás actividades que contribuyan al correcto funcionamiento del modelo de atención integral a la población habitante de calle."
+        ]
+    },
+    "42085283": {
+        "nombre": "MARIA ELENA LONDOÑO GALVIS",
+        "cargo": "PSICÓLOGA",
+        "contrato": "CPS 11/09/2026 - 10/11/2026",
+        "obligaciones": [
+            "Realizar reporte del cronograma semanal de las actividades grupales y atenciones individuales de acuerdo a la disponibilidad de espacios asignados por Dirección.",
+            "Entregar mensualmente las bases de datos correspondientes a las acciones 2.1.1 y 2.1.9, con soportes de metodología, formatos SPP en PDF y fotos para actividades grupales.",
+            "Participar de reuniones en pro del funcionamiento, revisión de novedades, estudios de caso con el programa de habitante de calle y reuniones del equipo interdisciplinario.",
+            "Presentar informe mensual de acuerdo con las funciones del área de Psicología, junto con los reportes del Observatorio Social ASCF; fecha límite de actividades y fotos: 25 de cada mes.",
+            "Propiciar mínimo un (1) encuentro semanal con al menos 5 usuarios para trabajar prevención selectiva o reducción de riesgos y daños frente al consumo de SPA.",
+            "Apoyar la apertura del buzón de sugerencias dos (2) veces al mes y dar respuesta a las PQR de acuerdo con las necesidades de los usuarios del centro día-noche rural.",
+            "Reportar a Dirección los formatos diligenciados y registro fotográfico de las secretarías o descentralizados que visitan los centros día-noche para seguimiento a actividades transversales e indicadores de política pública, correspondiente a Secretaría de Salud rural.",
+            "Realizar un (1) espacio semanal, en articulación con Psicología y Pedagogía, para estudios de caso o elaboración de PAI, reportándolo en el Observatorio Social ASCF.",
+            "Dar la bienvenida a los usuarios que por sus procesos individuales llegan trasladados del centro día-noche urbano, una (1) vez a la semana, con socialización y firma del acuerdo de voluntades.",
+            "Aplicar encuestas de satisfacción a usuarios de los albergues, programadas en promedio cada tres meses, para evaluar los servicios prestados al interior del centro día-noche urbano.",
+            "Aportar una (1) certificación actualizada, vigencia 2026, relacionada con la atención a población inmersa en el fenómeno social de consumo de sustancias psicoactivas.",
+            "Reportar los logros desarrollados en la plataforma Observatorio Social de la Asociación Ciudad Futuro.",
+            "Realizar las demás actividades que contribuyan al correcto funcionamiento del modelo de atención integral a la población habitante de calle."
+        ]
+    },
+    "9866284": {
+        "nombre": "JHON ANDREY CORREA CORTEZ",
+        "cargo": "PSICÓLOGO",
+        "contrato": "CPS 11/09/2026 - 10/11/2026",
+        "obligaciones": [
+            "Realizar reporte del cronograma semanal de las actividades grupales y atenciones individuales de acuerdo a la disponibilidad de espacios asignados por Dirección.",
+            "Entregar mensualmente las bases de datos correspondientes a las acciones 2.1.1 y 2.1.9, con soportes de metodología, formatos SPP en PDF y fotos para actividades grupales.",
+            "Participar de reuniones en pro del funcionamiento, revisión de novedades, estudios de caso con el programa de habitante de calle de la Alcaldía y reuniones del equipo interdisciplinario.",
+            "Presentar informe mensual de acuerdo con las funciones del área de Psicología, junto con los reportes del Observatorio Social ASCF; fecha límite de actividades y fotos: 25 de cada mes.",
+            "Propiciar mínimo un (1) encuentro semanal con al menos 5 usuarios para trabajar prevención selectiva o reducción de riesgos y daños frente al consumo de SPA.",
+            "Apoyar la apertura del buzón de sugerencias dos (2) veces al mes y dar respuesta a las PQR de acuerdo con las necesidades de los usuarios del centro día-noche rural.",
+            "Reportar a Dirección los formatos diligenciados y registro fotográfico de las secretarías o descentralizados que visitan los centros día-noche para seguimiento a actividades transversales e indicadores de política pública, correspondiente a Secretaría de Gobierno urbano.",
+            "Realizar un (1) espacio semanal, en articulación con Psicología, Trabajo Social y Pedagogía, para estudios de caso, elaboración o seguimiento al PAI, reportándolo en el Observatorio Social ASCF.",
+            "Participar mínimo en dos (2) salidas restaurativas al mes relacionadas con sensibilización en reducción de riesgos y daños, brigadas de alcance, trabajo comunitario y acciones en calle.",
+            "Reportar y sensibilizar a los usuarios que por sus procesos individuales serán trasladados al centro día-noche rural, una (1) vez a la semana, mediante socialización del acuerdo de voluntades.",
+            "Aportar una (1) certificación actualizada, vigencia 2026, relacionada con la atención a población inmersa en el fenómeno social de consumo de sustancias psicoactivas.",
+            "Reportar los logros desarrollados en la plataforma Observatorio Social de la Asociación Ciudad Futuro.",
+            "Realizar las demás actividades que contribuyan al correcto funcionamiento del modelo de atención integral a la población habitante de calle."
+        ]
+    },
+    "1129044593": {
+        "nombre": "SAMARA HINESTROZA AGUILAR",
+        "cargo": "TRABAJADORA SOCIAL",
+        "contrato": "CPS 11/09/2026 - 10/11/2026",
+        "obligaciones": [
+            "Realizar reporte del cronograma semanal de las actividades grupales y atenciones individuales de acuerdo a la disponibilidad de espacios asignados por Dirección.",
+            "Entregar mensualmente las bases de datos correspondientes a las acciones 2.1.5, 2.1.6 y 2.1.9, con soportes de metodología, formatos SPP en PDF y fotos para actividades grupales.",
+            "Participar de reuniones en pro del funcionamiento, revisión de novedades, estudios de caso y retos a desarrollar desde el área de Trabajo Social y el equipo interdisciplinario.",
+            "Identificar, orientar y acompañar, con remisión al enlace municipal de habitante de calle, los casos que requieran activación de rutas: hogar adulto mayor, tratamiento para conductas adictivas, Plan Retorno, vinculación familiar, restablecimiento de derechos e identificación plena.",
+            "Realizar dos (2) reuniones mensuales con Enfermería para revisar casos de portabilidad, afiliación, barreras en salud u otros trámites acompañables desde Trabajo Social.",
+            "Presentar informe mensual de acuerdo con las funciones del área de Trabajo Social, junto con los reportes del Observatorio Social ASCF; fecha límite de actividades y fotos: 25 de cada mes.",
+            "Realizar vinculación de redes familiares o de apoyo en el ejercicio de restablecimiento de derechos, garantizando mínimo dos (2) encuentros semanales con grupos o redes de apoyo.",
+            "Participar mínimo en dos (2) salidas restaurativas al mes.",
+            "Realizar un (1) espacio semanal, en articulación con Psicología y Pedagogía, para estudios de caso o elaboración de PAI, reportándolo en el Observatorio Social ASCF.",
+            "Realizar asesoría y acompañamiento a usuarios de rural en procesos de empleabilidad que se considere puedan acompañarse, reportándolo en el Observatorio Social ASCF.",
+            "Aplicar encuestas de satisfacción a usuarios de los albergues, programadas en promedio cada tres meses, para evaluar los servicios prestados al interior del centro día-noche urbano.",
+            "Aportar una (1) certificación actualizada, vigencia 2026, relacionada con la atención a población inmersa en el fenómeno social de consumo de sustancias psicoactivas.",
+            "Reportar los logros desarrollados desde el área de Trabajo Social en la plataforma Observatorio Social de la Asociación Ciudad Futuro.",
+            "Realizar caracterizaciones psicosociales en las jornadas de atención al interior de las sedes del Programa de Albergues para Habitantes de Calle de Pereira, reportándolas en el Observatorio Social ASCF.",
+            "Realizar las demás actividades que contribuyan al correcto funcionamiento del modelo de atención integral a la población habitante de calle."
+        ]
+    },
+    "42161455": {
+        "nombre": "SELMIRA MOSQUERA RENTERIA",
+        "cargo": "TRABAJADORA SOCIAL",
+        "contrato": "CPS 11/09/2026 - 10/11/2026",
+        "obligaciones": [
+            "Realizar reporte del cronograma semanal de las actividades grupales y atenciones individuales de acuerdo a la disponibilidad de espacios asignados por Dirección.",
+            "Entregar mensualmente las bases de datos correspondientes a las acciones 2.1.5, 2.1.6 y 2.1.9, con soportes de metodología, formatos SPP en PDF y fotos para actividades grupales.",
+            "Participar de reuniones en pro del funcionamiento, revisión de novedades, estudios de caso y retos a desarrollar desde el área de Trabajo Social y el equipo interdisciplinario.",
+            "Identificar, orientar y acompañar, con remisión al enlace municipal de habitante de calle, los casos que requieran activación de rutas: hogar adulto mayor, tratamiento para conductas adictivas, Plan Retorno, vinculación familiar, restablecimiento de derechos e identificación plena.",
+            "Realizar dos (2) reuniones mensuales con Enfermería para revisar casos de portabilidad, afiliación, barreras en salud u otros trámites acompañables desde Trabajo Social.",
+            "Presentar informe mensual de acuerdo con las funciones del área de Trabajo Social, junto con los reportes del Observatorio Social ASCF; fecha límite de actividades y fotos: 25 de cada mes.",
+            "Realizar vinculación de redes familiares o de apoyo en el ejercicio de restablecimiento de derechos, garantizando mínimo dos (2) encuentros semanales con grupos o redes de apoyo.",
+            "Participar mínimo en dos (2) salidas restaurativas al mes.",
+            "Realizar un (1) espacio semanal, en articulación con Psicología y Pedagogía, para estudios de caso o elaboración de PAI, reportándolo en el Observatorio Social ASCF.",
+            "Realizar asesoría y acompañamiento a usuarios de urbano en procesos de empleabilidad que se considere puedan acompañarse, reportándolo en el Observatorio Social ASCF.",
+            "Aplicar encuestas de satisfacción a usuarios de los albergues, programadas en promedio cada tres meses, para evaluar los servicios prestados al interior del centro día-noche urbano.",
+            "Aportar una (1) certificación actualizada, vigencia 2026, relacionada con la atención a población inmersa en el fenómeno social de consumo de sustancias psicoactivas.",
+            "Reportar los logros desarrollados desde el área de Trabajo Social en la plataforma Observatorio Social de la Asociación Ciudad Futuro.",
+            "Realizar caracterizaciones psicosociales en las jornadas de atención al interior de las sedes del Programa de Albergues para Habitantes de Calle de Pereira, reportándolas en el Observatorio Social ASCF.",
+            "Realizar las demás actividades que contribuyan al correcto funcionamiento del modelo de atención integral a la población habitante de calle."
+        ]
+    },
+    "1088278205": {
+        "nombre": "JUAN DAVID BOLIVAR MORALES",
+        "cargo": "PROFESIONAL ÁREA CIENCIAS SOCIALES, HUMANAS O DE LA SALUD",
+        "contrato": "CPS 11/09/2026 - 10/11/2026",
+        "obligaciones": [
+            "Realizar reporte del cronograma semanal de las actividades grupales y atenciones individuales de acuerdo a la disponibilidad de espacios asignados por Dirección.",
+            "Participar en el espacio de bienvenida a usuarios que llegan trasladados del centro día-noche urbano, una (1) vez a la semana, con socialización y firma del acuerdo de voluntades.",
+            "Participar de reuniones en pro del funcionamiento, revisión de novedades, estudios de caso con la administración municipal y retos a desarrollar desde ciencias sociales, humanas o de la salud y el equipo interdisciplinario.",
+            "Participar de la sensibilización de usuarios que serán trasladados al centro día-noche rural, una (1) vez a la semana, mediante socialización del acuerdo de voluntades.",
+            "Realizar dos (2) espacios mensuales en los albergues Urbano y Rural para fortalecer las dinámicas grupales frente al pacto de convivencia, en apoyo con el equipo interdisciplinario.",
+            "Presentar informe mensual de acuerdo con las funciones del área, junto con los reportes del Observatorio Social ASCF; fecha límite de actividades y fotos: 25 de cada mes.",
+            "Acompañar un (1) espacio semanal, en articulación con Psicología o Trabajo Social, para estudios de caso, elaboración o seguimiento del PAI, reportándolo en el Observatorio Social ASCF.",
+            "Apoyar la aplicación de encuestas de satisfacción a usuarios de los albergues, programadas en promedio cada tres meses.",
+            "Apoyar la apertura del buzón de sugerencias dos (2) veces al mes y dar respuesta a las PQR de acuerdo con las necesidades de usuarios de centro día-noche urbano o rural.",
+            "Reportar los logros desarrollados desde el área de ciencias sociales, humanas o de la salud en la plataforma Observatorio Social de la Asociación Ciudad Futuro.",
+            "Realizar caracterizaciones psicosociales en las jornadas de atención al interior de las sedes del Programa de Albergues para Habitantes de Calle de Pereira, reportándolas en el Observatorio Social ASCF.",
+            "Realizar las demás actividades que contribuyan al correcto funcionamiento del modelo de atención integral a la población habitante de calle."
+        ]
+    },
+    "16229448": {
+        "nombre": "HUGO ARMANDO CASTRO CORTES",
+        "cargo": "PROFESIONAL ÁREA CIENCIAS SOCIALES, HUMANAS O DE LA SALUD",
+        "contrato": "CPS 11/09/2026 - 10/11/2026",
+        "obligaciones": [
+            "Realizar reporte del cronograma semanal de las actividades grupales y atenciones individuales de acuerdo a la disponibilidad de espacios asignados por Dirección.",
+            "Entregar mensualmente las bases de datos correspondientes a las acciones 2.1.6, 2.1.8 y 2.1.11, con soportes de metodología, formatos SPP en PDF y fotos para actividades grupales.",
+            "Participar de reuniones en pro del funcionamiento, revisión de novedades, estudios de caso con la administración municipal y retos a desarrollar desde ciencias sociales, humanas o de la salud y el equipo interdisciplinario.",
+            "Liderar espacios grupales y/o individuales relacionados con la reducción del daño por consumo de SPA en los centros día-noche Urbano y Rural: mínimo un encuentro semanal por albergue, para un total de ocho (8) espacios grupales al mes.",
+            "Reportar a Dirección los formatos diligenciados y registro fotográfico de las secretarías o descentralizados que visitan los centros día-noche, correspondiente a Secretaría de Educación urbano y rural.",
+            "Presentar informe mensual de acuerdo con las funciones del área de ciencias sociales, humanas o de la salud, junto con los reportes del Observatorio Social ASCF; fecha límite de actividades y fotos: 25 de cada mes.",
+            "Realizar dos (2) espacios mensuales en los albergues Urbano y Rural para fortalecer las dinámicas grupales frente al pacto de convivencia, en apoyo con el equipo interdisciplinario.",
+            "Participar mínimo en dos (2) salidas restaurativas al mes relacionadas con sensibilización en reducción de riesgos y daños, brigadas de alcance, trabajo comunitario y acciones en calle.",
+            "Realizar un (1) espacio semanal, en articulación con Psicología o Trabajo Social, para estudios de caso, elaboración o seguimiento del PAI, reportándolo en el Observatorio Social ASCF.",
+            "Participar en el espacio de bienvenida a usuarios trasladados del centro día-noche urbano, una (1) vez a la semana, con socialización y firma del acuerdo de voluntades.",
+            "Reportar los logros desarrollados desde el área de ciencias sociales, humanas o de la salud en la plataforma Observatorio Social de la Asociación Ciudad Futuro.",
+            "Realizar caracterizaciones psicosociales en las jornadas de atención al interior de las sedes del Programa de Albergues para Habitantes de Calle de Pereira, reportándolas en el Observatorio Social ASCF.",
+            "Realizar las demás actividades que contribuyan al correcto funcionamiento del modelo de atención integral a la población habitante de calle."
+        ]
+    },
+    "1112778245": {
+        "nombre": "DAMIAN LEANDRO ZAPATA BERMUDEZ",
+        "cargo": "PSICÓLOGO",
+        "contrato": "CPS 11/09/2026 - 10/11/2026",
+        "obligaciones": [
+            "Realizar reporte del cronograma semanal de las actividades grupales y atenciones individuales de acuerdo a la disponibilidad de espacios asignados por Dirección.",
+            "Entregar mensualmente las bases de datos correspondientes a las acciones 2.1.1, 2.1.9 y 2.1.5, con soportes de metodología, formatos SPP en PDF y fotos para actividades grupales.",
+            "Participar de reuniones en pro del funcionamiento, revisión de novedades, estudios de caso con el programa de habitante de calle y reuniones del equipo interdisciplinario.",
+            "Presentar informe mensual de acuerdo con las funciones del área de Psicología, junto con los reportes del Observatorio Social ASCF; fecha límite de actividades y fotos: 25 de cada mes.",
+            "Propiciar mínimo un (1) encuentro semanal con al menos 5 usuarios para trabajar prevención selectiva o reducción de riesgos y daños frente al consumo de SPA.",
+            "Apoyar la apertura del buzón de sugerencias dos (2) veces al mes y dar respuesta a las PQR de acuerdo con las necesidades de los usuarios del centro día-noche rural.",
+            "Reportar a Dirección los formatos diligenciados y registro fotográfico de las secretarías o descentralizados que visitan los centros día-noche, correspondiente a Secretaría de Salud rural.",
+            "Realizar un (1) espacio semanal, en articulación con Psicología, Trabajo Social y Pedagogía, para estudios de caso, elaboración y seguimiento al PAI, reportándolo en el Observatorio Social ASCF.",
+            "Dar la bienvenida a los usuarios que llegan trasladados del centro día-noche urbano, una (1) vez a la semana, con socialización y firma del acuerdo de voluntades.",
+            "Aplicar encuestas de satisfacción a usuarios de los albergues, programadas en promedio cada tres meses, para evaluar los servicios prestados al interior del centro día-noche urbano.",
+            "Aportar una (1) certificación actualizada, vigencia 2026, relacionada con la atención a población inmersa en el fenómeno social de consumo de sustancias psicoactivas.",
+            "Reportar los logros desarrollados en la plataforma Observatorio Social de la Asociación Ciudad Futuro.",
+            "Realizar las demás actividades que contribuyan al correcto funcionamiento del modelo de atención integral a la población habitante de calle."
+        ]
+    },
+    "94381656": {
+        "nombre": "CARLOS HERNAN LOPEZ GARCIA",
+        "cargo": "PROFESIONAL ÁREA CIENCIAS SOCIALES, HUMANAS O DE LA SALUD",
+        "contrato": "CPS 11/09/2026 - 10/11/2026",
+        "obligaciones": [
+            "Realizar reporte del cronograma semanal de las actividades grupales y atenciones individuales de acuerdo a la disponibilidad de espacios asignados por Dirección.",
+            "Entregar mensualmente las bases de datos correspondientes a la acción 2.1.9, con soportes de metodología, formatos SPP en PDF y fotos para actividades grupales.",
+            "Participar de reuniones en pro del funcionamiento, revisión de novedades, estudios de caso con la administración municipal y retos a desarrollar desde ciencias sociales, humanas o de la salud y el equipo interdisciplinario.",
+            "Generar espacios, uno (1) por semana en cada albergue, que aporten a la participación ciudadana, prevención de vulnerabilidades, herramientas y habilidades para la resolución pacífica de conflictos y promoción de la dignidad mediante ciudadanía activa.",
+            "Generar espacios de pedagogía participativa para afianzar la cultura de la legalidad en la población beneficiaria del programa de albergues, uno (1) por semana en cada albergue.",
+            "Presentar informe mensual de acuerdo con las funciones del área de ciencias sociales, humanas o de la salud, junto con los reportes del Observatorio Social ASCF; fecha límite de actividades y fotos: 25 de cada mes.",
+            "Establecer condiciones para el reforzamiento comunitario con los usuarios del programa, facilitando bienestar individual y colectivo, gestión de vínculos y redes comunitarias y promoción del liderazgo colectivo.",
+            "Realizar un (1) espacio semanal por albergue, en articulación con Psicología o Trabajo Social, para estudios de caso, elaboración o seguimiento del PAI, reportándolo en el Observatorio Social ASCF.",
+            "Reportar y sensibilizar a los usuarios que serán trasladados al centro día-noche rural, una (1) vez a la semana, mediante socialización del acuerdo de voluntades.",
+            "Aportar una (1) certificación actualizada, vigencia 2026, relacionada con la atención a población inmersa en el fenómeno social de consumo de sustancias psicoactivas.",
+            "Reportar los logros desarrollados desde el área de ciencias sociales, humanas o de la salud en la plataforma Observatorio Social de la Asociación Ciudad Futuro.",
+            "Realizar las demás actividades que contribuyan al correcto funcionamiento del modelo de atención integral a la población habitante de calle."
+        ]
+    },
+    "1116270006": {
+        "nombre": "DANA CAROLINA LOPEZ GONZALEZ",
+        "cargo": "PROFESIONAL ÁREA CIENCIAS SOCIALES, HUMANAS O DE LA SALUD",
+        "contrato": "CPS 11/09/2026 - 10/11/2026",
+        "obligaciones": [
+            "Realizar reporte del cronograma semanal de las actividades grupales y atenciones individuales de acuerdo a la disponibilidad de espacios asignados por Dirección.",
+            "Entregar mensualmente las bases de datos correspondientes a la acción 2.1.9, con soportes de metodología, formatos SPP en PDF y fotos para actividades grupales.",
+            "Participar de reuniones en pro del funcionamiento, revisión de novedades, estudios de caso con la administración municipal y retos a desarrollar desde ciencias sociales, humanas o de la salud y el equipo interdisciplinario.",
+            "Acompañar casos específicos de usuarios que requieran defensa de derechos fundamentales, por ejemplo tutela, acceso a salud o identidad.",
+            "Reportar a Dirección los formatos diligenciados y registro fotográfico de las secretarías o descentralizados que visitan los centros día-noche, correspondiente a Secretaría de Deportes y Cultura rural.",
+            "Presentar informe mensual de acuerdo con las funciones del área de ciencias sociales, humanas o de la salud, junto con los reportes del Observatorio Social ASCF; fecha límite de actividades y fotos: 25 de cada mes.",
+            "Realizar un (1) espacio semanal grupal por albergue, urbano y rural, sobre derechos en salud, Constitución Política, política pública de habitante de calle, derechos y deberes, pacto de convivencia, política de drogas, entre otros.",
+            "Participar mínimo en dos (2) salidas restaurativas al mes relacionadas con sensibilización en reducción de riesgos y daños, brigadas de alcance, trabajo comunitario y acciones en calle.",
+            "Realizar un (1) espacio semanal por albergue, en articulación con Psicología o Trabajo Social, para estudios de caso, elaboración o seguimiento del PAI, reportándolo en el Observatorio Social ASCF.",
+            "Reportar y sensibilizar a los usuarios que serán trasladados al centro día-noche rural, una (1) vez a la semana, mediante socialización del acuerdo de voluntades.",
+            "Aportar una (1) certificación actualizada, vigencia 2026, relacionada con la atención a población inmersa en el fenómeno social de consumo de sustancias psicoactivas.",
+            "Reportar los logros desarrollados desde el área de ciencias sociales, humanas o de la salud en la plataforma Observatorio Social de la Asociación Ciudad Futuro.",
+            "Realizar caracterizaciones psicosociales en las jornadas de atención al interior de las sedes del Programa de Albergues para Habitantes de Calle de Pereira, reportándolas en el Observatorio Social ASCF.",
+            "Realizar las demás actividades que contribuyan al correcto funcionamiento del modelo de atención integral a la población habitante de calle."
+        ]
+    },
+    "1225092611": {
+        "nombre": "VICTORIA SANTAMARIA OSORIO",
+        "cargo": "PROFESIONAL ÁREA CIENCIAS SOCIALES, HUMANAS O DE LA SALUD",
+        "contrato": "CPS 11/09/2026 - 10/11/2026",
+        "obligaciones": [
+            "Realizar reporte del cronograma semanal de las actividades grupales y atenciones individuales de acuerdo a la disponibilidad de espacios asignados por Dirección.",
+            "Entregar mensualmente las bases de datos correspondientes a las acciones 2.1.3, 2.1.6 y 2.1.11, con soportes de metodología, formatos SPP en PDF y fotos para actividades grupales.",
+            "Participar de reuniones en pro del funcionamiento, revisión de novedades, estudios de caso con la administración municipal y retos a desarrollar desde ciencias sociales, humanas o de la salud y el equipo interdisciplinario.",
+            "Realizar abordaje del trauma con enfoque de género mediante círculos de la palabra dirigidos exclusivamente a mujeres y mujeres trans, en articulación con Psicología, Enfermería y Trabajo Social, con un (1) espacio semanal por albergue.",
+            "Realizar seguimiento a mujeres y mujeres trans usuarias del albergue, con sistematización de experiencias y violencias.",
+            "Presentar informe mensual de acuerdo con las funciones del área de ciencias sociales, humanas o de la salud, junto con los reportes del Observatorio Social ASCF; fecha límite de actividades y fotos: 25 de cada mes.",
+            "Motivar la articulación con colectivos y dependencias institucionales, fortaleciendo redes que garanticen a las mujeres acceso en igualdad de condiciones a distintos recursos.",
+            "Participar mínimo en dos (2) salidas restaurativas al mes relacionadas con sensibilización en reducción de riesgos y daños, brigadas de alcance, trabajo comunitario y acciones en calle.",
+            "Realizar un (1) espacio semanal, en articulación con Psicología o Trabajo Social, para estudios de caso, elaboración o seguimiento del PAI, reportándolo en el Observatorio Social ASCF.",
+            "Aplicar encuestas de satisfacción a usuarios de los albergues, programadas en promedio cada tres meses, para evaluar los servicios prestados al interior del centro día-noche urbano.",
+            "Aportar una (1) certificación actualizada, vigencia 2026, relacionada con la atención a población inmersa en el fenómeno social de consumo de sustancias psicoactivas.",
+            "Reportar los logros desarrollados desde el área de ciencias sociales, humanas o de la salud en la plataforma Observatorio Social de la Asociación Ciudad Futuro.",
+            "Realizar las demás actividades que contribuyan al correcto funcionamiento del modelo de atención integral a la población habitante de calle."
+        ]
+    },
+    "1192771619": {
+        "nombre": "JUAN DAVID ROBLEDO PULGARIN",
+        "cargo": "PROFESIONAL ÁREA CIENCIAS SOCIALES, HUMANAS O DE LA SALUD",
+        "contrato": "CPS 11/09/2026 - 10/11/2026",
+        "obligaciones": [
+            "Realizar reporte del cronograma semanal de las actividades grupales y atenciones individuales de acuerdo a la disponibilidad de espacios asignados por Dirección.",
+            "Entregar mensualmente las bases de datos correspondientes a las acciones 2.1.6 y 2.1.11, con soportes de metodología, formatos SPP en PDF y fotos para actividades grupales.",
+            "Participar de reuniones en pro del funcionamiento, revisión de novedades, estudios de caso con la administración municipal y retos a desarrollar desde ciencias sociales, humanas o de la salud y el equipo interdisciplinario.",
+            "Reportar a Dirección los formatos diligenciados y registro fotográfico de las secretarías o descentralizados que visitan los centros día-noche, correspondiente a Secretaría de Deportes y Cultura urbano.",
+            "Presentar informe mensual de acuerdo con las funciones del área, junto con los reportes del Observatorio Social ASCF; fecha límite de actividades y fotos: 25 de cada mes.",
+            "Socializar, desarrollar e implementar la estrategia CASADENTRO, CASAFUERA, dentro del marco de las narrativas y memoria del fenómeno social de habitanza en calle, como laboratorio desde la pedagogía, incluyendo un espacio de socialización de resultados.",
+            "Participar mínimo en dos (2) salidas restaurativas al mes relacionadas con sensibilización en reducción de riesgos y daños, brigadas de alcance, trabajo comunitario y acciones en calle.",
+            "Realizar un (1) espacio semanal, en articulación con Psicología y Trabajo Social, para estudios de caso, elaboración o seguimiento del PAI, reportándolo en el Observatorio Social ASCF.",
+            "Apoyar la apertura del buzón de sugerencias dos (2) veces al mes y dar respuesta a las PQR de acuerdo con las necesidades de los usuarios del centro día-noche urbano.",
+            "Aportar una (1) certificación actualizada, vigencia 2026, relacionada con la atención a población inmersa en el fenómeno social de consumo de sustancias psicoactivas.",
+            "Reportar los logros desarrollados desde el área de ciencias sociales, humanas o de la salud en la plataforma Observatorio Social de la Asociación Ciudad Futuro.",
+            "Reportar y sensibilizar a los usuarios que serán trasladados al centro día-noche rural, una (1) vez a la semana, mediante socialización del acuerdo de voluntades.",
+            "Realizar caracterizaciones psicosociales en las jornadas de atención al interior de las sedes del Programa de Albergues para Habitantes de Calle de Pereira, reportándolas en el Observatorio Social ASCF.",
+            "Realizar las demás actividades que contribuyan al correcto funcionamiento del modelo de atención integral a la población habitante de calle."
+        ]
+    },
+}
+
+
+def _solo_digitos_v16124(valor):
+    return "".join(ch for ch in str(valor or "") if ch.isdigit())
+
+
+def _contrato_individual_v16124(documento, nombre=""):
+    doc = _solo_digitos_v16124(documento)
+    if doc and doc in CONTRATOS_INFORME_MENSUAL_V16124:
+        return CONTRATOS_INFORME_MENSUAL_V16124[doc]
+
+    # Respaldo únicamente cuando profesionales no tiene cédula registrada.
+    # La parametrización sigue siendo individual; no se agrupa por profesión.
+    nom = _norm_nombre_pp_v1678(nombre)
+    if nom:
+        for cfg in CONTRATOS_INFORME_MENSUAL_V16124.values():
+            if _norm_nombre_pp_v1678(cfg.get("nombre")) == nom:
+                return cfg
+    return None
+
+
 def modulo_informe_mensual_profesional_piloto_v1627():
     st.title("📄 Informe Mensual Profesional")
     st.caption("Piloto para consolidar PAI, seguimientos y gestión mensual del profesional.")
@@ -24177,6 +24552,16 @@ def modulo_informe_mensual_profesional_piloto_v1627():
                     break
     except Exception:
         pass
+
+    # V16.124: si profesionales no trae documento, usar la cédula de la sesión activa.
+    if not documento_profesional_inf:
+        documento_profesional_inf = str(
+            st.session_state.get("documento_funcionario", "") or ""
+        ).strip()
+
+    contrato_individual = _contrato_individual_v16124(
+        documento_profesional_inf, nombre_profesional_inf
+    )
 
     try:
         tablas = pd.read_sql(
@@ -24302,6 +24687,9 @@ def modulo_informe_mensual_profesional_piloto_v1627():
     documento = documento_profesional_inf
 
     x1, x2 = st.columns(2)
+    cargo_def = str((contrato_individual or {}).get("cargo") or "").strip()
+    contrato_def = str((contrato_individual or {}).get("contrato") or "").strip()
+
     with x1:
         if documento:
             st.text_input(
@@ -24310,8 +24698,16 @@ def modulo_informe_mensual_profesional_piloto_v1627():
                 disabled=True,
                 key="imp_doc_fijo"
             )
-        cargo = st.text_input("Cargo / perfil profesional", key="imp_cargo")
-        contrato = st.text_input("Contrato / CPS", key="imp_contrato")
+        if contrato_individual:
+            cargo = st.text_input(
+                "Cargo / perfil profesional", value=cargo_def, disabled=True, key="imp_cargo_v16124"
+            )
+            contrato = st.text_input(
+                "Contrato / CPS", value=contrato_def, disabled=True, key="imp_contrato_v16124"
+            )
+        else:
+            cargo = st.text_input("Cargo / perfil profesional", key="imp_cargo")
+            contrato = st.text_input("Contrato / CPS", key="imp_contrato")
     with x2:
         proyecto = st.text_input(
             "Proyecto / programa",
@@ -24325,20 +24721,31 @@ def modulo_informe_mensual_profesional_piloto_v1627():
         )
 
     st.markdown("### 🧾 Cumplimiento de obligaciones")
-    obligaciones = [
-        "Realizar intervenciones, valoraciones y seguimientos individuales.",
-        "Mantener actualizada la información y bases de datos de las personas atendidas.",
-        "Participar en reuniones interdisciplinarias y estudios de caso.",
-        "Presentar informe mensual e indicadores de las actividades desarrolladas.",
-        "Desarrollar acciones de prevención, educación para la salud y reducción de riesgos y daños.",
-        "Realizar las demás actividades relacionadas con el objeto contractual."
-    ]
+    if contrato_individual:
+        st.success(
+            f"✅ Obligaciones cargadas del contrato individual de **{contrato_individual['nombre']}** "
+            f"según CC **{_solo_digitos_v16124(documento)}**."
+        )
+        obligaciones = list(contrato_individual.get("obligaciones", []))
+    else:
+        st.warning(
+            "⚠️ No se encontró una parametrización contractual individual para esta cédula. "
+            "Se muestran obligaciones generales de respaldo; Coordinación debe revisar la asignación."
+        )
+        obligaciones = [
+            "Realizar intervenciones, valoraciones y seguimientos individuales.",
+            "Mantener actualizada la información y bases de datos de las personas atendidas.",
+            "Participar en reuniones interdisciplinarias y estudios de caso.",
+            "Presentar informe mensual e indicadores de las actividades desarrolladas.",
+            "Desarrollar acciones de prevención, educación para la salud y reducción de riesgos y daños.",
+            "Realizar las demás actividades relacionadas con el objeto contractual."
+        ]
     filas = []
     for i, ob in enumerate(obligaciones, 1):
         with st.expander(f"{i}. {ob}", expanded=(i==1)):
-            act = st.text_area("Actividades ejecutadas", key=f"imp_act_{i}")
-            sop = st.text_area("Evidencias / soportes", key=f"imp_sop_{i}")
-            log = st.text_area("Logros / resultados", key=f"imp_log_{i}")
+            act = st.text_area("Actividades ejecutadas", key=f"imp_act_{_solo_digitos_v16124(documento)}_{i}")
+            sop = st.text_area("Evidencias / soportes", key=f"imp_sop_{_solo_digitos_v16124(documento)}_{i}")
+            log = st.text_area("Logros / resultados", key=f"imp_log_{_solo_digitos_v16124(documento)}_{i}")
             filas.append([ob, act, sop, log])
 
     st.markdown("### 🧠 Síntesis profesional")
