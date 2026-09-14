@@ -8489,12 +8489,11 @@ def control_turno_v13():
     if not permisos.empty:
         docs_fuera = set(permisos["documento"].astype(str).str.strip())
 
-    # V16.115 - Presencia física con fecha y hora reales.
-    # movimientos_habitante.fecha_movimiento es DATE, pero hora_movimiento guarda
-    # el timestamp operativo real. Para movimientos antiguos sin hora, se conserva
-    # fecha_movimiento::timestamp como respaldo.
-    # salidas_voluntarias_albergue.fecha_hora se normaliza a hora local Colombia
-    # antes de compararla con hora_movimiento.
+    # V16.116 - Presencia física con hora local Colombia.
+    # hora_movimiento es timestamp without time zone, pero los registros actuales
+    # se almacenan con reloj UTC. Por eso se interpreta explícitamente como UTC y
+    # se convierte a America/Bogota antes de compararlo con las salidas voluntarias.
+    # Para movimientos antiguos sin hora se conserva fecha_movimiento::timestamp.
     try:
         estado_salida_vol = pd.read_sql(
             text("""
@@ -8508,7 +8507,12 @@ def control_turno_v13():
                 ultimo_ingreso AS (
                     SELECT
                         TRIM(CAST(numero_identificacion AS TEXT)) AS documento,
-                        MAX(COALESCE(hora_movimiento, fecha_movimiento::timestamp)) AS fecha_ingreso
+                        MAX(
+                            COALESCE(
+                                (hora_movimiento AT TIME ZONE 'UTC') AT TIME ZONE 'America/Bogota',
+                                fecha_movimiento::timestamp
+                            )
+                        ) AS fecha_ingreso
                     FROM movimientos_habitante
                     WHERE UPPER(TRIM(COALESCE(tipo_movimiento,''))) IN (
                         'INGRESO', 'REINGRESO'
@@ -8623,7 +8627,10 @@ def control_turno_v13():
                     observacion
                 FROM movimientos_habitante
                 WHERE CAST(fecha_movimiento AS DATE) = :hoy_colombia
-                ORDER BY COALESCE(hora_movimiento, fecha_movimiento::timestamp) DESC
+                ORDER BY COALESCE(
+                    (hora_movimiento AT TIME ZONE 'UTC') AT TIME ZONE 'America/Bogota',
+                    fecha_movimiento::timestamp
+                ) DESC
             """),
             engine,
             params={"hoy_colombia": hoy_colombia}
@@ -13751,7 +13758,10 @@ def dashboard_ejecutivo():
                 WITH llegadas_base AS (
                     SELECT DISTINCT
                         m.fecha_movimiento,
-                        COALESCE(m.hora_movimiento, m.fecha_movimiento::timestamp) AS fecha_hora_movimiento,
+                        COALESCE(
+                            (m.hora_movimiento AT TIME ZONE 'UTC') AT TIME ZONE 'America/Bogota',
+                            m.fecha_movimiento::timestamp
+                        ) AS fecha_hora_movimiento,
                         TRIM(CAST(m.numero_identificacion AS TEXT)) AS documento,
                         UPPER(TRIM(COALESCE(m.modalidad,''))) AS modalidad,
                         UPPER(TRIM(COALESCE(m.tipo_movimiento,''))) AS tipo_original
@@ -13866,9 +13876,9 @@ def dashboard_ejecutivo():
         )
 
     if not df_llegadas_hist.empty:
-        # V16.115 - fecha_movimiento conserva el día y fecha_hora_movimiento
-        # contiene la hora operativa real. No se interpreta hora_movimiento como UTC:
-        # en la base es timestamp without time zone y representa hora local operativa.
+        # V16.116 - fecha_movimiento conserva el día operativo registrado.
+        # fecha_hora_movimiento ya llega convertido desde UTC a America/Bogota,
+        # evitando mostrar horas futuras del servidor como si fueran hora colombiana.
         df_llegadas_hist["fecha_movimiento"] = pd.to_datetime(
             df_llegadas_hist["fecha_movimiento"],
             errors="coerce"
