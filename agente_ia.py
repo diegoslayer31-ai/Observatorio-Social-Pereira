@@ -8489,27 +8489,26 @@ def control_turno_v13():
     if not permisos.empty:
         docs_fuera = set(permisos["documento"].astype(str).str.strip())
 
-    # V16.109 - Presencia física según última salida voluntaria
-    # versus último ingreso/reingreso.
-    # IMPORTANTE: movimientos_habitante.fecha_movimiento puede ser DATE (sin hora),
-    # mientras salidas_voluntarias_albergue.fecha_hora es TIMESTAMP.
-    # Para evitar falsos "fuera" cuando ambos eventos ocurren el mismo día,
-    # solo se considera fuera si la salida voluntaria ocurrió en una FECHA posterior
-    # al último ingreso/reingreso (o si nunca existe ingreso/reingreso).
+    # V16.115 - Presencia física con fecha y hora reales.
+    # movimientos_habitante.fecha_movimiento es DATE, pero hora_movimiento guarda
+    # el timestamp operativo real. Para movimientos antiguos sin hora, se conserva
+    # fecha_movimiento::timestamp como respaldo.
+    # salidas_voluntarias_albergue.fecha_hora se normaliza a hora local Colombia
+    # antes de compararla con hora_movimiento.
     try:
         estado_salida_vol = pd.read_sql(
             text("""
                 WITH ultima_salida AS (
                     SELECT
                         TRIM(CAST(numero_identificacion AS TEXT)) AS documento,
-                        MAX(fecha_hora) AS fecha_salida_vol
+                        MAX(fecha_hora AT TIME ZONE 'America/Bogota') AS fecha_salida_vol
                     FROM salidas_voluntarias_albergue
                     GROUP BY TRIM(CAST(numero_identificacion AS TEXT))
                 ),
                 ultimo_ingreso AS (
                     SELECT
                         TRIM(CAST(numero_identificacion AS TEXT)) AS documento,
-                        MAX(fecha_movimiento) AS fecha_ingreso
+                        MAX(COALESCE(hora_movimiento, fecha_movimiento::timestamp)) AS fecha_ingreso
                     FROM movimientos_habitante
                     WHERE UPPER(TRIM(COALESCE(tipo_movimiento,''))) IN (
                         'INGRESO', 'REINGRESO'
@@ -8525,7 +8524,7 @@ def control_turno_v13():
                   ON i.documento=s.documento
                 WHERE
                     i.fecha_ingreso IS NULL
-                    OR CAST(s.fecha_salida_vol AS DATE) > CAST(i.fecha_ingreso AS DATE)
+                    OR s.fecha_salida_vol > i.fecha_ingreso
             """),
             engine
         )
@@ -8616,6 +8615,7 @@ def control_turno_v13():
             text("""
                 SELECT
                     fecha_movimiento,
+                    hora_movimiento,
                     numero_identificacion,
                     tipo_movimiento,
                     modalidad,
@@ -8623,7 +8623,7 @@ def control_turno_v13():
                     observacion
                 FROM movimientos_habitante
                 WHERE CAST(fecha_movimiento AS DATE) = :hoy_colombia
-                ORDER BY fecha_movimiento DESC
+                ORDER BY COALESCE(hora_movimiento, fecha_movimiento::timestamp) DESC
             """),
             engine,
             params={"hoy_colombia": hoy_colombia}
@@ -13751,6 +13751,7 @@ def dashboard_ejecutivo():
                 WITH llegadas_base AS (
                     SELECT DISTINCT
                         m.fecha_movimiento,
+                        COALESCE(m.hora_movimiento, m.fecha_movimiento::timestamp) AS fecha_hora_movimiento,
                         TRIM(CAST(m.numero_identificacion AS TEXT)) AS documento,
                         UPPER(TRIM(COALESCE(m.modalidad,''))) AS modalidad,
                         UPPER(TRIM(COALESCE(m.tipo_movimiento,''))) AS tipo_original
@@ -13762,17 +13763,19 @@ def dashboard_ejecutivo():
                 ordenadas AS (
                     SELECT
                         fecha_movimiento,
+                        fecha_hora_movimiento,
                         documento,
                         modalidad,
                         tipo_original,
                         ROW_NUMBER() OVER (
                             PARTITION BY documento
-                            ORDER BY fecha_movimiento ASC, tipo_original ASC
+                            ORDER BY fecha_hora_movimiento ASC, tipo_original ASC
                         ) AS nro_llegada
                     FROM llegadas_base
                 )
                 SELECT
                     o.fecha_movimiento,
+                    o.fecha_hora_movimiento,
                     o.documento,
                     o.modalidad,
                     o.tipo_original,
@@ -13782,7 +13785,7 @@ def dashboard_ejecutivo():
                 FROM ordenadas o
                 LEFT JOIN habitante_de_calle h
                   ON TRIM(CAST(h.numero_identificacion AS TEXT)) = o.documento
-                ORDER BY o.fecha_movimiento DESC
+                ORDER BY o.fecha_hora_movimiento DESC
             """),
             engine
         )
@@ -13863,15 +13866,23 @@ def dashboard_ejecutivo():
         )
 
     if not df_llegadas_hist.empty:
-        # V16.78 - fecha_movimiento ya llega desde la consulta con la
-        # fecha/hora operativa correcta. No se vuelve a convertir de UTC
-        # para evitar desplazar un día hacia atrás.
+        # V16.115 - fecha_movimiento conserva el día y fecha_hora_movimiento
+        # contiene la hora operativa real. No se interpreta hora_movimiento como UTC:
+        # en la base es timestamp without time zone y representa hora local operativa.
         df_llegadas_hist["fecha_movimiento"] = pd.to_datetime(
             df_llegadas_hist["fecha_movimiento"],
             errors="coerce"
         )
+        df_llegadas_hist["fecha_hora_movimiento"] = pd.to_datetime(
+            df_llegadas_hist["fecha_hora_movimiento"],
+            errors="coerce"
+        )
         df_llegadas_hist = df_llegadas_hist.dropna(
             subset=["fecha_movimiento"]
+        )
+        df_llegadas_hist["fecha_hora_movimiento"] = (
+            df_llegadas_hist["fecha_hora_movimiento"]
+            .fillna(df_llegadas_hist["fecha_movimiento"])
         )
 
         df_llegadas_hist["fecha_dia"] = (
@@ -13929,7 +13940,7 @@ def dashboard_ejecutivo():
         # no se duplica la persona en el indicador.
         df_llegadas_hist = (
             df_llegadas_hist
-            .sort_values("fecha_movimiento")
+            .sort_values("fecha_hora_movimiento")
             .drop_duplicates(
                 subset=["documento", "fecha_dia", "clasificacion"],
                 keep="first"
@@ -13989,7 +14000,7 @@ def dashboard_ejecutivo():
                 ).str.strip()
 
                 df_dia["Hora"] = (
-                    df_dia["fecha_movimiento"]
+                    df_dia["fecha_hora_movimiento"]
                     .dt.strftime("%I:%M %p")
                 )
 
@@ -14060,7 +14071,7 @@ def dashboard_ejecutivo():
                 ).str.strip()
 
                 df_ingreso_dia["Hora"] = (
-                    df_ingreso_dia["fecha_movimiento"]
+                    df_ingreso_dia["fecha_hora_movimiento"]
                     .dt.strftime("%I:%M %p")
                 )
 
