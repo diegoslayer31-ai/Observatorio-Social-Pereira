@@ -23681,21 +23681,26 @@ def modulo_politica_publica_v1678():
         codigo = opciones[etiqueta_accion]
         cfg = POLITICA_PUBLICA_CATALOGO_V1678[codigo]
 
-        # V16.119: excepción operativa solicitada para Samara en la acción 2.1.9.
-        # Para ella esta acción puede registrarse tanto de forma individual como grupal,
-        # sin ampliar esa posibilidad al resto de responsables de la 2.1.9.
-        # V16.120: Samara puede registrar la 2.1.9 en modalidad individual o grupal.
-        # Coordinación/Manager también ve ambas opciones cuando prueba esa acción,
-        # sin ampliar el permiso grupal a los demás roles operativos responsables de 2.1.9.
+        # V16.126: excepciones operativas de la acción 2.1.9.
+        # Samara y Yuci Marcela pueden registrarla tanto de forma individual como grupal,
+        # de acuerdo con el alcance contractual reportado para cada una.
         samara_219_individual_grupal = (
             codigo == "2.1.9"
             and _responsable_pp_v1678(nombre_func, "SAMARA HINESTROZA AGUILAR")
+        )
+        yuci_219_individual_grupal = (
+            codigo == "2.1.9"
+            and _responsable_pp_v1678(nombre_func, "YUCI MARCELA MOSQUERA MOSQUERA")
         )
         supervision_prueba_219 = (
             codigo == "2.1.9"
             and rol in roles_supervision
         )
-        habilitar_grupal_219 = samara_219_individual_grupal or supervision_prueba_219
+        habilitar_grupal_219 = (
+            samara_219_individual_grupal
+            or yuci_219_individual_grupal
+            or supervision_prueba_219
+        )
 
         tipo_permitido = (
             "INDIVIDUAL/ACTIVIDAD"
@@ -23705,8 +23710,10 @@ def modulo_politica_publica_v1678():
 
         if samara_219_individual_grupal:
             st.caption("Tipo permitido para Samara en la acción 2.1.9: **INDIVIDUAL / ACTIVIDAD GRUPAL**")
+        elif yuci_219_individual_grupal:
+            st.caption("Tipo permitido para Yuci Marcela en la acción 2.1.9: **INDIVIDUAL / ACTIVIDAD GRUPAL**")
         elif supervision_prueba_219:
-            st.caption("Modo de prueba de Coordinación/Manager para la acción 2.1.9 de Samara: **INDIVIDUAL / ACTIVIDAD GRUPAL**")
+            st.caption("Modo de prueba de Coordinación/Manager para la acción 2.1.9: **INDIVIDUAL / ACTIVIDAD GRUPAL**")
         else:
             st.caption(
                 f"Tipo permitido según matriz: **{cfg['tipo']}**"
