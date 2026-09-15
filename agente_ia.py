@@ -5910,14 +5910,31 @@ def panel_inspirador_simple_v14():
         except Exception:
             pendientes = pd.DataFrame()
 
-        detalle_perm = []
-        if not permisos.empty:
-            for _, r in permisos.iterrows():
-                detalle_perm.append(
-                    f"• {'VENCIDO - ' if r.get('vencido') else ''}"
-                    f"{r.get('nombre_completo','')} "
-                    f"(CC {r.get('documento','')})"
-                )
+        def _bloque_permiso_por_albergue(df_permisos, modalidad):
+            if df_permisos.empty or "modalidad" not in df_permisos.columns:
+                df_mod = pd.DataFrame()
+            else:
+                serie_mod = df_permisos["modalidad"].fillna("").astype(str).str.strip().str.upper()
+                df_mod = df_permisos.loc[serie_mod.eq(modalidad)].copy()
+
+            vencidos_mod = int(df_mod["vencido"].fillna(False).sum()) if (not df_mod.empty and "vencido" in df_mod.columns) else 0
+            lineas = [
+                f"*🏠 ALBERGUE {modalidad}*",
+                f"*Personas con permiso:* {len(df_mod)}",
+                f"*Permisos vencidos:* {vencidos_mod}",
+                "*Fuera con permiso:*",
+            ]
+
+            if df_mod.empty:
+                lineas.append("• Ninguno")
+            else:
+                for _, r in df_mod.iterrows():
+                    estado = "🔴 VENCIDO - " if bool(r.get("vencido")) else "🟢 "
+                    lineas.append(
+                        f"• {estado}{r.get('nombre_completo','')} "
+                        f"(CC {r.get('documento','')})"
+                    )
+            return lineas
 
         detalle_nov = []
         if not pendientes.empty:
@@ -5926,16 +5943,19 @@ def panel_inspirador_simple_v14():
                     f"• [{r.get('prioridad')}] {r.get('novedad')}"
                 )
 
-        reporte = "\\n".join([
-            "*REPORTE OPERATIVO - ALBERGUE*",
+        reporte = "\n".join([
+            "*REPORTE OPERATIVO - ALBERGUES*",
             f"*Fecha:* {ahora.strftime('%d/%m/%Y %H:%M')}",
-            f"*Personas con permiso:* {len(permisos)}",
-            f"*Permisos vencidos:* {vencidos}",
             "",
-            "*Fuera con permiso:*",
-            *(detalle_perm if detalle_perm else ["• Ninguno"]),
+            *_bloque_permiso_por_albergue(permisos, "URBANO"),
             "",
-            "*Novedades pendientes:*",
+            *_bloque_permiso_por_albergue(permisos, "GRANJA"),
+            "",
+            "*📌 CONSOLIDADO GENERAL*",
+            f"*Total personas con permiso:* {len(permisos)}",
+            f"*Total permisos vencidos:* {vencidos}",
+            "",
+            "*📝 Novedades pendientes:*",
             *(detalle_nov if detalle_nov else ["• Ninguna"]),
             "",
             f"*Registra:* {responsable}"
