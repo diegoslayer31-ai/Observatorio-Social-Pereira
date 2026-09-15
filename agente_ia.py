@@ -25133,6 +25133,111 @@ def _evidencia_caracterizaciones_profesional_v16125(documento, fecha_inicio, fec
         return pd.DataFrame()
 
 
+# ============================================================
+# V16.136 - DETALLE NOMINAL Y FECHADO DE EVIDENCIA PAI
+# ============================================================
+def _detalle_pai_informe_v16136(df_pai=None, df_seg=None):
+    """Convierte las fuentes PAI/seguimiento en evidencia legible y auditable.
+
+    No inventa información: toma únicamente columnas realmente presentes y,
+    cuando existe documento del usuario, completa el nombre desde
+    habitante_de_calle.
+    """
+    def _col_local(df, candidatos):
+        if df is None or df.empty:
+            return None
+        mapa = {str(c).lower().strip(): c for c in df.columns}
+        for cand in candidatos:
+            if cand.lower() in mapa:
+                return mapa[cand.lower()]
+        for c in df.columns:
+            lc = str(c).lower()
+            if any(cand.lower() in lc for cand in candidatos):
+                return c
+        return None
+
+    def _txt(v):
+        if v is None or (isinstance(v, float) and pd.isna(v)):
+            return ""
+        t = str(v).strip()
+        return "" if t.lower() in ("nan", "none", "nat") else t
+
+    def _armar(df, fuente):
+        if df is None or df.empty:
+            return pd.DataFrame()
+        c_fecha = _col_local(df, ["fecha_hora", "fecha_registro", "fecha_seguimiento", "fecha_creacion", "created_at", "fecha_atencion", "fecha"])
+        c_doc = _col_local(df, ["documento_usuario", "numero_identificacion", "documento", "cedula_usuario", "cedula"])
+        c_tipo = _col_local(df, ["tipo_novedad", "tipo_seguimiento", "tipo_intervencion", "tipo", "objetivo_tipo", "estado"])
+        c_obj = _col_local(df, ["objetivo_descripcion", "objetivo", "actividad", "actividad_realizada", "intervencion", "motivo"])
+        c_desc = _col_local(df, ["descripcion", "seguimiento", "observacion", "resultado", "detalle", "evidencia"])
+        c_av = _col_local(df, ["avance_generado", "porcentaje_avance", "avance"])
+        c_prof = _col_local(df, ["profesional_responsable", "profesional", "profesional_referente", "responsable", "registrado_por_nombre"])
+
+        filas = []
+        for _, r in df.iterrows():
+            fecha_txt = ""
+            if c_fecha:
+                f = pd.to_datetime(r.get(c_fecha), errors="coerce")
+                if pd.notna(f):
+                    try:
+                        if getattr(f, "tzinfo", None) is not None:
+                            f = f.tz_convert("America/Bogota")
+                    except Exception:
+                        pass
+                    fecha_txt = f.strftime("%d/%m/%Y %I:%M %p") if (f.hour or f.minute or f.second) else f.strftime("%d/%m/%Y")
+                else:
+                    fecha_txt = _txt(r.get(c_fecha))
+            filas.append({
+                "Fecha / hora": fecha_txt,
+                "Documento usuario": _txt(r.get(c_doc)) if c_doc else "",
+                "Usuario": "",
+                "Fuente": fuente,
+                "Tipo de registro": _txt(r.get(c_tipo)) if c_tipo else fuente,
+                "Objetivo / actividad": _txt(r.get(c_obj)) if c_obj else "",
+                "Seguimiento / resultado": _txt(r.get(c_desc)) if c_desc else "",
+                "Avance": _txt(r.get(c_av)) if c_av else "",
+                "Profesional": _txt(r.get(c_prof)) if c_prof else "",
+            })
+        return pd.DataFrame(filas)
+
+    partes = []
+    p = _armar(df_pai, "PAI")
+    s = _armar(df_seg, "Seguimiento / intervención")
+    if not p.empty:
+        partes.append(p)
+    if not s.empty:
+        partes.append(s)
+    if not partes:
+        return pd.DataFrame()
+
+    det = pd.concat(partes, ignore_index=True, sort=False)
+
+    # Completar nombre de la persona sin alterar el registro original.
+    docs = [d for d in det["Documento usuario"].fillna("").astype(str).str.strip().unique().tolist() if d]
+    if docs:
+        try:
+            nombres = pd.read_sql(
+                text("""
+                    SELECT TRIM(CAST(numero_identificacion AS TEXT)) AS doc,
+                           TRIM(COALESCE(nombres,'') || ' ' || COALESCE(apellidos,'')) AS nombre
+                    FROM habitante_de_calle
+                    WHERE TRIM(CAST(numero_identificacion AS TEXT)) = ANY(:docs)
+                """), engine, params={"docs": docs}
+            )
+            mapa_n = dict(zip(nombres["doc"].astype(str), nombres["nombre"].astype(str)))
+            det["Usuario"] = det["Documento usuario"].astype(str).map(mapa_n).fillna("")
+        except Exception:
+            pass
+
+    # Orden descendente cuando la fecha es interpretable.
+    try:
+        _ord = pd.to_datetime(det["Fecha / hora"], errors="coerce", dayfirst=True)
+        det = det.assign(_orden=_ord).sort_values("_orden", ascending=False, na_position="last").drop(columns=["_orden"])
+    except Exception:
+        pass
+    return det.reset_index(drop=True)
+
+
 def _resumen_evidencia_v16125(tipo, df, codigos=None):
     if df is None or df.empty:
         return ""
@@ -25166,7 +25271,17 @@ def _resumen_evidencia_v16125(tipo, df, codigos=None):
             f"personas únicas: {unicos}; creaciones: {creadas}; actualizaciones: {actualizadas}."
         )
     if tipo == "pai":
-        return f"Registros automáticos PAI/seguimiento asociados al profesional: {int(len(df))}."
+        total = int(len(df))
+        personas = 0
+        try:
+            personas = int(df["Documento usuario"].fillna("").astype(str).str.strip().replace("", pd.NA).dropna().nunique())
+        except Exception:
+            pass
+        return (
+            f"Evidencia automática PAI/seguimiento: {total} registro(s) del período; "
+            f"personas únicas intervenidas: {personas}. Se detalla fecha/hora, persona, "
+            "tipo de registro, actividad/objetivo, seguimiento/resultado y avance cuando están disponibles."
+        )
     return ""
 
 
@@ -25204,16 +25319,7 @@ def _evidencia_automatica_obligacion_v16125(
         }
 
     if "PAI" in texto_norm or "ESTUDIO DE CASO" in texto_norm:
-        partes = []
-        if isinstance(df_pai, pd.DataFrame) and not df_pai.empty:
-            p = df_pai.copy()
-            p.insert(0, "Fuente automática", "PAI")
-            partes.append(p)
-        if isinstance(df_seg, pd.DataFrame) and not df_seg.empty:
-            s = df_seg.copy()
-            s.insert(0, "Fuente automática", "Seguimiento")
-            partes.append(s)
-        df = pd.concat(partes, ignore_index=True, sort=False) if partes else pd.DataFrame()
+        df = _detalle_pai_informe_v16136(df_pai=df_pai, df_seg=df_seg)
         return {
             "tipo": "pai",
             "df": df,
@@ -25502,6 +25608,11 @@ def modulo_informe_mensual_profesional_piloto_v1627():
                                 st.session_state["pp78_resaltar_registro"] = int(id_abrir)
                                 st.session_state.page = "politica_publica_v1678"
                                 st.rerun()
+                    elif ev_auto["tipo"] == "pai":
+                        st.caption(
+                            "Cada fila corresponde a evidencia real PAI/seguimiento atribuida al profesional "
+                            "en el período. Los campos vacíos indican que la fuente original no contiene ese dato."
+                        )
                 else:
                     st.info(
                         "No se encontraron registros automáticos asociados a esta obligación "
@@ -25544,6 +25655,20 @@ def modulo_informe_mensual_profesional_piloto_v1627():
                                 f"{_r.get('Documento usuario','')} | "
                                 f"{_r.get('Usuario','')} | "
                                 f"{_r.get('Fecha y hora','')}"
+                            )
+                    elif ev_auto["tipo"] == "pai":
+                        for _, _r in df_ev.head(40).iterrows():
+                            _persona = str(_r.get("Usuario", "") or "").strip()
+                            _docu = str(_r.get("Documento usuario", "") or "").strip()
+                            _quien = (_persona + (f" · CC {_docu}" if _docu else "")).strip(" ·")
+                            _avance = str(_r.get("Avance", "") or "").strip()
+                            partes_sop.append(
+                                f"{_r.get('Fecha / hora','')} | "
+                                f"{_quien or 'Usuario no identificado en la fuente'} | "
+                                f"{_r.get('Fuente','')} | {_r.get('Tipo de registro','')} | "
+                                f"Actividad/objetivo: {_r.get('Objetivo / actividad','')} | "
+                                f"Seguimiento/resultado: {_r.get('Seguimiento / resultado','')}"
+                                + (f" | Avance: {_avance}" if _avance else "")
                             )
             if sop_manual.strip():
                 partes_sop.append("SOPORTE ADICIONAL: " + sop_manual.strip())
