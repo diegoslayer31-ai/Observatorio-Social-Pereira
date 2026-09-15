@@ -381,7 +381,18 @@ def registrar_salida_fallecimiento_v16128(
     documento = limpiar_documento(documento)
     fecha_fallecimiento = fecha_fallecimiento or ahora_colombia().date()
     usuario = st.session_state.get("usuario_actual", "sistema")
-    persona = persona or {}
+    # `persona` puede llegar desde un DataFrame como pandas.Series.
+    # No usar `persona or {}` porque una Series no tiene un valor booleano único
+    # y pandas lanza: ValueError: The truth value of a Series is ambiguous.
+    if persona is None:
+        persona = {}
+    elif hasattr(persona, "to_dict"):
+        persona = persona.to_dict()
+    elif not isinstance(persona, dict):
+        try:
+            persona = dict(persona)
+        except Exception:
+            persona = {}
 
     obs_libre = str(observacion or "").strip()
     obs_mov = (
