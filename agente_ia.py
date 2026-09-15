@@ -25748,21 +25748,60 @@ def modulo_informe_mensual_profesional_piloto_v1627():
             ("FONTSIZE",(0,0),(-1,-1),8)
         ]))
         story += [ti, Spacer(1,8)]
-        data = [[Paragraph("<b>Obligación contractual</b>",body),
-                 Paragraph("<b>Actividades ejecutadas</b>",body),
-                 Paragraph("<b>Evidencias / soportes</b>",body),
-                 Paragraph("<b>Logros / resultados</b>",body)]]
-        for row in filas:
-            data.append([Paragraph(esc(x),body) for x in row])
-        tt = Table(data, colWidths=[4.5*cm,4.5*cm,3.8*cm,4.2*cm], repeatRows=1)
-        tt.setStyle(TableStyle([
-            ("GRID",(0,0),(-1,-1),0.3,colors.grey),
-            ("BACKGROUND",(0,0),(-1,0),colors.whitesmoke),
-            ("VALIGN",(0,0),(-1,-1),"TOP"),
-            ("LEFTPADDING",(0,0),(-1,-1),3),
-            ("RIGHTPADDING",(0,0),(-1,-1),3)
-        ]))
-        story += [tt, Spacer(1,8),
+        # V16.137 - PDF multipágina robusto.
+        # No usamos una sola tabla de 4 columnas para todas las obligaciones porque
+        # ReportLab no puede partir una celda cuya altura supera la página. Las
+        # evidencias automáticas (especialmente PAI) pueden contener decenas de
+        # registros y producir el error "tallest cell ... too large on page".
+        sec = ParagraphStyle(
+            "sec_obligacion_v16137", parent=body,
+            fontSize=8.2, leading=10.2, spaceBefore=6, spaceAfter=3
+        )
+        etiqueta = ParagraphStyle(
+            "etiqueta_v16137", parent=body,
+            fontSize=7.5, leading=9.2, spaceBefore=3, spaceAfter=1
+        )
+        detalle = ParagraphStyle(
+            "detalle_v16137", parent=body,
+            fontSize=7.2, leading=9.0, leftIndent=8, spaceAfter=2
+        )
+
+        story.append(Paragraph("<b>CUMPLIMIENTO DE OBLIGACIONES</b>", sec))
+        story.append(Spacer(1, 3))
+
+        for nro, row in enumerate(filas, start=1):
+            ob, act, sop, log = row
+            story.append(Paragraph(f"<b>{nro}. {esc(ob)}</b>", sec))
+
+            story.append(Paragraph("<b>Actividades ejecutadas</b>", etiqueta))
+            if str(act or "").strip():
+                for linea in str(act).splitlines():
+                    if linea.strip():
+                        story.append(Paragraph(esc(linea), detalle))
+            else:
+                story.append(Paragraph("Sin información diligenciada.", detalle))
+
+            story.append(Paragraph("<b>Evidencias / soportes</b>", etiqueta))
+            if str(sop or "").strip():
+                # Una evidencia por Flowable: ReportLab puede continuarla en la
+                # página siguiente sin intentar meter todo en una celda gigante.
+                for linea in str(sop).splitlines():
+                    if linea.strip():
+                        story.append(Paragraph("• " + esc(linea), detalle))
+            else:
+                story.append(Paragraph("Sin evidencias registradas para el período.", detalle))
+
+            story.append(Paragraph("<b>Logros / resultados</b>", etiqueta))
+            if str(log or "").strip():
+                for linea in str(log).splitlines():
+                    if linea.strip():
+                        story.append(Paragraph(esc(linea), detalle))
+            else:
+                story.append(Paragraph("Sin información diligenciada.", detalle))
+
+            story.append(Spacer(1, 7))
+
+        story += [Spacer(1,8),
                   Paragraph("<b>Análisis del período</b>",body),
                   Paragraph(esc(analisis) or "Sin observaciones.",body),
                   Spacer(1,6),
@@ -25774,14 +25813,14 @@ def modulo_informe_mensual_profesional_piloto_v1627():
         docpdf.build(story)
         bio.seek(0)
         st.download_button(
-            "📥 Generar PDF piloto",
+            "📥 Generar PDF del informe",
             data=bio.getvalue(),
             file_name=f"Informe_mensual_{fecha_inicio:%Y%m%d}_{fecha_fin:%Y%m%d}.pdf",
             mime="application/pdf",
             use_container_width=True
         )
     except Exception as e:
-        st.warning("No fue posible generar el PDF piloto: " + str(e))
+        st.warning("No fue posible generar el PDF del informe: " + str(e))
 
     st.info(
         "Este piloto consulta los registros existentes y genera el documento. "
