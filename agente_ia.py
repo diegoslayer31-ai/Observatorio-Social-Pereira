@@ -23617,8 +23617,8 @@ def _excel_alcaldia_politica_publica_v16122(mes, anio):
                 p.documento_usuario AS documento,
                 COALESCE(NULLIF(TRIM(p.nombre_usuario), ''),
                          TRIM(COALESCE(h.nombres,'') || ' ' || COALESCE(h.apellidos,''))) AS participante,
-                COALESCE(NULLIF(TRIM(p.modalidad_usuario), ''), h.modalidad, '') AS modalidad,
-                COALESCE(h.sexo_al_nacer, '') AS sexo_al_nacer
+                COALESCE(NULLIF(TRIM(p.modalidad_usuario), ''), h.modalidad, '') AS modalidad_pp,
+                h.*
             FROM politica_publica_registros r
             JOIN politica_publica_participantes p ON p.registro_id = r.id
             LEFT JOIN habitante_de_calle h
@@ -23773,29 +23773,73 @@ def _excel_alcaldia_politica_publica_v16122(mes, anio):
             c=ws2.cell(rr,j,_limpio(v)); c.border=borde; c.alignment=wrap; c.font=Font(size=9)
         ws2.cell(rr,3).number_format="DD/MM/YYYY"
 
-    # ---------------- PESTAÑA 3: SOPORTE NOMINAL GRUPALES ----------------
+    # ---------------- PESTAÑA 3: SOPORTE NOMINAL GRUPALES + CARACTERIZACIÓN COMPLETA ----------------
+    # Conserva los datos de la actividad y agrega la misma caracterización disponible
+    # para los usuarios individuales. Una fila = un participante de una actividad grupal.
     headers_part = [
-        "ID ACTIVIDAD", "FECHA", "CÓDIGO ACCIÓN", "ACCIÓN", "NOMBRE ACTIVIDAD",
-        "LUGAR", "RESPONSABLE", "DOCUMENTO PARTICIPANTE", "NOMBRE PARTICIPANTE",
-        "SEXO AL NACER", "MODALIDAD"
+        "ID ACTIVIDAD", "FECHA ACTIVIDAD", "CÓDIGO ACCIÓN", "ACCIÓN", "NOMBRE ACTIVIDAD",
+        "LUGAR", "RESPONSABLE",
+        "TIPO DE IDENTIFICACIÓN", "DOCUMENTO PARTICIPANTE", "NOMBRES", "APELLIDOS",
+        "NOMBRE COMPLETO", "SEXO AL NACER", "FECHA DE NACIMIENTO", "EDAD",
+        "GRUPO SISBÉN", "PERSONA CON DISCAPACIDAD", "CATEGORÍA DISCAPACIDAD",
+        "INDICADOR DISCAPACIDAD", "CABEZA DE FAMILIA", "MUJER GESTANTE/LACTANTE",
+        "LÍDER/REPRESENTANTE", "SE RECONOCE COMO", "ORIENTACIÓN SEXUAL LGTBI",
+        "EXPERIENCIA MIGRATORIA", "INDICADOR MIGRACIÓN", "NIÑOS, NIÑAS Y ADOLESCENTES",
+        "ADULTO MAYOR", "GRUPOS ÉTNICOS", "INDICADOR ETNIA", "SEGURIDAD EN SALUD",
+        "NIVEL EDUCATIVO", "CONDICIÓN OCUPACIONAL", "BARRIO/VEREDA",
+        "COMUNA/CORREGIMIENTO", "ZONA DE RESIDENCIA", "DIRECCIÓN", "TELÉFONO", "CORREO",
+        "NÚMERO DE ATENCIONES", "DEPARTAMENTO DE PROCEDENCIA", "POBLACIÓN",
+        "TIPO DE ATENCIÓN", "TIPO DE CONSUMO", "CAUSAS DE CALLE", "PERFIL OCUPACIONAL",
+        "ENFERMEDAD MENTAL", "HABILIDAD 1", "HABILIDAD 2", "ACOMPAÑAMIENTO FAMILIAR",
+        "MODALIDAD"
     ]
     ws3.merge_cells(start_row=1, start_column=1, end_row=1, end_column=len(headers_part))
-    t3 = ws3.cell(1, 1, "SOPORTE NOMINAL DE PARTICIPANTES - ACTIVIDADES GRUPALES")
+    t3 = ws3.cell(1, 1, "SOPORTE NOMINAL DE PARTICIPANTES - ACTIVIDADES GRUPALES / CARACTERIZACIÓN COMPLETA")
     t3.font = Font(bold=True, size=12); t3.alignment = centro
     for j, h in enumerate(headers_part, start=1):
         c = ws3.cell(3, j, h); c.fill = azul; c.font = Font(bold=True, size=9); c.border = borde; c.alignment = centro
-    ws3.row_dimensions[3].height = 42
+    ws3.row_dimensions[3].height = 58
+
+    def _sexo_normalizado(v):
+        x = str(_limpio(v)).strip().upper()
+        if x in {"M", "MASCULINO", "HOMBRE", "MALE"}:
+            return "MASCULINO"
+        if x in {"F", "FEMENINO", "MUJER", "FEMALE"}:
+            return "FEMENINO"
+        return _limpio(v)
+
     for i, (_, row) in enumerate(participantes_grupales.iterrows(), start=1):
+        doc = str(_r(row, "documento") or _r(row, "numero_identificacion")).strip()
+        nombres = _r(row, "nombres")
+        apellidos = _r(row, "apellidos")
+        nombre_completo = _r(row, "participante") or (str(nombres).strip() + " " + str(apellidos).strip()).strip()
+        discapacidad = _r(row, "categoria_discapacidad")
+        migracion = _si_no(_r(row, "experiencia_migratoria"))
+        etnia = _r(row, "grupos_etnicos")
         vals = [
             _r(row,"registro_id"), _r(row,"fecha_accion"), _r(row,"codigo_accion"),
-            _r(row,"accion"), _r(row,"nombre_actividad"), _r(row,"lugar"),
-            _r(row,"responsable"), _r(row,"documento"), _r(row,"participante"),
-            _r(row,"sexo_al_nacer"), _r(row,"modalidad")
+            _r(row,"accion"), _r(row,"nombre_actividad"), _r(row,"lugar"), _r(row,"responsable"),
+            _r(row,"tipo_identificacion"), doc, nombres, apellidos, nombre_completo,
+            _sexo_normalizado(_r(row,"sexo_al_nacer")), _r(row,"fecha_nacimiento"), _r(row,"edad"),
+            _r(row,"grupo_sisben"), _si_no(_r(row,"personas_con_discapacidad")), discapacidad,
+            _r(row,"indicador_discapacidad"), _si_no(_r(row,"cabeza_familia")), _r(row,"mujer_gestante_lactante"),
+            _si_no(_r(row,"lider_representante")), _r(row,"se_reconoce_como"), _r(row,"orientacion_sexual_lgtbi"),
+            migracion, _r(row,"indicador_migracion"), _si_no(_r(row,"ninos_ninas_adolescentes")),
+            _si_no(_r(row,"adulto_mayor")), etnia, _r(row,"indicador_etnia"), _r(row,"tipo_seguridad_salud"),
+            _r(row,"nivel_educativo"), _r(row,"condicion_ocupacional"), _r(row,"barrio_vereda"),
+            _r(row,"comuna_corregimiento"), _r(row,"zona_residencia"), _r(row,"direccion"), _r(row,"telefono"), _r(row,"correo"),
+            _r(row,"numero_atenciones"), _r(row,"departamento_procedencia"), _r(row,"poblacion") or "HABITANTE DE CALLE",
+            _r(row,"tipo_atencion"), _r(row,"tipo_consumo"), _r(row,"causas_calle"), _r(row,"perfil_ocupacional"),
+            _r(row,"enfermedad_mental"), _r(row,"habilidades_1"), _r(row,"habilidades_2"),
+            _r(row,"acompanamiento_familiar"), _r(row,"modalidad_pp") or _r(row,"modalidad")
         ]
         rr = 3 + i
         for j, v in enumerate(vals, start=1):
             c = ws3.cell(rr, j, _limpio(v)); c.border = borde; c.alignment = wrap; c.font = Font(size=9)
         ws3.cell(rr, 2).number_format = "DD/MM/YYYY"
+        ws3.cell(rr, 14).number_format = "DD/MM/YYYY"
+
+    ws3.auto_filter.ref = f"A3:{get_column_letter(len(headers_part))}{ws3.max_row}"
 
     # Presentación semejante al archivo institucional suministrado.
     for ws, start_col, end_col in [(ws1,3,2+len(headers_ind)), (ws2,2,1+len(headers_grp)), (ws3,1,len(headers_part))]:
