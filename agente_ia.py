@@ -25136,7 +25136,7 @@ def _evidencia_caracterizaciones_profesional_v16125(documento, fecha_inicio, fec
 # ============================================================
 # V16.136 - DETALLE NOMINAL Y FECHADO DE EVIDENCIA PAI
 # ============================================================
-def _detalle_pai_informe_v16136(df_pai=None, df_seg=None):
+def _detalle_pai_informe_v16136(df_pai=None, df_seg=None, fecha_inicio=None, fecha_fin=None):
     """Convierte las fuentes PAI/seguimiento en evidencia legible y auditable.
 
     No inventa información: toma únicamente columnas realmente presentes y,
@@ -25212,8 +25212,31 @@ def _detalle_pai_informe_v16136(df_pai=None, df_seg=None):
 
     det = pd.concat(partes, ignore_index=True, sort=False)
 
-    # Los dataframes de entrada ya vienen filtrados por período usando fecha local
-    # de Colombia (V16.138). No se vuelve a reinterpretar aquí la fecha como UTC.
+    # V16.139 - SEGUNDO CANDADO DE PERÍODO.
+    # El detalle que finalmente se imprime se vuelve a filtrar por la MISMA fecha
+    # que verá el usuario. Esto evita que una fuente con varias columnas de fecha
+    # (p. ej. fecha_registro y fecha_seguimiento) deje pasar registros de otro mes.
+    if fecha_inicio is not None and fecha_fin is not None and not det.empty:
+        def _fecha_visible_estricta(v):
+            if v is None:
+                return pd.NaT
+            txt = str(v).strip()
+            if not txt:
+                return pd.NaT
+            # El detalle se formatea DD/MM/YYYY; extraemos explícitamente esa fecha
+            # para no depender de inferencias ambiguas de pandas.
+            import re as _re
+            m = _re.match(r"^(\d{2})/(\d{2})/(\d{4})", txt)
+            if not m:
+                return pd.NaT
+            try:
+                from datetime import date as _date
+                return _date(int(m.group(3)), int(m.group(2)), int(m.group(1)))
+            except Exception:
+                return pd.NaT
+        _fv = det["Fecha / hora"].apply(_fecha_visible_estricta)
+        _mask = _fv.apply(lambda d: pd.notna(d) and fecha_inicio <= d <= fecha_fin)
+        det = det.loc[_mask].copy()
 
     # Completar nombre de la persona sin alterar el registro original.
     docs = [d for d in det["Documento usuario"].fillna("").astype(str).str.strip().unique().tolist() if d]
@@ -25322,7 +25345,7 @@ def _evidencia_automatica_obligacion_v16125(
         }
 
     if "PAI" in texto_norm or "ESTUDIO DE CASO" in texto_norm:
-        df = _detalle_pai_informe_v16136(df_pai=df_pai, df_seg=df_seg)
+        df = _detalle_pai_informe_v16136(df_pai=df_pai, df_seg=df_seg, fecha_inicio=fecha_inicio, fecha_fin=fecha_fin)
         return {
             "tipo": "pai",
             "df": df,
@@ -25724,6 +25747,19 @@ def modulo_informe_mensual_profesional_piloto_v1627():
     analisis = st.text_area("Análisis del período", height=140, key="imp_analisis")
     compromisos = st.text_area("Compromisos / acciones siguientes", height=100, key="imp_compromisos")
 
+    st.markdown("### ✍️ Firma del profesional")
+    st.caption("Opcional: puede adjuntar una imagen de su firma (PNG, JPG o JPEG) para incluirla en el PDF. Esta es una firma gráfica insertada en el informe; no reemplaza una firma digital criptográfica/certificada.")
+    firma_archivo = st.file_uploader(
+        "Agregar firma al informe",
+        type=["png", "jpg", "jpeg"],
+        key="imp_firma_profesional_v16139"
+    )
+    if firma_archivo is not None:
+        try:
+            st.image(firma_archivo, caption="Firma que se incluirá en el PDF", width=220)
+        except Exception:
+            pass
+
     st.markdown("### 👁️ Vista previa")
     st.write(
         f"**Profesional:** {nombre or 'Sin diligenciar'}  \n"
@@ -25852,8 +25888,25 @@ def modulo_informe_mensual_profesional_piloto_v1627():
                   Spacer(1,6),
                   Paragraph("<b>Compromisos / siguiente período</b>",body),
                   Paragraph(esc(compromisos) or "Sin compromisos registrados.",body),
-                  Spacer(1,20),
-                  Paragraph("________________________________________",body),
+                  Spacer(1,16)]
+
+        # V16.139 - firma gráfica opcional del profesional.
+        if firma_archivo is not None:
+            try:
+                from reportlab.platypus import Image as RLImage
+                firma_archivo.seek(0)
+                _firma_bytes = firma_archivo.read()
+                _firma_bio = BytesIO(_firma_bytes)
+                _img_firma = RLImage(_firma_bio)
+                _max_w, _max_h = 5.0*cm, 2.2*cm
+                _escala = min(_max_w / float(_img_firma.imageWidth), _max_h / float(_img_firma.imageHeight), 1.0)
+                _img_firma.drawWidth = float(_img_firma.imageWidth) * _escala
+                _img_firma.drawHeight = float(_img_firma.imageHeight) * _escala
+                story += [_img_firma, Spacer(1,3)]
+            except Exception as _e_firma:
+                story.append(Paragraph("Firma adjunta no pudo incorporarse al PDF.", body))
+
+        story += [Paragraph("________________________________________",body),
                   Paragraph(esc(nombre) or "Firma del profesional",body)]
         docpdf.build(story)
         bio.seek(0)
