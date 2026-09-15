@@ -271,6 +271,23 @@ def formatear_fecha_colombia(dt=None):
         dt = dt.astimezone(BOGOTA_TZ)
     return dt.strftime("%d/%m/%Y")
 
+
+def normalizar_timestamp_pandas_sin_tz(valor):
+    """Normaliza fechas PostgreSQL/Pandas para cálculos sin mezclar tz-aware y tz-naive."""
+    ts = pd.to_datetime(valor, errors="coerce")
+    if pd.isna(ts):
+        return pd.NaT
+    try:
+        ts = pd.Timestamp(ts)
+        if ts.tzinfo is not None:
+            ts = ts.tz_convert("America/Bogota").tz_localize(None)
+        return ts
+    except Exception:
+        try:
+            return pd.Timestamp(ts).tz_localize(None)
+        except Exception:
+            return pd.NaT
+
 # ============================================================
 # CONFIGURACIÓN Y UTILIDADES CENTRALES
 # ============================================================
@@ -12437,8 +12454,8 @@ def panel_profesional_v15(doc_forzado=None, incrustado=False):
             tmp["porcentaje_avance"], errors="coerce"
         ).fillna(0)
         tmp["fecha_meta"] = pd.to_datetime(tmp["fecha_meta"], errors="coerce")
-        tmp["fecha_ultimo_seguimiento"] = pd.to_datetime(
-            tmp["fecha_ultimo_seguimiento"], errors="coerce"
+        tmp["fecha_ultimo_seguimiento"] = tmp["fecha_ultimo_seguimiento"].apply(
+            normalizar_timestamp_pandas_sin_tz
         )
         hoy = pd.Timestamp(date.today())
         cumplido_mask = (
@@ -13609,8 +13626,8 @@ def supervision_pai_v15():
         control["fecha_meta"] = pd.to_datetime(
             control["fecha_meta"], errors="coerce"
         )
-        control["fecha_ultimo_seguimiento"] = pd.to_datetime(
-            control["fecha_ultimo_seguimiento"], errors="coerce"
+        control["fecha_ultimo_seguimiento"] = control["fecha_ultimo_seguimiento"].apply(
+            normalizar_timestamp_pandas_sin_tz
         )
         control["porcentaje_avance"] = pd.to_numeric(
             control["porcentaje_avance"], errors="coerce"
@@ -14063,8 +14080,8 @@ def dashboard_ejecutivo():
         df_pai_coord["fecha_meta"] = pd.to_datetime(
             df_pai_coord["fecha_meta"], errors="coerce"
         )
-        df_pai_coord["fecha_ultimo_seguimiento"] = pd.to_datetime(
-            df_pai_coord["fecha_ultimo_seguimiento"], errors="coerce"
+        df_pai_coord["fecha_ultimo_seguimiento"] = df_pai_coord["fecha_ultimo_seguimiento"].apply(
+            normalizar_timestamp_pandas_sin_tz
         )
         df_pai_coord["porcentaje_avance"] = pd.to_numeric(
             df_pai_coord["porcentaje_avance"], errors="coerce"
@@ -30307,8 +30324,8 @@ with tab6:
         df_control_pai["fecha_cumplimiento_real"] = pd.to_datetime(
             df_control_pai["fecha_cumplimiento_real"], errors="coerce"
         )
-        df_control_pai["fecha_ultimo_seguimiento"] = pd.to_datetime(
-            df_control_pai["fecha_ultimo_seguimiento"], errors="coerce"
+        df_control_pai["fecha_ultimo_seguimiento"] = df_control_pai["fecha_ultimo_seguimiento"].apply(
+            normalizar_timestamp_pandas_sin_tz
         )
         df_control_pai["porcentaje_avance"] = pd.to_numeric(
             df_control_pai["porcentaje_avance"], errors="coerce"
