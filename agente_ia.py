@@ -25212,6 +25212,9 @@ def _detalle_pai_informe_v16136(df_pai=None, df_seg=None):
 
     det = pd.concat(partes, ignore_index=True, sort=False)
 
+    # Los dataframes de entrada ya vienen filtrados por período usando fecha local
+    # de Colombia (V16.138). No se vuelve a reinterpretar aquí la fecha como UTC.
+
     # Completar nombre de la persona sin alterar el registro original.
     docs = [d for d in det["Documento usuario"].fillna("").astype(str).str.strip().unique().tolist() if d]
     if docs:
@@ -25412,14 +25415,56 @@ def modulo_informe_mensual_profesional_piloto_v1627():
         return None
 
     def filtrar_periodo(df):
+        """Filtra por la fecha LOCAL de Colombia que luego se muestra en el informe.
+
+        V16.138: evita que un timestamp UTC del 01/09 (por ejemplo 00:xx UTC)
+        pase el filtro de septiembre y después se muestre como 31/08 al convertirlo
+        a America/Bogota. Para timestamps con zona horaria, primero convertimos a
+        Colombia y SOLO DESPUÉS comparamos la fecha. Las fechas naive se conservan
+        como fechas locales, sin aplicar un desplazamiento artificial.
+        """
         if df is None or df.empty:
             return pd.DataFrame()
-        cf = col(df, ["fecha_registro","fecha_seguimiento","fecha_creacion","created_at","fecha_atencion","fecha"])
+
+        # Prioridad estricta: usar la fecha real del evento/seguimiento antes que
+        # columnas genéricas. La búsqueda aproximada anterior podía escoger otra
+        # columna que simplemente contuviera la palabra "fecha".
+        candidatos = [
+            "fecha_seguimiento", "fecha_registro", "fecha_hora", "creado_en",
+            "created_at", "fecha_creacion", "fecha_atencion", "fecha_movimiento",
+            "fecha"
+        ]
+        mapa = {str(x).lower().strip(): x for x in df.columns}
+        cf = next((mapa[c] for c in candidatos if c in mapa), None)
+        if cf is None:
+            # Solo como último recurso usar la lógica flexible existente.
+            cf = col(df, candidatos)
         if not cf:
             return df.copy()
+
         tmp = df.copy()
-        ff = pd.to_datetime(tmp[cf], errors="coerce", dayfirst=True)
-        return tmp[(ff.dt.date >= fecha_inicio) & (ff.dt.date <= fecha_fin)].copy()
+
+        def _fecha_local_colombia(v):
+            if v is None or (isinstance(v, float) and pd.isna(v)):
+                return pd.NaT
+            try:
+                ts = pd.Timestamp(v)
+            except Exception:
+                return pd.NaT
+            if pd.isna(ts):
+                return pd.NaT
+            try:
+                if ts.tzinfo is not None:
+                    ts = ts.tz_convert("America/Bogota")
+            except Exception:
+                pass
+            return ts.date()
+
+        fechas_locales = tmp[cf].apply(_fecha_local_colombia)
+        mascara = fechas_locales.apply(
+            lambda d: pd.notna(d) and fecha_inicio <= d <= fecha_fin
+        )
+        return tmp.loc[mascara].copy()
 
     # Detecta las tablas reales existentes en esta instalación.
     tablas_pai = [t for t in tablas if "pai" in t.lower()]
