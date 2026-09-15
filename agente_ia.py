@@ -5316,17 +5316,35 @@ def registrar_egreso_profesional_v12(u, documento):
         key=f"v12_fecha_egreso_{documento}"
     )
 
-    motivo_e = st.selectbox(
-        "Tipo de egreso",
-        [
+    # V16.145 - Los Inspiradores pueden registrar egresos definitivos
+    # únicamente cuando la persona es trasladada sin fecha de regreso a
+    # Centro de Protección de Adulto Mayor o Albergue de Víctimas.
+    rol_egreso = str(st.session_state.get("rol_actual", "")).strip().upper()
+    if rol_egreso == "INSPIRADOR":
+        opciones_motivo_egreso = [
+            "TRASLADO A CENTRO DE PROTECCIÓN DE ADULTO MAYOR",
+            "TRASLADO A ALBERGUE DE VÍCTIMAS"
+        ]
+        st.info(
+            "Para Inspiradores este registro corresponde a una salida definitiva "
+            "sin fecha de regreso. Se contabiliza como EGRESO e IMPACTO."
+        )
+    else:
+        opciones_motivo_egreso = [
             "PLAN RETORNO",
             "VINCULACION FAMILIAR",
             "VINCULACION LABORAL",
             "TRASLADO A CENTRO DE PROTECCION",
+            "TRASLADO A CENTRO DE PROTECCIÓN DE ADULTO MAYOR",
+            "TRASLADO A ALBERGUE DE VÍCTIMAS",
             "INGRESO A TRATAMIENTO",
             "AUTONOMIA / SUPERACION DE VIDA EN CALLE",
             "OTRO"
-        ],
+        ]
+
+    motivo_e = st.selectbox(
+        "Tipo de egreso",
+        opciones_motivo_egreso,
         key=f"v12_motivo_egreso_{documento}"
     )
 
@@ -5614,14 +5632,21 @@ def registrar_egreso_profesional_v12(u, documento):
         registrar_auditoria(
             "REGISTRAR_EGRESO",
             documento=documento,
-            modulo="Gestión Profesional",
+            modulo=(
+                "Gestión Móvil - Inspirador"
+                if rol_egreso == "INSPIRADOR"
+                else "Gestión Profesional"
+            ),
             valor_anterior=estado_actual,
             valor_nuevo="EGRESADO",
             observacion=observacion_final[:500]
         )
 
         invalidar_cache_datos()
-        st.success("✅ Egreso registrado correctamente.")
+        st.success(
+            "✅ Egreso registrado correctamente. La persona quedó EGRESADA, "
+            "se liberó su modalidad/cupo y el registro se suma a Egresos e Impacto."
+        )
         st.rerun()
 
 
@@ -6670,6 +6695,7 @@ def gestion_usuarios_movil():
             "➕ Ingreso / Reingreso",
             "🚶 Salida voluntaria",
             "🕊️ Salida por fallecimiento",
+            "🏆 Registrar egreso",
             "🚪 Salida de permiso",
             "↩️ Regreso de permiso",
             "⛔ Sanción / Expulsión",
@@ -7776,10 +7802,8 @@ def gestion_usuarios_movil():
     # --------------------------------------------------------
     elif accion == "🏆 Registrar egreso":
 
-        if rol_visible not in ["PROFESIONAL", "COORDINACION"]:
-            st.error(
-                "El registro de egreso corresponde al equipo profesional."
-            )
+        if rol_visible not in ["INSPIRADOR", "PROFESIONAL", "COORDINACION", "MANAGER"]:
+            st.error("Este perfil no tiene habilitado el registro de egresos.")
         else:
             registrar_egreso_profesional_v12(
                 u,
