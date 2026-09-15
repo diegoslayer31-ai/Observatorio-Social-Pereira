@@ -11840,11 +11840,29 @@ def panel_profesional_v15(doc_forzado=None, incrustado=False):
             gestion["porcentaje_avance"] = pd.to_numeric(
                 gestion["porcentaje_avance"], errors="coerce"
             ).fillna(0)
-            gestion["fecha_meta"] = pd.to_datetime(
-                gestion["fecha_meta"], errors="coerce"
+            # V16.133 - Normalización defensiva de fechas PAI.
+            # PostgreSQL puede devolver una mezcla de DATE/TIMESTAMP y TIMESTAMPTZ;
+            # pandas no permite restar timestamps con y sin zona horaria.
+            def _normalizar_fecha_gestion_pai_v16133(valor):
+                ts = pd.to_datetime(valor, errors="coerce")
+                if pd.isna(ts):
+                    return pd.NaT
+                try:
+                    ts = pd.Timestamp(ts)
+                    if ts.tzinfo is not None:
+                        ts = ts.tz_convert("America/Bogota").tz_localize(None)
+                    return ts
+                except Exception:
+                    try:
+                        return pd.Timestamp(ts).tz_localize(None)
+                    except Exception:
+                        return pd.NaT
+
+            gestion["fecha_meta"] = gestion["fecha_meta"].apply(
+                _normalizar_fecha_gestion_pai_v16133
             )
-            gestion["fecha_ultimo_seguimiento"] = pd.to_datetime(
-                gestion["fecha_ultimo_seguimiento"], errors="coerce"
+            gestion["fecha_ultimo_seguimiento"] = gestion["fecha_ultimo_seguimiento"].apply(
+                _normalizar_fecha_gestion_pai_v16133
             )
             hoy_g = pd.Timestamp(date.today())
 
