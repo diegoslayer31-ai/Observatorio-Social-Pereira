@@ -5444,22 +5444,31 @@ def registrar_egreso_profesional_v12(u, documento):
                 SELECT COUNT(*) AS total
                 FROM personas_caracterizacion
                 WHERE TRIM(CAST("{col_doc_egreso}" AS TEXT))=:doc
-                  AND "{col_fecha_egreso}"=:fecha
+                  AND CAST("{col_fecha_egreso}" AS DATE)=CAST(:fecha AS DATE)
                 """
             )
-            dup = pd.read_sql(
-                consulta_dup,
-                engine,
-                params={
-                    "doc": documento,
-                    "fecha": fecha_e
-                }
-            )
-            if int(dup.iloc[0]["total"] or 0) > 0:
-                st.error(
-                    "Ya existe un egreso para esta persona en esa fecha."
+            try:
+                dup = pd.read_sql(
+                    consulta_dup,
+                    engine,
+                    params={
+                        "doc": str(documento).strip(),
+                        "fecha": fecha_e.isoformat()
+                    }
                 )
-                return
+                if int(dup.iloc[0]["total"] or 0) > 0:
+                    st.error(
+                        "Ya existe un egreso para esta persona en esa fecha."
+                    )
+                    return
+            except Exception as e_dup:
+                # V16.148: una inconsistencia histórica de tipo de fecha no debe
+                # bloquear el egreso. Se continúa y la transacción principal
+                # conserva la trazabilidad del movimiento.
+                st.warning(
+                    "No fue posible validar automáticamente duplicados históricos; "
+                    "se continuará con el registro del egreso."
+                )
 
         meses = [
             "", "ENERO", "FEBRERO", "MARZO", "ABRIL",
@@ -23590,6 +23599,7 @@ POLITICA_PUBLICA_CATALOGO_V1678 = {
             "SELMIRA MOSQUERA RENTERIA",
             "JUAN DAVID BOLIVAR MORALES",
             "HUGO ARMANDO CASTRO CORTES",
+            "HUGO CASTRO",  # V16.147 alias robusto para nombre de sesión
             "DAMIAN LEANDRO ZAPATA BERMUDEZ",
             "CARLOS HERNAN LOPEZ GARCIA",
             "DANA CAROLINA LOPEZ GONZALEZ",
@@ -23608,6 +23618,7 @@ POLITICA_PUBLICA_CATALOGO_V1678 = {
         "responsables": [
             "VALERIA MARTINEZ GARCIA",
             "HUGO ARMANDO CASTRO CORTES",
+            "HUGO CASTRO",  # V16.147 alias robusto para nombre de sesión
         ],
     },
     "2.1.9": {
@@ -23630,6 +23641,7 @@ POLITICA_PUBLICA_CATALOGO_V1678 = {
         "tipo": "INDIVIDUAL/ACTIVIDAD",
         "responsables": [
             "HUGO ARMANDO CASTRO CORTES",
+            "HUGO CASTRO",  # V16.147 alias robusto para nombre de sesión
             "JUAN DAVID ROBLEDO PULGARIN",
             "VICTORIA SANTAMARIA OSORIO",
             "DANA CAROLINA LOPEZ GONZALEZ",
