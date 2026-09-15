@@ -2323,13 +2323,28 @@ def gestion_usuarios():
                     value=ahora_colombia().date()
                 )
 
+                causal_medida_gestion = st.selectbox(
+                    "Causal / criterio *",
+                    [
+                        "AGRESIÓN FÍSICA", "AGRESIÓN VERBAL A FUNCIONARIO",
+                        "FUGA", "USO DE SPA", "PORTE DE SPA",
+                        "HURTO MENOR", "HURTO GRAVE", "VENTA DE SPA"
+                    ],
+                    key=f"gestion_causal_medida_{documento}"
+                )
+
                 remitido_comite = st.checkbox(
                     "🟠 Caso remitido a Comité",
                     help=(
                         "Si se marca, no se asigna fecha estimada de reingreso. "
                         "El reingreso dependerá de la decisión del Comité de Casos."
-                    )
+                    ),
+                    disabled=(causal_medida_gestion == "HURTO GRAVE"),
+                    value=(causal_medida_gestion == "HURTO GRAVE")
                 )
+                if causal_medida_gestion == "HURTO GRAVE":
+                    remitido_comite = True
+                    st.warning("🟠 HURTO GRAVE: remisión obligatoria a Comité. No se asigna fecha de reingreso.")
 
                 if remitido_comite:
                     fecha_fin_medida = None
@@ -2344,8 +2359,8 @@ def gestion_usuarios():
                     )
 
                 motivo_medida = st.text_area(
-                    "Motivo de la medida *",
-                    placeholder="Describa el hecho o causal que sustenta la medida."
+                    "Detalle del hecho *",
+                    placeholder="Describa concretamente lo ocurrido."
                 )
 
                 observacion_medida = st.text_area(
@@ -2408,11 +2423,14 @@ def gestion_usuarios():
                             {
                                 "doc": documento,
                                 "tipo": tipo_medida,
-                                "motivo": motivo_medida.strip(),
+                                "motivo": causal_medida_gestion,
                                 "inicio": fecha_inicio_medida,
                                 "fin": None if remitido_comite else fecha_fin_medida,
                                 "remitido_comite": bool(remitido_comite),
-                                "observacion": observacion_medida.strip(),
+                                "observacion": (
+                                    "DETALLE: " + motivo_medida.strip()
+                                    + ((" | " + observacion_medida.strip()) if observacion_medida.strip() else "")
+                                ),
                                 "usuario": usuario_registra
                             }
                         )
@@ -4663,6 +4681,7 @@ CRITERIOS_REINGRESO_V1641 = {
     # VOLVER A SOLICITAR CUPO, no una garantía automática de reingreso.
     "SALIDA VOLUNTARIA": ("dias", 1, "1 día completo de sanción"),
     "AGRESIÓN FÍSICA": ("dias", 3, "3 días completos de sanción"),
+    "AGRESIÓN VERBAL A FUNCIONARIO": ("dias", 3, "3 días completos de sanción"),
     "FUGA": ("dias", 1, "1 día completo de sanción"),
     "USO DE SPA": ("dias", 2, "2 días completos de sanción"),
     "PORTE DE SPA": ("dias", 1, "1 día completo de sanción"),
@@ -7484,7 +7503,7 @@ def gestion_usuarios_movil():
         causal_medida = c2.selectbox(
             "Causal / criterio *",
             [
-                "AGRESIÓN FÍSICA", "FUGA", "USO DE SPA", "PORTE DE SPA",
+                "AGRESIÓN FÍSICA", "AGRESIÓN VERBAL A FUNCIONARIO", "FUGA", "USO DE SPA", "PORTE DE SPA",
                 "HURTO MENOR", "HURTO GRAVE", "VENTA DE SPA"
             ],
             key=f"movil_causal_medida_{documento}"
@@ -7495,8 +7514,14 @@ def gestion_usuarios_movil():
             help=(
                 "No se asignará fecha estimada de reingreso. "
                 "El reingreso dependerá de la decisión del Comité de Casos."
-            )
+            ),
+            disabled=(causal_medida == "HURTO GRAVE"),
+            value=(causal_medida == "HURTO GRAVE")
         )
+        # V16.140: HURTO GRAVE siempre debe pasar a Comité; nunca genera días/fecha automática.
+        if causal_medida == "HURTO GRAVE":
+            remitido_comite = True
+            st.warning("🟠 HURTO GRAVE: remisión obligatoria a Comité. No se asigna fecha de reingreso.")
 
         if remitido_comite:
             fin = None
@@ -12680,43 +12705,45 @@ def panel_profesional_v15(doc_forzado=None, incrustado=False):
             ]
         }
 
-        with st.form(f"v16_2_objetivo_{doc_sel}"):
-            tipo_obj = st.selectbox("Tipo de objetivo", tipos_objetivo)
-            linea = linea_por_tipo.get(tipo_obj, "Intervención integral")
-            ods = ods_por_tipo.get(tipo_obj, "ODS 10")
+        # V16.142: todos los campos dependientes se renderizan fuera de st.form
+        # para que línea de política, ODS e hitos cambien inmediatamente.
+        tipo_obj = st.selectbox(
+            "Tipo de objetivo", tipos_objetivo,
+            key=f"v16_2_tipo_objetivo_{doc_sel}"
+        )
+        linea = linea_por_tipo.get(tipo_obj, "Intervención integral")
+        ods = ods_por_tipo.get(tipo_obj, "ODS 10")
+        sugeridos = list(hitos_sugeridos.get(tipo_obj, []))
 
-            cpol1, cpol2 = st.columns(2)
-            cpol1.info(f"Línea de política: {linea}")
-            cpol2.info(f"ODS: {ods}")
+        cpol1, cpol2 = st.columns(2)
+        cpol1.info(f"Línea de política: {linea}")
+        cpol2.info(f"ODS: {ods}")
 
-            descripcion = st.text_area(
-                "Descripción del objetivo *",
-                placeholder="Redacte el resultado que se espera lograr."
-            )
+        descripcion = st.text_area(
+            "Descripción del objetivo *",
+            placeholder="Redacte el resultado que se espera lograr.",
+            key=f"v16_2_desc_obj_{doc_sel}"
+        )
+        actividades = st.multiselect(
+            "Actividades / hitos", sugeridos, default=sugeridos,
+            key=f"v16_2_hitos_{doc_sel}_{tipo_obj}"
+        )
+        actividad_extra = st.text_input(
+            "Actividad adicional (opcional)",
+            key=f"v16_2_extra_obj_{doc_sel}"
+        )
+        if actividad_extra.strip():
+            actividades = actividades + [actividad_extra.strip()]
 
-            sugeridos = hitos_sugeridos.get(tipo_obj, [])
-            actividades = st.multiselect(
-                "Actividades / hitos",
-                sugeridos,
-                default=sugeridos
-            )
-
-            actividad_extra = st.text_input(
-                "Actividad adicional (opcional)"
-            )
-            if actividad_extra.strip():
-                actividades = actividades + [actividad_extra.strip()]
-
-            fecha_meta = st.date_input(
-                "Fecha meta",
-                value=date.today() + timedelta(days=30)
-            )
-
-            guardar_obj = st.form_submit_button(
-                f"➕ Crear objetivo para {nombre_usuario}",
-                use_container_width=True,
-                type="primary"
-            )
+        fecha_meta = st.date_input(
+            "Fecha meta", value=date.today() + timedelta(days=30),
+            key=f"v16_2_fecha_meta_{doc_sel}"
+        )
+        guardar_obj = st.button(
+            f"➕ Crear objetivo para {nombre_usuario}",
+            key=f"v16_2_guardar_obj_{doc_sel}",
+            use_container_width=True, type="primary"
+        )
 
         if guardar_obj:
             if not descripcion.strip():
@@ -25890,22 +25917,44 @@ def modulo_informe_mensual_profesional_piloto_v1627():
                   Paragraph(esc(compromisos) or "Sin compromisos registrados.",body),
                   Spacer(1,16)]
 
-        # V16.139 - firma gráfica opcional del profesional.
+        # V16.140 - firma gráfica recortada y alineada sobre la línea de firma.
+        _firma_flowable = None
         if firma_archivo is not None:
             try:
                 from reportlab.platypus import Image as RLImage
+                from PIL import Image as PILImage, ImageChops
                 firma_archivo.seek(0)
                 _firma_bytes = firma_archivo.read()
-                _firma_bio = BytesIO(_firma_bytes)
-                _img_firma = RLImage(_firma_bio)
-                _max_w, _max_h = 5.0*cm, 2.2*cm
+                _pil = PILImage.open(BytesIO(_firma_bytes)).convert("RGBA")
+                # Recorta márgenes transparentes/blancos para que la firma no quede flotando.
+                _bg = PILImage.new("RGBA", _pil.size, (255,255,255,255))
+                _diff = ImageChops.difference(_pil, _bg).convert("L")
+                _bbox = _diff.point(lambda p: 255 if p > 18 else 0).getbbox()
+                if _bbox:
+                    _pil = _pil.crop(_bbox)
+                _firma_limpia = BytesIO()
+                _pil.save(_firma_limpia, format="PNG")
+                _firma_limpia.seek(0)
+                _img_firma = RLImage(_firma_limpia)
+                _max_w, _max_h = 6.0*cm, 2.0*cm
                 _escala = min(_max_w / float(_img_firma.imageWidth), _max_h / float(_img_firma.imageHeight), 1.0)
                 _img_firma.drawWidth = float(_img_firma.imageWidth) * _escala
                 _img_firma.drawHeight = float(_img_firma.imageHeight) * _escala
-                story += [_img_firma, Spacer(1,3)]
-            except Exception as _e_firma:
+                _img_firma.hAlign = "CENTER"
+                _firma_flowable = Table([[_img_firma]], colWidths=[8.5*cm], hAlign="LEFT")
+                _firma_flowable.setStyle(TableStyle([
+                    ("ALIGN", (0,0), (-1,-1), "CENTER"),
+                    ("VALIGN", (0,0), (-1,-1), "BOTTOM"),
+                    ("LEFTPADDING", (0,0), (-1,-1), 0),
+                    ("RIGHTPADDING", (0,0), (-1,-1), 0),
+                    ("TOPPADDING", (0,0), (-1,-1), 0),
+                    ("BOTTOMPADDING", (0,0), (-1,-1), 1),
+                ]))
+            except Exception:
                 story.append(Paragraph("Firma adjunta no pudo incorporarse al PDF.", body))
 
+        if _firma_flowable is not None:
+            story += [_firma_flowable, Spacer(1,1)]
         story += [Paragraph("________________________________________",body),
                   Paragraph(esc(nombre) or "Firma del profesional",body)]
         docpdf.build(story)
