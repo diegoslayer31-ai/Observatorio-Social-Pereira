@@ -23474,11 +23474,15 @@ POLITICA_PUBLICA_CATALOGO_V1678 = {
         "accion": "Registro de beneficiarios de atención psicológica y socio familiar",
         "tipo": "INDIVIDUAL",
         "responsables": [
-            "ESTEFANY SCARPETTA",
+            # V16.143: todos los psicólogos y trabajadores sociales
+            "ESTEFANY SCARPETTA TORRES",
             "DAMIAN LEANDRO ZAPATA BERMUDEZ",
-            "JHON ANDREY",
-            "MARIA ELENA LONDONO",
+            "JHON ANDREY CORREA CORTEZ",
+            "MARIA ELENA LONDOÑO GALVIS",
             "VALERIA MARTINEZ GARCIA",
+            "YUCI MARCELA MOSQUERA MOSQUERA",
+            "SAMARA HINESTROZA AGUILAR",
+            "SELMIRA MOSQUERA RENTERIA",
         ],
     },
     "2.1.2": {
@@ -23502,18 +23506,34 @@ POLITICA_PUBLICA_CATALOGO_V1678 = {
     "2.1.5": {
         "accion": "Registro de beneficiarios de procesos de reintegración familiar y social con su respectivo seguimiento",
         "tipo": "INDIVIDUAL",
-        "responsables": ["VALERIA MARTINEZ GARCIA"],
+        "responsables": [
+            # V16.143: todos los trabajadores sociales
+            "VALERIA MARTINEZ GARCIA",
+            "YUCI MARCELA MOSQUERA MOSQUERA",
+            "SAMARA HINESTROZA AGUILAR",
+            "SELMIRA MOSQUERA RENTERIA",
+        ],
     },
     "2.1.6": {
         "accion": "Registro de beneficiarios de actividades lúdicas, deportivas, de desarrollo personal y de reflexión en temas relacionados con la espiritualidad",
         "tipo": "INDIVIDUAL/ACTIVIDAD",
         "responsables": [
-            "MARCELA MOSQUERA",
-            "HUGO CASTRO",
-            "JUAN DAVID ROBLEDO PULGARIN",
-            "SAMARA HINESTROZA AGUILAR",
+            # V16.143: todos los profesionales del equipo contractual
             "VALERIA MARTINEZ GARCIA",
-            "VICTORIA SANTAMARIA",
+            "KAREN POSADA GONZALEZ",
+            "YUCI MARCELA MOSQUERA MOSQUERA",
+            "ESTEFANY SCARPETTA TORRES",
+            "MARIA ELENA LONDOÑO GALVIS",
+            "JHON ANDREY CORREA CORTEZ",
+            "SAMARA HINESTROZA AGUILAR",
+            "SELMIRA MOSQUERA RENTERIA",
+            "JUAN DAVID BOLIVAR MORALES",
+            "HUGO ARMANDO CASTRO CORTES",
+            "DAMIAN LEANDRO ZAPATA BERMUDEZ",
+            "CARLOS HERNAN LOPEZ GARCIA",
+            "DANA CAROLINA LOPEZ GONZALEZ",
+            "VICTORIA SANTAMARIA OSORIO",
+            "JUAN DAVID ROBLEDO PULGARIN",
         ],
     },
     "2.1.7": {
@@ -23524,7 +23544,10 @@ POLITICA_PUBLICA_CATALOGO_V1678 = {
     "2.1.8": {
         "accion": "Registro de beneficiarios de procesos de emprendimiento y empleabilidad",
         "tipo": "INDIVIDUAL/ACTIVIDAD",
-        "responsables": ["VALERIA MARTINEZ GARCIA"],
+        "responsables": [
+            "VALERIA MARTINEZ GARCIA",
+            "HUGO ARMANDO CASTRO CORTES",
+        ],
     },
     "2.1.9": {
         "accion": "Registro de beneficiarios de actividades de sana convivencia",
@@ -23545,8 +23568,10 @@ POLITICA_PUBLICA_CATALOGO_V1678 = {
         "accion": "Registro de beneficiarios de actividades de mitigación del daño por consumo de sustancias psicoactivas",
         "tipo": "INDIVIDUAL/ACTIVIDAD",
         "responsables": [
-            "HUGO CASTRO",
+            "HUGO ARMANDO CASTRO CORTES",
             "JUAN DAVID ROBLEDO PULGARIN",
+            "VICTORIA SANTAMARIA OSORIO",
+            "DANA CAROLINA LOPEZ GONZALEZ",
         ],
     },
 }
