@@ -23371,7 +23371,7 @@ POLITICA_PUBLICA_CATALOGO_V1678 = {
     },
     "2.1.9": {
         "accion": "Registro de beneficiarios de actividades de sana convivencia",
-        "tipo": "INDIVIDUAL",
+        "tipo": "INDIVIDUAL/ACTIVIDAD",
         "responsables": [
             "ESTEFANY SCARPETTA",
             "MARCELA MOSQUERA",
@@ -23996,54 +23996,18 @@ def modulo_politica_publica_v1678():
         codigo = opciones[etiqueta_accion]
         cfg = POLITICA_PUBLICA_CATALOGO_V1678[codigo]
 
-        # V16.126: excepciones operativas de la acción 2.1.9.
-        # Samara y Yuci Marcela pueden registrarla tanto de forma individual como grupal,
-        # de acuerdo con el alcance contractual reportado para cada una.
-        _doc_func_norm_219 = "".join(ch for ch in str(doc_func or "") if ch.isdigit())
-        samara_219_individual_grupal = (
-            codigo == "2.1.9"
-            and (
-                _doc_func_norm_219 == "1129044593"
-                or _responsable_pp_v1678(nombre_func, "SAMARA HINESTROZA AGUILAR")
-            )
-        )
-        # V16.127: identificar a Yuci/Yucy por cédula, no por ortografía del nombre.
-        # En funcionarios_sistema aparece como YUCY MARCELA..., mientras el contrato
-        # fue parametrizado como YUCI MARCELA.... La cédula es la llave confiable.
-        yuci_219_individual_grupal = (
-            codigo == "2.1.9"
-            and (
-                _doc_func_norm_219 == "1076382393"
-                or _responsable_pp_v1678(nombre_func, "YUCI MARCELA MOSQUERA MOSQUERA")
-                or _responsable_pp_v1678(nombre_func, "YUCY MARCELA MOSQUERA MOSQUERA")
-            )
-        )
-        supervision_prueba_219 = (
-            codigo == "2.1.9"
-            and rol in roles_supervision
-        )
-        habilitar_grupal_219 = (
-            samara_219_individual_grupal
-            or yuci_219_individual_grupal
-            or supervision_prueba_219
-        )
+        # V16.129: la acción 2.1.9 permite registro INDIVIDUAL o ACTIVIDAD GRUPAL
+        # para cualquier profesional que tenga esta acción asignada en la matriz.
+        # La asignación de la acción sigue controlada por acciones_asignadas; este cambio
+        # únicamente amplía la forma de registro, no concede la acción a otros usuarios.
+        tipo_permitido = cfg["tipo"]
 
-        tipo_permitido = (
-            "INDIVIDUAL/ACTIVIDAD"
-            if habilitar_grupal_219
-            else cfg["tipo"]
-        )
-
-        if samara_219_individual_grupal:
-            st.caption("Tipo permitido para Samara en la acción 2.1.9: **INDIVIDUAL / ACTIVIDAD GRUPAL**")
-        elif yuci_219_individual_grupal:
-            st.caption("Tipo permitido para Yuci Marcela en la acción 2.1.9: **INDIVIDUAL / ACTIVIDAD GRUPAL**")
-        elif supervision_prueba_219:
-            st.caption("Modo de prueba de Coordinación/Manager para la acción 2.1.9: **INDIVIDUAL / ACTIVIDAD GRUPAL**")
-        else:
+        if codigo == "2.1.9":
             st.caption(
-                f"Tipo permitido según matriz: **{cfg['tipo']}**"
+                "Tipo permitido para la acción 2.1.9: **INDIVIDUAL / ACTIVIDAD GRUPAL**"
             )
+        else:
+            st.caption(f"Tipo permitido según matriz: **{cfg['tipo']}**")
 
         if tipo_permitido == "INDIVIDUAL/ACTIVIDAD":
             modalidad_registro = st.radio(
@@ -24452,10 +24416,17 @@ def modulo_politica_publica_v1678():
         filas = []
         for cod, cfg in POLITICA_PUBLICA_CATALOGO_V1678.items():
             for resp in cfg["responsables"]:
+                # V16.130: mostrar la matriz en lenguaje operativo claro.
+                # La 2.1.9 admite ambas modalidades para TODOS sus responsables.
+                tipo_visible = (
+                    "INDIVIDUAL / GRUPAL"
+                    if cod == "2.1.9"
+                    else ("INDIVIDUAL / GRUPAL" if cfg["tipo"] == "INDIVIDUAL/ACTIVIDAD" else cfg["tipo"])
+                )
                 filas.append({
                     "Código": cod,
                     "Acción": cfg["accion"],
-                    "Tipo": cfg["tipo"],
+                    "Tipo permitido": tipo_visible,
                     "Responsable": resp,
                 })
         st.dataframe(
@@ -24465,7 +24436,8 @@ def modulo_politica_publica_v1678():
         )
         st.caption(
             "Las acciones visibles para cada operador se determinan por el nombre "
-            "de la sesión activa y este listado de responsables."
+            "de la sesión activa y este listado de responsables. En la acción 2.1.9, "
+            "todos los responsables pueden registrar tanto INDIVIDUAL como GRUPAL."
         )
 
 
