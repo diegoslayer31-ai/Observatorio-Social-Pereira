@@ -9927,10 +9927,29 @@ def _profesional_actual_v15():
 
 
 def _semaforo_integral_usuario_v16(documento):
-    """Semáforo integral del caso, tolerante a tablas/campos opcionales."""
+    """Semáforo integral del caso. Un PAI formalmente cerrado no genera pendientes."""
     hoy = pd.Timestamp(date.today())
     puntaje = 0
     razones = []
+
+    # V16.134 - Si existe cierre formal, el caso deja de alimentar alertas PAI.
+    try:
+        cierre_activo = pd.read_sql(
+            text("""
+                SELECT resultado_final, fecha_cierre
+                FROM pai_cierres
+                WHERE TRIM(CAST(documento_usuario AS TEXT))=:doc
+                ORDER BY creado_en DESC NULLS LAST, fecha_cierre DESC
+                LIMIT 1
+            """),
+            engine,
+            params={"doc": str(documento)}
+        )
+        if not cierre_activo.empty:
+            resultado_c = str(cierre_activo.iloc[0].get("resultado_final") or "CERRADO").strip()
+            return "⚫ PAI CERRADO", [f"Cierre formal: {resultado_c}"]
+    except Exception:
+        pass
 
     try:
         objs = pd.read_sql(
@@ -11771,13 +11790,21 @@ def panel_profesional_v15(doc_forzado=None, incrustado=False):
                         LIMIT 1
                     ) h ON TRUE
                     WHERE
-                        p.profesional_referente=:prof
-                        OR EXISTS (
+                        (
+                            p.profesional_referente=:prof
+                            OR EXISTS (
+                                SELECT 1
+                                FROM pai_profesionales_vinculados v
+                                WHERE v.id_objetivo=p.id
+                                  AND v.profesional_id=:prof
+                                  AND COALESCE(v.fuente,'')='MIGRADO PAI 2026'
+                            )
+                        )
+                        AND NOT EXISTS (
                             SELECT 1
-                            FROM pai_profesionales_vinculados v
-                            WHERE v.id_objetivo=p.id
-                              AND v.profesional_id=:prof
-                              AND COALESCE(v.fuente,'')='MIGRADO PAI 2026'
+                            FROM pai_cierres c
+                            WHERE TRIM(CAST(c.documento_usuario AS TEXT))
+                                  = TRIM(CAST(p.documento_usuario AS TEXT))
                         )
                 """),
                 engine,
@@ -11793,13 +11820,20 @@ def panel_profesional_v15(doc_forzado=None, incrustado=False):
                     FROM pai_novedades n
                     JOIN pai_objetivos o ON o.id=n.id_objetivo
                     WHERE
-                        o.profesional_referente=:prof
-                        OR EXISTS (
-                            SELECT 1
-                            FROM pai_profesionales_vinculados v
-                            WHERE v.id_objetivo=o.id
-                              AND v.profesional_id=:prof
-                              AND COALESCE(v.fuente,'')='MIGRADO PAI 2026'
+                        (
+                            o.profesional_referente=:prof
+                            OR EXISTS (
+                                SELECT 1
+                                FROM pai_profesionales_vinculados v
+                                WHERE v.id_objetivo=o.id
+                                  AND v.profesional_id=:prof
+                                  AND COALESCE(v.fuente,'')='MIGRADO PAI 2026'
+                            )
+                        )
+                        AND NOT EXISTS (
+                            SELECT 1 FROM pai_cierres c
+                            WHERE TRIM(CAST(c.documento_usuario AS TEXT))
+                                  = TRIM(CAST(o.documento_usuario AS TEXT))
                         )
                 """),
                 engine,
@@ -11815,19 +11849,51 @@ def panel_profesional_v15(doc_forzado=None, incrustado=False):
         try:
             cierres_prof = pd.read_sql(
                 text("""
-                    SELECT COUNT(DISTINCT documento_usuario) AS total
-                    FROM pai_cierres
-                    WHERE profesional_referente=:prof
+                    SELECT DISTINCT ON (TRIM(CAST(c.documento_usuario AS TEXT)))
+                        TRIM(CAST(c.documento_usuario AS TEXT)) AS documento,
+                        c.fecha_cierre, c.resultado_final, c.resumen_cierre,
+                        c.cerrado_por,
+                        COALESCE(h.nombres,'') AS nombres,
+                        COALESCE(h.apellidos,'') AS apellidos
+                    FROM pai_cierres c
+                    LEFT JOIN LATERAL (
+                        SELECT hx.nombres, hx.apellidos
+                        FROM habitante_de_calle hx
+                        WHERE TRIM(CAST(hx.numero_identificacion AS TEXT))
+                              = TRIM(CAST(c.documento_usuario AS TEXT))
+                        LIMIT 1
+                    ) h ON TRUE
+                    WHERE c.profesional_referente=:prof
+                       OR EXISTS (
+                           SELECT 1 FROM pai_objetivos po
+                           WHERE TRIM(CAST(po.documento_usuario AS TEXT))
+                                 = TRIM(CAST(c.documento_usuario AS TEXT))
+                             AND po.profesional_referente=:prof
+                       )
+                    ORDER BY TRIM(CAST(c.documento_usuario AS TEXT)),
+                             c.creado_en DESC NULLS LAST, c.fecha_cierre DESC
                 """),
                 engine,
                 params={"prof": prof_id}
             )
-            total_cerrados = (
-                int(cierres_prof.iloc[0]["total"])
-                if not cierres_prof.empty else 0
-            )
+            total_cerrados = int(cierres_prof["documento"].nunique()) if not cierres_prof.empty else 0
         except Exception:
+            cierres_prof = pd.DataFrame()
             total_cerrados = 0
+
+        # V16.135 - Exclusión definitiva de PAI cerrados en Mi Gestión PAI.
+        # Además del NOT EXISTS SQL, se cruza explícitamente en pandas para que
+        # ningún objetivo de una persona con cierre formal siga contando como
+        # vinculado, vencido o sin seguimiento por diferencias de tipo/formato.
+        if not gestion.empty and not cierres_prof.empty:
+            docs_cerrados_v16135 = set(
+                cierres_prof["documento"]
+                .dropna().astype(str).str.strip().tolist()
+            )
+            gestion["documento"] = gestion["documento"].astype(str).str.strip()
+            gestion = gestion.loc[
+                ~gestion["documento"].isin(docs_cerrados_v16135)
+            ].copy()
 
         if gestion.empty:
             personas_pai = 0
@@ -12001,14 +12067,37 @@ def panel_profesional_v15(doc_forzado=None, incrustado=False):
                     ["_orden", "Persona"]
                 ).drop(columns=["_orden"])
 
-                st.markdown("#### 👥 Mis casos PAI")
+                st.markdown("#### 👥 Mis casos PAI abiertos")
+                st.caption("Aquí solo aparecen PAI que continúan abiertos y requieren gestión o seguimiento.")
                 st.dataframe(
                     tabla_gestion,
                     use_container_width=True,
                     hide_index=True
                 )
             else:
-                st.info("Todavía no tiene objetivos PAI registrados.")
+                st.success("✅ No tiene casos PAI abiertos pendientes de gestión.")
+
+            st.markdown("#### 🗃️ PAI cerrados")
+            if 'cierres_prof' in locals() and not cierres_prof.empty:
+                cerrados_mostrar = cierres_prof.copy()
+                cerrados_mostrar["Persona"] = (
+                    cerrados_mostrar["nombres"].fillna("").astype(str).str.strip()
+                    + " " + cerrados_mostrar["apellidos"].fillna("").astype(str).str.strip()
+                ).str.strip()
+                cerrados_mostrar["Fecha de cierre"] = pd.to_datetime(
+                    cerrados_mostrar["fecha_cierre"], errors="coerce"
+                ).dt.strftime("%d/%m/%Y").fillna("—")
+                cerrados_mostrar = cerrados_mostrar.rename(columns={
+                    "documento": "Documento",
+                    "resultado_final": "Resultado",
+                    "resumen_cierre": "Resumen"
+                })
+                st.dataframe(
+                    cerrados_mostrar[["Persona", "Documento", "Fecha de cierre", "Resultado", "Resumen"]],
+                    use_container_width=True, hide_index=True
+                )
+            else:
+                st.info("No tiene PAI cerrados registrados.")
 
         st.divider()
 
@@ -13473,6 +13562,12 @@ def supervision_pai_v15():
                 LEFT JOIN profesionales pr
                     ON pr.id=p.profesional_referente
                 WHERE COALESCE(p.origen_registro,'ACTUAL') <> 'MIGRADO PAI 2026'
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM pai_cierres c
+                      WHERE TRIM(CAST(c.documento_usuario AS TEXT))
+                            = TRIM(CAST(p.documento_usuario AS TEXT))
+                  )
             """),
             engine
         )
@@ -15916,7 +16011,13 @@ def inicio_ejecutivo_v167():
                     porcentaje_avance,
                     fecha_meta,
                     fecha_ultimo_seguimiento
-                FROM pai_objetivos
+                FROM pai_objetivos p
+                WHERE NOT EXISTS (
+                    SELECT 1
+                    FROM pai_cierres c
+                    WHERE TRIM(CAST(c.documento_usuario AS TEXT))
+                          = TRIM(CAST(p.documento_usuario AS TEXT))
+                )
             """),
             engine
         )
