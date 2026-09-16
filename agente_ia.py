@@ -5534,6 +5534,37 @@ def registrar_egreso_profesional_v12(u, documento):
             if k and k in columnas_e
         }
 
+        # V16.150 - Normalización de tipos Pandas/NumPy antes de enviarlos
+        # a psycopg2/PostgreSQL. Evita errores como:
+        #   ProgrammingError: can't adapt type 'numpy.int64'
+        # que se presentaba, por ejemplo, al insertar la edad en el egreso.
+        def _valor_postgres_v16150(valor):
+            if valor is None:
+                return None
+
+            # NaN / NaT / pd.NA deben llegar como NULL.
+            try:
+                es_nulo = pd.isna(valor)
+                if isinstance(es_nulo, (bool, np.bool_)) and es_nulo:
+                    return None
+            except Exception:
+                pass
+
+            # Timestamp de pandas -> datetime nativo.
+            if isinstance(valor, pd.Timestamp):
+                return valor.to_pydatetime()
+
+            # Escalares NumPy (int64, float64, bool_, etc.) -> Python nativo.
+            if isinstance(valor, np.generic):
+                return valor.item()
+
+            return valor
+
+        datos = {
+            k: _valor_postgres_v16150(v)
+            for k, v in datos.items()
+        }
+
         with engine.begin() as conn:
 
             if "numero" in columnas_e:
@@ -5548,12 +5579,21 @@ def registrar_egreso_profesional_v12(u, documento):
                     """)
                 )
 
-                datos["numero"] = conn.execute(
-                    text("""
-                        SELECT COALESCE(MAX(numero),0)+1
-                        FROM personas_caracterizacion
-                    """)
-                ).scalar()
+                datos["numero"] = _valor_postgres_v16150(
+                    conn.execute(
+                        text("""
+                            SELECT COALESCE(MAX(numero),0)+1
+                            FROM personas_caracterizacion
+                        """)
+                    ).scalar()
+                )
+
+            # Segunda pasada defensiva por si durante la transacción se agregó
+            # algún valor dinámico al diccionario.
+            datos = {
+                k: _valor_postgres_v16150(v)
+                for k, v in datos.items()
+            }
 
             columnas = list(datos.keys())
             params_ins = {}
@@ -10248,8 +10288,8 @@ def comite_casos_v16():
        real se registra después desde Ingreso / Reingreso.
     """
     rol = str(st.session_state.get("rol_actual", "")).upper()
-    if rol not in ["COORDINACION", "MANAGER"]:
-        st.error("Acceso exclusivo para Coordinación y Manager.")
+    if rol not in ["PROFESIONAL", "COORDINACION", "MANAGER"]:
+        st.error("Acceso exclusivo para profesionales, Coordinación y Manager.")
         return
 
     st.title("🧠 Comité de Casos")
@@ -15624,6 +15664,14 @@ with st.sidebar:
             use_container_width=True
         ):
             st.session_state.page = "historia_integral_v12"
+            st.rerun()
+
+        if st.button(
+            "🧠 Comité de Casos",
+            use_container_width=True,
+            key="menu_comite_prof_v16149"
+        ):
+            st.session_state.page = "comite_casos_v16"
             st.rerun()
 
         # V16.78 - El informe mensual también es parte del acceso profesional.
@@ -26768,8 +26816,8 @@ elif st.session_state.page == "tablero_ods_v16":
 
 elif st.session_state.page == "comite_casos_v16":
 
-    if rol_router not in ["COORDINACION", "MANAGER"]:
-        st.error("Acceso exclusivo para Coordinación o Manager.")
+    if rol_router not in ["PROFESIONAL", "COORDINACION", "MANAGER"]:
+        st.error("Acceso exclusivo para profesionales, Coordinación o Manager.")
     else:
         comite_casos_v16()
 
