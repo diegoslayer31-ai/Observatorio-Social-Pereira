@@ -21618,6 +21618,11 @@ def modulo_enfermeria_v1673():
             st.progress(_paso / 7)
             st.markdown(f"### Sección {_paso} de 7 — {_titulos[_paso]}")
 
+            # V16.96 - La variable debe existir en todas las etapas.
+            # Solo toma True en la sección 7 al pulsar "Finalizar valoración".
+            guardar = False
+            confirmar = False
+
             # ---------------- 1. IDENTIFICACIÓN ----------------
             if _paso == 1:
                 with st.form(f"enf94_s1_{doc}"):
