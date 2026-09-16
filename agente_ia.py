@@ -22973,6 +22973,420 @@ def _responsable_pp_v1678(nombre_sesion, nombre_referencia):
     return a == b or a.startswith(b + " ") or b.startswith(a + " ")
 
 
+# V16.122 - EXPORTACIÓN A FORMATO ALCALDÍA
+# Dos pestañas conforme al FBD suministrado:
+#   1) REGISTROS USUARIOS = atenciones/acciones individuales
+#   2) REGISTR ACTIVI ART Y MASIVAS = actividades grupales
+# ============================================================
+POLITICA_PUBLICA_ALCALDIA_V16122 = {
+    "2.1.1": {
+        "componente": "",
+        "meta": "2. Brindar atención integral a los habitantes de calle y en calle en modalidad albergue urbano y rural",
+        "actividad": "2.1. Implementar un albergue en modalidad urbana y rural",
+        "accion": "2.1.1. Registro de beneficiarios de atención psicológica y socio familiar",
+        "transversal": "4. Atención psicológica y socio familiar",
+    },
+    "2.1.2": {
+        "componente": "",
+        "meta": "2. Brindar atención integral a los habitantes de calle y en calle en modalidad albergue urbano y rural",
+        "actividad": "2.1. Implementar un albergue en modalidad urbana y rural",
+        "accion": "2.1.2. Registro de beneficiarios remitidos para tratamiento de adicciones, con el seguimiento correspondiente.",
+        "transversal": "6. Seguimiento a casos de usuarios habitantes de calle y en calle remitidos para tratamiento de adicciones",
+    },
+    "2.1.3": {
+        "componente": "",
+        "meta": "2. Brindar atención integral a los habitantes de calle y en calle en modalidad albergue urbano y rural",
+        "actividad": "2.1. Implementar un albergue en modalidad urbana y rural",
+        "accion": "2.1.3. Registro de beneficiarios estrategias para mitigar la violencia física y sexual en los habitantes de calle",
+        "transversal": "15. Estrategia para mitigar la violencia física y sexual en los habitantes de calle",
+    },
+    "2.1.4": {
+        "componente": "",
+        "meta": "2. Brindar atención integral a los habitantes de calle y en calle en modalidad albergue urbano y rural",
+        "actividad": "2.1. Implementar un albergue en modalidad urbana y rural",
+        "accion": "2.1.4. Registro de beneficiarios de estrategias de inclusión social para la población habitante de calle LGTBI",
+        "transversal": "16. Estrategia de inclusión social para la población habitante de calle LGTBI",
+    },
+    "2.1.5": {
+        "componente": "",
+        "meta": "2. Brindar atención integral a los habitantes de calle y en calle en modalidad albergue urbano y rural",
+        "actividad": "2.1. Implementar un albergue en modalidad urbana y rural",
+        "accion": "2.1.5. Registro de beneficiarios de procesos de reintegración familiar y social con su respectivo seguimiento",
+        "transversal": "17. Propiciar la reintegración familiar y social de los habitantes de calle y en calle",
+    },
+    "2.1.6": {
+        "componente": "",
+        "meta": "2. Brindar atención integral a los habitantes de calle y en calle en modalidad albergue urbano y rural",
+        "actividad": "2.1. Implementar un albergue en modalidad urbana y rural",
+        "accion": "2.1.6. Registro de beneficiarios de actividades lúdicas, deportivas, de desarrollo personal y de reflexión en temas relacionados con la espiritualidad.",
+        "transversal": "18. Talleres de reflexión en temas relacionados con la espiritualidad que contribuyan a fortalecer la reintegración familiar y social de los habitantes de calle y en calle.",
+    },
+    "2.1.7": {
+        "componente": "",
+        "meta": "2. Brindar atención integral a los habitantes de calle y en calle en modalidad albergue urbano y rural",
+        "actividad": "2.1. Implementar un albergue en modalidad urbana y rural",
+        "accion": "2.1.7. Registro de beneficiarios de atención, direccionamiento y seguimiento para prestación de servicios de salud",
+        "transversal": "2. Promover en las instituciones de salud la atención del Habitante de Calle a través de acciones de demanda inducida a los servicios de salud.",
+    },
+    "2.1.8": {
+        "componente": "",
+        "meta": "2. Brindar atención integral a los habitantes de calle y en calle en modalidad albergue urbano y rural",
+        "actividad": "2.1. Implementar un albergue en modalidad urbana y rural",
+        "accion": "2.1.8. Registro de beneficiarios de procesos de emprendimiento y empleabilidad",
+        "transversal": "20. Apoyar proyectos productivos que surjan dentro de los procesos de caracterización de las necesidades e intereses identificados en los habitantes de calle.",
+    },
+    "2.1.9": {
+        "componente": "",
+        "meta": "2. Brindar atención integral a los habitantes de calle y en calle en modalidad albergue urbano y rural",
+        "actividad": "2.1. Implementar un albergue en modalidad urbana y rural",
+        "accion": "2.1.9. Registro de beneficiarios de actividades de sana convivencia",
+        "transversal": "23. Realizar un proceso de formación sobre sana convivencia al Habitante de calle en los albergues",
+    },
+    "2.1.11": {
+        "componente": "ZONA ESCUCHA",
+        "meta": "2. Brindar atención integral a los habitantes de calle y en calle en modalidad albergue urbano y rural",
+        "actividad": "2.1. Implementar un albergue en modalidad urbana y rural",
+        "accion": "2.1.11. Registro de beneficiarios de actividades de mitigación del daño por consumo de sustancias psicoactivas",
+        "transversal": "5. Proceso de intervención comunitaria de mitigación del daño por consumo de sustancias psicoactivas",
+    },
+}
+
+
+def _excel_alcaldia_politica_publica_v16122(mes, anio):
+    """Genera el archivo mensual solicitado por Alcaldía a partir de la base viva."""
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Border, Side, Alignment
+    from openpyxl.utils import get_column_letter
+    from datetime import date as _date, datetime as _datetime
+
+    params = {"mes": int(mes), "anio": int(anio)}
+
+    individuales = pd.read_sql(
+        text("""
+            SELECT
+                r.id AS registro_pp_id,
+                r.fecha_accion,
+                r.codigo_accion,
+                r.accion AS accion_pp,
+                r.lugar AS lugar_pp,
+                r.descripcion AS descripcion_pp,
+                r.observacion AS observacion_pp,
+                r.registrado_por_nombre,
+                r.registrado_por_cc,
+                p.documento_usuario AS documento_pp,
+                p.nombre_usuario AS nombre_pp,
+                p.modalidad_usuario AS modalidad_pp,
+                h.*
+            FROM politica_publica_registros r
+            JOIN politica_publica_participantes p
+              ON p.registro_id = r.id
+            LEFT JOIN habitante_de_calle h
+              ON TRIM(CAST(h.numero_identificacion AS TEXT))
+               = TRIM(CAST(p.documento_usuario AS TEXT))
+            WHERE UPPER(TRIM(COALESCE(r.tipo_registro,''))) = 'INDIVIDUAL'
+              AND EXTRACT(MONTH FROM r.fecha_accion)=:mes
+              AND EXTRACT(YEAR FROM r.fecha_accion)=:anio
+            ORDER BY r.fecha_accion, r.id, p.id
+        """), engine, params=params
+    )
+
+    grupales = pd.read_sql(
+        text("""
+            SELECT
+                r.id,
+                r.fecha_accion,
+                r.codigo_accion,
+                r.accion,
+                r.nombre_actividad,
+                r.lugar,
+                r.descripcion,
+                r.observacion,
+                r.registrado_por_nombre,
+                r.registrado_por_cc,
+                COUNT(p.id)::int AS total,
+                COUNT(*) FILTER (
+                    WHERE UPPER(LEFT(TRIM(COALESCE(h.sexo_al_nacer,'')),1))='F'
+                )::int AS total_f,
+                COUNT(*) FILTER (
+                    WHERE UPPER(LEFT(TRIM(COALESCE(h.sexo_al_nacer,'')),1))='M'
+                )::int AS total_m
+            FROM politica_publica_registros r
+            LEFT JOIN politica_publica_participantes p
+              ON p.registro_id=r.id
+            LEFT JOIN habitante_de_calle h
+              ON TRIM(CAST(h.numero_identificacion AS TEXT))
+               = TRIM(CAST(p.documento_usuario AS TEXT))
+            WHERE UPPER(TRIM(COALESCE(r.tipo_registro,''))) = 'ACTIVIDAD GRUPAL'
+              AND EXTRACT(MONTH FROM r.fecha_accion)=:mes
+              AND EXTRACT(YEAR FROM r.fecha_accion)=:anio
+            GROUP BY
+                r.id, r.fecha_accion, r.codigo_accion, r.accion,
+                r.nombre_actividad, r.lugar, r.descripcion, r.observacion,
+                r.registrado_por_nombre, r.registrado_por_cc
+            ORDER BY r.fecha_accion, r.id
+        """), engine, params=params
+    )
+
+    participantes_grupales = pd.read_sql(
+        text("""
+            SELECT
+                r.id AS registro_id,
+                r.fecha_accion,
+                r.codigo_accion,
+                r.accion,
+                r.nombre_actividad,
+                r.lugar,
+                r.registrado_por_nombre AS responsable,
+                p.documento_usuario AS documento,
+                COALESCE(NULLIF(TRIM(p.nombre_usuario), ''),
+                         TRIM(COALESCE(h.nombres,'') || ' ' || COALESCE(h.apellidos,''))) AS participante,
+                COALESCE(NULLIF(TRIM(p.modalidad_usuario), ''), h.modalidad, '') AS modalidad_pp,
+                h.*
+            FROM politica_publica_registros r
+            JOIN politica_publica_participantes p ON p.registro_id = r.id
+            LEFT JOIN habitante_de_calle h
+              ON TRIM(CAST(h.numero_identificacion AS TEXT))
+               = TRIM(CAST(p.documento_usuario AS TEXT))
+            WHERE UPPER(TRIM(COALESCE(r.tipo_registro,''))) = 'ACTIVIDAD GRUPAL'
+              AND EXTRACT(MONTH FROM r.fecha_accion)=:mes
+              AND EXTRACT(YEAR FROM r.fecha_accion)=:anio
+            ORDER BY r.fecha_accion, r.id, participante
+        """), engine, params=params
+    )
+
+    def _limpio(v):
+        if v is None:
+            return ""
+        try:
+            if pd.isna(v):
+                return ""
+        except Exception:
+            pass
+        if isinstance(v, pd.Timestamp):
+            return v.to_pydatetime()
+        return v
+
+    def _r(row, col, default=""):
+        try:
+            return _limpio(row.get(col, default))
+        except Exception:
+            return default
+
+    def _si_no(v):
+        x = str(_limpio(v)).strip().upper()
+        if x in {"TRUE", "1", "SI", "SÍ", "YES"}:
+            return "SI"
+        if x in {"FALSE", "0", "NO"}:
+            return "NO"
+        return _limpio(v)
+
+    wb = Workbook()
+    ws1 = wb.active
+    ws1.title = "REGISTROS USUARIOS"
+    ws2 = wb.create_sheet("REGISTR ACTIVI ART Y MASIVAS")
+    ws3 = wb.create_sheet("PARTICIPANTES GRUPALES")
+
+    azul = PatternFill("solid", fgColor="D9E2F3")
+    gris = PatternFill("solid", fgColor="E7E6E6")
+    borde = Border(
+        left=Side(style="thin", color="000000"),
+        right=Side(style="thin", color="000000"),
+        top=Side(style="thin", color="000000"),
+        bottom=Side(style="thin", color="000000"),
+    )
+    centro = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    wrap = Alignment(vertical="top", wrap_text=True)
+
+    # ---------------- PESTAÑA 1: INDIVIDUALES ----------------
+    headers_ind = [
+        "N.", "FECHA DE ATENCION  DD/MM/AA", "PROYECTO", "COMPONENTE",
+        "NOMBRES", "APELLIDOS", "SEXO AL NACER", "FECHA DE NACIMIENTO DD/MM/AA",
+        "EDAD", "TIPO DE IDENTIFICACION",
+        "NÚMERO DE IDENTIDADFICACIÓN ( SIN PUNTOS, NI RAYAS,EL REGISTROES EL NUIP)",
+        "GRUPO SIBEN", "PERSONAS CON DISCAPACIDAD", "CATEGORIA DE DISCAPACIDAD",
+        "XXX", "INDICADOR DISCAPACIDAD", "HOMBRES Y MUJERES CABEZA DE FAMILIA",
+        "MUJER GESTANTE/LACTANTE", "LIDER/REPRESENTANTE COMUNIDAD/ORGANIZACIÓN",
+        "SE RECONOCE COMO", "ORIENTACION SEXUAL COMUNIDAD LGTBI",
+        "EXPERIENCIA MIGRATORIA DENTRO DEL NUCLEO FAMILIAR", "XXX", "INDICADOR MIGRACION",
+        "NIÑOS, NIÑAS, ADOLESCENTE", "ADULTO MAYOR", "GRUPOS ÉTNICOS AFRO/INDIGENA",
+        "XX", "INDICADOR ETNIA", "TIPO DE SEGURIDAD EN SALUD",
+        "NIVEL EDUCATIVO QUE TIENE O CURSA", "CONDICIÓN OCUPACIONAL",
+        "BARRIO O VEREDA DE RESIDENCIA", "COMUNA O CORREGIMIENTO DE RESIDENCIA",
+        "ZONA DE RESIDENCIA", "DIRECCION", "TELEFONO Y/O CELULAR", "CORREO",
+        "NUMERO DE ATENCIONES", "XXXXXXXX", "VERIFICACION", "METAS", "ACTIIVDADES",
+        "ACCIONES", "ACCIONES DE POLIITCAS TRANSVERSALES Y DEL PROYECTO",
+        "DEPARTAMENTO DE PROCEDENCIA", "POBLACION", "TIPO DE ATENCIÓN", "TIPO DE CONSUMO",
+        "RAZONES POR LAS CUALES VIVE EN AL CALLE Y EJERCER LA MENDICIDAD ESTACIONARIA EN ESPACIO PÚBLICO",
+        "PERFIL OCUPACIONAL/SU PRINCIPAL FUENTE DE INGRESO ES", "ENFERMEDAD MENTAL",
+        "FECHA DE INGRESO ALBERGUE RURAL", "FECHA DE EGRESO ALBERGUE RURAL",
+        "FUNCIONARIO /CONTRATISTA RESPONSABLE", "OBSERVACIONES",
+        "VALIDACIÓN META AMARRADA A ACTIVIDAD",
+    ]
+    ws1.merge_cells(start_row=6, start_column=3, end_row=6, end_column=2+len(headers_ind))
+    t1 = ws1.cell(6,3,"SECRETARIA DE DESARROLLO SOCIAL Y POLITICO - REGISTRO DE USUARIOS")
+    t1.font = Font(bold=True, size=12)
+    t1.alignment = centro
+    for j,h in enumerate(headers_ind, start=3):
+        c=ws1.cell(8,j,h); c.fill=azul; c.font=Font(bold=True,size=9); c.border=borde; c.alignment=centro
+    ws1.row_dimensions[8].height=55
+
+    for i, (_, row) in enumerate(individuales.iterrows(), start=1):
+        cfg = POLITICA_PUBLICA_ALCALDIA_V16122.get(str(_r(row,"codigo_accion")), {})
+        doc = str(_r(row,"documento_pp") or _r(row,"numero_identificacion")).strip()
+        discapacidad = _r(row,"categoria_discapacidad")
+        migracion = _si_no(_r(row,"experiencia_migratoria"))
+        etnia = _r(row,"grupos_etnicos")
+        obs = " | ".join(x for x in [str(_r(row,"descripcion_pp")).strip(), str(_r(row,"observacion_pp")).strip()] if x)
+        valores = [
+            i, _r(row,"fecha_accion"), "HABITANTE DE CALLE", cfg.get("componente",""),
+            _r(row,"nombres"), _r(row,"apellidos"), _r(row,"sexo_al_nacer"), _r(row,"fecha_nacimiento"),
+            _r(row,"edad"), _r(row,"tipo_identificacion"), doc, _r(row,"grupo_sisben"),
+            _si_no(_r(row,"personas_con_discapacidad")), discapacidad,
+            (doc + str(discapacidad)) if doc and discapacidad else "", "",
+            _si_no(_r(row,"cabeza_familia")), _r(row,"mujer_gestante_lactante"),
+            _si_no(_r(row,"lider_representante")), _r(row,"se_reconoce_como"), _r(row,"orientacion_sexual_lgtbi"),
+            migracion, (doc + str(migracion)) if doc and migracion else "", "",
+            _si_no(_r(row,"ninos_ninas_adolescentes")), _si_no(_r(row,"adulto_mayor")), etnia,
+            (doc + str(etnia)) if doc and etnia else "", "",
+            _r(row,"tipo_seguridad_salud"), _r(row,"nivel_educativo"), _r(row,"condicion_ocupacional"),
+            _r(row,"barrio_vereda"), _r(row,"comuna_corregimiento"), _r(row,"zona_residencia"),
+            _r(row,"direccion"), _r(row,"telefono"), _r(row,"correo"),
+            _r(row,"numero_atenciones"), "", "", cfg.get("meta",""), cfg.get("actividad",""),
+            cfg.get("accion", str(_r(row,"accion_pp"))), cfg.get("transversal",""),
+            _r(row,"departamento_procedencia"), _r(row,"poblacion") or "HABITANTE DE CALLE",
+            _r(row,"tipo_atencion"), _r(row,"tipo_consumo"), _r(row,"causas_calle"),
+            _r(row,"perfil_ocupacional"), _r(row,"enfermedad_mental"), "", "",
+            "OPERADOR-" + str(_r(row,"registrado_por_nombre")).strip().upper(), obs, "OK",
+        ]
+        rr=8+i
+        for j,v in enumerate(valores,start=3):
+            c=ws1.cell(rr,j,_limpio(v)); c.border=borde; c.alignment=wrap; c.font=Font(size=9)
+        for col in (4,10):
+            ws1.cell(rr,col).number_format="DD/MM/YYYY"
+
+    # ---------------- PESTAÑA 2: GRUPALES ----------------
+    headers_grp = [
+        "N", "FECHA DE ATENCION  DD/MM/AA", "PROYECTO", "COMPONENTE", "METAS",
+        "ACTIIVDADES", "ACCIONES", "ACCIONES DE POLIITCAS TRANSVERSALES Y DEL PROYECTO",
+        "FUNCIONARIO RESPONSABLE ACTIVIDAD", "NOMBRE DEL LIDER Y/O ORGAMIZADOR COMUNIDAD",
+        "TELEFONO CONTACTO", "LUGAR DE EVENTO O ACTIVIDAD", "COMUNA/CORREGIMIENTO",
+        "MEDIO VERIFICACION", "TOTAL F", "TOTAL M", "TOTAL", "TIPO ACTIVIDAD",
+        "POBLACION", "OBSERVACIONES", "VALIDACIÓN META AMARRADA A ACTIVIDAD",
+    ]
+    ws2.merge_cells(start_row=2, start_column=2, end_row=2, end_column=1+len(headers_grp))
+    t2=ws2.cell(2,2,"SECRETARIA DE DESARROLLO SOCIAL Y POLITICO REGISTRO DE ATENCIONES REALIZADAS POR MASIVAS O POR IDENTIFICACION DE ACTIVIDAD")
+    t2.font=Font(bold=True,size=12); t2.alignment=centro
+    for j,h in enumerate(headers_grp,start=2):
+        c=ws2.cell(4,j,h); c.fill=azul; c.font=Font(bold=True,size=9); c.border=borde; c.alignment=centro
+    ws2.row_dimensions[4].height=55
+
+    for i, (_, row) in enumerate(grupales.iterrows(), start=1):
+        cfg=POLITICA_PUBLICA_ALCALDIA_V16122.get(str(_r(row,"codigo_accion")), {})
+        total=int(_r(row,"total") or 0); tf=int(_r(row,"total_f") or 0); tm=int(_r(row,"total_m") or 0)
+        desc = " | ".join(x for x in [str(_r(row,"nombre_actividad")).strip(), str(_r(row,"descripcion")).strip(), str(_r(row,"observacion")).strip()] if x)
+        valores=[
+            i, _r(row,"fecha_accion"), "HABITANTE DE CALLE", cfg.get("componente",""),
+            cfg.get("meta",""), cfg.get("actividad",""), cfg.get("accion",str(_r(row,"accion"))),
+            cfg.get("transversal",""), "OPERADOR-"+str(_r(row,"registrado_por_nombre")).strip().upper(),
+            "", "", _r(row,"lugar"), "", "SPP", tf, tm, total,
+            "REGISTRO DE ACTIVIDAD", "HABITANTE DE CALLE", desc, "OK",
+        ]
+        rr=4+i
+        for j,v in enumerate(valores,start=2):
+            c=ws2.cell(rr,j,_limpio(v)); c.border=borde; c.alignment=wrap; c.font=Font(size=9)
+        ws2.cell(rr,3).number_format="DD/MM/YYYY"
+
+    # ---------------- PESTAÑA 3: SOPORTE NOMINAL GRUPALES + CARACTERIZACIÓN COMPLETA ----------------
+    # Conserva los datos de la actividad y agrega la misma caracterización disponible
+    # para los usuarios individuales. Una fila = un participante de una actividad grupal.
+    headers_part = [
+        "ID ACTIVIDAD", "FECHA ACTIVIDAD", "CÓDIGO ACCIÓN", "ACCIÓN", "NOMBRE ACTIVIDAD",
+        "LUGAR", "RESPONSABLE",
+        "TIPO DE IDENTIFICACIÓN", "DOCUMENTO PARTICIPANTE", "NOMBRES", "APELLIDOS",
+        "NOMBRE COMPLETO", "SEXO AL NACER", "FECHA DE NACIMIENTO", "EDAD",
+        "GRUPO SISBÉN", "PERSONA CON DISCAPACIDAD", "CATEGORÍA DISCAPACIDAD",
+        "INDICADOR DISCAPACIDAD", "CABEZA DE FAMILIA", "MUJER GESTANTE/LACTANTE",
+        "LÍDER/REPRESENTANTE", "SE RECONOCE COMO", "ORIENTACIÓN SEXUAL LGTBI",
+        "EXPERIENCIA MIGRATORIA", "INDICADOR MIGRACIÓN", "NIÑOS, NIÑAS Y ADOLESCENTES",
+        "ADULTO MAYOR", "GRUPOS ÉTNICOS", "INDICADOR ETNIA", "SEGURIDAD EN SALUD",
+        "NIVEL EDUCATIVO", "CONDICIÓN OCUPACIONAL", "BARRIO/VEREDA",
+        "COMUNA/CORREGIMIENTO", "ZONA DE RESIDENCIA", "DIRECCIÓN", "TELÉFONO", "CORREO",
+        "NÚMERO DE ATENCIONES", "DEPARTAMENTO DE PROCEDENCIA", "POBLACIÓN",
+        "TIPO DE ATENCIÓN", "TIPO DE CONSUMO", "CAUSAS DE CALLE", "PERFIL OCUPACIONAL",
+        "ENFERMEDAD MENTAL", "HABILIDAD 1", "HABILIDAD 2", "ACOMPAÑAMIENTO FAMILIAR",
+        "MODALIDAD"
+    ]
+    ws3.merge_cells(start_row=1, start_column=1, end_row=1, end_column=len(headers_part))
+    t3 = ws3.cell(1, 1, "SOPORTE NOMINAL DE PARTICIPANTES - ACTIVIDADES GRUPALES / CARACTERIZACIÓN COMPLETA")
+    t3.font = Font(bold=True, size=12); t3.alignment = centro
+    for j, h in enumerate(headers_part, start=1):
+        c = ws3.cell(3, j, h); c.fill = azul; c.font = Font(bold=True, size=9); c.border = borde; c.alignment = centro
+    ws3.row_dimensions[3].height = 58
+
+    def _sexo_normalizado(v):
+        x = str(_limpio(v)).strip().upper()
+        if x in {"M", "MASCULINO", "HOMBRE", "MALE"}:
+            return "MASCULINO"
+        if x in {"F", "FEMENINO", "MUJER", "FEMALE"}:
+            return "FEMENINO"
+        return _limpio(v)
+
+    for i, (_, row) in enumerate(participantes_grupales.iterrows(), start=1):
+        doc = str(_r(row, "documento") or _r(row, "numero_identificacion")).strip()
+        nombres = _r(row, "nombres")
+        apellidos = _r(row, "apellidos")
+        nombre_completo = _r(row, "participante") or (str(nombres).strip() + " " + str(apellidos).strip()).strip()
+        discapacidad = _r(row, "categoria_discapacidad")
+        migracion = _si_no(_r(row, "experiencia_migratoria"))
+        etnia = _r(row, "grupos_etnicos")
+        vals = [
+            _r(row,"registro_id"), _r(row,"fecha_accion"), _r(row,"codigo_accion"),
+            _r(row,"accion"), _r(row,"nombre_actividad"), _r(row,"lugar"), _r(row,"responsable"),
+            _r(row,"tipo_identificacion"), doc, nombres, apellidos, nombre_completo,
+            _sexo_normalizado(_r(row,"sexo_al_nacer")), _r(row,"fecha_nacimiento"), _r(row,"edad"),
+            _r(row,"grupo_sisben"), _si_no(_r(row,"personas_con_discapacidad")), discapacidad,
+            _r(row,"indicador_discapacidad"), _si_no(_r(row,"cabeza_familia")), _r(row,"mujer_gestante_lactante"),
+            _si_no(_r(row,"lider_representante")), _r(row,"se_reconoce_como"), _r(row,"orientacion_sexual_lgtbi"),
+            migracion, _r(row,"indicador_migracion"), _si_no(_r(row,"ninos_ninas_adolescentes")),
+            _si_no(_r(row,"adulto_mayor")), etnia, _r(row,"indicador_etnia"), _r(row,"tipo_seguridad_salud"),
+            _r(row,"nivel_educativo"), _r(row,"condicion_ocupacional"), _r(row,"barrio_vereda"),
+            _r(row,"comuna_corregimiento"), _r(row,"zona_residencia"), _r(row,"direccion"), _r(row,"telefono"), _r(row,"correo"),
+            _r(row,"numero_atenciones"), _r(row,"departamento_procedencia"), _r(row,"poblacion") or "HABITANTE DE CALLE",
+            _r(row,"tipo_atencion"), _r(row,"tipo_consumo"), _r(row,"causas_calle"), _r(row,"perfil_ocupacional"),
+            _r(row,"enfermedad_mental"), _r(row,"habilidades_1"), _r(row,"habilidades_2"),
+            _r(row,"acompanamiento_familiar"), _r(row,"modalidad_pp") or _r(row,"modalidad")
+        ]
+        rr = 3 + i
+        for j, v in enumerate(vals, start=1):
+            c = ws3.cell(rr, j, _limpio(v)); c.border = borde; c.alignment = wrap; c.font = Font(size=9)
+        ws3.cell(rr, 2).number_format = "DD/MM/YYYY"
+        ws3.cell(rr, 14).number_format = "DD/MM/YYYY"
+
+    ws3.auto_filter.ref = f"A3:{get_column_letter(len(headers_part))}{ws3.max_row}"
+
+    # Presentación semejante al archivo institucional suministrado.
+    for ws, start_col, end_col in [(ws1,3,2+len(headers_ind)), (ws2,2,1+len(headers_grp)), (ws3,1,len(headers_part))]:
+        ws.freeze_panes = ws.cell(9 if ws is ws1 else (5 if ws is ws2 else 4), start_col)
+        widths={}
+        for col in range(start_col,end_col+1):
+            max_len=0
+            for row in range(1, min(ws.max_row,250)+1):
+                val=ws.cell(row,col).value
+                if val is not None:
+                    max_len=max(max_len, len(str(val)))
+            widths[col]=min(max(max_len+2,10),42)
+        for col,w in widths.items():
+            ws.column_dimensions[get_column_letter(col)].width=w
+        ws.sheet_view.showGridLines=False
+
+    out=BytesIO()
+    wb.save(out)
+    out.seek(0)
+    return out.getvalue(), len(individuales), len(grupales)
+
+
+
+
 def modulo_politica_publica_v1678():
     rol = str(st.session_state.get("rol_actual", "")).strip().upper()
     nombre_func = str(st.session_state.get("nombre_funcionario", "")).strip()
@@ -23354,12 +23768,17 @@ def modulo_politica_publica_v1678():
         if rep.empty:
             st.info("No hay registros para el periodo seleccionado.")
         else:
-            st.dataframe(rep, use_container_width=True, hide_index=True)
+            rep_vista = rep.rename(columns={
+                "codigo_accion": "Código", "accion": "Acción", "responsable": "Responsable",
+                "registros": "Registros", "beneficiarios_registrados": "Beneficiarios registrados"
+            })
+            st.dataframe(rep_vista, use_container_width=True, hide_index=True)
 
-            st.markdown("#### Detalle de actividades grupales")
+            st.markdown("#### 👥 Detalle de actividades grupales")
             grupales = pd.read_sql(
                 text("""
                     SELECT
+                        r.id AS registro_id,
                         r.fecha_accion,
                         r.codigo_accion,
                         r.nombre_actividad,
@@ -23367,18 +23786,70 @@ def modulo_politica_publica_v1678():
                         r.registrado_por_nombre AS responsable,
                         COUNT(p.id)::int AS participantes
                     FROM politica_publica_registros r
-                    LEFT JOIN politica_publica_participantes p
-                      ON p.registro_id=r.id
-                    WHERE r.tipo_registro='ACTIVIDAD GRUPAL'
+                    LEFT JOIN politica_publica_participantes p ON p.registro_id=r.id
+                    WHERE UPPER(TRIM(COALESCE(r.tipo_registro,'')))='ACTIVIDAD GRUPAL'
                       AND EXTRACT(MONTH FROM r.fecha_accion)=:mes
                       AND EXTRACT(YEAR FROM r.fecha_accion)=:anio
                     GROUP BY r.id
                     ORDER BY r.fecha_accion DESC, r.id DESC
-                """),
-                engine,
-                params={"mes": int(mes), "anio": int(anio)}
+                """), engine, params={"mes": int(mes), "anio": int(anio)}
             )
-            st.dataframe(grupales, use_container_width=True, hide_index=True)
+            if grupales.empty:
+                st.info("No hay actividades grupales en el periodo seleccionado.")
+            else:
+                vista_grp = grupales[["fecha_accion","codigo_accion","nombre_actividad","lugar","responsable","participantes"]].rename(columns={
+                    "fecha_accion":"Fecha", "codigo_accion":"Código", "nombre_actividad":"Actividad",
+                    "lugar":"Lugar", "responsable":"Responsable", "participantes":"N.º participantes"
+                })
+                st.dataframe(vista_grp, use_container_width=True, hide_index=True)
+
+                st.caption("Abre cada actividad para consultar el soporte nominal de sus participantes.")
+                for _, g in grupales.iterrows():
+                    rid = int(g["registro_id"])
+                    etiqueta = (f"👥 Ver participantes ({int(g['participantes'])}) · "
+                                f"{g['codigo_accion']} · {g['nombre_actividad']} · {g['fecha_accion']}")
+                    with st.expander(etiqueta, expanded=False):
+                        part = pd.read_sql(
+                            text("""
+                                SELECT
+                                    COALESCE(NULLIF(TRIM(p.nombre_usuario), ''),
+                                             TRIM(COALESCE(h.nombres,'') || ' ' || COALESCE(h.apellidos,''))) AS nombre,
+                                    p.documento_usuario AS documento,
+                                    COALESCE(h.sexo_al_nacer, '') AS sexo,
+                                    COALESCE(NULLIF(TRIM(p.modalidad_usuario), ''), h.modalidad, '') AS modalidad
+                                FROM politica_publica_participantes p
+                                LEFT JOIN habitante_de_calle h
+                                  ON TRIM(CAST(h.numero_identificacion AS TEXT))
+                                   = TRIM(CAST(p.documento_usuario AS TEXT))
+                                WHERE p.registro_id=:rid
+                                ORDER BY nombre
+                            """), engine, params={"rid": rid}
+                        )
+                        part = part.rename(columns={"nombre":"Nombre completo", "documento":"Documento", "sexo":"Sexo", "modalidad":"Modalidad"})
+                        st.dataframe(part, use_container_width=True, hide_index=True)
+
+            st.markdown("#### 📥 Exportación oficial para Alcaldía")
+            st.caption(
+                "Genera un Excel con las dos pestañas oficiales del formato suministrado y una tercera pestaña auxiliar con el soporte nominal: "
+                "**REGISTROS USUARIOS** para registros individuales y "
+                "**REGISTR ACTIVI ART Y MASIVAS** para actividades grupales y **PARTICIPANTES GRUPALES** con el detalle nominal."
+            )
+            try:
+                excel_alcaldia, n_ind, n_grp = _excel_alcaldia_politica_publica_v16122(mes, anio)
+                st.download_button(
+                    "📗 Descargar formato Alcaldía (Excel)",
+                    data=excel_alcaldia,
+                    file_name=f"FBD_politica_publica_{int(anio)}_{int(mes):02d}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True,
+                    key="pp_v16122_export_alcaldia",
+                )
+                st.caption(
+                    f"Incluye **{n_ind}** registro(s) individual(es) y "
+                    f"**{n_grp}** actividad(es) grupal(es) del periodo."
+                )
+            except Exception as e:
+                st.error(f"No fue posible generar el formato de Alcaldía: {e}")
 
     with tabs[3]:
         st.subheader("👥 Responsables definidos para el informe mensual")
