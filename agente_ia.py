@@ -10819,12 +10819,64 @@ def panel_profesional_v15(doc_forzado=None, incrustado=False):
                     ["_orden", "Persona"]
                 ).drop(columns=["_orden"])
 
-                st.markdown("#### 👥 Mis casos PAI")
-                st.dataframe(
-                    tabla_gestion,
-                    use_container_width=True,
-                    hide_index=True
+                # V16.95 - Separar expedientes PAI ABIERTOS y CERRADOS.
+                # Un PAI se considera cerrado únicamente cuando existe un
+                # cierre formal en pai_cierres; no basta con que sus objetivos
+                # estén al 100%.
+                try:
+                    _docs_cerrados = pd.read_sql(
+                        text("""
+                            SELECT DISTINCT
+                                TRIM(CAST(documento_usuario AS TEXT)) AS documento
+                            FROM pai_cierres
+                        """),
+                        engine
+                    )
+                    _set_cerrados = set(
+                        _docs_cerrados["documento"].dropna().astype(str).str.strip()
+                    ) if not _docs_cerrados.empty else set()
+                except Exception:
+                    _set_cerrados = set()
+
+                tabla_gestion["Situación PAI"] = tabla_gestion["Documento"].astype(str).str.strip().apply(
+                    lambda _d: "CERRADO" if _d in _set_cerrados else "ABIERTO"
                 )
+
+                tabla_abiertos = tabla_gestion[
+                    tabla_gestion["Situación PAI"] == "ABIERTO"
+                ].drop(columns=["Situación PAI"]).copy()
+                tabla_cerrados = tabla_gestion[
+                    tabla_gestion["Situación PAI"] == "CERRADO"
+                ].drop(columns=["Situación PAI"]).copy()
+
+                st.markdown("#### 👥 Mis casos PAI")
+                tab_pai_abiertos, tab_pai_cerrados = st.tabs([
+                    f"🟢 Abiertos ({len(tabla_abiertos)})",
+                    f"📁 Cerrados ({len(tabla_cerrados)})",
+                ])
+
+                with tab_pai_abiertos:
+                    if tabla_abiertos.empty:
+                        st.info("No tiene PAI abiertos.")
+                    else:
+                        st.dataframe(
+                            tabla_abiertos,
+                            use_container_width=True,
+                            hide_index=True
+                        )
+
+                with tab_pai_cerrados:
+                    if tabla_cerrados.empty:
+                        st.info("No tiene PAI cerrados.")
+                    else:
+                        st.caption(
+                            "Archivo histórico: estos PAI ya tienen un cierre formal registrado."
+                        )
+                        st.dataframe(
+                            tabla_cerrados,
+                            use_container_width=True,
+                            hide_index=True
+                        )
             else:
                 st.info("Todavía no tiene objetivos PAI registrados.")
 
@@ -21437,210 +21489,319 @@ def modulo_enfermeria_v1673():
                 st.rerun()
 
         if puede_registrar:
-            with st.form(f"enf73_val_{doc}"):
-                st.markdown("#### 1. Datos de identificación")
-                c0, c01, c02 = st.columns([2, 1, 1])
-                c0.text_input("Nombre completo", value=p["nombre_completo"], disabled=True)
-                c01.text_input("Documento", value=doc, disabled=True)
-                c02.text_input("Edad", value=str(p.get("edad") or ""), disabled=True)
+            # ============================================================
+            # V16.94 - VALORACIÓN POR ETAPAS + BORRADOR PERSISTENTE
+            # El borrador se guarda en PostgreSQL/Supabase y sobrevive
+            # cierres del navegador, reruns, cambios de página y reconexiones.
+            # ============================================================
+            import json as _json_enf
 
-                st.markdown("#### 2. Antecedentes y condiciones de salud")
-                enfermedad_conocida = st.selectbox(
-                    "¿Sufre alguna enfermedad o tiene diagnóstico conocido?",
-                    ["NO", "SÍ", "POR VERIFICAR"]
-                )
-                enfermedad_detalle = st.text_area("¿Cuál enfermedad / diagnóstico?")
+            with engine.begin() as _conn_enf:
+                _conn_enf.execute(text("""
+                    CREATE TABLE IF NOT EXISTS enfermeria_valoraciones_borrador (
+                        documento_usuario TEXT PRIMARY KEY,
+                        nombre_usuario TEXT,
+                        modalidad TEXT,
+                        enfermera_documento TEXT,
+                        enfermera_nombre TEXT,
+                        datos JSONB NOT NULL DEFAULT '{}'::jsonb,
+                        seccion_actual INTEGER NOT NULL DEFAULT 1,
+                        creado_en TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                        actualizado_en TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                    )
+                """))
 
-                toma_medicamento = st.selectbox(
-                    "¿Toma actualmente algún medicamento?",
-                    ["NO", "SÍ", "POR VERIFICAR"]
-                )
-                medicamentos_detalle = st.text_area(
-                    "Medicamento(s): nombre, dosis y frecuencia si se conocen"
-                )
+            _borrador_df = pd.read_sql(
+                text("""
+                    SELECT *
+                    FROM enfermeria_valoraciones_borrador
+                    WHERE TRIM(documento_usuario)=:doc
+                    LIMIT 1
+                """),
+                engine,
+                params={"doc": doc}
+            )
 
-                alergia_medicamento = st.selectbox(
-                    "¿Es alérgico a algún medicamento?",
-                    ["NO", "SÍ", "POR VERIFICAR"]
-                )
-                alergias_detalle = st.text_input("¿Cuál alergia?")
+            if _borrador_df.empty:
+                _draft = {}
+                _seccion_guardada = 1
+                _draft_owner = ""
+                _draft_updated = None
+            else:
+                _br = _borrador_df.iloc[0]
+                _raw = _br.get("datos")
+                if isinstance(_raw, dict):
+                    _draft = _raw
+                else:
+                    try:
+                        _draft = _json_enf.loads(_raw or "{}")
+                    except Exception:
+                        _draft = {}
+                _seccion_guardada = int(_br.get("seccion_actual") or 1)
+                _draft_owner = str(_br.get("enfermera_nombre") or "")
+                _draft_updated = pd.to_datetime(_br.get("actualizado_en"), errors="coerce", utc=True)
 
-                c1, c2, c3 = st.columns(3)
-                sintomas_gripales = c1.selectbox(
-                    "¿Presenta actualmente síntomas gripales?",
-                    ["NO", "SÍ", "POR VERIFICAR"]
-                )
-                dificultad_respirar = c2.selectbox(
-                    "¿Presenta dificultad para respirar?",
-                    ["NO", "SÍ", "POR VERIFICAR"]
-                )
-                erupciones_cutaneas = c3.selectbox(
-                    "¿Presenta erupciones cutáneas?",
-                    ["NO", "SÍ", "POR VERIFICAR"]
-                )
+            def _d(key, default=""):
+                val = _draft.get(key, default)
+                return default if val is None else val
 
-                necesidad_salud = st.selectbox(
-                    "¿Refiere necesidad inmediata relacionada con su salud?",
-                    ["NO", "SÍ", "POR VERIFICAR"]
-                )
-                necesidad_salud_detalle = st.text_area(
-                    "Detalle de la necesidad inmediata"
-                )
+            def _idx(options, value, default=0):
+                try:
+                    return options.index(value)
+                except Exception:
+                    return default
 
-                st.markdown("#### 3. Valoración física")
-                f1, f2 = st.columns(2)
-                peso = f1.number_input(
-                    "Peso (kg)", min_value=0.0, max_value=300.0, step=0.1
-                )
-                talla = f2.number_input(
-                    "Talla (m)", min_value=0.0, max_value=2.5, step=0.01
-                )
+            def _guardar_borrador_enf(nuevos, seccion_siguiente):
+                datos = dict(_draft)
+                datos.update(nuevos)
+                with engine.begin() as _c:
+                    _c.execute(
+                        text("""
+                            INSERT INTO enfermeria_valoraciones_borrador (
+                                documento_usuario, nombre_usuario, modalidad,
+                                enfermera_documento, enfermera_nombre,
+                                datos, seccion_actual, creado_en, actualizado_en
+                            )
+                            VALUES (
+                                :doc, :nombre, :modalidad, :enf_doc, :enf_nombre,
+                                CAST(:datos AS jsonb), :seccion, NOW(), NOW()
+                            )
+                            ON CONFLICT (documento_usuario)
+                            DO UPDATE SET
+                                nombre_usuario=EXCLUDED.nombre_usuario,
+                                modalidad=EXCLUDED.modalidad,
+                                enfermera_documento=EXCLUDED.enfermera_documento,
+                                enfermera_nombre=EXCLUDED.enfermera_nombre,
+                                datos=EXCLUDED.datos,
+                                seccion_actual=EXCLUDED.seccion_actual,
+                                actualizado_en=NOW()
+                        """),
+                        {
+                            "doc": doc,
+                            "nombre": p["nombre_completo"],
+                            "modalidad": p["modalidad"],
+                            "enf_doc": enfermera_documento,
+                            "enf_nombre": enfermera_nombre,
+                            "datos": _json_enf.dumps(datos, ensure_ascii=False),
+                            "seccion": int(seccion_siguiente),
+                        }
+                    )
+                st.session_state[f"enf94_paso_{doc}"] = int(seccion_siguiente)
+                st.success("💾 Borrador guardado en la base de datos.")
+                st.rerun()
 
-                heridas_hallazgos = st.text_area(
-                    "Heridas, lesiones, hematomas, quemaduras o signos visibles de infección"
+            if _draft:
+                _fh_txt = ""
+                if pd.notna(_draft_updated):
+                    try:
+                        _fh_txt = _draft_updated.tz_convert("America/Bogota").strftime("%d/%m/%Y %I:%M %p")
+                    except Exception:
+                        _fh_txt = str(_draft_updated)
+                st.info(
+                    f"🟡 **BORRADOR RECUPERADO** · Último guardado: **{_fh_txt or 'registrado'}**"
+                    + (f" · Inició/actualizó: **{_draft_owner}**" if _draft_owner else "")
                 )
+            else:
+                st.caption("🟢 Aún no hay borrador. Al guardar una sección quedará protegido en la base de datos.")
 
-                d1, d2, d3 = st.columns([1, 2, 1])
-                presenta_dolor = d1.selectbox("¿Presenta dolor?", ["NO", "SÍ"])
-                dolor_localizacion = d2.text_input("Localización del dolor")
-                dolor_intensidad = d3.number_input(
-                    "Intensidad 0–10", min_value=0, max_value=10, step=1
-                )
+            _paso = int(st.session_state.get(f"enf94_paso_{doc}", _seccion_guardada))
+            _paso = max(1, min(7, _paso))
+            _titulos = {
+                1: "Identificación",
+                2: "Antecedentes y condiciones de salud",
+                3: "Valoración física",
+                4: "Consumo de SPA",
+                5: "Restablecimiento de derechos",
+                6: "Salud integral",
+                7: "Conducta, revisión y finalización",
+            }
+            st.progress(_paso / 7)
+            st.markdown(f"### Sección {_paso} de 7 — {_titulos[_paso]}")
 
-                m1, m2, m3 = st.columns(3)
-                movilidad_marcha = m1.selectbox(
-                    "Movilidad y marcha",
-                    ["NORMAL", "ALTERADA", "REQUIERE APOYO", "POR VERIFICAR"]
-                )
-                estado_conciencia = m2.selectbox(
-                    "Estado de conciencia",
-                    ["ALERTA", "SOMNOLIENTO", "ALTERADO", "OTRO"]
-                )
-                orientacion = m3.selectbox(
-                    "Orientación",
-                    ["ORIENTADO", "DESORIENTADO", "POR VERIFICAR"]
-                )
+            # ---------------- 1. IDENTIFICACIÓN ----------------
+            if _paso == 1:
+                with st.form(f"enf94_s1_{doc}"):
+                    c0, c01, c02 = st.columns([2, 1, 1])
+                    c0.text_input("Nombre completo", value=p["nombre_completo"], disabled=True)
+                    c01.text_input("Documento", value=doc, disabled=True)
+                    c02.text_input("Edad", value=str(p.get("edad") or ""), disabled=True)
+                    st.caption("Verifique que la persona seleccionada sea la correcta antes de continuar.")
+                    _siguiente = st.form_submit_button("💾 Guardar y continuar →", use_container_width=True, type="primary")
+                if _siguiente:
+                    _guardar_borrador_enf({}, 2)
 
-                st.markdown("#### 4. Consumo de SPA")
-                s1, s2 = st.columns(2)
-                consume_spa = s1.selectbox(
-                    "¿Consume SPA actualmente?",
-                    ["", "Sí", "No", "No sabe / no responde"]
-                )
-                sustancia_principal = s2.selectbox(
-                    "Sustancia principal",
-                    ["", "Bazuco", "Marihuana", "Cigarrillo / nicotina",
-                     "Alcohol", "Cocaína", "Heroína", "Inhalantes",
-                     "Pepas / medicamentos", "Tusi / mezclas", "Otra", "No aplica"]
-                )
-                via_spa = st.selectbox(
-                    "Vía de administración principal",
-                    ["", "FUMADA", "INHALADA / ASPIRADA", "ORAL / INGERIDA",
-                     "INYECTADA / INTRAVENOSA", "SUBLINGUAL", "TRANSDÉRMICA",
-                     "OTRA", "NO SABE / POR VERIFICAR"]
-                )
-                otras_spa = st.text_input("Otras sustancias consumidas")
+            # ---------------- 2. ANTECEDENTES ----------------
+            elif _paso == 2:
+                with st.form(f"enf94_s2_{doc}"):
+                    _opts3 = ["NO", "SÍ", "POR VERIFICAR"]
+                    enfermedad_conocida = st.selectbox("¿Sufre alguna enfermedad o tiene diagnóstico conocido?", _opts3, index=_idx(_opts3, _d("enfermedad_conocida", "NO")))
+                    enfermedad_detalle = st.text_area("¿Cuál enfermedad / diagnóstico?", value=str(_d("enfermedad_detalle", "")))
+                    toma_medicamento = st.selectbox("¿Toma actualmente algún medicamento?", _opts3, index=_idx(_opts3, _d("toma_medicamento", "NO")))
+                    medicamentos_detalle = st.text_area("Medicamento(s): nombre, dosis y frecuencia si se conocen", value=str(_d("medicamentos_detalle", "")))
+                    alergia_medicamento = st.selectbox("¿Es alérgico a algún medicamento?", _opts3, index=_idx(_opts3, _d("alergia_medicamento", "NO")))
+                    alergias_detalle = st.text_input("¿Cuál alergia?", value=str(_d("alergias_detalle", "")))
+                    c1,c2,c3=st.columns(3)
+                    sintomas_gripales=c1.selectbox("¿Presenta actualmente síntomas gripales?",_opts3,index=_idx(_opts3,_d("sintomas_gripales","NO")))
+                    dificultad_respirar=c2.selectbox("¿Presenta dificultad para respirar?",_opts3,index=_idx(_opts3,_d("dificultad_respirar","NO")))
+                    erupciones_cutaneas=c3.selectbox("¿Presenta erupciones cutáneas?",_opts3,index=_idx(_opts3,_d("erupciones_cutaneas","NO")))
+                    necesidad_salud=st.selectbox("¿Refiere necesidad inmediata relacionada con su salud?",_opts3,index=_idx(_opts3,_d("necesidad_salud","NO")))
+                    necesidad_salud_detalle=st.text_area("Detalle de la necesidad inmediata",value=str(_d("necesidad_salud_detalle","")))
+                    a,b=st.columns(2)
+                    _atras=a.form_submit_button("← Anterior",use_container_width=True)
+                    _sig=b.form_submit_button("💾 Guardar y continuar →",use_container_width=True,type="primary")
+                if _atras:
+                    st.session_state[f"enf94_paso_{doc}"]=1; st.rerun()
+                if _sig:
+                    _guardar_borrador_enf({
+                        "enfermedad_conocida":enfermedad_conocida,"enfermedad_detalle":enfermedad_detalle,
+                        "toma_medicamento":toma_medicamento,"medicamentos_detalle":medicamentos_detalle,
+                        "alergia_medicamento":alergia_medicamento,"alergias_detalle":alergias_detalle,
+                        "sintomas_gripales":sintomas_gripales,"dificultad_respirar":dificultad_respirar,
+                        "erupciones_cutaneas":erupciones_cutaneas,"necesidad_salud":necesidad_salud,
+                        "necesidad_salud_detalle":necesidad_salud_detalle},3)
 
-                spa1, spa2 = st.columns(2)
-                tiempo_anos_consumo = spa1.number_input(
-                    "Años aproximados de consumo",
-                    min_value=0.0,
-                    max_value=80.0,
-                    value=0.0,
-                    step=0.5
-                )
-                frecuencia_consumo = spa2.selectbox(
-                    "Frecuencia de consumo",
-                    [
-                        "",
-                        "Ocasional",
-                        "1-2 días por semana",
-                        "3-4 días por semana",
-                        "5-6 días por semana",
-                        "Diario",
-                        "Varias veces al día",
-                        "No aplica / no consume"
-                    ]
-                )
+            # ---------------- 3. VALORACIÓN FÍSICA ----------------
+            elif _paso == 3:
+                with st.form(f"enf94_s3_{doc}"):
+                    f1,f2=st.columns(2)
+                    peso=f1.number_input("Peso (kg)",0.0,300.0,value=float(_d("peso",0) or 0),step=0.1)
+                    talla=f2.number_input("Talla (m)",0.0,2.5,value=float(_d("talla",0) or 0),step=0.01)
+                    heridas_hallazgos=st.text_area("Heridas, lesiones, hematomas, quemaduras o signos visibles de infección",value=str(_d("heridas_hallazgos","")))
+                    d1,d2,d3=st.columns([1,2,1])
+                    _dol=["NO","SÍ"]
+                    presenta_dolor=d1.selectbox("¿Presenta dolor?",_dol,index=_idx(_dol,_d("presenta_dolor","NO")))
+                    dolor_localizacion=d2.text_input("Localización del dolor",value=str(_d("dolor_localizacion","")))
+                    dolor_intensidad=d3.number_input("Intensidad 0–10",0,10,value=int(_d("dolor_intensidad",0) or 0),step=1)
+                    m1,m2,m3=st.columns(3)
+                    _mov=["NORMAL","ALTERADA","REQUIERE APOYO","POR VERIFICAR"]
+                    movilidad_marcha=m1.selectbox("Movilidad y marcha",_mov,index=_idx(_mov,_d("movilidad_marcha","NORMAL")))
+                    _con=["ALERTA","SOMNOLIENTO","ALTERADO","OTRO"]
+                    estado_conciencia=m2.selectbox("Estado de conciencia",_con,index=_idx(_con,_d("estado_conciencia","ALERTA")))
+                    _ori=["ORIENTADO","DESORIENTADO","POR VERIFICAR"]
+                    orientacion=m3.selectbox("Orientación",_ori,index=_idx(_ori,_d("orientacion","ORIENTADO")))
+                    a,b=st.columns(2); _atras=a.form_submit_button("← Anterior",use_container_width=True); _sig=b.form_submit_button("💾 Guardar y continuar →",use_container_width=True,type="primary")
+                if _atras: st.session_state[f"enf94_paso_{doc}"]=2; st.rerun()
+                if _sig:
+                    _guardar_borrador_enf({"peso":peso,"talla":talla,"heridas_hallazgos":heridas_hallazgos,
+                        "presenta_dolor":presenta_dolor,"dolor_localizacion":dolor_localizacion,
+                        "dolor_intensidad":dolor_intensidad,"movilidad_marcha":movilidad_marcha,
+                        "estado_conciencia":estado_conciencia,"orientacion":orientacion},4)
 
-                tr1, tr2 = st.columns(2)
-                tratamiento_spa = tr1.selectbox(
-                    "¿Ha recibido tratamiento por consumo de SPA?",
-                    ["", "Sí", "No", "No sabe / no responde"]
-                )
-                tratamiento_spa_actual = tr2.selectbox(
-                    "¿Actualmente está en tratamiento por consumo de SPA?",
-                    ["", "Sí", "No", "No aplica", "No sabe / no responde"]
-                )
+            # ---------------- 4. SPA ----------------
+            elif _paso == 4:
+                with st.form(f"enf94_s4_{doc}"):
+                    s1,s2=st.columns(2)
+                    _yn=["","Sí","No","No sabe / no responde"]
+                    consume_spa=s1.selectbox("¿Consume SPA actualmente?",_yn,index=_idx(_yn,_d("consume_spa","")))
+                    _sus=["","Bazuco","Marihuana","Cigarrillo / nicotina","Alcohol","Cocaína","Heroína","Inhalantes","Pepas / medicamentos","Tusi / mezclas","Otra","No aplica"]
+                    sustancia_principal=s2.selectbox("Sustancia principal",_sus,index=_idx(_sus,_d("sustancia_principal","")))
+                    _vias=["","FUMADA","INHALADA / ASPIRADA","ORAL / INGERIDA","INYECTADA / INTRAVENOSA","SUBLINGUAL","TRANSDÉRMICA","OTRA","NO SABE / POR VERIFICAR"]
+                    via_spa=st.selectbox("Vía de administración principal",_vias,index=_idx(_vias,_d("via_spa","")))
+                    otras_spa=st.text_input("Otras sustancias consumidas",value=str(_d("otras_spa","")))
+                    spa1,spa2=st.columns(2)
+                    tiempo_anos_consumo=spa1.number_input("Años aproximados de consumo",0.0,80.0,value=float(_d("tiempo_anos_consumo",0) or 0),step=0.5)
+                    _freq=["","Ocasional","1-2 días por semana","3-4 días por semana","5-6 días por semana","Diario","Varias veces al día","No aplica / no consume"]
+                    frecuencia_consumo=spa2.selectbox("Frecuencia de consumo",_freq,index=_idx(_freq,_d("frecuencia_consumo","")))
+                    tr1,tr2=st.columns(2)
+                    tratamiento_spa=tr1.selectbox("¿Ha recibido tratamiento por consumo de SPA?",_yn,index=_idx(_yn,_d("tratamiento_spa","")))
+                    _act=["","Sí","No","No aplica","No sabe / no responde"]
+                    tratamiento_spa_actual=tr2.selectbox("¿Actualmente está en tratamiento por consumo de SPA?",_act,index=_idx(_act,_d("tratamiento_spa_actual","")))
+                    a,b=st.columns(2); _atras=a.form_submit_button("← Anterior",use_container_width=True); _sig=b.form_submit_button("💾 Guardar y continuar →",use_container_width=True,type="primary")
+                if _atras: st.session_state[f"enf94_paso_{doc}"]=3; st.rerun()
+                if _sig:
+                    _guardar_borrador_enf({"consume_spa":consume_spa,"sustancia_principal":sustancia_principal,
+                        "via_spa":via_spa,"otras_spa":otras_spa,"tiempo_anos_consumo":tiempo_anos_consumo,
+                        "frecuencia_consumo":frecuencia_consumo,"tratamiento_spa":tratamiento_spa,
+                        "tratamiento_spa_actual":tratamiento_spa_actual},5)
 
-                st.markdown("#### 5. Restablecimiento de derechos")
-                r1, r2 = st.columns(2)
-                regimen_salud = r1.selectbox(
-                    "Régimen de aseguramiento en salud",
-                    ["", "CONTRIBUTIVO", "SUBSIDIADO", "ESPECIAL / EXCEPCIÓN",
-                     "NO ASEGURADO", "NO SABE / POR VERIFICAR"]
-                )
-                eps_nombre = r2.text_input("Nombre de la EPS / entidad aseguradora")
-                municipio_eps = st.text_input(
-                    "Municipio / ciudad donde tiene registrada la EPS"
-                )
-                r3, r4 = st.columns(2)
-                cedulado = r3.selectbox(
-                    "¿Está cedulado?",
-                    ["", "SÍ", "NO", "EN TRÁMITE", "POR VERIFICAR"]
-                )
-                documento_fisico = r4.selectbox(
-                    "¿Tiene documento de identidad en físico?",
-                    ["", "SÍ", "NO", "NO APLICA", "POR VERIFICAR"]
-                )
+            # ---------------- 5. DERECHOS ----------------
+            elif _paso == 5:
+                with st.form(f"enf94_s5_{doc}"):
+                    r1,r2=st.columns(2)
+                    _reg=["","CONTRIBUTIVO","SUBSIDIADO","ESPECIAL / EXCEPCIÓN","NO ASEGURADO","NO SABE / POR VERIFICAR"]
+                    regimen_salud=r1.selectbox("Régimen de aseguramiento en salud",_reg,index=_idx(_reg,_d("regimen_salud","")))
+                    eps_nombre=r2.text_input("Nombre de la EPS / entidad aseguradora",value=str(_d("eps_nombre","")))
+                    municipio_eps=st.text_input("Municipio / ciudad donde tiene registrada la EPS",value=str(_d("municipio_eps","")))
+                    r3,r4=st.columns(2)
+                    _ced=["","SÍ","NO","EN TRÁMITE","POR VERIFICAR"]
+                    cedulado=r3.selectbox("¿Está cedulado?",_ced,index=_idx(_ced,_d("cedulado","")))
+                    _fis=["","SÍ","NO","NO APLICA","POR VERIFICAR"]
+                    documento_fisico=r4.selectbox("¿Tiene documento de identidad en físico?",_fis,index=_idx(_fis,_d("documento_fisico","")))
+                    a,b=st.columns(2); _atras=a.form_submit_button("← Anterior",use_container_width=True); _sig=b.form_submit_button("💾 Guardar y continuar →",use_container_width=True,type="primary")
+                if _atras: st.session_state[f"enf94_paso_{doc}"]=4; st.rerun()
+                if _sig:
+                    _guardar_borrador_enf({"regimen_salud":regimen_salud,"eps_nombre":eps_nombre,
+                        "municipio_eps":municipio_eps,"cedulado":cedulado,"documento_fisico":documento_fisico},6)
 
-                st.markdown("#### 6. Salud integral")
-                st.caption("Enfermedades infectocontagiosas / transmisibles")
-                estados_salud = [
-                    "", "NO REFIERE", "SOSPECHA", "DIAGNÓSTICO CONFIRMADO",
-                    "EN TRATAMIENTO", "TRATAMIENTO FINALIZADO", "POR VERIFICAR"
-                ]
-                i1, i2, i3 = st.columns(3)
-                tuberculosis = i1.selectbox("Tuberculosis (TB)", estados_salud)
-                vih = i2.selectbox("VIH", estados_salud)
-                its = i3.selectbox("ITS / Sífilis", estados_salud)
-                i4, i5 = st.columns(2)
-                hepatitis_b = i4.selectbox("Hepatitis B", estados_salud)
-                hepatitis_c = i5.selectbox("Hepatitis C", estados_salud)
-                otra_transmisible = st.text_input("Otra enfermedad transmisible")
+            # ---------------- 6. SALUD INTEGRAL ----------------
+            elif _paso == 6:
+                with st.form(f"enf94_s6_{doc}"):
+                    estados_salud=["","NO REFIERE","SOSPECHA","DIAGNÓSTICO CONFIRMADO","EN TRATAMIENTO","TRATAMIENTO FINALIZADO","POR VERIFICAR"]
+                    i1,i2,i3=st.columns(3)
+                    tuberculosis=i1.selectbox("Tuberculosis (TB)",estados_salud,index=_idx(estados_salud,_d("tuberculosis","")))
+                    vih=i2.selectbox("VIH",estados_salud,index=_idx(estados_salud,_d("vih","")))
+                    its=i3.selectbox("ITS / Sífilis",estados_salud,index=_idx(estados_salud,_d("its","")))
+                    i4,i5=st.columns(2)
+                    hepatitis_b=i4.selectbox("Hepatitis B",estados_salud,index=_idx(estados_salud,_d("hepatitis_b","")))
+                    hepatitis_c=i5.selectbox("Hepatitis C",estados_salud,index=_idx(estados_salud,_d("hepatitis_c","")))
+                    otra_transmisible=st.text_input("Otra enfermedad transmisible",value=str(_d("otra_transmisible","")))
+                    mt1,mt2=st.columns(2)
+                    _med=["","NO","SÍ","POR VERIFICAR"]
+                    usa_medicacion=mt1.selectbox("¿Tiene medicación formulada actualmente?",_med,index=_idx(_med,_d("usa_medicacion","")))
+                    _adh=["","NO APLICA","ADECUADA","IRREGULAR","NO ADHERENTE","POR VERIFICAR"]
+                    adherencia_medicacion=mt2.selectbox("Adherencia a la medicación",_adh,index=_idx(_adh,_d("adherencia_medicacion","")))
+                    hospitalizacion_reciente=st.selectbox("Hospitalización reciente",_med,index=_idx(_med,_d("hospitalizacion_reciente","")))
+                    a,b=st.columns(2); _atras=a.form_submit_button("← Anterior",use_container_width=True); _sig=b.form_submit_button("💾 Guardar y continuar →",use_container_width=True,type="primary")
+                if _atras: st.session_state[f"enf94_paso_{doc}"]=5; st.rerun()
+                if _sig:
+                    _guardar_borrador_enf({"tuberculosis":tuberculosis,"vih":vih,"its":its,
+                        "hepatitis_b":hepatitis_b,"hepatitis_c":hepatitis_c,"otra_transmisible":otra_transmisible,
+                        "usa_medicacion":usa_medicacion,"adherencia_medicacion":adherencia_medicacion,
+                        "hospitalizacion_reciente":hospitalizacion_reciente},7)
 
-                st.caption("Medicación y tratamiento")
-                mt1, mt2 = st.columns(2)
-                usa_medicacion = mt1.selectbox(
-                    "¿Tiene medicación formulada actualmente?",
-                    ["", "NO", "SÍ", "POR VERIFICAR"]
-                )
-                adherencia_medicacion = mt2.selectbox(
-                    "Adherencia a la medicación",
-                    ["", "NO APLICA", "ADECUADA", "IRREGULAR",
-                     "NO ADHERENTE", "POR VERIFICAR"]
-                )
-                hospitalizacion_reciente = st.selectbox(
-                    "Hospitalización reciente",
-                    ["", "NO", "SÍ", "POR VERIFICAR"]
-                )
+            # ---------------- 7. CONDUCTA / FINALIZAR ----------------
+            elif _paso == 7:
+                # Recuperar todo lo ya guardado para que el INSERT final conserve
+                # exactamente las mismas columnas de la versión anterior.
+                enfermedad_conocida=_d("enfermedad_conocida","NO"); enfermedad_detalle=str(_d("enfermedad_detalle",""))
+                toma_medicamento=_d("toma_medicamento","NO"); medicamentos_detalle=str(_d("medicamentos_detalle",""))
+                alergia_medicamento=_d("alergia_medicamento","NO"); alergias_detalle=str(_d("alergias_detalle",""))
+                sintomas_gripales=_d("sintomas_gripales","NO"); dificultad_respirar=_d("dificultad_respirar","NO")
+                erupciones_cutaneas=_d("erupciones_cutaneas","NO"); necesidad_salud=_d("necesidad_salud","NO")
+                necesidad_salud_detalle=str(_d("necesidad_salud_detalle",""))
+                peso=float(_d("peso",0) or 0); talla=float(_d("talla",0) or 0)
+                heridas_hallazgos=str(_d("heridas_hallazgos","")); presenta_dolor=_d("presenta_dolor","NO")
+                dolor_localizacion=str(_d("dolor_localizacion","")); dolor_intensidad=int(_d("dolor_intensidad",0) or 0)
+                movilidad_marcha=_d("movilidad_marcha","NORMAL"); estado_conciencia=_d("estado_conciencia","ALERTA"); orientacion=_d("orientacion","ORIENTADO")
+                consume_spa=_d("consume_spa",""); sustancia_principal=_d("sustancia_principal",""); via_spa=_d("via_spa","")
+                otras_spa=str(_d("otras_spa","")); tiempo_anos_consumo=float(_d("tiempo_anos_consumo",0) or 0)
+                frecuencia_consumo=_d("frecuencia_consumo",""); tratamiento_spa=_d("tratamiento_spa",""); tratamiento_spa_actual=_d("tratamiento_spa_actual","")
+                regimen_salud=_d("regimen_salud",""); eps_nombre=str(_d("eps_nombre","")); municipio_eps=str(_d("municipio_eps",""))
+                cedulado=_d("cedulado",""); documento_fisico=_d("documento_fisico","")
+                tuberculosis=_d("tuberculosis",""); vih=_d("vih",""); its=_d("its",""); hepatitis_b=_d("hepatitis_b",""); hepatitis_c=_d("hepatitis_c","")
+                otra_transmisible=str(_d("otra_transmisible","")); usa_medicacion=_d("usa_medicacion",""); adherencia_medicacion=_d("adherencia_medicacion","")
+                hospitalizacion_reciente=_d("hospitalizacion_reciente","")
 
-                st.markdown("#### 7. Conducta / remisión")
-                requiere_urgencias = st.selectbox(
-                    "¿Requiere atención o remisión a urgencias?",
-                    ["NO", "SÍ", "PENDIENTE VALORACIÓN"]
-                )
-                motivo_remision = st.text_area("Motivo de la remisión")
-                observaciones = st.text_area("Observaciones de enfermería")
-
-                confirmar = st.checkbox(
-                    f"Confirmo que la valoración corresponde a {p['nombre_completo']} · CC {doc}"
-                )
-                guardar = st.form_submit_button(
-                    "💾 Guardar valoración de enfermería",
-                    use_container_width=True,
-                    type="primary"
-                )
+                with st.form(f"enf94_s7_{doc}"):
+                    _rem=["NO","SÍ","PENDIENTE VALORACIÓN"]
+                    requiere_urgencias=st.selectbox("¿Requiere atención o remisión a urgencias?",_rem,index=_idx(_rem,_d("requiere_urgencias","NO")))
+                    motivo_remision=st.text_area("Motivo de la remisión",value=str(_d("motivo_remision","")))
+                    observaciones=st.text_area("Observaciones de enfermería",value=str(_d("observaciones","")))
+                    st.markdown("#### Revisión antes de finalizar")
+                    st.caption("Al finalizar se crea la valoración clínica definitiva y se conserva en la historia de Enfermería.")
+                    confirmar=st.checkbox(f"Confirmo que la valoración corresponde a {p['nombre_completo']} · CC {doc}")
+                    a,b=st.columns(2)
+                    _atras=a.form_submit_button("← Anterior",use_container_width=True)
+                    guardar=b.form_submit_button("✅ Finalizar valoración",use_container_width=True,type="primary")
+                if _atras:
+                    # Guardar también la sección final antes de volver.
+                    _guardar_borrador_enf({"requiere_urgencias":requiere_urgencias,
+                        "motivo_remision":motivo_remision,"observaciones":observaciones},6)
+                if guardar and confirmar:
+                    # Asegura que los últimos campos también queden en borrador
+                    # hasta que termine exitosamente la transacción definitiva.
+                    _draft.update({"requiere_urgencias":requiere_urgencias,
+                        "motivo_remision":motivo_remision,"observaciones":observaciones})
 
             # V16.91 - La foto permanece visible al FINAL del formulario.
             # Puede tomarse antes o después de guardar; es temporal y no se almacena.
@@ -21892,6 +22053,18 @@ def modulo_enfermeria_v1673():
                                 "enf_nombre": enfermera_nombre,
                             }
                         )
+
+                        # V16.94 - La valoración definitiva quedó registrada:
+                        # retirar únicamente el borrador de esta persona.
+                        conn.execute(
+                            text("""
+                                DELETE FROM enfermeria_valoraciones_borrador
+                                WHERE TRIM(documento_usuario)=:doc
+                            """),
+                            {"doc": doc}
+                        )
+
+                    st.session_state.pop(f"enf94_paso_{doc}", None)
 
                     registrar_auditoria(
                         "VALORACION_INICIAL_ENFERMERIA",
