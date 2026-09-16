@@ -25570,7 +25570,8 @@ def modulo_informe_mensual_profesional_piloto_v1627():
         # columnas genéricas. La búsqueda aproximada anterior podía escoger otra
         # columna que simplemente contuviera la palabra "fecha".
         candidatos = [
-            "fecha_seguimiento", "fecha_registro", "fecha_hora", "creado_en",
+            # Para pai_objetivos la fecha contractual/operativa del PAI es fecha_apertura.
+            "fecha_apertura", "fecha_seguimiento", "fecha_registro", "fecha_hora", "creado_en",
             "created_at", "fecha_creacion", "fecha_atencion", "fecha_movimiento",
             "fecha"
         ]
@@ -25606,8 +25607,11 @@ def modulo_informe_mensual_profesional_piloto_v1627():
         )
         return tmp.loc[mascara].copy()
 
-    # Detecta las tablas reales existentes en esta instalación.
-    tablas_pai = [t for t in tablas if "pai" in t.lower()]
+    # V16.150: priorizar la fuente real de objetivos PAI.
+    # Evita que el informe tome primero otra tabla cuyo nombre también contenga "pai".
+    tablas_pai = (
+        ["pai_objetivos"] if "pai_objetivos" in tablas else []
+    ) + [t for t in tablas if "pai" in t.lower() and t != "pai_objetivos"]
     tablas_seg = [
         t for t in tablas
         if any(k in t.lower() for k in ["seguimiento","intervencion"])
@@ -25635,7 +25639,8 @@ def modulo_informe_mensual_profesional_piloto_v1627():
         if df.empty:
             return df
 
-        cp_id = col(df, ["profesional_id", "id_profesional"])
+        # En pai_objetivos, profesional_referente contiene el ID de profesionales.
+        cp_id = col(df, ["profesional_id", "id_profesional", "profesional_referente"])
         if cp_id and profesional_id_inf is not None:
             ids = pd.to_numeric(df[cp_id], errors="coerce")
             mask_id = ids.eq(pd.to_numeric(pd.Series([profesional_id_inf]), errors="coerce").iloc[0])
@@ -25663,14 +25668,32 @@ def modulo_informe_mensual_profesional_piloto_v1627():
 
     docs = set()
     for df in [df_pai, df_seg]:
-        cd = col(df, ["numero_identificacion","documento","cedula"])
+        cd = col(df, ["documento_usuario","numero_identificacion","documento","cedula"])
         if cd:
             docs.update(df[cd].dropna().astype(str).str.strip().tolist())
     docs.discard("")
 
     st.markdown("### 📊 Consolidado automático")
     a,b,c,d = st.columns(4)
-    a.metric("PAI del período", len(df_pai))
+    # Un PAI del período se cuenta por PERSONA, no por cantidad de objetivos.
+    # Ej.: 5 objetivos abiertos para una misma persona = 1 PAI.
+    _doc_pai = col(
+        df_pai,
+        ["documento_usuario","numero_identificacion","documento","cedula"]
+    )
+    if _doc_pai and not df_pai.empty:
+        total_pai_periodo = int(
+            df_pai[_doc_pai]
+            .dropna()
+            .astype(str)
+            .str.strip()
+            .replace("", pd.NA)
+            .dropna()
+            .nunique()
+        )
+    else:
+        total_pai_periodo = 0
+    a.metric("PAI del período", total_pai_periodo)
     b.metric("Seguimientos / intervenciones", len(df_seg))
     c.metric("Personas únicas", len(docs))
     d.metric("Fuentes detectadas", int(bool(fuente_pai)) + int(bool(fuente_seg)))
