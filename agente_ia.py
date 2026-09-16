@@ -14128,6 +14128,8 @@ def dashboard_ejecutivo():
     # ========================================================
     # EGRESOS / MOVIMIENTOS
     # ========================================================
+    # V16.155: mismo criterio de Egresos e Impacto; los fallecimientos
+    # permanecen como cierre administrativo pero no suman en esta tarjeta.
     try:
         egresos_coord = int(
             pd.read_sql(
@@ -14135,6 +14137,7 @@ def dashboard_ejecutivo():
                     SELECT COUNT(*) AS total
                     FROM personas_caracterizacion
                     WHERE UPPER(TRIM(COALESCE(estado_caso,''))) = 'EGRESADO'
+                      AND UPPER(COALESCE(observaciones_egreso,'')) NOT LIKE '%FALLEC%'
                 """),
                 engine
             ).iloc[0]["total"] or 0
@@ -14358,7 +14361,7 @@ def dashboard_ejecutivo():
     c2.metric("🟢 Activos", activos_coord)
     c3.metric("🏙️ Urbano", f"{urbano_coord}/100")
     c4.metric("🌱 Granja", granja_coord)
-    c5.metric("🏆 Egresos", egresos_coord)
+    c5.metric("🏆 Egresos de impacto", egresos_coord)
     c6.metric("⛔ Medidas activas", medidas_activas_coord)
 
     with st.expander("⛔ Seguimiento de medidas activas", expanded=False):
