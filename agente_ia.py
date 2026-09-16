@@ -5543,9 +5543,13 @@ def registrar_egreso_profesional_v12(u, documento):
                 return None
 
             # NaN / NaT / pd.NA deben llegar como NULL.
+            # No dependemos del alias `np`, porque este archivo no importa numpy como np.
             try:
                 es_nulo = pd.isna(valor)
-                if isinstance(es_nulo, (bool, np.bool_)) and es_nulo:
+                if isinstance(es_nulo, bool) and es_nulo:
+                    return None
+                # numpy.bool_ y otros booleanos escalares exponen .item().
+                if hasattr(es_nulo, "item") and bool(es_nulo.item()):
                     return None
             except Exception:
                 pass
@@ -5554,9 +5558,13 @@ def registrar_egreso_profesional_v12(u, documento):
             if isinstance(valor, pd.Timestamp):
                 return valor.to_pydatetime()
 
-            # Escalares NumPy (int64, float64, bool_, etc.) -> Python nativo.
-            if isinstance(valor, np.generic):
-                return valor.item()
+            # Escalares NumPy (int64, float64, bool_, etc.) -> Python nativo
+            # sin requerir `import numpy as np`.
+            if type(valor).__module__ == "numpy" and hasattr(valor, "item"):
+                try:
+                    return valor.item()
+                except Exception:
+                    pass
 
             return valor
 
