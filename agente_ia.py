@@ -10629,13 +10629,21 @@ def panel_profesional_v15(doc_forzado=None, incrustado=False):
                     FROM pai_novedades n
                     JOIN pai_objetivos o ON o.id=n.id_objetivo
                     WHERE
-                        o.profesional_referente=:prof
-                        OR EXISTS (
+                        (
+                            o.profesional_referente=:prof
+                            OR EXISTS (
+                                SELECT 1
+                                FROM pai_profesionales_vinculados v
+                                WHERE v.id_objetivo=o.id
+                                  AND v.profesional_id=:prof
+                                  AND COALESCE(v.fuente,'')='MIGRADO PAI 2026'
+                            )
+                        )
+                        AND NOT EXISTS (
                             SELECT 1
-                            FROM pai_profesionales_vinculados v
-                            WHERE v.id_objetivo=o.id
-                              AND v.profesional_id=:prof
-                              AND COALESCE(v.fuente,'')='MIGRADO PAI 2026'
+                            FROM pai_cierres c
+                            WHERE TRIM(CAST(c.documento_usuario AS TEXT))
+                                  = TRIM(CAST(o.documento_usuario AS TEXT))
                         )
                 """),
                 engine,
@@ -10665,7 +10673,31 @@ def panel_profesional_v15(doc_forzado=None, incrustado=False):
         except Exception:
             total_cerrados = 0
 
-        if gestion.empty:
+        # V16.97 - El dashboard operativo debe medir únicamente PAI ABIERTOS.
+        # Los expedientes cerrados se conservan en su pestaña histórica, pero
+        # sus personas/objetivos/seguimientos no inflan los indicadores activos.
+        try:
+            _cierres_docs_dash = pd.read_sql(
+                text("""
+                    SELECT DISTINCT
+                        TRIM(CAST(documento_usuario AS TEXT)) AS documento
+                    FROM pai_cierres
+                """),
+                engine
+            )
+            _set_cerrados_dash = set(
+                _cierres_docs_dash["documento"].dropna().astype(str).str.strip()
+            ) if not _cierres_docs_dash.empty else set()
+        except Exception:
+            _set_cerrados_dash = set()
+
+        gestion_dashboard = gestion.copy()
+        if not gestion_dashboard.empty and _set_cerrados_dash:
+            gestion_dashboard = gestion_dashboard[
+                ~gestion_dashboard["documento"].astype(str).str.strip().isin(_set_cerrados_dash)
+            ].copy()
+
+        if gestion_dashboard.empty:
             personas_pai = 0
             objetivos_total = 0
             objetivos_cumplidos = 0
@@ -10673,42 +10705,42 @@ def panel_profesional_v15(doc_forzado=None, incrustado=False):
             casos_sin_seg = 0
             cumplimiento_promedio = 0
         else:
-            gestion["porcentaje_avance"] = pd.to_numeric(
-                gestion["porcentaje_avance"], errors="coerce"
+            gestion_dashboard["porcentaje_avance"] = pd.to_numeric(
+                gestion_dashboard["porcentaje_avance"], errors="coerce"
             ).fillna(0)
-            gestion["fecha_meta"] = pd.to_datetime(
-                gestion["fecha_meta"], errors="coerce"
+            gestion_dashboard["fecha_meta"] = pd.to_datetime(
+                gestion_dashboard["fecha_meta"], errors="coerce"
             )
-            gestion["fecha_ultimo_seguimiento"] = normalizar_timestamp_colombia_v1692(
-                gestion["fecha_ultimo_seguimiento"]
+            gestion_dashboard["fecha_ultimo_seguimiento"] = normalizar_timestamp_colombia_v1692(
+                gestion_dashboard["fecha_ultimo_seguimiento"]
             )
             hoy_g = pd.Timestamp(date.today())
 
             cumplido_g = (
-                gestion["porcentaje_avance"].ge(100)
-                | gestion["estado"].fillna("").astype(str).str.upper().eq("CUMPLIDO")
+                gestion_dashboard["porcentaje_avance"].ge(100)
+                | gestion_dashboard["estado"].fillna("").astype(str).str.upper().eq("CUMPLIDO")
             )
-            dias_meta_g = (gestion["fecha_meta"].dt.normalize() - hoy_g).dt.days
+            dias_meta_g = (gestion_dashboard["fecha_meta"].dt.normalize() - hoy_g).dt.days
             dias_seg_g = (
-                hoy_g - gestion["fecha_ultimo_seguimiento"].dt.normalize()
+                hoy_g - gestion_dashboard["fecha_ultimo_seguimiento"].dt.normalize()
             ).dt.days
 
-            personas_pai = gestion["documento"].nunique()
-            objetivos_total = len(gestion)
+            personas_pai = gestion_dashboard["documento"].nunique()
+            objetivos_total = len(gestion_dashboard)
             objetivos_cumplidos = int(cumplido_g.sum())
             objetivos_vencidos = int((~cumplido_g & dias_meta_g.lt(0)).sum())
 
-            sin_seg_docs = gestion.loc[
+            sin_seg_docs = gestion_dashboard.loc[
                 ~cumplido_g
                 & (
-                    gestion["fecha_ultimo_seguimiento"].isna()
+                    gestion_dashboard["fecha_ultimo_seguimiento"].isna()
                     | dias_seg_g.gt(15)
                 ),
                 "documento"
             ]
             casos_sin_seg = sin_seg_docs.nunique()
             cumplimiento_promedio = round(
-                float(gestion["porcentaje_avance"].mean()), 1
+                float(gestion_dashboard["porcentaje_avance"].mean()), 1
             )
 
         with st.expander("📊 Ver resumen de mi gestión", expanded=True):
