@@ -21334,7 +21334,6 @@ CATEGORIAS_ENFERMERIA_V1671 = [
     "USUARIO CON ADHERENCIA EN EL TRATAMIENTO ITS",
     "USUARIO CON ADHERENCIA EN EL TRATAMIENTO VIH",
     "USUARIO HOSPITALIZADO",
-    "VALORACIÓN DE INGRESO",
 ]
 
 def modulo_enfermeria_v1673():
@@ -22349,7 +22348,13 @@ def modulo_enfermeria_v1673():
                 )
 
             if guardar_reg:
-                if not detalle.strip():
+                if str(tipo).strip().upper() == "VALORACIÓN DE INGRESO":
+                    st.error(
+                        "⛔ La valoración de ingreso/reingreso no se registra desde "
+                        "Atenciones. Use la pestaña «Valoración inicial» para que "
+                        "se guarde la valoración clínica completa."
+                    )
+                elif not detalle.strip():
                     st.error("Debe registrar el detalle.")
                 elif not confirmar_reg:
                     st.error("Debe confirmar la identidad de la persona.")
@@ -22636,9 +22641,16 @@ def modulo_enfermeria_v1673():
                     story.append(Paragraph("OTRAS ATENCIONES Y NOVEDADES", subt))
                     filas = [["Fecha", "Atención / novedad", "Resultado", "Detalle", "Registró"]]
                     for _, rr in registros.sort_values("fecha_hora").iterrows():
+                        _tipo_pdf = _enf_txt(rr.get("tipo_atencion"))
+                        _detalle_pdf = _enf_txt(rr.get("detalle"))
+                        if (
+                            _tipo_pdf.strip().upper() == "VALORACIÓN DE INGRESO"
+                            and _detalle_pdf.strip().upper() == "REINGRESO"
+                        ):
+                            _tipo_pdf = "REGISTRO OPERATIVO DE REINGRESO (HISTÓRICO)"
                         filas.append([
-                            _fecha_enf(rr.get("fecha_hora")), _enf_txt(rr.get("tipo_atencion")),
-                            _enf_txt(rr.get("resultado")), _enf_txt(rr.get("detalle")),
+                            _fecha_enf(rr.get("fecha_hora")), _tipo_pdf,
+                            _enf_txt(rr.get("resultado")), _detalle_pdf,
                             f"{_enf_txt(rr.get('enfermera_nombre'))} · CC {_enf_txt(rr.get('enfermera_documento'))}"
                         ])
                     tabla = Table(
@@ -22739,6 +22751,17 @@ def modulo_enfermeria_v1673():
                 hist["fecha_hora"] = pd.to_datetime(
                     hist["fecha_hora"], errors="coerce", utc=True
                 ).dt.tz_convert("America/Bogota")
+
+                # V16.99 - Las valoraciones clínicas reales viven en
+                # enfermeria_valoraciones_iniciales. Los registros históricos
+                # creados manualmente como "VALORACIÓN DE INGRESO" se conservan
+                # por auditoría, pero se identifican como registros operativos
+                # para no contarlos como valoraciones clínicas completas.
+                _tipo_hist = hist["tipo_atencion"].fillna("").astype(str).str.strip().str.upper()
+                _detalle_hist = hist["detalle"].fillna("").astype(str).str.strip().str.upper()
+                _manual_ingreso = _tipo_hist.eq("VALORACIÓN DE INGRESO") & _detalle_hist.eq("REINGRESO")
+                hist.loc[_manual_ingreso, "tipo_atencion"] = "REGISTRO OPERATIVO DE REINGRESO (HISTÓRICO)"
+
                 hist["Fecha"] = hist["fecha_hora"].dt.strftime("%d/%m/%Y %I:%M %p")
                 mostrar = hist[
                     ["Fecha", "tipo_atencion", "resultado", "detalle",
@@ -22790,6 +22813,10 @@ def modulo_enfermeria_v1673():
                 WHERE fecha_hora >= :desde
                   AND fecha_hora < :hasta
                   {filtro_mod}
+                  AND NOT (
+                      UPPER(TRIM(COALESCE(tipo_atencion,'')))='VALORACIÓN DE INGRESO'
+                      AND UPPER(TRIM(COALESCE(detalle,'')))='REINGRESO'
+                  )
                 GROUP BY tipo_atencion
             """),
             engine,
