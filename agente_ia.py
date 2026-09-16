@@ -16226,6 +16226,48 @@ def inicio_ejecutivo_v167():
 # V16.8 - MÓDULOS INSTITUCIONALES RESTAURADOS
 # ============================================================
 
+def _motivo_egreso_impacto_v16154(valor):
+    txt = str(valor or "").strip().upper()
+    try:
+        import unicodedata
+        txt = unicodedata.normalize("NFKD", txt)
+        txt = "".join(c for c in txt if not unicodedata.combining(c))
+    except Exception:
+        pass
+
+    if "FALLEC" in txt:
+        return None
+    if "ALBERGUE" in txt and "VICTIMA" in txt:
+        return "TRASLADO A ALBERGUE DE VÍCTIMAS"
+    if "CPSAM" in txt or ("CENTRO" in txt and "PROTECCION" in txt and "ADULTO MAYOR" in txt):
+        return "TRASLADO A CENTRO DE PROTECCIÓN DE ADULTO MAYOR"
+    if "VINCULACION FAMILIAR" in txt:
+        return "VINCULACIÓN FAMILIAR"
+    if "VINCULACION LABORAL" in txt or "EMPLEABIL" in txt:
+        return "VINCULACIÓN LABORAL"
+    if "PLAN RETORNO" in txt or "PLAN DE RETORNO" in txt:
+        return "PLAN RETORNO"
+    if "EMPRENDIMIENTO" in txt:
+        return "EMPRENDIMIENTO"
+    if "INDEPEND" in txt or "APARTAESTUDIO" in txt:
+        return "INDEPENDIZACIÓN"
+    if "CASO EXITOS" in txt:
+        return "CASO EXITOSO"
+    return str(valor or "Sin observación").strip() or "Sin observación"
+
+
+def _filtrar_egresos_impacto_v16154(df):
+    if df is None or df.empty or "observaciones_egreso" not in df.columns:
+        return df.copy() if df is not None else pd.DataFrame()
+    salida = df.copy()
+    salida["motivo_impacto"] = salida["observaciones_egreso"].apply(_motivo_egreso_impacto_v16154)
+    return salida[salida["motivo_impacto"].notna()].copy()
+
+# ============================================================
+# V16.8 - MÓDULOS INSTITUCIONALES RESTAURADOS
+# ============================================================
+
+
 def modulo_egresos_impacto_v169():
 
     df = pd.read_sql("SELECT * FROM habitante_de_calle", engine)
@@ -16253,11 +16295,15 @@ def modulo_egresos_impacto_v169():
 
     st.subheader("📊 Indicadores de Egreso")
 
-    df_impacto = pd.read_sql_query("""
+    df_impacto_todos = pd.read_sql_query("""
         SELECT *
         FROM personas_caracterizacion
         WHERE estado_caso = 'EGRESADO'
     """, engine)
+    # V16.154: el fallecimiento sigue en la historia, pero se excluye de
+    # Egresos e Impacto porque no corresponde a un caso exitoso.
+    df_impacto = _filtrar_egresos_impacto_v16154(df_impacto_todos)
+    df_egresados = df_impacto.copy()
 
     total_egresados = len(df_impacto)
     total_personas = len(df)
@@ -16266,7 +16312,7 @@ def modulo_egresos_impacto_v169():
 
     col1, col2, col3 = st.columns(3)
 
-    col1.metric("🎓 Total Egresados", total_egresados)
+    col1.metric("🏆 Egresos de impacto", total_egresados)
     col2.metric("📈 Tasa de Egreso", f"{tasa_egreso}%")
     col3.metric("👤 Edad Promedio", round(df_impacto["edad"].mean(), 1) if len(df_impacto) > 0 else 0)
 
@@ -16279,7 +16325,7 @@ def modulo_egresos_impacto_v169():
     st.subheader("📌 Observaciones de Egreso")
 
     obs_df = (
-        df_egresados["observaciones_egreso"]
+        df_egresados["motivo_impacto"]
         .fillna("Sin observación")
         .value_counts()
         .reset_index()
@@ -16314,7 +16360,7 @@ def modulo_egresos_impacto_v169():
 
     st.plotly_chart(px.histogram(df_impacto, x="edad", nbins=10, title="Edad"))
 
-    st.info(f"Total egresados: {total_egresados} | Tasa: {tasa_egreso}%")
+    st.info(f"Egresos de impacto: {total_egresados} | Tasa: {tasa_egreso}% · Los fallecimientos no se contabilizan como casos exitosos.")
 
 def modulo_reportes_institucionales_v169():
 
