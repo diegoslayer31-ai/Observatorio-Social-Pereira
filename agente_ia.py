@@ -8752,11 +8752,14 @@ def control_turno_v13():
     ])
 
     with tab1:
-        st.markdown("#### Personas presentes")
-        if presentes.empty:
-            st.info("No hay personas presentes según los registros actuales.")
+        st.markdown("#### Personas activas por modalidad")
+        if activos.empty:
+            st.info("No hay personas ACTIVAS con modalidad según los registros actuales.")
         else:
-            vista_presentes = presentes[
+            # V16.93 - Este listado muestra TODOS los usuarios cuyo estado_caso
+            # es ACTIVO y tienen modalidad. Los permisos/salidas se siguen usando
+            # por separado para los indicadores de presencia física.
+            vista_presentes = activos[
                 ["documento", "nombres", "apellidos", "modalidad"]
             ].sort_values(["modalidad", "nombres", "apellidos"])
 
@@ -22683,7 +22686,7 @@ POLITICA_PUBLICA_CATALOGO_V1678 = {
     },
     "2.1.9": {
         "accion": "Registro de beneficiarios de actividades de sana convivencia",
-        "tipo": "INDIVIDUAL",
+        "tipo": "INDIVIDUAL/ACTIVIDAD",
         "responsables": [
             "ESTEFANY SCARPETTA",
             "MARCELA MOSQUERA",
@@ -22747,6 +22750,10 @@ def modulo_politica_publica_v1678():
     acciones_asignadas = []
     if rol in roles_supervision:
         acciones_asignadas = list(POLITICA_PUBLICA_CATALOGO_V1678.keys())
+    elif rol in ["ENFERMERA", "COORDINACION_ENFERMERIA"]:
+        # V16.93 - Permiso institucional por ROL.
+        # Todas las enfermeras pueden registrar estas cuatro acciones.
+        acciones_asignadas = ["2.1.2", "2.1.7", "2.1.9", "2.1.11"]
     else:
         for cod, cfg in POLITICA_PUBLICA_CATALOGO_V1678.items():
             if any(
