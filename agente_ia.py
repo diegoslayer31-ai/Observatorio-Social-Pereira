@@ -270,6 +270,16 @@ def formatear_fecha_colombia(dt=None):
         dt = dt.astimezone(BOGOTA_TZ)
     return dt.strftime("%d/%m/%Y")
 
+
+def normalizar_timestamp_colombia_v1692(serie):
+    """
+    Convierte timestamps de PostgreSQL/Supabase a hora Colombia y elimina la zona
+    solo para cálculos con fechas locales de pandas. Evita TypeError por mezclar
+    datetime64[ns, UTC] con Timestamp sin zona después de registrar seguimientos.
+    """
+    valores = pd.to_datetime(serie, errors="coerce", utc=True)
+    return valores.dt.tz_convert("America/Bogota").dt.tz_localize(None)
+
 # ============================================================
 # CONFIGURACIÓN Y UTILIDADES CENTRALES
 # ============================================================
@@ -9446,8 +9456,8 @@ def _semaforo_integral_usuario_v16(documento):
             objs["porcentaje_avance"], errors="coerce"
         ).fillna(0)
         objs["fecha_meta"] = pd.to_datetime(objs["fecha_meta"], errors="coerce")
-        objs["fecha_ultimo_seguimiento"] = pd.to_datetime(
-            objs["fecha_ultimo_seguimiento"], errors="coerce"
+        objs["fecha_ultimo_seguimiento"] = normalizar_timestamp_colombia_v1692(
+            objs["fecha_ultimo_seguimiento"]
         )
 
         cumplido = (
@@ -10351,6 +10361,7 @@ def _resumen_profesionales_historicos_v1639(df):
     return actuales, historicos
 
 
+# V16.92 - corrección timezone PAI: seguimientos de Supabase se normalizan a Colombia.
 def panel_profesional_v15(doc_forzado=None, incrustado=False):
     if not incrustado:
         st.title("🩺 Mi Panel Profesional")
@@ -10665,8 +10676,8 @@ def panel_profesional_v15(doc_forzado=None, incrustado=False):
             gestion["fecha_meta"] = pd.to_datetime(
                 gestion["fecha_meta"], errors="coerce"
             )
-            gestion["fecha_ultimo_seguimiento"] = pd.to_datetime(
-                gestion["fecha_ultimo_seguimiento"], errors="coerce"
+            gestion["fecha_ultimo_seguimiento"] = normalizar_timestamp_colombia_v1692(
+                gestion["fecha_ultimo_seguimiento"]
             )
             hoy_g = pd.Timestamp(date.today())
 
@@ -11127,8 +11138,8 @@ def panel_profesional_v15(doc_forzado=None, incrustado=False):
             tmp["porcentaje_avance"], errors="coerce"
         ).fillna(0)
         tmp["fecha_meta"] = pd.to_datetime(tmp["fecha_meta"], errors="coerce")
-        tmp["fecha_ultimo_seguimiento"] = pd.to_datetime(
-            tmp["fecha_ultimo_seguimiento"], errors="coerce"
+        tmp["fecha_ultimo_seguimiento"] = normalizar_timestamp_colombia_v1692(
+            tmp["fecha_ultimo_seguimiento"]
         )
         hoy = pd.Timestamp(date.today())
         cumplido_mask = (
@@ -12154,8 +12165,8 @@ def supervision_pai_v15():
         control["fecha_meta"] = pd.to_datetime(
             control["fecha_meta"], errors="coerce"
         )
-        control["fecha_ultimo_seguimiento"] = pd.to_datetime(
-            control["fecha_ultimo_seguimiento"], errors="coerce"
+        control["fecha_ultimo_seguimiento"] = normalizar_timestamp_colombia_v1692(
+            control["fecha_ultimo_seguimiento"]
         )
         control["porcentaje_avance"] = pd.to_numeric(
             control["porcentaje_avance"], errors="coerce"
@@ -12608,8 +12619,8 @@ def dashboard_ejecutivo():
         df_pai_coord["fecha_meta"] = pd.to_datetime(
             df_pai_coord["fecha_meta"], errors="coerce"
         )
-        df_pai_coord["fecha_ultimo_seguimiento"] = pd.to_datetime(
-            df_pai_coord["fecha_ultimo_seguimiento"], errors="coerce"
+        df_pai_coord["fecha_ultimo_seguimiento"] = normalizar_timestamp_colombia_v1692(
+            df_pai_coord["fecha_ultimo_seguimiento"]
         )
         df_pai_coord["porcentaje_avance"] = pd.to_numeric(
             df_pai_coord["porcentaje_avance"], errors="coerce"
@@ -27736,8 +27747,8 @@ with tab6:
         df_control_pai["fecha_cumplimiento_real"] = pd.to_datetime(
             df_control_pai["fecha_cumplimiento_real"], errors="coerce"
         )
-        df_control_pai["fecha_ultimo_seguimiento"] = pd.to_datetime(
-            df_control_pai["fecha_ultimo_seguimiento"], errors="coerce"
+        df_control_pai["fecha_ultimo_seguimiento"] = normalizar_timestamp_colombia_v1692(
+            df_control_pai["fecha_ultimo_seguimiento"]
         )
         df_control_pai["porcentaje_avance"] = pd.to_numeric(
             df_control_pai["porcentaje_avance"], errors="coerce"
