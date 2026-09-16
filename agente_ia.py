@@ -5480,8 +5480,17 @@ def registrar_egreso_profesional_v12(u, documento):
         if obs_e.strip():
             observacion_final += " - " + obs_e.strip()
 
+        # V16.152 - personas_caracterizacion.cedula_validada es BOOLEAN en PostgreSQL.
+        # El formulario trabaja con SI / NO / NO APLICA; se traduce antes del INSERT
+        # para evitar DataError: invalid input syntax for type boolean: "SI".
+        cedula_validada_db = (
+            True if cedula_validada == "SI"
+            else False if cedula_validada == "NO"
+            else None
+        )
+
         datos = {
-            ce("cedula_validada"): cedula_validada,
+            ce("cedula_validada"): cedula_validada_db,
             ce("mes_validacion"): meses[fecha_e.month],
             ce("nombres"): pv("nombres", default=""),
             ce("apellidos"): pv("apellidos", default=""),
