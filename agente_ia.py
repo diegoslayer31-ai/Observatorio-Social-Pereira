@@ -10714,6 +10714,12 @@ def panel_profesional_v15(doc_forzado=None, incrustado=False):
             gestion_dashboard["fecha_ultimo_seguimiento"] = normalizar_timestamp_colombia_v1692(
                 gestion_dashboard["fecha_ultimo_seguimiento"]
             )
+            # V16.98 - Comparaciones de calendario sin mezclar timestamps
+            # timezone-aware con pd.Timestamp(date.today()) timezone-naive.
+            gestion_dashboard["fecha_ultimo_seguimiento"] = (
+                gestion_dashboard["fecha_ultimo_seguimiento"]
+                .dt.tz_localize(None)
+            )
             hoy_g = pd.Timestamp(date.today())
 
             cumplido_g = (
@@ -10770,9 +10776,10 @@ def panel_profesional_v15(doc_forzado=None, incrustado=False):
                         grupo["porcentaje_avance"], errors="coerce"
                     ).fillna(0)
                     metas = pd.to_datetime(grupo["fecha_meta"], errors="coerce")
-                    segs = pd.to_datetime(
-                        grupo["fecha_ultimo_seguimiento"], errors="coerce"
+                    segs = normalizar_timestamp_colombia_v1692(
+                        grupo["fecha_ultimo_seguimiento"]
                     )
+                    segs = segs.dt.tz_localize(None)
                     cumplidos_g = (
                         grupo["porcentaje_avance"].ge(100)
                         | grupo["estado"].fillna("").astype(str).str.upper().eq(
