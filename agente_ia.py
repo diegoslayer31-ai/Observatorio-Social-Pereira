@@ -9,6 +9,7 @@ import base64
 from sqlalchemy import create_engine, text
 import os
 import unicodedata
+import re
 from difflib import SequenceMatcher
 import matplotlib.pyplot as plt
 
@@ -271,14 +272,21 @@ def formatear_fecha_colombia(dt=None):
     return dt.strftime("%d/%m/%Y")
 
 
-def normalizar_timestamp_colombia_v1692(serie):
-    """
-    Convierte timestamps de PostgreSQL/Supabase a hora Colombia y elimina la zona
-    solo para cálculos con fechas locales de pandas. Evita TypeError por mezclar
-    datetime64[ns, UTC] con Timestamp sin zona después de registrar seguimientos.
-    """
-    valores = pd.to_datetime(serie, errors="coerce", utc=True)
-    return valores.dt.tz_convert("America/Bogota").dt.tz_localize(None)
+def normalizar_timestamp_pandas_sin_tz(valor):
+    """Normaliza fechas PostgreSQL/Pandas para cálculos sin mezclar tz-aware y tz-naive."""
+    ts = pd.to_datetime(valor, errors="coerce")
+    if pd.isna(ts):
+        return pd.NaT
+    try:
+        ts = pd.Timestamp(ts)
+        if ts.tzinfo is not None:
+            ts = ts.tz_convert("America/Bogota").tz_localize(None)
+        return ts
+    except Exception:
+        try:
+            return pd.Timestamp(ts).tz_localize(None)
+        except Exception:
+            return pd.NaT
 
 # ============================================================
 # CONFIGURACIÓN Y UTILIDADES CENTRALES
@@ -362,6 +370,210 @@ def registrar_auditoria(
         pass
 
 
+# ============================================================
+# V16.128 - SALIDA POR FALLECIMIENTO
+# ============================================================
+def registrar_salida_fallecimiento_v16128(
+    documento,
+    persona=None,
+    fecha_fallecimiento=None,
+    observacion="",
+    modulo="Gestión Usuarios",
+):
+    """
+    Registra una salida por fallecimiento sin borrar el expediente.
+
+    Decisión operativa:
+    - estado_caso pasa a EGRESADO para conservar compatibilidad con reportes
+      y filtros existentes.
+    - modalidad queda NULL para liberar cupo.
+    - la causa se conserva de forma inequívoca en movimientos y auditoría
+      como SALIDA POR FALLECIMIENTO.
+    - intenta guardar también un registro de egreso en
+      personas_caracterizacion cuando la estructura disponible lo permite.
+
+    La función es idempotente: si ya existe un movimiento marcado como
+    fallecimiento para la misma persona, no crea un segundo registro.
+    """
+    documento = limpiar_documento(documento)
+    fecha_fallecimiento = fecha_fallecimiento or ahora_colombia().date()
+    usuario = st.session_state.get("usuario_actual", "sistema")
+    # `persona` puede llegar desde un DataFrame como pandas.Series.
+    # No usar `persona or {}` porque una Series no tiene un valor booleano único
+    # y pandas lanza: ValueError: The truth value of a Series is ambiguous.
+    if persona is None:
+        persona = {}
+    elif hasattr(persona, "to_dict"):
+        persona = persona.to_dict()
+    elif not isinstance(persona, dict):
+        try:
+            persona = dict(persona)
+        except Exception:
+            persona = {}
+
+    obs_libre = str(observacion or "").strip()
+    obs_mov = (
+        f"[FALLECIMIENTO] Fecha de fallecimiento: {fecha_fallecimiento}. "
+        f"{obs_libre}"
+    ).strip()
+
+    try:
+        with engine.begin() as conn:
+            # Evitar duplicidad por clic repetido o rerun.
+            try:
+                existe = conn.execute(
+                    text("""
+                        SELECT 1
+                        FROM movimientos_habitante
+                        WHERE REGEXP_REPLACE(
+                                UPPER(TRIM(CAST(numero_identificacion AS TEXT))),
+                                '[^A-Z0-9]', '', 'g'
+                              ) = REGEXP_REPLACE(
+                                UPPER(TRIM(CAST(:doc AS TEXT))),
+                                '[^A-Z0-9]', '', 'g'
+                              )
+                          AND UPPER(COALESCE(observacion,'')) LIKE '%[FALLECIMIENTO]%'
+                        LIMIT 1
+                    """),
+                    {"doc": documento},
+                ).first()
+            except Exception:
+                existe = None
+
+            if existe:
+                return {"ok": True, "duplicado": True, "mensaje": "La salida por fallecimiento ya estaba registrada."}
+
+            # Leer columnas reales de la base principal.
+            cols_h = set(
+                r[0] for r in conn.execute(
+                    text("""
+                        SELECT column_name
+                        FROM information_schema.columns
+                        WHERE table_schema='public'
+                          AND table_name='habitante_de_calle'
+                    """)
+                ).fetchall()
+            )
+
+            sets = ["estado_caso = 'EGRESADO'", "modalidad = NULL"]
+            params = {"doc": documento, "fecha": fecha_fallecimiento}
+            if "fecha_ultimo_egreso" in cols_h:
+                sets.append("fecha_ultimo_egreso = :fecha")
+
+            conn.execute(
+                text(
+                    "UPDATE habitante_de_calle SET "
+                    + ", ".join(sets)
+                    + " WHERE REGEXP_REPLACE(UPPER(TRIM(CAST(numero_identificacion AS TEXT))), '[^A-Z0-9]', '', 'g') = REGEXP_REPLACE(UPPER(TRIM(CAST(:doc AS TEXT))), '[^A-Z0-9]', '', 'g')"
+                ),
+                params,
+            )
+
+            # Trazabilidad en movimientos. Usamos EGRESO como tipo compatible
+            # y dejamos la causa específica en la observación.
+            try:
+                with conn.begin_nested():
+                    conn.execute(
+                        text("""
+                            INSERT INTO movimientos_habitante (
+                                numero_identificacion,
+                                tipo_movimiento,
+                                modalidad,
+                                usuario_registra,
+                                observacion
+                            ) VALUES (
+                                :doc, 'EGRESO', NULL, :usuario, :obs
+                            )
+                        """),
+                        {"doc": documento, "usuario": usuario, "obs": obs_mov},
+                    )
+            except Exception:
+                pass
+
+            # Intento no bloqueante de llevarlo también a la base de egresos.
+            try:
+                cols_e = set(
+                    r[0] for r in conn.execute(
+                        text("""
+                            SELECT column_name
+                            FROM information_schema.columns
+                            WHERE table_schema='public'
+                              AND table_name='personas_caracterizacion'
+                        """)
+                    ).fetchall()
+                )
+                if cols_e:
+                    def pv(*keys, default=None):
+                        for k in keys:
+                            try:
+                                v = persona.get(k)
+                            except Exception:
+                                v = None
+                            if v is not None and str(v).strip().lower() not in ('', 'nan', 'none'):
+                                return v
+                        return default
+
+                    candidatos = {
+                        "nombres": pv("nombres", default=""),
+                        "apellidos": pv("apellidos", default=""),
+                        "numero_identidad": documento,
+                        "numero_identificacion": documento,
+                        "sexo_nacer": pv("sexo_al_nacer", "sexo_nacer", default=""),
+                        "sexo_al_nacer": pv("sexo_al_nacer", "sexo_nacer", default=""),
+                        "edad": pv("edad"),
+                        "fecha_nacimiento": pv("fecha_nacimiento", "fecha_de_nacimiento_dd_mm_aa"),
+                        "estado_caso": "EGRESADO",
+                        "fecha_egreso": fecha_fallecimiento,
+                        "observaciones_egreso": obs_mov,
+                        "funcionario_egreso": str(usuario),
+                    }
+                    datos = {k:v for k,v in candidatos.items() if k in cols_e and v is not None}
+                    # No duplicar en personas_caracterizacion si ya existe la misma causa.
+                    doc_col = "numero_identidad" if "numero_identidad" in cols_e else ("numero_identificacion" if "numero_identificacion" in cols_e else None)
+                    ya_egreso = None
+                    if doc_col and "observaciones_egreso" in cols_e:
+                        ya_egreso = conn.execute(
+                            text(f"""
+                                SELECT 1 FROM personas_caracterizacion
+                                WHERE TRIM(CAST("{doc_col}" AS TEXT)) = :doc
+                                  AND UPPER(COALESCE(observaciones_egreso,'')) LIKE '%[FALLECIMIENTO]%'
+                                LIMIT 1
+                            """),
+                            {"doc": documento},
+                        ).first()
+                    if datos and not ya_egreso:
+                        cols = list(datos)
+                        params_i = {f"v{i}": datos[c] for i,c in enumerate(cols)}
+                        conn.execute(
+                            text(
+                                "INSERT INTO personas_caracterizacion ("
+                                + ", ".join(f'\"{c}\"' for c in cols)
+                                + ") VALUES ("
+                                + ", ".join(f":v{i}" for i in range(len(cols)))
+                                + ")"
+                            ),
+                            params_i,
+                        )
+            except Exception:
+                # La tabla histórica de egresos puede tener restricciones propias.
+                # Esto no debe impedir registrar el fallecimiento en la base principal.
+                pass
+
+        registrar_auditoria(
+            "SALIDA_FALLECIMIENTO",
+            documento=documento,
+            modulo=modulo,
+            valor_anterior=str(getattr(persona, 'get', lambda *_: '')('estado_caso', '') or ''),
+            valor_nuevo="EGRESADO - FALLECIMIENTO",
+            observacion=obs_mov[:500],
+        )
+        try:
+            invalidar_cache_datos()
+        except Exception:
+            pass
+        return {"ok": True, "duplicado": False, "mensaje": "Salida por fallecimiento registrada correctamente."}
+    except Exception as e:
+        return {"ok": False, "duplicado": False, "mensaje": f"No fue posible registrar la salida por fallecimiento: {e}"}
 
 
 def normalizar_texto_ingreso_v16193(valor):
@@ -1027,6 +1239,7 @@ def _panel_medidas_activas_v1647(clave="medidas_activas"):
                     s.motivo,
                     s.fecha_inicio,
                     s.fecha_fin,
+                    COALESCE(s.remitido_comite, FALSE) AS remitido_comite,
                     s.estado_medida,
                     s.observacion,
                     s.usuario_registra
@@ -1074,7 +1287,10 @@ def _panel_medidas_activas_v1647(clave="medidas_activas"):
         + df_medidas["apellidos"].fillna("").astype(str).str.strip()
     ).str.strip()
 
-    def _estado_medida_visual(f):
+    def _estado_medida_visual(row):
+        if bool(row.get("remitido_comite", False)):
+            return "🟠 CASO REMITIDO A COMITÉ"
+        f = row.get("fecha_fin")
         if pd.isna(f):
             return "🔴 VIGENTE"
         fecha = f.date()
@@ -1083,15 +1299,24 @@ def _panel_medidas_activas_v1647(clave="medidas_activas"):
         dias = (fecha - hoy).days
         return f"🔴 VIGENTE · {dias} día(s)"
 
-    df_medidas["Estado"] = df_medidas["fecha_fin"].apply(
-        _estado_medida_visual
+    df_medidas["Estado"] = df_medidas.apply(
+        _estado_medida_visual, axis=1
     )
 
     df_medidas["Fecha salida"] = df_medidas["fecha_inicio"].apply(
         lambda x: x.strftime("%d/%m/%Y") if pd.notna(x) else "—"
     )
-    df_medidas["Puede solicitar reingreso desde"] = df_medidas["fecha_fin"].apply(
-        lambda x: x.strftime("%d/%m/%Y") if pd.notna(x) else "—"
+    df_medidas["Puede solicitar reingreso desde"] = df_medidas.apply(
+        lambda r: (
+            "CASO REMITIDO A COMITÉ"
+            if bool(r.get("remitido_comite", False))
+            else (
+                r["fecha_fin"].strftime("%d/%m/%Y")
+                if pd.notna(r.get("fecha_fin"))
+                else "—"
+            )
+        ),
+        axis=1
     )
 
     mostrar = df_medidas[
@@ -1121,7 +1346,10 @@ def _panel_medidas_activas_v1647(clave="medidas_activas"):
     )
 
     pendientes_cierre = int(
-        df_medidas["Estado"].eq("🟢 PUEDE REINGRESAR").sum()
+        (
+            df_medidas["Estado"].eq("🟢 PUEDE REINGRESAR")
+            & ~df_medidas["remitido_comite"].fillna(False).astype(bool)
+        ).sum()
     )
     if pendientes_cierre:
         st.warning(
@@ -1613,6 +1841,58 @@ def gestion_usuarios():
                 st.rerun()
 
         # ----------------------------------------------------
+        # SALIDA POR FALLECIMIENTO - V16.128
+        # ----------------------------------------------------
+        st.divider()
+        st.markdown("### 🕊️ Salida por fallecimiento")
+        st.caption(
+            "Registra el fallecimiento como una salida definitiva, libera el cupo y conserva "
+            "todo el expediente e historial. El estado queda EGRESADO para mantener compatibilidad "
+            "con los reportes, pero la causa queda identificada expresamente como FALLECIMIENTO."
+        )
+
+        with st.expander("🕊️ Registrar salida por fallecimiento", expanded=False):
+            fecha_fallecimiento_g = st.date_input(
+                "Fecha de fallecimiento",
+                value=ahora_colombia().date(),
+                max_value=ahora_colombia().date(),
+                key=f"gestion_fecha_fallecimiento_{documento}",
+            )
+            obs_fallecimiento_g = st.text_area(
+                "Observación / soporte de la novedad",
+                placeholder="Ej.: Información recibida de familiar, institución de salud o autoridad competente.",
+                key=f"gestion_obs_fallecimiento_{documento}",
+            )
+            conf_fallecimiento_g = st.checkbox(
+                "Confirmo que la información corresponde a este usuario y que se registrará una salida definitiva por fallecimiento.",
+                key=f"gestion_conf_fallecimiento_{documento}",
+            )
+            if st.button(
+                "🕊️ Confirmar salida por fallecimiento",
+                type="primary",
+                use_container_width=True,
+                key=f"gestion_guardar_fallecimiento_{documento}",
+            ):
+                if not conf_fallecimiento_g:
+                    st.error("Debe confirmar expresamente la salida por fallecimiento antes de guardar.")
+                else:
+                    res_f = registrar_salida_fallecimiento_v16128(
+                        documento,
+                        persona=persona,
+                        fecha_fallecimiento=fecha_fallecimiento_g,
+                        observacion=obs_fallecimiento_g,
+                        modulo="Gestión Usuarios",
+                    )
+                    if res_f.get("ok"):
+                        if res_f.get("duplicado"):
+                            st.warning("⚠️ " + res_f.get("mensaje", "La salida ya estaba registrada."))
+                        else:
+                            st.success("✅ " + res_f.get("mensaje", "Salida por fallecimiento registrada."))
+                        st.rerun()
+                    else:
+                        st.error(res_f.get("mensaje", "No fue posible registrar la salida."))
+
+        # ----------------------------------------------------
         # EGRESO ESTRUCTURADO
         # ----------------------------------------------------
         st.divider()
@@ -2008,6 +2288,7 @@ def gestion_usuarios():
                             motivo,
                             fecha_inicio,
                             fecha_fin,
+                            COALESCE(remitido_comite, FALSE) AS remitido_comite,
                             estado_medida,
                             observacion,
                             usuario_registra,
@@ -2047,7 +2328,7 @@ def gestion_usuarios():
 
             with st.form(f"medida_v9_{documento}"):
 
-                s1, s2, s3 = st.columns(3)
+                s1, s2 = st.columns(2)
 
                 tipo_medida = s1.selectbox(
                     "Medida",
@@ -2056,21 +2337,47 @@ def gestion_usuarios():
 
                 fecha_inicio_medida = s2.date_input(
                     "Fecha de inicio",
-                    value=date.today()
+                    value=ahora_colombia().date()
                 )
 
-                fecha_fin_medida = s3.date_input(
-                    "Fecha de finalización",
-                    value=date.today() + timedelta(days=3),
-                    help=(
-                        "Para expulsión puede usarse como fecha de revisión "
-                        "si la medida no tiene término definido."
-                    )
+                causal_medida_gestion = st.selectbox(
+                    "Causal / criterio *",
+                    [
+                        "AGRESIÓN FÍSICA", "AGRESIÓN VERBAL A FUNCIONARIO",
+                        "FUGA", "USO DE SPA", "PORTE DE SPA",
+                        "HURTO MENOR", "HURTO GRAVE", "VENTA DE SPA"
+                    ],
+                    key=f"gestion_causal_medida_{documento}"
                 )
+
+                remitido_comite = st.checkbox(
+                    "🟠 Caso remitido a Comité",
+                    help=(
+                        "Si se marca, no se asigna fecha estimada de reingreso. "
+                        "El reingreso dependerá de la decisión del Comité de Casos."
+                    ),
+                    disabled=(causal_medida_gestion == "HURTO GRAVE"),
+                    value=(causal_medida_gestion == "HURTO GRAVE")
+                )
+                if causal_medida_gestion == "HURTO GRAVE":
+                    remitido_comite = True
+                    st.warning("🟠 HURTO GRAVE: remisión obligatoria a Comité. No se asigna fecha de reingreso.")
+
+                if remitido_comite:
+                    fecha_fin_medida = None
+                    st.info(
+                        "🟠 CASO REMITIDO A COMITÉ · "
+                        "No se registrará fecha estimada de reingreso."
+                    )
+                else:
+                    fecha_fin_medida = st.date_input(
+                        "Fecha de finalización",
+                        value=ahora_colombia().date() + timedelta(days=3)
+                    )
 
                 motivo_medida = st.text_area(
-                    "Motivo de la medida *",
-                    placeholder="Describa el hecho o causal que sustenta la medida."
+                    "Detalle del hecho *",
+                    placeholder="Describa concretamente lo ocurrido."
                 )
 
                 observacion_medida = st.text_area(
@@ -2091,7 +2398,11 @@ def gestion_usuarios():
                     st.error("Debe registrar el motivo de la medida.")
                 elif not confirmar_medida:
                     st.error("Debe confirmar la aplicación de la medida.")
-                elif fecha_fin_medida < fecha_inicio_medida:
+                elif (
+                    not remitido_comite
+                    and fecha_fin_medida is not None
+                    and fecha_fin_medida < fecha_inicio_medida
+                ):
                     st.error(
                         "La fecha final no puede ser anterior a la fecha inicial."
                     )
@@ -2109,6 +2420,7 @@ def gestion_usuarios():
                                     motivo,
                                     fecha_inicio,
                                     fecha_fin,
+                                    remitido_comite,
                                     estado_medida,
                                     observacion,
                                     usuario_registra
@@ -2119,6 +2431,7 @@ def gestion_usuarios():
                                     :motivo,
                                     :inicio,
                                     :fin,
+                                    :remitido_comite,
                                     'ACTIVA',
                                     :observacion,
                                     :usuario
@@ -2127,10 +2440,14 @@ def gestion_usuarios():
                             {
                                 "doc": documento,
                                 "tipo": tipo_medida,
-                                "motivo": motivo_medida.strip(),
+                                "motivo": causal_medida_gestion,
                                 "inicio": fecha_inicio_medida,
-                                "fin": fecha_fin_medida,
-                                "observacion": observacion_medida.strip(),
+                                "fin": None if remitido_comite else fecha_fin_medida,
+                                "remitido_comite": bool(remitido_comite),
+                                "observacion": (
+                                    "DETALLE: " + motivo_medida.strip()
+                                    + ((" | " + observacion_medida.strip()) if observacion_medida.strip() else "")
+                                ),
                                 "usuario": usuario_registra
                             }
                         )
@@ -2184,7 +2501,13 @@ def gestion_usuarios():
                         documento=documento,
                         modulo="Gestión Usuarios",
                         valor_nuevo=tipo_medida,
-                        observacion=motivo_medida.strip()[:500]
+                        observacion=(
+                            (
+                                "CASO REMITIDO A COMITÉ | "
+                                if remitido_comite else ""
+                            )
+                            + motivo_medida.strip()
+                        )[:500]
                     )
 
                     invalidar_cache_datos()
@@ -4375,6 +4698,7 @@ CRITERIOS_REINGRESO_V1641 = {
     # VOLVER A SOLICITAR CUPO, no una garantía automática de reingreso.
     "SALIDA VOLUNTARIA": ("dias", 1, "1 día completo de sanción"),
     "AGRESIÓN FÍSICA": ("dias", 3, "3 días completos de sanción"),
+    "AGRESIÓN VERBAL A FUNCIONARIO": ("dias", 3, "3 días completos de sanción"),
     "FUGA": ("dias", 1, "1 día completo de sanción"),
     "USO DE SPA": ("dias", 2, "2 días completos de sanción"),
     "PORTE DE SPA": ("dias", 1, "1 día completo de sanción"),
@@ -4439,6 +4763,28 @@ def _es_reingreso_operativo_v1667(documento, estado_anterior=""):
         return total > 0
     except Exception:
         return False
+
+
+def _caso_remitido_comite_activo_v16106(documento):
+    """True si la persona tiene una medida ACTIVA remitida a Comité."""
+    try:
+        df = pd.read_sql(
+            text("""
+                SELECT 1
+                FROM sanciones_usuarios
+                WHERE TRIM(CAST(numero_identificacion AS TEXT)) = :doc
+                  AND UPPER(TRIM(COALESCE(estado_medida,''))) = 'ACTIVA'
+                  AND COALESCE(remitido_comite, FALSE) = TRUE
+                ORDER BY creado_en DESC
+                LIMIT 1
+            """),
+            engine,
+            params={"doc": str(documento or "").strip()}
+        )
+        return not df.empty
+    except Exception:
+        return False
+
 
 def _restriccion_reingreso_v1670(documento):
     """
@@ -4535,6 +4881,7 @@ def _restriccion_reingreso_v1670(documento):
                 FROM sanciones_usuarios
                 WHERE TRIM(CAST(numero_identificacion AS TEXT)) = :doc
                   AND fecha_fin IS NOT NULL
+                  AND COALESCE(remitido_comite, FALSE) = FALSE
                   AND UPPER(TRIM(COALESCE(estado_medida,''))) = 'ACTIVA'
                 ORDER BY creado_en DESC
                 LIMIT 1
@@ -4582,7 +4929,8 @@ def _texto_whatsapp_movimiento(
     hora=None,
     detalle="",
     responsable="",
-    fecha_posible_reingreso=None
+    fecha_posible_reingreso=None,
+    caso_remitido_comite=False
 ):
     """Construye un reporte corto para compartir por WhatsApp."""
     fecha_txt = (
@@ -4610,7 +4958,9 @@ def _texto_whatsapp_movimiento(
         lineas.append(f"*HORA:* {hora_txt}")
     if detalle:
         lineas.append(f"*OBSERVACIÓN:* {str(detalle).strip()}")
-    if fecha_posible_reingreso:
+    if caso_remitido_comite:
+        lineas.append("*CASO REMITIDO A COMITÉ*")
+    elif fecha_posible_reingreso:
         fecha_reingreso_txt = (
             fecha_posible_reingreso.strftime("%d/%m/%Y")
             if hasattr(fecha_posible_reingreso, "strftime")
@@ -4966,17 +5316,35 @@ def registrar_egreso_profesional_v12(u, documento):
         key=f"v12_fecha_egreso_{documento}"
     )
 
-    motivo_e = st.selectbox(
-        "Tipo de egreso",
-        [
+    # V16.145 - Los Inspiradores pueden registrar egresos definitivos
+    # únicamente cuando la persona es trasladada sin fecha de regreso a
+    # Centro de Protección de Adulto Mayor o Albergue de Víctimas.
+    rol_egreso = str(st.session_state.get("rol_actual", "")).strip().upper()
+    if rol_egreso == "INSPIRADOR":
+        opciones_motivo_egreso = [
+            "TRASLADO A CENTRO DE PROTECCIÓN DE ADULTO MAYOR",
+            "TRASLADO A ALBERGUE DE VÍCTIMAS"
+        ]
+        st.info(
+            "Para Inspiradores este registro corresponde a una salida definitiva "
+            "sin fecha de regreso. Se contabiliza como EGRESO e IMPACTO."
+        )
+    else:
+        opciones_motivo_egreso = [
             "PLAN RETORNO",
             "VINCULACION FAMILIAR",
             "VINCULACION LABORAL",
             "TRASLADO A CENTRO DE PROTECCION",
+            "TRASLADO A CENTRO DE PROTECCIÓN DE ADULTO MAYOR",
+            "TRASLADO A ALBERGUE DE VÍCTIMAS",
             "INGRESO A TRATAMIENTO",
             "AUTONOMIA / SUPERACION DE VIDA EN CALLE",
             "OTRO"
-        ],
+        ]
+
+    motivo_e = st.selectbox(
+        "Tipo de egreso",
+        opciones_motivo_egreso,
         key=f"v12_motivo_egreso_{documento}"
     )
 
@@ -5264,14 +5632,21 @@ def registrar_egreso_profesional_v12(u, documento):
         registrar_auditoria(
             "REGISTRAR_EGRESO",
             documento=documento,
-            modulo="Gestión Profesional",
+            modulo=(
+                "Gestión Móvil - Inspirador"
+                if rol_egreso == "INSPIRADOR"
+                else "Gestión Profesional"
+            ),
             valor_anterior=estado_actual,
             valor_nuevo="EGRESADO",
             observacion=observacion_final[:500]
         )
 
         invalidar_cache_datos()
-        st.success("✅ Egreso registrado correctamente.")
+        st.success(
+            "✅ Egreso registrado correctamente. La persona quedó EGRESADA, "
+            "se liberó su modalidad/cupo y el registro se suma a Egresos e Impacto."
+        )
         st.rerun()
 
 
@@ -5427,15 +5802,17 @@ def panel_inspirador_simple_v14():
                     text("""
                         UPDATE permisos_usuarios
                         SET estado_permiso='CERRADO',
-                            fecha_regreso_real=CURRENT_DATE,
-                            hora_regreso_real=CURRENT_TIME,
+                            fecha_regreso_real=:fecha_regreso,
+                            hora_regreso_real=:hora_regreso,
                             observacion_regreso='REGRESA AL ALBERGUE',
                             cerrado_en=NOW()
                         WHERE id=:id
                           AND UPPER(TRIM(COALESCE(estado_permiso,'')))='ABIERTO'
                     """),
                     {
-                        "id": int(permiso_id)
+                        "id": int(permiso_id),
+                        "fecha_regreso": ahora_colombia().date(),
+                        "hora_regreso": ahora_colombia().time().replace(microsecond=0)
                     }
                 )
 
@@ -5533,14 +5910,31 @@ def panel_inspirador_simple_v14():
         except Exception:
             pendientes = pd.DataFrame()
 
-        detalle_perm = []
-        if not permisos.empty:
-            for _, r in permisos.iterrows():
-                detalle_perm.append(
-                    f"• {'VENCIDO - ' if r.get('vencido') else ''}"
-                    f"{r.get('nombre_completo','')} "
-                    f"(CC {r.get('documento','')})"
-                )
+        def _bloque_permiso_por_albergue(df_permisos, modalidad):
+            if df_permisos.empty or "modalidad" not in df_permisos.columns:
+                df_mod = pd.DataFrame()
+            else:
+                serie_mod = df_permisos["modalidad"].fillna("").astype(str).str.strip().str.upper()
+                df_mod = df_permisos.loc[serie_mod.eq(modalidad)].copy()
+
+            vencidos_mod = int(df_mod["vencido"].fillna(False).sum()) if (not df_mod.empty and "vencido" in df_mod.columns) else 0
+            lineas = [
+                f"*🏠 ALBERGUE {modalidad}*",
+                f"*Personas con permiso:* {len(df_mod)}",
+                f"*Permisos vencidos:* {vencidos_mod}",
+                "*Fuera con permiso:*",
+            ]
+
+            if df_mod.empty:
+                lineas.append("• Ninguno")
+            else:
+                for _, r in df_mod.iterrows():
+                    estado = "🔴 VENCIDO - " if bool(r.get("vencido")) else "🟢 "
+                    lineas.append(
+                        f"• {estado}{r.get('nombre_completo','')} "
+                        f"(CC {r.get('documento','')})"
+                    )
+            return lineas
 
         detalle_nov = []
         if not pendientes.empty:
@@ -5549,16 +5943,19 @@ def panel_inspirador_simple_v14():
                     f"• [{r.get('prioridad')}] {r.get('novedad')}"
                 )
 
-        reporte = "\\n".join([
-            "*REPORTE OPERATIVO - ALBERGUE*",
+        reporte = "\n".join([
+            "*REPORTE OPERATIVO - ALBERGUES*",
             f"*Fecha:* {ahora.strftime('%d/%m/%Y %H:%M')}",
-            f"*Personas con permiso:* {len(permisos)}",
-            f"*Permisos vencidos:* {vencidos}",
             "",
-            "*Fuera con permiso:*",
-            *(detalle_perm if detalle_perm else ["• Ninguno"]),
+            *_bloque_permiso_por_albergue(permisos, "URBANO"),
             "",
-            "*Novedades pendientes:*",
+            *_bloque_permiso_por_albergue(permisos, "GRANJA"),
+            "",
+            "*📌 CONSOLIDADO GENERAL*",
+            f"*Total personas con permiso:* {len(permisos)}",
+            f"*Total permisos vencidos:* {vencidos}",
+            "",
+            "*📝 Novedades pendientes:*",
             *(detalle_nov if detalle_nov else ["• Ninguna"]),
             "",
             f"*Registra:* {responsable}"
@@ -5575,7 +5972,8 @@ def _medida_activa_duplicada_v1655(
     tipo_medida,
     causal,
     fecha_inicio,
-    fecha_fin
+    fecha_fin,
+    remitido_comite=False
 ):
     """Devuelve la medida activa idéntica ya existente, si la hay."""
     try:
@@ -5596,7 +5994,8 @@ def _medida_activa_duplicada_v1655(
                   AND UPPER(TRIM(COALESCE(tipo_medida,''))) = :tipo
                   AND UPPER(TRIM(COALESCE(motivo,''))) = :causal
                   AND fecha_inicio = :inicio
-                  AND fecha_fin = :fin
+                  AND fecha_fin IS NOT DISTINCT FROM :fin
+                  AND COALESCE(remitido_comite, FALSE) = :remitido_comite
                   AND UPPER(TRIM(COALESCE(estado_medida,''))) = 'ACTIVA'
                 ORDER BY id
                 LIMIT 1
@@ -5608,6 +6007,7 @@ def _medida_activa_duplicada_v1655(
                 "causal": str(causal or "").strip().upper(),
                 "inicio": fecha_inicio,
                 "fin": fecha_fin,
+                "remitido_comite": bool(remitido_comite),
             }
         )
     except Exception:
@@ -5626,7 +6026,7 @@ def gestion_usuarios_movil():
         "regresos de permiso, sanciones, expulsiones y control de turno."
     )
 
-    # V16.98 - Ajuste visual de medidas vencidas/reingresadas.
+    # V16.97 - Ajuste visual de medidas vencidas/reingresadas.
     # V16.39 - Unificación operativa.
     # Control de Turno deja de ser un módulo separado del menú lateral.
     seccion_movil = st.radio(
@@ -6177,7 +6577,12 @@ def gestion_usuarios_movil():
     try:
         medida_activa = pd.read_sql(
             text("""
-                SELECT tipo_medida, fecha_inicio, fecha_fin, motivo
+                SELECT
+                    tipo_medida,
+                    fecha_inicio,
+                    fecha_fin,
+                    motivo,
+                    COALESCE(remitido_comite, FALSE) AS remitido_comite
                 FROM sanciones_usuarios
                 WHERE TRIM(CAST(numero_identificacion AS TEXT)) = :doc
                   AND UPPER(TRIM(COALESCE(estado_medida,''))) = 'ACTIVA'
@@ -6196,14 +6601,18 @@ def gestion_usuarios_movil():
             )
             hoy_medida = ahora_colombia().date()
 
-            # V16.98 - La alerta visual distingue entre una medida realmente
-            # vigente y una medida cuya fecha de reingreso ya se cumplió.
-            # Si ya existe un REINGRESO posterior al vencimiento, no se muestra
-            # ninguna alerta de suspensión aunque el registro histórico aún
-            # conserve estado_medida='ACTIVA'.
-            reingreso_posterior = False
+            # V16.106 - Un caso remitido a Comité NO tiene fecha estimada
+            # de reingreso y permanece bloqueado hasta decisión institucional.
+            if bool(m.get("remitido_comite", False)):
+                st.warning(
+                    f"🟠 CASO REMITIDO A COMITÉ · {m['tipo_medida']} · "
+                    f"Causal: {m.get('motivo') or 'Sin causal'}."
+                )
+                reingreso_posterior = None
+            else:
+                reingreso_posterior = False
 
-            if pd.notna(fecha_fin_medida):
+            if reingreso_posterior is not None and pd.notna(fecha_fin_medida):
                 try:
                     df_reingreso_post = pd.read_sql(
                         text("""
@@ -6224,7 +6633,9 @@ def gestion_usuarios_movil():
                 except Exception:
                     reingreso_posterior = False
 
-            if reingreso_posterior:
+            if reingreso_posterior is None:
+                pass
+            elif reingreso_posterior:
                 pass
             elif pd.notna(fecha_fin_medida) and fecha_fin_medida.date() <= hoy_medida:
                 st.success(
@@ -6303,6 +6714,8 @@ def gestion_usuarios_movil():
         acciones = [
             "➕ Ingreso / Reingreso",
             "🚶 Salida voluntaria",
+            "🕊️ Salida por fallecimiento",
+            "🏆 Registrar egreso",
             "🚪 Salida de permiso",
             "↩️ Regreso de permiso",
             "⛔ Sanción / Expulsión",
@@ -6312,6 +6725,7 @@ def gestion_usuarios_movil():
     elif rol_visible == "PROFESIONAL":
         acciones = [
             "🏆 Registrar egreso",
+            "🕊️ Salida por fallecimiento",
             "🎯 PAI / Seguimiento",
             "🧾 Consultar información",
             "📚 Ver historia"
@@ -6321,6 +6735,7 @@ def gestion_usuarios_movil():
         acciones = [
             "➕ Ingreso / Reingreso",
             "🚶 Salida voluntaria",
+            "🕊️ Salida por fallecimiento",
             "🚪 Salida de permiso",
             "↩️ Regreso de permiso",
             "🏆 Registrar egreso",
@@ -6388,6 +6803,17 @@ def gestion_usuarios_movil():
                 # V16.78 - Este flujo parte de "Buscar usuario existente".
                 # Por definición, si ya está en habitante_de_calle, es REINGRESO.
                 tipo_mov = "REINGRESO"
+
+                if (
+                    tipo_mov == "REINGRESO"
+                    and _caso_remitido_comite_activo_v16106(documento)
+                ):
+                    st.error(
+                        "⛔ Reingreso no permitido. "
+                        "CASO REMITIDO A COMITÉ. "
+                        "La posibilidad de reingreso depende de la decisión del Comité de Casos."
+                    )
+                    st.stop()
 
                 fecha_restriccion, causal_restriccion = _restriccion_reingreso_v1670(documento)
                 if (
@@ -6633,6 +7059,73 @@ def gestion_usuarios_movil():
             documento,
             "salida_voluntaria"
         )
+
+    # --------------------------------------------------------
+    # Salida por fallecimiento - V16.128
+    # --------------------------------------------------------
+    elif accion == "🕊️ Salida por fallecimiento":
+
+        st.markdown("#### 🕊️ Salida por fallecimiento")
+        st.warning(
+            "Esta acción registra una salida definitiva por fallecimiento. "
+            "El expediente no se elimina: queda EGRESADO, sin modalidad y con trazabilidad en auditoría e historial."
+        )
+
+        fecha_fallecimiento_m = st.date_input(
+            "Fecha de fallecimiento",
+            value=ahora_colombia().date(),
+            max_value=ahora_colombia().date(),
+            key=f"movil_fecha_fallecimiento_{documento}",
+        )
+        obs_fallecimiento_m = st.text_area(
+            "Observación / fuente de la novedad",
+            placeholder="Ej.: Reportado por familiar, institución de salud o autoridad competente.",
+            key=f"movil_obs_fallecimiento_{documento}",
+        )
+        confirmar_fallecimiento_m = st.checkbox(
+            "Confirmo que corresponde a este usuario y que debo registrar la salida por fallecimiento.",
+            key=f"movil_conf_fallecimiento_{documento}",
+        )
+
+        if st.button(
+            "🕊️ Registrar salida por fallecimiento",
+            type="primary",
+            use_container_width=True,
+            key=f"movil_guardar_fallecimiento_{documento}",
+        ):
+            if not confirmar_fallecimiento_m:
+                st.error("Debe confirmar expresamente el fallecimiento antes de guardar.")
+            else:
+                res_f = registrar_salida_fallecimiento_v16128(
+                    documento,
+                    persona=u,
+                    fecha_fallecimiento=fecha_fallecimiento_m,
+                    observacion=obs_fallecimiento_m,
+                    modulo="Gestión Móvil",
+                )
+                if res_f.get("ok"):
+                    if res_f.get("duplicado"):
+                        st.warning("⚠️ " + res_f.get("mensaje", "La salida ya estaba registrada."))
+                    else:
+                        st.success("✅ " + res_f.get("mensaje", "Salida por fallecimiento registrada."))
+                        ahora_f = ahora_colombia()
+                        reporte_f = _texto_whatsapp_movimiento(
+                            "SALIDA POR FALLECIMIENTO",
+                            u.get("nombres"),
+                            u.get("apellidos"),
+                            documento,
+                            modalidad=str(u.get("modalidad") or ""),
+                            fecha=fecha_fallecimiento_m,
+                            hora=ahora_f.time(),
+                            detalle=obs_fallecimiento_m.strip() or "Fallecimiento reportado",
+                            responsable=st.session_state.get("usuario_actual", "sistema"),
+                        )
+                        st.session_state[f"reporte_whatsapp_{documento}"] = reporte_f
+                    st.rerun()
+                else:
+                    st.error(res_f.get("mensaje", "No fue posible registrar la salida por fallecimiento."))
+
+        _mostrar_reporte_movimiento_v1636(documento, "salida_fallecimiento")
 
     # --------------------------------------------------------
     # Salida de permiso
@@ -6934,13 +7427,15 @@ def gestion_usuarios_movil():
             )
 
             c1, c2 = st.columns(2)
+            ahora_regreso_colombia = ahora_colombia()
             fecha_regreso_real = c1.date_input(
                 "Fecha de regreso",
-                value=date.today(),
+                value=ahora_regreso_colombia.date(),
                 key=f"perm_fecha_reg_real_{documento}"
             )
             hora_regreso_real = c2.time_input(
                 "Hora de regreso",
+                value=ahora_regreso_colombia.time().replace(second=0, microsecond=0),
                 key=f"perm_hora_reg_real_{documento}"
             )
 
@@ -7071,17 +7566,36 @@ def gestion_usuarios_movil():
         causal_medida = c2.selectbox(
             "Causal / criterio *",
             [
-                "AGRESIÓN FÍSICA", "FUGA", "USO DE SPA", "PORTE DE SPA",
+                "AGRESIÓN FÍSICA", "AGRESIÓN VERBAL A FUNCIONARIO", "FUGA", "USO DE SPA", "PORTE DE SPA",
                 "HURTO MENOR", "HURTO GRAVE", "VENTA DE SPA"
             ],
             key=f"movil_causal_medida_{documento}"
         )
-        fin = _fecha_posible_reingreso_v1641(inicio, causal_medida)
-        regla_txt = CRITERIOS_REINGRESO_V1641[causal_medida][2]
-        st.info(
-            f"📅 Puede solicitar reingreso desde: **{fin.strftime('%d/%m/%Y')}** "
-            f"({regla_txt})."
+        remitido_comite = st.checkbox(
+            "🟠 Caso remitido a Comité",
+            key=f"movil_comite_medida_{documento}",
+            help=(
+                "No se asignará fecha estimada de reingreso. "
+                "El reingreso dependerá de la decisión del Comité de Casos."
+            ),
+            disabled=(causal_medida == "HURTO GRAVE"),
+            value=(causal_medida == "HURTO GRAVE")
         )
+        # V16.140: HURTO GRAVE siempre debe pasar a Comité; nunca genera días/fecha automática.
+        if causal_medida == "HURTO GRAVE":
+            remitido_comite = True
+            st.warning("🟠 HURTO GRAVE: remisión obligatoria a Comité. No se asigna fecha de reingreso.")
+
+        if remitido_comite:
+            fin = None
+            st.warning("🟠 CASO REMITIDO A COMITÉ")
+        else:
+            fin = _fecha_posible_reingreso_v1641(inicio, causal_medida)
+            regla_txt = CRITERIOS_REINGRESO_V1641[causal_medida][2]
+            st.info(
+                f"📅 Puede solicitar reingreso desde: **{fin.strftime('%d/%m/%Y')}** "
+                f"({regla_txt})."
+            )
 
         motivo = st.text_area(
             "Detalle / observación del hecho *",
@@ -7116,7 +7630,11 @@ def gestion_usuarios_movil():
                 st.error("Debe registrar el motivo.")
             elif not conf:
                 st.error("Debe confirmar la medida.")
-            elif fin < inicio:
+            elif (
+                not remitido_comite
+                and fin is not None
+                and fin < inicio
+            ):
                 st.error("La fecha final no puede ser anterior al inicio.")
             else:
                 medida_existente = _medida_activa_duplicada_v1655(
@@ -7124,7 +7642,8 @@ def gestion_usuarios_movil():
                     tipo,
                     causal_medida,
                     inicio,
-                    fin
+                    fin,
+                    remitido_comite=remitido_comite
                 )
 
                 if medida_existente:
@@ -7137,11 +7656,19 @@ def gestion_usuarios_movil():
                         "No se creó un segundo registro. "
                         f"Registro existente por: {registrado_por}."
                     )
-                    st.info(
-                        f"{tipo} · {causal_medida} · "
-                        f"{inicio.strftime('%d/%m/%Y')} → "
-                        f"{fin.strftime('%d/%m/%Y')}"
-                    )
+                    if remitido_comite:
+                        st.info(
+                            f"{tipo} · {causal_medida} · "
+                            f"{inicio.strftime('%d/%m/%Y')} · "
+                            "CASO REMITIDO A COMITÉ"
+                        )
+                    else:
+                        st.info(
+                            f"{tipo} · {causal_medida} · "
+                            f"{inicio.strftime('%d/%m/%Y')} → "
+                            f"{fin.strftime('%d/%m/%Y')}"
+                        )
+
                 else:
                     usuario = st.session_state.get(
                         "usuario_actual", "inspirador"
@@ -7156,12 +7683,14 @@ def gestion_usuarios_movil():
                                     motivo,
                                     fecha_inicio,
                                     fecha_fin,
+                                    remitido_comite,
                                     estado_medida,
                                     observacion,
                                     usuario_registra
                                 )
                                 VALUES (
                                     :doc, :tipo, :motivo, :inicio, :fin,
+                                    :remitido_comite,
                                     'ACTIVA', :obs, :usuario
                                 )
                             """),
@@ -7170,7 +7699,8 @@ def gestion_usuarios_movil():
                                 "tipo": tipo,
                                 "motivo": causal_medida,
                                 "inicio": inicio,
-                                "fin": fin,
+                                "fin": None if remitido_comite else fin,
+                                "remitido_comite": bool(remitido_comite),
                                 "obs": obs.strip(),
                                 "usuario": usuario
                             }
@@ -7248,7 +7778,13 @@ def gestion_usuarios_movil():
                         documento=documento,
                         modulo="Gestión Móvil",
                         valor_nuevo=tipo,
-                        observacion=f"{causal_medida}: {motivo.strip()}"[:500]
+                        observacion=(
+                            (
+                                "CASO REMITIDO A COMITÉ | "
+                                if remitido_comite else ""
+                            )
+                            + f"{causal_medida}: {motivo.strip()}"
+                        )[:500]
                     )
                     invalidar_cache_datos()
 
@@ -7266,7 +7802,8 @@ def gestion_usuarios_movil():
                         fecha=inicio,
                         detalle=detalle_reporte,
                         responsable=usuario,
-                        fecha_posible_reingreso=fin
+                        fecha_posible_reingreso=None if remitido_comite else fin,
+                        caso_remitido_comite=remitido_comite
                     )
                     st.session_state[f"reporte_whatsapp_{documento}"] = reporte
 
@@ -7285,10 +7822,8 @@ def gestion_usuarios_movil():
     # --------------------------------------------------------
     elif accion == "🏆 Registrar egreso":
 
-        if rol_visible not in ["PROFESIONAL", "COORDINACION"]:
-            st.error(
-                "El registro de egreso corresponde al equipo profesional."
-            )
+        if rol_visible not in ["INSPIRADOR", "PROFESIONAL", "COORDINACION", "MANAGER"]:
+            st.error("Este perfil no tiene habilitado el registro de egresos.")
         else:
             registrar_egreso_profesional_v12(
                 u,
@@ -7943,6 +8478,24 @@ def historia_integral_v12():
         if pd.isna(fecha_pd):
             return
 
+        # V16.110 - Historia Integral: normalizar todas las fechas a un mismo
+        # tipo antes de ordenar. PostgreSQL puede entregar algunos TIMESTAMPTZ
+        # con zona horaria y otros campos DATE/TIMESTAMP sin zona; Pandas no
+        # permite ordenar una mezcla de timestamps aware y naive.
+        #
+        # Si la fecha trae zona horaria, se muestra en hora Colombia y se
+        # elimina la zona solo para que toda la columna sea comparable. Las
+        # fechas sin zona (por ejemplo DATE) se conservan tal como vienen.
+        try:
+            if isinstance(fecha_pd, pd.Timestamp) and fecha_pd.tzinfo is not None:
+                fecha_pd = (
+                    fecha_pd
+                    .tz_convert("America/Bogota")
+                    .tz_localize(None)
+                )
+        except Exception:
+            pass
+
         eventos.append({
             "Fecha": fecha_pd,
             "Evento": evento,
@@ -8192,6 +8745,23 @@ def historia_integral_v12():
         return
 
     timeline = pd.DataFrame(eventos)
+
+    # V16.110 - Protección adicional: convertir cualquier fecha residual a
+    # Timestamp naive antes de ordenar la línea de tiempo.
+    def _normalizar_fecha_historia_v16110(valor):
+        ts = pd.to_datetime(valor, errors="coerce")
+        if pd.isna(ts):
+            return pd.NaT
+        try:
+            if isinstance(ts, pd.Timestamp) and ts.tzinfo is not None:
+                ts = ts.tz_convert("America/Bogota").tz_localize(None)
+        except Exception:
+            pass
+        return ts
+
+    timeline["Fecha"] = timeline["Fecha"].apply(
+        _normalizar_fecha_historia_v16110
+    )
     timeline = timeline.dropna(
         subset=["Fecha"]
     ).sort_values(
@@ -8331,22 +8901,30 @@ def control_turno_v13():
     if not permisos.empty:
         docs_fuera = set(permisos["documento"].astype(str).str.strip())
 
-    # V16.40.16-CAMBIO-ESTADO-ROBUSTO - Presencia física según última salida voluntaria
-    # versus último ingreso/reingreso.
+    # V16.116 - Presencia física con hora local Colombia.
+    # hora_movimiento es timestamp without time zone, pero los registros actuales
+    # se almacenan con reloj UTC. Por eso se interpreta explícitamente como UTC y
+    # se convierte a America/Bogota antes de compararlo con las salidas voluntarias.
+    # Para movimientos antiguos sin hora se conserva fecha_movimiento::timestamp.
     try:
         estado_salida_vol = pd.read_sql(
             text("""
                 WITH ultima_salida AS (
                     SELECT
                         TRIM(CAST(numero_identificacion AS TEXT)) AS documento,
-                        MAX(fecha_hora) AS fecha_salida_vol
+                        MAX(fecha_hora AT TIME ZONE 'America/Bogota') AS fecha_salida_vol
                     FROM salidas_voluntarias_albergue
                     GROUP BY TRIM(CAST(numero_identificacion AS TEXT))
                 ),
                 ultimo_ingreso AS (
                     SELECT
                         TRIM(CAST(numero_identificacion AS TEXT)) AS documento,
-                        MAX(fecha_movimiento) AS fecha_ingreso
+                        MAX(
+                            COALESCE(
+                                (hora_movimiento AT TIME ZONE 'UTC') AT TIME ZONE 'America/Bogota',
+                                fecha_movimiento::timestamp
+                            )
+                        ) AS fecha_ingreso
                     FROM movimientos_habitante
                     WHERE UPPER(TRIM(COALESCE(tipo_movimiento,''))) IN (
                         'INGRESO', 'REINGRESO'
@@ -8453,6 +9031,7 @@ def control_turno_v13():
             text("""
                 SELECT
                     fecha_movimiento,
+                    hora_movimiento,
                     numero_identificacion,
                     tipo_movimiento,
                     modalidad,
@@ -8460,7 +9039,10 @@ def control_turno_v13():
                     observacion
                 FROM movimientos_habitante
                 WHERE CAST(fecha_movimiento AS DATE) = :hoy_colombia
-                ORDER BY fecha_movimiento DESC
+                ORDER BY COALESCE(
+                    (hora_movimiento AT TIME ZONE 'UTC') AT TIME ZONE 'America/Bogota',
+                    fecha_movimiento::timestamp
+                ) DESC
             """),
             engine,
             params={"hoy_colombia": hoy_colombia}
@@ -8752,14 +9334,11 @@ def control_turno_v13():
     ])
 
     with tab1:
-        st.markdown("#### Personas activas por modalidad")
-        if activos.empty:
-            st.info("No hay personas ACTIVAS con modalidad según los registros actuales.")
+        st.markdown("#### Personas presentes")
+        if presentes.empty:
+            st.info("No hay personas presentes según los registros actuales.")
         else:
-            # V16.93 - Este listado muestra TODOS los usuarios cuyo estado_caso
-            # es ACTIVO y tienen modalidad. Los permisos/salidas se siguen usando
-            # por separado para los indicadores de presencia física.
-            vista_presentes = activos[
+            vista_presentes = presentes[
                 ["documento", "nombres", "apellidos", "modalidad"]
             ].sort_values(["modalidad", "nombres", "apellidos"])
 
@@ -8871,8 +9450,8 @@ def control_turno_v13():
                             text("""
                                 UPDATE permisos_usuarios
                                 SET estado_permiso='CERRADO',
-                                    fecha_regreso_real=CURRENT_DATE,
-                                    hora_regreso_real=CURRENT_TIME,
+                                    fecha_regreso_real=:fecha_regreso,
+                                    hora_regreso_real=:hora_regreso,
                                     observacion_regreso=:observacion,
                                     cerrado_en=NOW()
                                 WHERE id=:id
@@ -8880,7 +9459,9 @@ def control_turno_v13():
                             """),
                             {
                                 "observacion": obs_regreso_rapido.strip(),
-                                "id": int(permiso_id_regreso)
+                                "id": int(permiso_id_regreso),
+                                "fecha_regreso": ahora_colombia().date(),
+                                "hora_regreso": ahora_colombia().time().replace(microsecond=0)
                             }
                         )
 
@@ -9432,10 +10013,29 @@ def _profesional_actual_v15():
 
 
 def _semaforo_integral_usuario_v16(documento):
-    """Semáforo integral del caso, tolerante a tablas/campos opcionales."""
+    """Semáforo integral del caso. Un PAI formalmente cerrado no genera pendientes."""
     hoy = pd.Timestamp(date.today())
     puntaje = 0
     razones = []
+
+    # V16.134 - Si existe cierre formal, el caso deja de alimentar alertas PAI.
+    try:
+        cierre_activo = pd.read_sql(
+            text("""
+                SELECT resultado_final, fecha_cierre
+                FROM pai_cierres
+                WHERE TRIM(CAST(documento_usuario AS TEXT))=:doc
+                ORDER BY creado_en DESC NULLS LAST, fecha_cierre DESC
+                LIMIT 1
+            """),
+            engine,
+            params={"doc": str(documento)}
+        )
+        if not cierre_activo.empty:
+            resultado_c = str(cierre_activo.iloc[0].get("resultado_final") or "CERRADO").strip()
+            return "⚫ PAI CERRADO", [f"Cierre formal: {resultado_c}"]
+    except Exception:
+        pass
 
     try:
         objs = pd.read_sql(
@@ -9458,9 +10058,27 @@ def _semaforo_integral_usuario_v16(documento):
         objs["porcentaje_avance"] = pd.to_numeric(
             objs["porcentaje_avance"], errors="coerce"
         ).fillna(0)
-        objs["fecha_meta"] = pd.to_datetime(objs["fecha_meta"], errors="coerce")
-        objs["fecha_ultimo_seguimiento"] = normalizar_timestamp_colombia_v1692(
-            objs["fecha_ultimo_seguimiento"]
+        # V16.117 - Normalizar fechas PAI para evitar mezclar timestamps
+        # con zona horaria y sin zona horaria. Esto podía romper el panel
+        # profesional (incluido Enfermería) al hacer rerun después de subir
+        # una foto o modificar información.
+        def _normalizar_fecha_pai_v16117(valor):
+            ts = pd.to_datetime(valor, errors="coerce")
+            if pd.isna(ts):
+                return pd.NaT
+            try:
+                if isinstance(ts, pd.Timestamp) and ts.tzinfo is not None:
+                    ts = ts.tz_convert("America/Bogota").tz_localize(None)
+            except Exception:
+                try:
+                    ts = pd.Timestamp(ts).tz_localize(None)
+                except Exception:
+                    return pd.NaT
+            return ts
+
+        objs["fecha_meta"] = objs["fecha_meta"].apply(_normalizar_fecha_pai_v16117)
+        objs["fecha_ultimo_seguimiento"] = objs["fecha_ultimo_seguimiento"].apply(
+            _normalizar_fecha_pai_v16117
         )
 
         cumplido = (
@@ -9608,6 +10226,18 @@ def cierre_pai_usuario_v16(documento, profesional_id=None, profesional_nombre=No
 
 
 def comite_casos_v16():
+    """
+    V16.107 - Comité de Casos integrado con medidas remitidas.
+
+    Flujo institucional:
+    1. Las medidas ACTIVA + remitido_comite=TRUE aparecen automáticamente
+       como casos pendientes de estudio.
+    2. El Comité registra el análisis y la decisión en comites_casos.
+    3. La misma decisión puede levantar la medida, mantenerla bloqueada o
+       convertirla en una medida temporal con nueva fecha de posible reingreso.
+    4. Levantar la medida NO reactiva automáticamente a la persona: el regreso
+       real se registra después desde Ingreso / Reingreso.
+    """
     rol = str(st.session_state.get("rol_actual", "")).upper()
     if rol not in ["COORDINACION", "MANAGER"]:
         st.error("Acceso exclusivo para Coordinación y Manager.")
@@ -9615,193 +10245,833 @@ def comite_casos_v16():
 
     st.title("🧠 Comité de Casos")
     st.caption(
-        "Registro de análisis interdisciplinario, decisiones, compromisos "
-        "y responsables."
+        "Estudio de casos remitidos, decisión institucional, compromisos "
+        "y cierre o continuidad de medidas disciplinarias."
     )
 
-    personas = pd.read_sql(
-        text("""
-            SELECT
-                TRIM(CAST(numero_identificacion AS TEXT)) AS documento,
-                nombres,
-                apellidos,
-                modalidad,
-                estado_caso
-            FROM habitante_de_calle
-            ORDER BY nombres, apellidos
-        """),
-        engine
-    )
-    personas["nombre_completo"] = (
-        personas["nombres"].fillna("").astype(str).str.strip()
-        + " "
-        + personas["apellidos"].fillna("").astype(str).str.strip()
-    ).str.strip()
-
-    docs = personas["documento"].astype(str).tolist()
-
-    with st.form("v16_nuevo_comite"):
-        doc = st.selectbox(
-            "Usuario",
-            docs,
-            format_func=lambda d: (
-                personas.loc[
-                    personas["documento"].astype(str) == str(d),
-                    "nombre_completo"
-                ].iloc[0]
-                + f" · CC {d}"
-            )
-        )
-        fecha_comite = st.date_input("Fecha del comité", value=date.today())
-        situacion = st.text_area("Situación analizada *")
-        decision = st.text_area("Decisiones del comité *")
-        participantes = st.text_area(
-            "Participantes",
-            placeholder="Nombres o perfiles participantes"
-        )
-        crear = st.form_submit_button(
-            "💾 Registrar comité",
-            use_container_width=True,
-            type="primary"
-        )
-
-    if crear:
-        if not situacion.strip() or not decision.strip():
-            st.error("Situación y decisiones son obligatorias.")
-        else:
-            with engine.begin() as conn:
-                res = conn.execute(
-                    text("""
-                        INSERT INTO comites_casos(
-                            documento_usuario,
-                            fecha_comite,
-                            situacion_analizada,
-                            decisiones,
-                            participantes,
-                            registrado_por
-                        )
-                        VALUES(
-                            :doc,
-                            :fecha,
-                            :situacion,
-                            :decision,
-                            :participantes,
-                            :usuario
-                        )
-                        RETURNING id
-                    """),
-                    {
-                        "doc": doc,
-                        "fecha": fecha_comite,
-                        "situacion": situacion.strip(),
-                        "decision": decision.strip(),
-                        "participantes": participantes.strip(),
-                        "usuario": st.session_state.get(
-                            "usuario_actual", "coordinacion"
-                        )
-                    }
-                )
-                comite_id = int(res.scalar())
-            st.session_state["v16_comite_id"] = comite_id
-            st.success("✅ Comité registrado.")
-
-    comites = pd.read_sql(
-        text("""
-            SELECT
-                c.id,
-                c.fecha_comite,
-                c.documento_usuario,
-                h.nombres,
-                h.apellidos,
-                c.situacion_analizada,
-                c.decisiones,
-                c.participantes,
-                c.registrado_por
-            FROM comites_casos c
-            LEFT JOIN habitante_de_calle h
-              ON TRIM(CAST(h.numero_identificacion AS TEXT))
-               = TRIM(CAST(c.documento_usuario AS TEXT))
-            ORDER BY c.fecha_comite DESC, c.id DESC
-            LIMIT 50
-        """),
-        engine
-    )
-
-    st.markdown("### 📋 Comités recientes")
-    if not comites.empty:
-        st.dataframe(comites, use_container_width=True, hide_index=True)
-
-        ids = comites["id"].tolist()
-        comite_sel = st.selectbox(
-            "Comité para agregar compromiso",
-            ids,
-            key="v16_comite_sel"
-        )
-
-        funcionarios = pd.read_sql(
+    # ============================================================
+    # 1. BANDEJA AUTOMÁTICA DE CASOS REMITIDOS
+    # ============================================================
+    try:
+        pendientes = pd.read_sql(
             text("""
-                SELECT cedula, nombre
-                FROM funcionarios_sistema
-                WHERE activo=TRUE
-                ORDER BY nombre
+                SELECT
+                    s.id AS id_medida,
+                    TRIM(CAST(s.numero_identificacion AS TEXT)) AS documento,
+                    COALESCE(h.nombres, '') AS nombres,
+                    COALESCE(h.apellidos, '') AS apellidos,
+                    h.estado_caso,
+                    h.modalidad,
+                    s.tipo_medida,
+                    s.motivo,
+                    s.fecha_inicio,
+                    s.fecha_fin,
+                    s.observacion,
+                    s.usuario_registra,
+                    s.creado_en
+                FROM sanciones_usuarios s
+                LEFT JOIN habitante_de_calle h
+                  ON TRIM(CAST(h.numero_identificacion AS TEXT))
+                   = TRIM(CAST(s.numero_identificacion AS TEXT))
+                WHERE UPPER(TRIM(COALESCE(s.estado_medida,''))) = 'ACTIVA'
+                  AND COALESCE(s.remitido_comite, FALSE) = TRUE
+                ORDER BY s.creado_en ASC, s.id ASC
             """),
             engine
         )
+    except Exception as e:
+        pendientes = pd.DataFrame()
+        st.error(f"No fue posible consultar los casos remitidos a Comité: {e}")
 
-        with st.form("v16_compromiso"):
-            responsable = st.selectbox(
-                "Responsable",
-                funcionarios["cedula"].astype(str).tolist(),
-                format_func=lambda c: (
-                    funcionarios.loc[
-                        funcionarios["cedula"].astype(str) == str(c),
-                        "nombre"
+    if not pendientes.empty:
+        pendientes["nombre_completo"] = (
+            pendientes["nombres"].fillna("").astype(str).str.strip()
+            + " "
+            + pendientes["apellidos"].fillna("").astype(str).str.strip()
+        ).str.strip()
+        pendientes["fecha_inicio"] = pd.to_datetime(
+            pendientes["fecha_inicio"], errors="coerce"
+        )
+
+        st.markdown(f"### 🟠 Casos pendientes de estudio · {len(pendientes)}")
+
+        tabla_pendientes = pendientes.copy()
+        tabla_pendientes["Fecha medida"] = tabla_pendientes["fecha_inicio"].apply(
+            lambda x: x.strftime("%d/%m/%Y") if pd.notna(x) else "—"
+        )
+        tabla_pendientes["Estado"] = "🟠 PENDIENTE COMITÉ"
+
+        st.dataframe(
+            tabla_pendientes[
+                [
+                    "nombre_completo",
+                    "documento",
+                    "tipo_medida",
+                    "motivo",
+                    "Fecha medida",
+                    "usuario_registra",
+                    "Estado",
+                ]
+            ].rename(
+                columns={
+                    "nombre_completo": "Usuario",
+                    "documento": "Documento",
+                    "tipo_medida": "Medida preliminar",
+                    "motivo": "Causal",
+                    "usuario_registra": "Remitido / registrado por",
+                }
+            ),
+            use_container_width=True,
+            hide_index=True,
+        )
+
+        ids_medidas = pendientes["id_medida"].astype(int).tolist()
+        id_medida_sel = st.selectbox(
+            "Caso para estudio",
+            ids_medidas,
+            key="v16107_medida_comite_sel",
+            format_func=lambda mid: (
+                pendientes.loc[
+                    pendientes["id_medida"].astype(int) == int(mid),
+                    "nombre_completo",
+                ].iloc[0]
+                + " · CC "
+                + str(
+                    pendientes.loc[
+                        pendientes["id_medida"].astype(int) == int(mid),
+                        "documento",
                     ].iloc[0]
-                    + f" · CC {c}"
                 )
+                + " · "
+                + str(
+                    pendientes.loc[
+                        pendientes["id_medida"].astype(int) == int(mid),
+                        "motivo",
+                    ].iloc[0]
+                )
+            ),
+        )
+
+        caso = pendientes.loc[
+            pendientes["id_medida"].astype(int) == int(id_medida_sel)
+        ].iloc[0]
+        doc_caso = str(caso["documento"]).strip()
+        nombre_caso = str(caso["nombre_completo"]).strip()
+        fecha_medida_txt = (
+            caso["fecha_inicio"].strftime("%d/%m/%Y")
+            if pd.notna(caso["fecha_inicio"])
+            else "—"
+        )
+
+        st.info(
+            f"**{nombre_caso} · CC {doc_caso}**  \n"
+            f"Medida preliminar: **{caso['tipo_medida']}** · "
+            f"Causal: **{caso['motivo']}** · Fecha: **{fecha_medida_txt}**  \n"
+            f"Observación previa: {caso.get('observacion') or 'Sin observación adicional'}"
+        )
+
+        with st.form(f"v16107_estudio_comite_{id_medida_sel}"):
+            fecha_comite = st.date_input(
+                "Fecha del comité",
+                value=ahora_colombia().date(),
+                key=f"v16107_fecha_{id_medida_sel}",
             )
-            compromiso = st.text_area("Compromiso *")
-            fecha_limite = st.date_input(
-                "Fecha límite",
-                value=date.today() + timedelta(days=15)
+            situacion = st.text_area(
+                "Situación analizada *",
+                value=(
+                    f"Estudio de caso remitido por medida preliminar de "
+                    f"{caso['tipo_medida']} - {caso['motivo']}."
+                ),
+                key=f"v16107_situacion_{id_medida_sel}",
             )
-            guardar = st.form_submit_button(
-                "➕ Agregar compromiso",
-                use_container_width=True
+            analisis = st.text_area(
+                "Análisis interdisciplinario / consideraciones *",
+                key=f"v16107_analisis_{id_medida_sel}",
+                placeholder=(
+                    "Registre hechos verificados, antecedentes, versión del usuario, "
+                    "criterios del equipo y demás elementos considerados."
+                ),
+            )
+            decision = st.text_area(
+                "Decisión motivada del Comité *",
+                key=f"v16107_decision_{id_medida_sel}",
+            )
+            resultado = st.selectbox(
+                "Resultado institucional *",
+                [
+                    "LEVANTAR MEDIDA Y HABILITAR REINGRESO",
+                    "MANTENER MEDIDA / NO AUTORIZAR REINGRESO POR AHORA",
+                    "FIJAR NUEVA FECHA DE POSIBLE REINGRESO",
+                ],
+                key=f"v16107_resultado_{id_medida_sel}",
             )
 
-        if guardar:
-            if not compromiso.strip():
-                st.error("Debe registrar el compromiso.")
+            nueva_fecha = None
+            if resultado == "FIJAR NUEVA FECHA DE POSIBLE REINGRESO":
+                nueva_fecha = st.date_input(
+                    "Nueva fecha desde la cual puede solicitar reingreso *",
+                    value=ahora_colombia().date() + timedelta(days=1),
+                    key=f"v16107_nueva_fecha_{id_medida_sel}",
+                )
+
+            participantes = st.text_area(
+                "Participantes *",
+                placeholder="Nombres o perfiles participantes",
+                key=f"v16107_participantes_{id_medida_sel}",
+            )
+            confirmar = st.checkbox(
+                "Confirmo que esta es la decisión formal del Comité de Casos.",
+                key=f"v16107_confirmar_{id_medida_sel}",
+            )
+            crear = st.form_submit_button(
+                "💾 Registrar decisión del Comité",
+                use_container_width=True,
+                type="primary",
+            )
+
+        if crear:
+            if not situacion.strip():
+                st.error("Debe registrar la situación analizada.")
+            elif not analisis.strip():
+                st.error("Debe registrar el análisis interdisciplinario.")
+            elif not decision.strip():
+                st.error("Debe registrar la decisión motivada.")
+            elif not participantes.strip():
+                st.error("Debe registrar los participantes del Comité.")
+            elif not confirmar:
+                st.error("Debe confirmar la decisión formal del Comité.")
+            elif (
+                resultado == "FIJAR NUEVA FECHA DE POSIBLE REINGRESO"
+                and (nueva_fecha is None or nueva_fecha <= ahora_colombia().date())
+            ):
+                st.error("La nueva fecha de posible reingreso debe ser posterior a hoy.")
             else:
-                with engine.begin() as conn:
-                    conn.execute(
-                        text("""
-                            INSERT INTO compromisos_comite(
-                                comite_id,
-                                compromiso,
-                                responsable_cedula,
-                                fecha_limite,
-                                estado
-                            )
-                            VALUES(
-                                :comite,
-                                :compromiso,
-                                :responsable,
-                                :fecha,
-                                'PENDIENTE'
-                            )
-                        """),
-                        {
-                            "comite": int(comite_sel),
-                            "compromiso": compromiso.strip(),
-                            "responsable": str(responsable),
-                            "fecha": fecha_limite
-                        }
-                    )
-                st.success("✅ Compromiso agregado.")
-                st.rerun()
+                usuario_actual = st.session_state.get(
+                    "usuario_actual", "coordinacion"
+                )
+                decision_integral = (
+                    f"RESULTADO INSTITUCIONAL: {resultado}\n\n"
+                    f"ANÁLISIS INTERDISCIPLINARIO:\n{analisis.strip()}\n\n"
+                    f"DECISIÓN MOTIVADA:\n{decision.strip()}"
+                )
 
+                try:
+                    comite_duplicado = False
+                    with engine.begin() as conn:
+                        params_comite = {
+                            "doc": doc_caso,
+                            "fecha": fecha_comite,
+                            "situacion": situacion.strip(),
+                            "decision": decision_integral,
+                            "participantes": participantes.strip(),
+                            "usuario": usuario_actual,
+                        }
+
+                        # V16.114 - Evitar doble registro del mismo Comité.
+                        # Se considera duplicado cuando coinciden persona, fecha,
+                        # situación y decisión formal. En ese caso se reutiliza el
+                        # registro existente y NO se repiten efectos operativos.
+                        existente = conn.execute(
+                            text("""
+                                SELECT id
+                                FROM comites_casos
+                                WHERE TRIM(CAST(documento_usuario AS TEXT)) = TRIM(CAST(:doc AS TEXT))
+                                  AND fecha_comite = :fecha
+                                  AND TRIM(COALESCE(situacion_analizada,'')) = TRIM(COALESCE(:situacion,''))
+                                  AND TRIM(COALESCE(decisiones,'')) = TRIM(COALESCE(:decision,''))
+                                ORDER BY id DESC
+                                LIMIT 1
+                            """),
+                            params_comite,
+                        ).scalar()
+
+                        if existente is not None:
+                            comite_id = int(existente)
+                            comite_duplicado = True
+                        else:
+                            res = conn.execute(
+                                text("""
+                                    INSERT INTO comites_casos(
+                                        documento_usuario,
+                                        fecha_comite,
+                                        situacion_analizada,
+                                        decisiones,
+                                        participantes,
+                                        registrado_por
+                                    )
+                                    VALUES(
+                                        :doc,
+                                        :fecha,
+                                        :situacion,
+                                        :decision,
+                                        :participantes,
+                                        :usuario
+                                    )
+                                    RETURNING id
+                                """),
+                                params_comite,
+                            )
+                            comite_id = int(res.scalar())
+
+                        if not comite_duplicado:
+
+                            if resultado == "LEVANTAR MEDIDA Y HABILITAR REINGRESO":
+                                conn.execute(
+                                    text("""
+                                        UPDATE sanciones_usuarios
+                                        SET estado_medida = 'LEVANTADA_COMITE',
+                                            cerrado_en = NOW(),
+                                            observacion = CONCAT_WS(
+                                                ' | ',
+                                                NULLIF(TRIM(COALESCE(observacion,'')), ''),
+                                                :obs_comite
+                                            )
+                                        WHERE id = :id_medida
+                                          AND UPPER(TRIM(COALESCE(estado_medida,''))) = 'ACTIVA'
+                                    """),
+                                    {
+                                        "id_medida": int(id_medida_sel),
+                                        "obs_comite": (
+                                            f"COMITÉ #{comite_id}: medida levantada; "
+                                            "persona habilitada para solicitar reingreso."
+                                        ),
+                                    },
+                                )
+
+                            elif resultado == "FIJAR NUEVA FECHA DE POSIBLE REINGRESO":
+                                conn.execute(
+                                    text("""
+                                        UPDATE sanciones_usuarios
+                                        SET fecha_fin = :fecha_fin,
+                                            remitido_comite = FALSE,
+                                            observacion = CONCAT_WS(
+                                                ' | ',
+                                                NULLIF(TRIM(COALESCE(observacion,'')), ''),
+                                                :obs_comite
+                                            )
+                                        WHERE id = :id_medida
+                                          AND UPPER(TRIM(COALESCE(estado_medida,''))) = 'ACTIVA'
+                                    """),
+                                    {
+                                        "id_medida": int(id_medida_sel),
+                                        "fecha_fin": nueva_fecha,
+                                        "obs_comite": (
+                                            f"COMITÉ #{comite_id}: fija posible reingreso "
+                                            f"desde {nueva_fecha.strftime('%d/%m/%Y')}. "
+                                            "El antecedente de remisión queda documentado en el Comité."
+                                        ),
+                                    },
+                                )
+
+                            else:
+                                # Se mantiene ACTIVA + remitido_comite=TRUE para conservar
+                                # el bloqueo institucional hasta una nueva decisión formal.
+                                conn.execute(
+                                    text("""
+                                        UPDATE sanciones_usuarios
+                                        SET observacion = CONCAT_WS(
+                                                ' | ',
+                                                NULLIF(TRIM(COALESCE(observacion,'')), ''),
+                                                :obs_comite
+                                            )
+                                        WHERE id = :id_medida
+                                          AND UPPER(TRIM(COALESCE(estado_medida,''))) = 'ACTIVA'
+                                    """),
+                                    {
+                                        "id_medida": int(id_medida_sel),
+                                        "obs_comite": (
+                                            f"COMITÉ #{comite_id}: se mantiene la medida; "
+                                            "reingreso no autorizado por ahora."
+                                        ),
+                                    },
+                                )
+
+                    if not comite_duplicado:
+                        registrar_auditoria(
+                            "DECISION_COMITE_CASOS",
+                            documento=doc_caso,
+                            modulo="Comité de Casos",
+                            valor_anterior=(
+                                f"Medida #{id_medida_sel} ACTIVA · "
+                                f"{caso['tipo_medida']} · {caso['motivo']}"
+                            ),
+                            valor_nuevo=resultado,
+                            observacion=(
+                                f"Comité #{comite_id}. {decision.strip()}"
+                            )[:500],
+                        )
+
+                    invalidar_cache_datos()
+                    st.session_state["v16_comite_id"] = comite_id
+
+                    if comite_duplicado:
+                        st.warning(
+                            f"⚠️ Este Comité ya estaba registrado como #{comite_id}. "
+                            "No se creó un duplicado ni se repitieron efectos sobre la medida."
+                        )
+                    elif resultado == "LEVANTAR MEDIDA Y HABILITAR REINGRESO":
+                        st.success(
+                            "✅ Decisión registrada. La medida fue levantada y la persona "
+                            "quedó habilitada para solicitar reingreso. NO fue reactivada "
+                            "automáticamente; el regreso real debe registrarse desde "
+                            "Ingreso / Reingreso."
+                        )
+                    elif resultado == "FIJAR NUEVA FECHA DE POSIBLE REINGRESO":
+                        st.success(
+                            "✅ Decisión registrada. La medida continúa ACTIVA hasta la "
+                            f"fecha definida: {nueva_fecha.strftime('%d/%m/%Y')}."
+                        )
+                    else:
+                        st.success(
+                            "✅ Decisión registrada. La medida continúa ACTIVA y el "
+                            "reingreso permanece bloqueado hasta una nueva decisión del Comité."
+                        )
+                    st.rerun()
+
+                except Exception as e:
+                    st.error(f"No fue posible registrar la decisión del Comité: {e}")
+
+    else:
+        st.success("✅ No hay medidas activas pendientes de estudio por Comité.")
+
+    # ============================================================
+    # 2. COMITÉ EXTRAORDINARIO / CASO NO ORIGINADO EN SANCIÓN
+    #    Se conserva la funcionalidad anterior para no perder capacidad.
+    # ============================================================
+    with st.expander(
+        "➕ Registrar comité extraordinario (sin medida remitida)",
+        expanded=False,
+    ):
+        personas = pd.read_sql(
+            text("""
+                SELECT
+                    TRIM(CAST(numero_identificacion AS TEXT)) AS documento,
+                    nombres,
+                    apellidos,
+                    modalidad,
+                    estado_caso
+                FROM habitante_de_calle
+                ORDER BY nombres, apellidos
+            """),
+            engine,
+        )
+
+        if not personas.empty:
+            personas["nombre_completo"] = (
+                personas["nombres"].fillna("").astype(str).str.strip()
+                + " "
+                + personas["apellidos"].fillna("").astype(str).str.strip()
+            ).str.strip()
+            docs = personas["documento"].astype(str).tolist()
+
+            with st.form("v16107_comite_extraordinario"):
+                doc_extra = st.selectbox(
+                    "Usuario",
+                    docs,
+                    format_func=lambda d: (
+                        personas.loc[
+                            personas["documento"].astype(str) == str(d),
+                            "nombre_completo",
+                        ].iloc[0]
+                        + f" · CC {d}"
+                    ),
+                )
+                fecha_extra = st.date_input(
+                    "Fecha del comité",
+                    value=ahora_colombia().date(),
+                    key="v16107_fecha_extra",
+                )
+                situacion_extra = st.text_area(
+                    "Situación analizada *",
+                    key="v16107_situacion_extra",
+                )
+                decision_extra = st.text_area(
+                    "Decisiones del comité *",
+                    key="v16107_decision_extra",
+                )
+                participantes_extra = st.text_area(
+                    "Participantes",
+                    placeholder="Nombres o perfiles participantes",
+                    key="v16107_participantes_extra",
+                )
+                crear_extra = st.form_submit_button(
+                    "💾 Registrar comité extraordinario",
+                    use_container_width=True,
+                )
+
+            if crear_extra:
+                if not situacion_extra.strip() or not decision_extra.strip():
+                    st.error("Situación y decisiones son obligatorias.")
+                else:
+                    comite_extra_duplicado = False
+                    with engine.begin() as conn:
+                        params_extra = {
+                            "doc": doc_extra,
+                            "fecha": fecha_extra,
+                            "situacion": situacion_extra.strip(),
+                            "decision": decision_extra.strip(),
+                            "participantes": participantes_extra.strip(),
+                            "usuario": st.session_state.get(
+                                "usuario_actual", "coordinacion"
+                            ),
+                        }
+
+                        existente_extra = conn.execute(
+                            text("""
+                                SELECT id
+                                FROM comites_casos
+                                WHERE TRIM(CAST(documento_usuario AS TEXT)) = TRIM(CAST(:doc AS TEXT))
+                                  AND fecha_comite = :fecha
+                                  AND TRIM(COALESCE(situacion_analizada,'')) = TRIM(COALESCE(:situacion,''))
+                                  AND TRIM(COALESCE(decisiones,'')) = TRIM(COALESCE(:decision,''))
+                                ORDER BY id DESC
+                                LIMIT 1
+                            """),
+                            params_extra,
+                        ).scalar()
+
+                        if existente_extra is not None:
+                            comite_extra_id = int(existente_extra)
+                            comite_extra_duplicado = True
+                        else:
+                            res = conn.execute(
+                                text("""
+                                    INSERT INTO comites_casos(
+                                        documento_usuario,
+                                        fecha_comite,
+                                        situacion_analizada,
+                                        decisiones,
+                                        participantes,
+                                        registrado_por
+                                    )
+                                    VALUES(
+                                        :doc, :fecha, :situacion, :decision,
+                                        :participantes, :usuario
+                                    )
+                                    RETURNING id
+                                """),
+                                params_extra,
+                            )
+                            comite_extra_id = int(res.scalar())
+
+                    st.session_state["v16_comite_id"] = comite_extra_id
+                    if comite_extra_duplicado:
+                        st.warning(
+                            f"⚠️ Este Comité extraordinario ya estaba registrado como "
+                            f"#{comite_extra_id}. No se creó un duplicado."
+                        )
+                    else:
+                        st.success("✅ Comité extraordinario registrado.")
+                    st.rerun()
+
+    # ============================================================
+    # 3. HISTÓRICO DE COMITÉS Y COMPROMISOS
+    # ============================================================
+    try:
+        comites = pd.read_sql(
+            text("""
+                SELECT
+                    c.id,
+                    c.fecha_comite,
+                    c.documento_usuario,
+                    h.nombres,
+                    h.apellidos,
+                    c.situacion_analizada,
+                    c.decisiones,
+                    c.participantes,
+                    c.registrado_por
+                FROM comites_casos c
+                LEFT JOIN habitante_de_calle h
+                  ON TRIM(CAST(h.numero_identificacion AS TEXT))
+                   = TRIM(CAST(c.documento_usuario AS TEXT))
+                ORDER BY c.fecha_comite DESC, c.id DESC
+                LIMIT 50
+            """),
+            engine,
+        )
+    except Exception:
+        comites = pd.DataFrame()
+
+    st.markdown("### 📋 Comités recientes")
+    if comites.empty:
+        st.caption("Aún no hay comités registrados.")
+        return
+
+    st.dataframe(comites, use_container_width=True, hide_index=True)
+
+    # ============================================================
+    # V16.112 - RESOLUCIÓN INTERNA DE LA DECISIÓN DEL COMITÉ
+    # Reemplaza el antiguo bloque de compromisos. La resolución se
+    # genera directamente desde la decisión ya registrada en el comité,
+    # sin modificar el contenido histórico del caso.
+    # ============================================================
+    ids = comites["id"].astype(int).tolist()
+
+    # V16.113 - Autoseleccionar el comité recién registrado.
+    # Los flujos de decisión formal y comité extraordinario guardan el id
+    # recién creado en v16_comite_id antes de ejecutar st.rerun(). Aquí se
+    # consume una sola vez para llevar al usuario directamente a su resolución,
+    # sin impedir que después seleccione manualmente otro comité.
+    comite_recien_creado = st.session_state.pop("v16_comite_id", None)
+    if comite_recien_creado is not None:
+        try:
+            comite_recien_creado = int(comite_recien_creado)
+            if comite_recien_creado in ids:
+                st.session_state["v16112_comite_sel_resolucion"] = comite_recien_creado
+        except (TypeError, ValueError):
+            pass
+
+    comite_sel = st.selectbox(
+        "Comité para generar resolución",
+        ids,
+        key="v16112_comite_sel_resolucion",
+        format_func=lambda cid: (
+            f"Comité #{cid} · "
+            + str(
+                comites.loc[
+                    comites["id"].astype(int) == int(cid),
+                    "fecha_comite",
+                ].iloc[0]
+            )
+            + " · "
+            + str(
+                comites.loc[
+                    comites["id"].astype(int) == int(cid),
+                    "nombres",
+                ].iloc[0]
+                or ""
+            )
+            + " "
+            + str(
+                comites.loc[
+                    comites["id"].astype(int) == int(cid),
+                    "apellidos",
+                ].iloc[0]
+                or ""
+            )
+        ),
+    )
+
+    fila_res = comites.loc[
+        comites["id"].astype(int) == int(comite_sel)
+    ].iloc[0]
+
+    st.markdown("### 📄 Resolución de la decisión del Comité")
+    st.caption(
+        "Genera una resolución interna a partir de la situación y la decisión "
+        "ya registradas en el Comité. El documento no altera el histórico del caso."
+    )
+
+    anio_res = pd.to_datetime(
+        fila_res.get("fecha_comite"), errors="coerce"
+    )
+    anio_res = int(anio_res.year) if pd.notna(anio_res) else ahora_colombia().year
+    numero_res_default = f"CE-{anio_res}-{int(comite_sel):04d}"
+
+    r1, r2 = st.columns(2)
+    with r1:
+        numero_res = st.text_input(
+            "Número de resolución",
+            value=numero_res_default,
+            key=f"v16112_num_res_{comite_sel}",
+        )
+    with r2:
+        fecha_resolucion = st.date_input(
+            "Fecha de resolución",
+            value=ahora_colombia().date(),
+            key=f"v16112_fecha_res_{comite_sel}",
+        )
+
+    consideraciones_adicionales = st.text_area(
+        "Consideraciones adicionales (opcional)",
+        placeholder=(
+            "Puede registrar aquí antecedentes o precisiones que deban quedar "
+            "en la resolución. La decisión del Comité no se modifica."
+        ),
+        key=f"v16112_consideraciones_{comite_sel}",
+    )
+
+    nombre_benef = " ".join(
+        x for x in [
+            str(fila_res.get("nombres") or "").strip(),
+            str(fila_res.get("apellidos") or "").strip(),
+        ]
+        if x
+    ).strip() or "PERSONA BENEFICIARIA"
+    doc_benef = str(fila_res.get("documento_usuario") or "").strip()
+    situacion_res = str(fila_res.get("situacion_analizada") or "").strip()
+    decision_res = str(fila_res.get("decisiones") or "").strip()
+    participantes_res = str(fila_res.get("participantes") or "").strip()
+    registrado_por_res = str(fila_res.get("registrado_por") or "").strip()
+
+    with st.expander("👁️ Vista previa de la resolución", expanded=True):
+        st.markdown(
+            f"**RESOLUCIÓN INTERNA No. {numero_res or numero_res_default}**  \n"
+            f"**Fecha:** {fecha_resolucion.strftime('%d/%m/%Y')}  \n"
+            f"**Comité relacionado:** #{int(comite_sel)}  \n"
+            f"**Persona:** {nombre_benef} · CC {doc_benef}"
+        )
+        st.markdown("**CONSIDERANDO**")
+        st.write(situacion_res or "Sin situación analizada registrada.")
+        if consideraciones_adicionales.strip():
+            st.write(consideraciones_adicionales.strip())
+        st.markdown("**RESUELVE**")
+        st.markdown("**ARTÍCULO PRIMERO. Decisión del Comité.**")
+        st.write(decision_res or "Sin decisión registrada.")
+        st.markdown("**ARTÍCULO SEGUNDO. Comunicación y cumplimiento.**")
+        st.write(
+            "Comunicar la presente decisión a la persona interesada y al equipo "
+            "responsable de su ejecución, dejando constancia en el sistema de información."
+        )
+        st.markdown("**ARTÍCULO TERCERO. Vigencia.**")
+        st.write(
+            "La presente resolución interna rige a partir de la fecha de su expedición, "
+            "sin perjuicio de las actuaciones posteriores que correspondan."
+        )
+
+    def _pdf_resolucion_comite_v16112():
+        from xml.sax.saxutils import escape as _xml_escape
+        from reportlab.lib.enums import TA_CENTER
+        from reportlab.lib.styles import ParagraphStyle
+        from reportlab.lib.units import cm
+
+        buffer = BytesIO()
+        doc_pdf = SimpleDocTemplate(
+            buffer,
+            pagesize=letter,
+            rightMargin=2.2 * cm,
+            leftMargin=2.2 * cm,
+            topMargin=2.0 * cm,
+            bottomMargin=2.0 * cm,
+        )
+        styles = getSampleStyleSheet()
+        titulo = ParagraphStyle(
+            "ResolucionTituloV16112",
+            parent=styles["Title"],
+            alignment=TA_CENTER,
+            fontSize=14,
+            leading=18,
+            spaceAfter=10,
+        )
+        subtitulo = ParagraphStyle(
+            "ResolucionSubtituloV16112",
+            parent=styles["Heading2"],
+            alignment=TA_CENTER,
+            fontSize=11,
+            leading=14,
+            spaceAfter=8,
+        )
+        cuerpo = ParagraphStyle(
+            "ResolucionCuerpoV16112",
+            parent=styles["BodyText"],
+            fontSize=10,
+            leading=15,
+            spaceAfter=8,
+        )
+        articulo = ParagraphStyle(
+            "ResolucionArticuloV16112",
+            parent=cuerpo,
+            spaceBefore=6,
+            spaceAfter=8,
+        )
+
+        def P(txt, style=cuerpo):
+            txt = _xml_escape(str(txt or "")).replace("\n", "<br/>")
+            return Paragraph(txt, style)
+
+        elems = []
+        elems.append(P("ASOCIACIÓN CIUDAD FUTURO", titulo))
+        elems.append(P("COMITÉ DE CASOS", subtitulo))
+        elems.append(P(
+            f"RESOLUCIÓN INTERNA No. {_xml_escape(numero_res or numero_res_default)}",
+            titulo,
+        ))
+        elems.append(P(
+            f"Por medio de la cual se formaliza la decisión adoptada en el Comité "
+            f"No. {int(comite_sel)} respecto de {nombre_benef}, identificado(a) con "
+            f"documento No. {doc_benef}.",
+            cuerpo,
+        ))
+        elems.append(Spacer(1, 8))
+        elems.append(P("CONSIDERANDO", subtitulo))
+        elems.append(P(
+            f"1. Que el día {pd.to_datetime(fila_res.get('fecha_comite'), errors='coerce').strftime('%d/%m/%Y') if pd.notna(pd.to_datetime(fila_res.get('fecha_comite'), errors='coerce')) else '—'} "
+            f"se reunió el Comité de Casos para analizar la situación de {nombre_benef}.",
+            cuerpo,
+        ))
+        elems.append(P(
+            f"2. Que la situación analizada quedó registrada así: {situacion_res or 'Sin descripción registrada.'}",
+            cuerpo,
+        ))
+        if participantes_res:
+            elems.append(P(
+                f"3. Que participaron en el Comité: {participantes_res}.",
+                cuerpo,
+            ))
+        if consideraciones_adicionales.strip():
+            elems.append(P(
+                f"4. Consideraciones adicionales: {consideraciones_adicionales.strip()}",
+                cuerpo,
+            ))
+
+        elems.append(Spacer(1, 8))
+        elems.append(P("RESUELVE", subtitulo))
+        elems.append(P(
+            f"<b>ARTÍCULO PRIMERO. Decisión del Comité.</b> {decision_res or 'Sin decisión registrada.'}",
+            articulo,
+        ))
+        elems.append(P(
+            "<b>ARTÍCULO SEGUNDO. Comunicación y cumplimiento.</b> Comunicar la presente "
+            "decisión a la persona interesada y al equipo responsable de su ejecución, "
+            "dejando constancia de las actuaciones que se deriven de ella en el sistema "
+            "de información institucional.",
+            articulo,
+        ))
+        elems.append(P(
+            "<b>ARTÍCULO TERCERO. Vigencia.</b> La presente resolución interna rige a partir "
+            "de la fecha de su expedición, sin perjuicio de las actuaciones posteriores "
+            "que correspondan conforme a la decisión del Comité.",
+            articulo,
+        ))
+        elems.append(Spacer(1, 18))
+        elems.append(P(
+            f"Expedida el {fecha_resolucion.strftime('%d/%m/%Y')}.",
+            cuerpo,
+        ))
+        elems.append(Spacer(1, 24))
+        elems.append(P("________________________________________", cuerpo))
+        elems.append(P("Coordinación / Comité de Casos", cuerpo))
+        if registrado_por_res:
+            elems.append(P(
+                f"Registro en sistema: {registrado_por_res}",
+                cuerpo,
+            ))
+        elems.append(P(
+            f"Documento generado con base en el registro del Comité #{int(comite_sel)}. "
+            "La generación de este PDF no modifica la decisión almacenada en la base de datos.",
+            cuerpo,
+        ))
+
+        doc_pdf.build(elems)
+        buffer.seek(0)
+        return buffer.getvalue()
+
+    try:
+        pdf_resolucion = _pdf_resolucion_comite_v16112()
+        nombre_archivo_res = (
+            f"resolucion_comite_{int(comite_sel)}_"
+            f"{str(doc_benef).replace(' ', '_')}.pdf"
+        )
+        st.download_button(
+            "⬇️ Descargar resolución en PDF",
+            data=pdf_resolucion,
+            file_name=nombre_archivo_res,
+            mime="application/pdf",
+            use_container_width=True,
+            key=f"v16112_descargar_res_{comite_sel}",
+        )
+    except Exception as e:
+        st.error(f"No fue posible generar la resolución en PDF: {e}")
 
 def tablero_contribucion_ods_v16():
     """Tablero institucional de contribución del programa a los ODS."""
@@ -10364,7 +11634,6 @@ def _resumen_profesionales_historicos_v1639(df):
     return actuales, historicos
 
 
-# V16.92 - corrección timezone PAI: seguimientos de Supabase se normalizan a Colombia.
 def panel_profesional_v15(doc_forzado=None, incrustado=False):
     if not incrustado:
         st.title("🩺 Mi Panel Profesional")
@@ -10607,13 +11876,21 @@ def panel_profesional_v15(doc_forzado=None, incrustado=False):
                         LIMIT 1
                     ) h ON TRUE
                     WHERE
-                        p.profesional_referente=:prof
-                        OR EXISTS (
+                        (
+                            p.profesional_referente=:prof
+                            OR EXISTS (
+                                SELECT 1
+                                FROM pai_profesionales_vinculados v
+                                WHERE v.id_objetivo=p.id
+                                  AND v.profesional_id=:prof
+                                  AND COALESCE(v.fuente,'')='MIGRADO PAI 2026'
+                            )
+                        )
+                        AND NOT EXISTS (
                             SELECT 1
-                            FROM pai_profesionales_vinculados v
-                            WHERE v.id_objetivo=p.id
-                              AND v.profesional_id=:prof
-                              AND COALESCE(v.fuente,'')='MIGRADO PAI 2026'
+                            FROM pai_cierres c
+                            WHERE TRIM(CAST(c.documento_usuario AS TEXT))
+                                  = TRIM(CAST(p.documento_usuario AS TEXT))
                         )
                 """),
                 engine,
@@ -10640,8 +11917,7 @@ def panel_profesional_v15(doc_forzado=None, incrustado=False):
                             )
                         )
                         AND NOT EXISTS (
-                            SELECT 1
-                            FROM pai_cierres c
+                            SELECT 1 FROM pai_cierres c
                             WHERE TRIM(CAST(c.documento_usuario AS TEXT))
                                   = TRIM(CAST(o.documento_usuario AS TEXT))
                         )
@@ -10659,45 +11935,53 @@ def panel_profesional_v15(doc_forzado=None, incrustado=False):
         try:
             cierres_prof = pd.read_sql(
                 text("""
-                    SELECT COUNT(DISTINCT documento_usuario) AS total
-                    FROM pai_cierres
-                    WHERE profesional_referente=:prof
+                    SELECT DISTINCT ON (TRIM(CAST(c.documento_usuario AS TEXT)))
+                        TRIM(CAST(c.documento_usuario AS TEXT)) AS documento,
+                        c.fecha_cierre, c.resultado_final, c.resumen_cierre,
+                        c.cerrado_por,
+                        COALESCE(h.nombres,'') AS nombres,
+                        COALESCE(h.apellidos,'') AS apellidos
+                    FROM pai_cierres c
+                    LEFT JOIN LATERAL (
+                        SELECT hx.nombres, hx.apellidos
+                        FROM habitante_de_calle hx
+                        WHERE TRIM(CAST(hx.numero_identificacion AS TEXT))
+                              = TRIM(CAST(c.documento_usuario AS TEXT))
+                        LIMIT 1
+                    ) h ON TRUE
+                    WHERE c.profesional_referente=:prof
+                       OR EXISTS (
+                           SELECT 1 FROM pai_objetivos po
+                           WHERE TRIM(CAST(po.documento_usuario AS TEXT))
+                                 = TRIM(CAST(c.documento_usuario AS TEXT))
+                             AND po.profesional_referente=:prof
+                       )
+                    ORDER BY TRIM(CAST(c.documento_usuario AS TEXT)),
+                             c.creado_en DESC NULLS LAST, c.fecha_cierre DESC
                 """),
                 engine,
                 params={"prof": prof_id}
             )
-            total_cerrados = (
-                int(cierres_prof.iloc[0]["total"])
-                if not cierres_prof.empty else 0
-            )
+            total_cerrados = int(cierres_prof["documento"].nunique()) if not cierres_prof.empty else 0
         except Exception:
+            cierres_prof = pd.DataFrame()
             total_cerrados = 0
 
-        # V16.97 - El dashboard operativo debe medir únicamente PAI ABIERTOS.
-        # Los expedientes cerrados se conservan en su pestaña histórica, pero
-        # sus personas/objetivos/seguimientos no inflan los indicadores activos.
-        try:
-            _cierres_docs_dash = pd.read_sql(
-                text("""
-                    SELECT DISTINCT
-                        TRIM(CAST(documento_usuario AS TEXT)) AS documento
-                    FROM pai_cierres
-                """),
-                engine
+        # V16.135 - Exclusión definitiva de PAI cerrados en Mi Gestión PAI.
+        # Además del NOT EXISTS SQL, se cruza explícitamente en pandas para que
+        # ningún objetivo de una persona con cierre formal siga contando como
+        # vinculado, vencido o sin seguimiento por diferencias de tipo/formato.
+        if not gestion.empty and not cierres_prof.empty:
+            docs_cerrados_v16135 = set(
+                cierres_prof["documento"]
+                .dropna().astype(str).str.strip().tolist()
             )
-            _set_cerrados_dash = set(
-                _cierres_docs_dash["documento"].dropna().astype(str).str.strip()
-            ) if not _cierres_docs_dash.empty else set()
-        except Exception:
-            _set_cerrados_dash = set()
-
-        gestion_dashboard = gestion.copy()
-        if not gestion_dashboard.empty and _set_cerrados_dash:
-            gestion_dashboard = gestion_dashboard[
-                ~gestion_dashboard["documento"].astype(str).str.strip().isin(_set_cerrados_dash)
+            gestion["documento"] = gestion["documento"].astype(str).str.strip()
+            gestion = gestion.loc[
+                ~gestion["documento"].isin(docs_cerrados_v16135)
             ].copy()
 
-        if gestion_dashboard.empty:
+        if gestion.empty:
             personas_pai = 0
             objetivos_total = 0
             objetivos_cumplidos = 0
@@ -10705,48 +11989,60 @@ def panel_profesional_v15(doc_forzado=None, incrustado=False):
             casos_sin_seg = 0
             cumplimiento_promedio = 0
         else:
-            gestion_dashboard["porcentaje_avance"] = pd.to_numeric(
-                gestion_dashboard["porcentaje_avance"], errors="coerce"
+            gestion["porcentaje_avance"] = pd.to_numeric(
+                gestion["porcentaje_avance"], errors="coerce"
             ).fillna(0)
-            gestion_dashboard["fecha_meta"] = pd.to_datetime(
-                gestion_dashboard["fecha_meta"], errors="coerce"
+            # V16.133 - Normalización defensiva de fechas PAI.
+            # PostgreSQL puede devolver una mezcla de DATE/TIMESTAMP y TIMESTAMPTZ;
+            # pandas no permite restar timestamps con y sin zona horaria.
+            def _normalizar_fecha_gestion_pai_v16133(valor):
+                ts = pd.to_datetime(valor, errors="coerce")
+                if pd.isna(ts):
+                    return pd.NaT
+                try:
+                    ts = pd.Timestamp(ts)
+                    if ts.tzinfo is not None:
+                        ts = ts.tz_convert("America/Bogota").tz_localize(None)
+                    return ts
+                except Exception:
+                    try:
+                        return pd.Timestamp(ts).tz_localize(None)
+                    except Exception:
+                        return pd.NaT
+
+            gestion["fecha_meta"] = gestion["fecha_meta"].apply(
+                _normalizar_fecha_gestion_pai_v16133
             )
-            gestion_dashboard["fecha_ultimo_seguimiento"] = normalizar_timestamp_colombia_v1692(
-                gestion_dashboard["fecha_ultimo_seguimiento"]
-            )
-            # V16.98 - Comparaciones de calendario sin mezclar timestamps
-            # timezone-aware con pd.Timestamp(date.today()) timezone-naive.
-            gestion_dashboard["fecha_ultimo_seguimiento"] = (
-                gestion_dashboard["fecha_ultimo_seguimiento"]
-                .dt.tz_localize(None)
+            gestion["fecha_ultimo_seguimiento"] = gestion["fecha_ultimo_seguimiento"].apply(
+                _normalizar_fecha_gestion_pai_v16133
             )
             hoy_g = pd.Timestamp(date.today())
 
             cumplido_g = (
-                gestion_dashboard["porcentaje_avance"].ge(100)
-                | gestion_dashboard["estado"].fillna("").astype(str).str.upper().eq("CUMPLIDO")
+                gestion["porcentaje_avance"].ge(100)
+                | gestion["estado"].fillna("").astype(str).str.upper().eq("CUMPLIDO")
             )
-            dias_meta_g = (gestion_dashboard["fecha_meta"].dt.normalize() - hoy_g).dt.days
+            dias_meta_g = (gestion["fecha_meta"].dt.normalize() - hoy_g).dt.days
             dias_seg_g = (
-                hoy_g - gestion_dashboard["fecha_ultimo_seguimiento"].dt.normalize()
+                hoy_g - gestion["fecha_ultimo_seguimiento"].dt.normalize()
             ).dt.days
 
-            personas_pai = gestion_dashboard["documento"].nunique()
-            objetivos_total = len(gestion_dashboard)
+            personas_pai = gestion["documento"].nunique()
+            objetivos_total = len(gestion)
             objetivos_cumplidos = int(cumplido_g.sum())
             objetivos_vencidos = int((~cumplido_g & dias_meta_g.lt(0)).sum())
 
-            sin_seg_docs = gestion_dashboard.loc[
+            sin_seg_docs = gestion.loc[
                 ~cumplido_g
                 & (
-                    gestion_dashboard["fecha_ultimo_seguimiento"].isna()
+                    gestion["fecha_ultimo_seguimiento"].isna()
                     | dias_seg_g.gt(15)
                 ),
                 "documento"
             ]
             casos_sin_seg = sin_seg_docs.nunique()
             cumplimiento_promedio = round(
-                float(gestion_dashboard["porcentaje_avance"].mean()), 1
+                float(gestion["porcentaje_avance"].mean()), 1
             )
 
         with st.expander("📊 Ver resumen de mi gestión", expanded=True):
@@ -10776,10 +12072,9 @@ def panel_profesional_v15(doc_forzado=None, incrustado=False):
                         grupo["porcentaje_avance"], errors="coerce"
                     ).fillna(0)
                     metas = pd.to_datetime(grupo["fecha_meta"], errors="coerce")
-                    segs = normalizar_timestamp_colombia_v1692(
-                        grupo["fecha_ultimo_seguimiento"]
+                    segs = pd.to_datetime(
+                        grupo["fecha_ultimo_seguimiento"], errors="coerce"
                     )
-                    segs = segs.dt.tz_localize(None)
                     cumplidos_g = (
                         grupo["porcentaje_avance"].ge(100)
                         | grupo["estado"].fillna("").astype(str).str.upper().eq(
@@ -10858,66 +12153,37 @@ def panel_profesional_v15(doc_forzado=None, incrustado=False):
                     ["_orden", "Persona"]
                 ).drop(columns=["_orden"])
 
-                # V16.95 - Separar expedientes PAI ABIERTOS y CERRADOS.
-                # Un PAI se considera cerrado únicamente cuando existe un
-                # cierre formal en pai_cierres; no basta con que sus objetivos
-                # estén al 100%.
-                try:
-                    _docs_cerrados = pd.read_sql(
-                        text("""
-                            SELECT DISTINCT
-                                TRIM(CAST(documento_usuario AS TEXT)) AS documento
-                            FROM pai_cierres
-                        """),
-                        engine
-                    )
-                    _set_cerrados = set(
-                        _docs_cerrados["documento"].dropna().astype(str).str.strip()
-                    ) if not _docs_cerrados.empty else set()
-                except Exception:
-                    _set_cerrados = set()
-
-                tabla_gestion["Situación PAI"] = tabla_gestion["Documento"].astype(str).str.strip().apply(
-                    lambda _d: "CERRADO" if _d in _set_cerrados else "ABIERTO"
+                st.markdown("#### 👥 Mis casos PAI abiertos")
+                st.caption("Aquí solo aparecen PAI que continúan abiertos y requieren gestión o seguimiento.")
+                st.dataframe(
+                    tabla_gestion,
+                    use_container_width=True,
+                    hide_index=True
                 )
-
-                tabla_abiertos = tabla_gestion[
-                    tabla_gestion["Situación PAI"] == "ABIERTO"
-                ].drop(columns=["Situación PAI"]).copy()
-                tabla_cerrados = tabla_gestion[
-                    tabla_gestion["Situación PAI"] == "CERRADO"
-                ].drop(columns=["Situación PAI"]).copy()
-
-                st.markdown("#### 👥 Mis casos PAI")
-                tab_pai_abiertos, tab_pai_cerrados = st.tabs([
-                    f"🟢 Abiertos ({len(tabla_abiertos)})",
-                    f"📁 Cerrados ({len(tabla_cerrados)})",
-                ])
-
-                with tab_pai_abiertos:
-                    if tabla_abiertos.empty:
-                        st.info("No tiene PAI abiertos.")
-                    else:
-                        st.dataframe(
-                            tabla_abiertos,
-                            use_container_width=True,
-                            hide_index=True
-                        )
-
-                with tab_pai_cerrados:
-                    if tabla_cerrados.empty:
-                        st.info("No tiene PAI cerrados.")
-                    else:
-                        st.caption(
-                            "Archivo histórico: estos PAI ya tienen un cierre formal registrado."
-                        )
-                        st.dataframe(
-                            tabla_cerrados,
-                            use_container_width=True,
-                            hide_index=True
-                        )
             else:
-                st.info("Todavía no tiene objetivos PAI registrados.")
+                st.success("✅ No tiene casos PAI abiertos pendientes de gestión.")
+
+            st.markdown("#### 🗃️ PAI cerrados")
+            if 'cierres_prof' in locals() and not cierres_prof.empty:
+                cerrados_mostrar = cierres_prof.copy()
+                cerrados_mostrar["Persona"] = (
+                    cerrados_mostrar["nombres"].fillna("").astype(str).str.strip()
+                    + " " + cerrados_mostrar["apellidos"].fillna("").astype(str).str.strip()
+                ).str.strip()
+                cerrados_mostrar["Fecha de cierre"] = pd.to_datetime(
+                    cerrados_mostrar["fecha_cierre"], errors="coerce"
+                ).dt.strftime("%d/%m/%Y").fillna("—")
+                cerrados_mostrar = cerrados_mostrar.rename(columns={
+                    "documento": "Documento",
+                    "resultado_final": "Resultado",
+                    "resumen_cierre": "Resumen"
+                })
+                st.dataframe(
+                    cerrados_mostrar[["Persona", "Documento", "Fecha de cierre", "Resultado", "Resumen"]],
+                    use_container_width=True, hide_index=True
+                )
+            else:
+                st.info("No tiene PAI cerrados registrados.")
 
         st.divider()
 
@@ -11232,8 +12498,8 @@ def panel_profesional_v15(doc_forzado=None, incrustado=False):
             tmp["porcentaje_avance"], errors="coerce"
         ).fillna(0)
         tmp["fecha_meta"] = pd.to_datetime(tmp["fecha_meta"], errors="coerce")
-        tmp["fecha_ultimo_seguimiento"] = normalizar_timestamp_colombia_v1692(
-            tmp["fecha_ultimo_seguimiento"]
+        tmp["fecha_ultimo_seguimiento"] = tmp["fecha_ultimo_seguimiento"].apply(
+            normalizar_timestamp_pandas_sin_tz
         )
         hoy = pd.Timestamp(date.today())
         cumplido_mask = (
@@ -11500,43 +12766,45 @@ def panel_profesional_v15(doc_forzado=None, incrustado=False):
             ]
         }
 
-        with st.form(f"v16_2_objetivo_{doc_sel}"):
-            tipo_obj = st.selectbox("Tipo de objetivo", tipos_objetivo)
-            linea = linea_por_tipo.get(tipo_obj, "Intervención integral")
-            ods = ods_por_tipo.get(tipo_obj, "ODS 10")
+        # V16.142: todos los campos dependientes se renderizan fuera de st.form
+        # para que línea de política, ODS e hitos cambien inmediatamente.
+        tipo_obj = st.selectbox(
+            "Tipo de objetivo", tipos_objetivo,
+            key=f"v16_2_tipo_objetivo_{doc_sel}"
+        )
+        linea = linea_por_tipo.get(tipo_obj, "Intervención integral")
+        ods = ods_por_tipo.get(tipo_obj, "ODS 10")
+        sugeridos = list(hitos_sugeridos.get(tipo_obj, []))
 
-            cpol1, cpol2 = st.columns(2)
-            cpol1.info(f"Línea de política: {linea}")
-            cpol2.info(f"ODS: {ods}")
+        cpol1, cpol2 = st.columns(2)
+        cpol1.info(f"Línea de política: {linea}")
+        cpol2.info(f"ODS: {ods}")
 
-            descripcion = st.text_area(
-                "Descripción del objetivo *",
-                placeholder="Redacte el resultado que se espera lograr."
-            )
+        descripcion = st.text_area(
+            "Descripción del objetivo *",
+            placeholder="Redacte el resultado que se espera lograr.",
+            key=f"v16_2_desc_obj_{doc_sel}"
+        )
+        actividades = st.multiselect(
+            "Actividades / hitos", sugeridos, default=sugeridos,
+            key=f"v16_2_hitos_{doc_sel}_{tipo_obj}"
+        )
+        actividad_extra = st.text_input(
+            "Actividad adicional (opcional)",
+            key=f"v16_2_extra_obj_{doc_sel}"
+        )
+        if actividad_extra.strip():
+            actividades = actividades + [actividad_extra.strip()]
 
-            sugeridos = hitos_sugeridos.get(tipo_obj, [])
-            actividades = st.multiselect(
-                "Actividades / hitos",
-                sugeridos,
-                default=sugeridos
-            )
-
-            actividad_extra = st.text_input(
-                "Actividad adicional (opcional)"
-            )
-            if actividad_extra.strip():
-                actividades = actividades + [actividad_extra.strip()]
-
-            fecha_meta = st.date_input(
-                "Fecha meta",
-                value=date.today() + timedelta(days=30)
-            )
-
-            guardar_obj = st.form_submit_button(
-                f"➕ Crear objetivo para {nombre_usuario}",
-                use_container_width=True,
-                type="primary"
-            )
+        fecha_meta = st.date_input(
+            "Fecha meta", value=date.today() + timedelta(days=30),
+            key=f"v16_2_fecha_meta_{doc_sel}"
+        )
+        guardar_obj = st.button(
+            f"➕ Crear objetivo para {nombre_usuario}",
+            key=f"v16_2_guardar_obj_{doc_sel}",
+            use_container_width=True, type="primary"
+        )
 
         if guardar_obj:
             if not descripcion.strip():
@@ -11662,54 +12930,191 @@ def panel_profesional_v15(doc_forzado=None, incrustado=False):
             except Exception:
                 avance = []
 
-            completos = st.multiselect(
-                "Hitos completados",
-                acts,
-                default=[x for x in avance if x in acts],
-                key=f"v16_2_hitos_{doc_sel}_{obj_id}"
+            # V16.111 - Los objetivos operativos conservan el avance por hitos.
+            # Los objetivos históricos migrados que no tienen hitos permiten
+            # registrar avance manual con observación obligatoria.
+            origen_obj = str(obj_row.get("origen_registro") or "").strip().upper()
+            es_historico = (
+                origen_obj == "MIGRADO PAI 2026"
+                or str(obj_row.get("estado") or "").strip().upper() == "HISTORICO"
             )
 
-            pct = round((len(completos) / len(acts)) * 100) if acts else 0
-            st.progress(pct / 100 if pct else 0)
-            st.caption(f"Avance calculado: {pct}%")
-
-            if st.button(
-                f"💾 Guardar avance de {nombre_usuario}",
-                use_container_width=True,
-                key=f"v16_2_guardar_avance_{doc_sel}_{obj_id}"
-            ):
-                with engine.begin() as conn:
-                    conn.execute(
-                        text("""
-                            UPDATE pai_objetivos
-                            SET
-                                avance_hitos=CAST(:avance AS JSON),
-                                porcentaje_avance=:pct,
-                                estado=CASE
-                                    WHEN :pct >= 100 THEN 'CUMPLIDO'
-                                    ELSE 'Activo'
-                                END,
-                                fecha_cumplimiento_real=CASE
-                                    WHEN :pct >= 100 THEN NOW()
-                                    ELSE NULL
-                                END
-                            WHERE id=:id
-                              AND TRIM(CAST(documento_usuario AS TEXT))=:doc
-                        """),
-                        {
-                            "avance": json.dumps(
-                                completos, ensure_ascii=False
-                            ),
-                            "pct": pct,
-                            "id": int(obj_id),
-                            "doc": str(doc_sel),
-                            "prof": prof_id
-                        }
-                    )
-                st.success(
-                    f"✅ Avance actualizado para {nombre_usuario}."
+            if acts:
+                completos = st.multiselect(
+                    "Hitos completados",
+                    acts,
+                    default=[x for x in avance if x in acts],
+                    key=f"v16_2_hitos_{doc_sel}_{obj_id}"
                 )
-                st.rerun()
+
+                pct = round((len(completos) / len(acts)) * 100)
+                st.progress(pct / 100 if pct else 0)
+                st.caption(f"Avance calculado: {pct}%")
+
+                if st.button(
+                    f"💾 Guardar avance de {nombre_usuario}",
+                    use_container_width=True,
+                    key=f"v16_2_guardar_avance_{doc_sel}_{obj_id}"
+                ):
+                    with engine.begin() as conn:
+                        conn.execute(
+                            text("""
+                                UPDATE pai_objetivos
+                                SET
+                                    avance_hitos=CAST(:avance AS JSON),
+                                    porcentaje_avance=:pct,
+                                    estado=CASE
+                                        WHEN :pct >= 100 THEN 'CUMPLIDO'
+                                        ELSE 'Activo'
+                                    END,
+                                    fecha_ultimo_seguimiento=NOW(),
+                                    fecha_cumplimiento_real=CASE
+                                        WHEN :pct >= 100 THEN NOW()
+                                        ELSE NULL
+                                    END
+                                WHERE id=:id
+                                  AND TRIM(CAST(documento_usuario AS TEXT))=:doc
+                            """),
+                            {
+                                "avance": json.dumps(
+                                    completos, ensure_ascii=False
+                                ),
+                                "pct": pct,
+                                "id": int(obj_id),
+                                "doc": str(doc_sel)
+                            }
+                        )
+                    st.success(
+                        f"✅ Avance actualizado para {nombre_usuario}."
+                    )
+                    st.rerun()
+
+            elif es_historico:
+                st.info(
+                    "📚 Este objetivo proviene del PAI histórico 2026 y no tiene "
+                    "hitos estructurados. Puede continuar su gestión registrando "
+                    "el porcentaje de avance manualmente."
+                )
+
+                pct_actual = pd.to_numeric(
+                    pd.Series([obj_row.get("porcentaje_avance")]),
+                    errors="coerce"
+                ).fillna(0).iloc[0]
+                pct_actual = int(max(0, min(100, round(float(pct_actual)))))
+
+                pct_manual = st.slider(
+                    "Avance del objetivo (%)",
+                    min_value=0,
+                    max_value=100,
+                    value=pct_actual,
+                    step=5,
+                    key=f"v16_111_pct_hist_{doc_sel}_{obj_id}"
+                )
+                st.progress(pct_manual / 100 if pct_manual else 0)
+                st.caption(f"Avance a registrar: {pct_manual}%")
+
+                observacion_hist = st.text_area(
+                    "Observación del seguimiento *",
+                    placeholder=(
+                        "Describa el avance verificado, las acciones realizadas "
+                        "y la situación actual del objetivo histórico."
+                    ),
+                    key=f"v16_111_obs_hist_{doc_sel}_{obj_id}"
+                )
+
+                if st.button(
+                    f"💾 Guardar avance histórico de {nombre_usuario}",
+                    use_container_width=True,
+                    key=f"v16_111_guardar_hist_{doc_sel}_{obj_id}"
+                ):
+                    if not observacion_hist.strip():
+                        st.error(
+                            "La observación del seguimiento es obligatoria para "
+                            "actualizar un objetivo histórico."
+                        )
+                    else:
+                        with engine.begin() as conn:
+                            conn.execute(
+                                text("""
+                                    UPDATE pai_objetivos
+                                    SET
+                                        porcentaje_avance=:pct,
+                                        estado=CASE
+                                            WHEN :pct >= 100 THEN 'CUMPLIDO'
+                                            ELSE 'HISTORICO'
+                                        END,
+                                        fecha_ultimo_seguimiento=NOW(),
+                                        fecha_cumplimiento_real=CASE
+                                            WHEN :pct >= 100 THEN NOW()
+                                            ELSE NULL
+                                        END
+                                    WHERE id=:id
+                                      AND TRIM(CAST(documento_usuario AS TEXT))=:doc
+                                """),
+                                {
+                                    "pct": int(pct_manual),
+                                    "id": int(obj_id),
+                                    "doc": str(doc_sel)
+                                }
+                            )
+
+                            # Dejar trazabilidad del seguimiento sobre el objetivo
+                            # histórico sin modificar su texto original migrado.
+                            conn.execute(
+                                text("""
+                                    INSERT INTO pai_novedades(
+                                        id_objetivo,
+                                        fecha,
+                                        profesional,
+                                        tipo_novedad,
+                                        descripcion,
+                                        avance_generado,
+                                        evidencia
+                                    )
+                                    VALUES(
+                                        :id_obj,
+                                        NOW(),
+                                        :profesional,
+                                        'SEGUIMIENTO OBJETIVO HISTORICO',
+                                        :descripcion,
+                                        :avance,
+                                        ''
+                                    )
+                                """),
+                                {
+                                    "id_obj": int(obj_id),
+                                    "profesional": str(prof_nombre),
+                                    "descripcion": observacion_hist.strip(),
+                                    "avance": int(pct_manual)
+                                }
+                            )
+
+                        try:
+                            registrar_auditoria(
+                                "PAI",
+                                "ACTUALIZAR_OBJETIVO_HISTORICO",
+                                numero_identificacion=str(doc_sel),
+                                valor_anterior=str(pct_actual),
+                                valor_nuevo=str(pct_manual),
+                                observacion=(
+                                    f"Objetivo PAI #{obj_id} · "
+                                    f"{observacion_hist.strip()}"
+                                )
+                            )
+                        except Exception:
+                            pass
+
+                        st.success(
+                            f"✅ Avance histórico actualizado a {pct_manual}% "
+                            f"para {nombre_usuario}."
+                        )
+                        st.rerun()
+
+            else:
+                st.warning(
+                    "Este objetivo no tiene hitos configurados. Agregue actividades "
+                    "al objetivo antes de registrar avance."
+                )
 
     # ============================================================
     # SEGUIMIENTOS
@@ -12245,6 +13650,12 @@ def supervision_pai_v15():
                 LEFT JOIN profesionales pr
                     ON pr.id=p.profesional_referente
                 WHERE COALESCE(p.origen_registro,'ACTUAL') <> 'MIGRADO PAI 2026'
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM pai_cierres c
+                      WHERE TRIM(CAST(c.documento_usuario AS TEXT))
+                            = TRIM(CAST(p.documento_usuario AS TEXT))
+                  )
             """),
             engine
         )
@@ -12259,8 +13670,8 @@ def supervision_pai_v15():
         control["fecha_meta"] = pd.to_datetime(
             control["fecha_meta"], errors="coerce"
         )
-        control["fecha_ultimo_seguimiento"] = normalizar_timestamp_colombia_v1692(
-            control["fecha_ultimo_seguimiento"]
+        control["fecha_ultimo_seguimiento"] = control["fecha_ultimo_seguimiento"].apply(
+            normalizar_timestamp_pandas_sin_tz
         )
         control["porcentaje_avance"] = pd.to_numeric(
             control["porcentaje_avance"], errors="coerce"
@@ -12713,8 +14124,8 @@ def dashboard_ejecutivo():
         df_pai_coord["fecha_meta"] = pd.to_datetime(
             df_pai_coord["fecha_meta"], errors="coerce"
         )
-        df_pai_coord["fecha_ultimo_seguimiento"] = normalizar_timestamp_colombia_v1692(
-            df_pai_coord["fecha_ultimo_seguimiento"]
+        df_pai_coord["fecha_ultimo_seguimiento"] = df_pai_coord["fecha_ultimo_seguimiento"].apply(
+            normalizar_timestamp_pandas_sin_tz
         )
         df_pai_coord["porcentaje_avance"] = pd.to_numeric(
             df_pai_coord["porcentaje_avance"], errors="coerce"
@@ -12892,6 +14303,10 @@ def dashboard_ejecutivo():
                 WITH llegadas_base AS (
                     SELECT DISTINCT
                         m.fecha_movimiento,
+                        COALESCE(
+                            (m.hora_movimiento AT TIME ZONE 'UTC') AT TIME ZONE 'America/Bogota',
+                            m.fecha_movimiento::timestamp
+                        ) AS fecha_hora_movimiento,
                         TRIM(CAST(m.numero_identificacion AS TEXT)) AS documento,
                         UPPER(TRIM(COALESCE(m.modalidad,''))) AS modalidad,
                         UPPER(TRIM(COALESCE(m.tipo_movimiento,''))) AS tipo_original
@@ -12903,17 +14318,19 @@ def dashboard_ejecutivo():
                 ordenadas AS (
                     SELECT
                         fecha_movimiento,
+                        fecha_hora_movimiento,
                         documento,
                         modalidad,
                         tipo_original,
                         ROW_NUMBER() OVER (
                             PARTITION BY documento
-                            ORDER BY fecha_movimiento ASC, tipo_original ASC
+                            ORDER BY fecha_hora_movimiento ASC, tipo_original ASC
                         ) AS nro_llegada
                     FROM llegadas_base
                 )
                 SELECT
                     o.fecha_movimiento,
+                    o.fecha_hora_movimiento,
                     o.documento,
                     o.modalidad,
                     o.tipo_original,
@@ -12923,7 +14340,7 @@ def dashboard_ejecutivo():
                 FROM ordenadas o
                 LEFT JOIN habitante_de_calle h
                   ON TRIM(CAST(h.numero_identificacion AS TEXT)) = o.documento
-                ORDER BY o.fecha_movimiento DESC
+                ORDER BY o.fecha_hora_movimiento DESC
             """),
             engine
         )
@@ -13004,15 +14421,23 @@ def dashboard_ejecutivo():
         )
 
     if not df_llegadas_hist.empty:
-        # V16.78 - fecha_movimiento ya llega desde la consulta con la
-        # fecha/hora operativa correcta. No se vuelve a convertir de UTC
-        # para evitar desplazar un día hacia atrás.
+        # V16.116 - fecha_movimiento conserva el día operativo registrado.
+        # fecha_hora_movimiento ya llega convertido desde UTC a America/Bogota,
+        # evitando mostrar horas futuras del servidor como si fueran hora colombiana.
         df_llegadas_hist["fecha_movimiento"] = pd.to_datetime(
             df_llegadas_hist["fecha_movimiento"],
             errors="coerce"
         )
+        df_llegadas_hist["fecha_hora_movimiento"] = pd.to_datetime(
+            df_llegadas_hist["fecha_hora_movimiento"],
+            errors="coerce"
+        )
         df_llegadas_hist = df_llegadas_hist.dropna(
             subset=["fecha_movimiento"]
+        )
+        df_llegadas_hist["fecha_hora_movimiento"] = (
+            df_llegadas_hist["fecha_hora_movimiento"]
+            .fillna(df_llegadas_hist["fecha_movimiento"])
         )
 
         df_llegadas_hist["fecha_dia"] = (
@@ -13070,7 +14495,7 @@ def dashboard_ejecutivo():
         # no se duplica la persona en el indicador.
         df_llegadas_hist = (
             df_llegadas_hist
-            .sort_values("fecha_movimiento")
+            .sort_values("fecha_hora_movimiento")
             .drop_duplicates(
                 subset=["documento", "fecha_dia", "clasificacion"],
                 keep="first"
@@ -13130,7 +14555,7 @@ def dashboard_ejecutivo():
                 ).str.strip()
 
                 df_dia["Hora"] = (
-                    df_dia["fecha_movimiento"]
+                    df_dia["fecha_hora_movimiento"]
                     .dt.strftime("%I:%M %p")
                 )
 
@@ -13201,7 +14626,7 @@ def dashboard_ejecutivo():
                 ).str.strip()
 
                 df_ingreso_dia["Hora"] = (
-                    df_ingreso_dia["fecha_movimiento"]
+                    df_ingreso_dia["fecha_hora_movimiento"]
                     .dt.strftime("%I:%M %p")
                 )
 
@@ -14674,7 +16099,13 @@ def inicio_ejecutivo_v167():
                     porcentaje_avance,
                     fecha_meta,
                     fecha_ultimo_seguimiento
-                FROM pai_objetivos
+                FROM pai_objetivos p
+                WHERE NOT EXISTS (
+                    SELECT 1
+                    FROM pai_cierres c
+                    WHERE TRIM(CAST(c.documento_usuario AS TEXT))
+                          = TRIM(CAST(p.documento_usuario AS TEXT))
+                )
             """),
             engine
         )
@@ -20434,143 +21865,55 @@ def control_asistencia_albergue_v1613():
 
     st.title("📋 Control Diario de Asistencia")
     st.caption(
-        "Consulta histórica y consolidado mensual de asistencia de los albergues. "
-        "La información se reconstruye a partir de los movimientos registrados en la plataforma."
+        "La base del cálculo son las personas ACTIVAS en habitante_de_calle. "
+        "Los movimientos solo se usan para reconstruir hacia atrás los cambios "
+        "ocurridos desde que empezó a utilizarse la app."
     )
 
-    tab_dia, tab_mes = st.tabs([
-        "📅 Asistencia por día",
-        "📆 Consolidado mensual"
-    ])
+    vista_asistencia = st.radio(
+        "Vista",
+        ["📅 Asistencia por día", "📆 Consolidado mensual"],
+        horizontal=True,
+        key="v16102_vista_asistencia"
+    )
 
     # ========================================================
-    # FUNCIONES COMUNES
+    # DATOS BASE AUTORITATIVOS
     # ========================================================
-    def _norm_tipo_asistencia_v1691(valor):
-        v = str(valor or "").strip().upper()
-        v = (
-            v.replace("Á","A").replace("É","E").replace("Í","I")
-             .replace("Ó","O").replace("Ú","U").replace("Ñ","N")
+    @st.cache_data(ttl=60, show_spinner=False)
+    def _base_actual_v16102():
+        df = pd.read_sql(
+            text("""
+                SELECT
+                    TRIM(CAST(numero_identificacion AS TEXT)) AS documento,
+                    COALESCE(nombres,'') AS nombres,
+                    COALESCE(apellidos,'') AS apellidos,
+                    UPPER(TRIM(COALESCE(estado_caso,''))) AS estado_actual,
+                    UPPER(TRIM(COALESCE(modalidad,''))) AS modalidad_actual
+                FROM habitante_de_calle
+            """),
+            engine
         )
-        return " ".join(v.replace("_", " ").split())
+        if df.empty:
+            return df
 
-    def _estado_por_tipo_v1691(tipo):
-        t = _norm_tipo_asistencia_v1691(tipo)
-
-        if t in {
-            "INGRESO",
-            "REINGRESO",
-            "REGRESO PERMISO",
-            "REGRESO DE PERMISO"
-        }:
-            return "ACTIVO"
-
-        if t in {
-            "SALIDA PERMISO",
-            "SALIDA DE PERMISO"
-        }:
-            # Para efectos de canasta y atención, permiso cuenta como activo.
-            return "ACTIVO"
-
-        if t in {
-            "SALIDA VOLUNTARIA",
-            "SUSPENSION",
-            "EXPULSION",
-            "EGRESO"
-        }:
-            return "NO ACTIVO"
-
-        return "SIN CAMBIO"
-
-    def _normalizar_documento_v1693(valor):
-        txt = str(valor or "").strip()
-        txt = "".join(c for c in txt if c.isalnum())
-        if txt.endswith("0") and ".0" in str(valor):
-            txt = txt[:-1]
-        return txt.upper()
-
-    def _cargar_maestro_v1691():
-        # V16.96 - La fuente principal de nombres es SIEMPRE habitante_de_calle.
-        # personas_caracterizacion se consulta aparte como respaldo para que,
-        # si su estructura cambia, no deje vacía toda la base de nombres.
-        partes = []
-
-        try:
-            maestro_hdc = pd.read_sql(
-                text("""
-                    SELECT
-                        TRIM(CAST(numero_identificacion AS TEXT)) AS documento,
-                        COALESCE(nombres,'') AS nombres,
-                        COALESCE(apellidos,'') AS apellidos,
-                        UPPER(TRIM(COALESCE(estado_caso,''))) AS estado_actual,
-                        UPPER(TRIM(COALESCE(modalidad,''))) AS modalidad_actual
-                    FROM habitante_de_calle
-                """),
-                engine
-            )
-            if not maestro_hdc.empty:
-                maestro_hdc["prioridad"] = 1
-                partes.append(maestro_hdc)
-        except Exception:
-            pass
-
-        try:
-            maestro_egr = pd.read_sql(
-                text("""
-                    SELECT
-                        TRIM(CAST(numero_identificacion AS TEXT)) AS documento,
-                        COALESCE(nombres,'') AS nombres,
-                        COALESCE(apellidos,'') AS apellidos,
-                        ''::TEXT AS estado_actual,
-                        ''::TEXT AS modalidad_actual
-                    FROM personas_caracterizacion
-                """),
-                engine
-            )
-            if not maestro_egr.empty:
-                maestro_egr["prioridad"] = 2
-                partes.append(maestro_egr)
-        except Exception:
-            pass
-
-        if not partes:
-            return pd.DataFrame(
-                columns=[
-                    "documento", "nombres", "apellidos",
-                    "prioridad", "documento_norm", "nombre_completo"
-                ]
-            )
-
-        maestro = pd.concat(partes, ignore_index=True, sort=False)
-
-        maestro["documento"] = (
-            maestro["documento"].fillna("").astype(str).str.strip()
+        df["documento"] = (
+            df["documento"].fillna("").astype(str).str.strip()
         )
-        maestro["documento_norm"] = maestro["documento"].apply(
-            _normalizar_documento_v1693
-        )
-        maestro["nombre_completo"] = (
-            maestro["nombres"].fillna("").astype(str).str.strip()
+        df["nombre_completo"] = (
+            df["nombres"].fillna("").astype(str).str.strip()
             + " "
-            + maestro["apellidos"].fillna("").astype(str).str.strip()
+            + df["apellidos"].fillna("").astype(str).str.strip()
         ).str.replace(r"\s+", " ", regex=True).str.strip()
 
-        # Preferir registros que efectivamente tengan nombre.
-        maestro["sin_nombre"] = maestro["nombre_completo"].eq("")
-        maestro = (
-            maestro.sort_values(
-                ["documento_norm", "sin_nombre", "prioridad"]
-            )
-            .drop_duplicates(subset=["documento_norm"], keep="first")
+        return df.drop_duplicates(
+            subset=["documento"], keep="first"
         )
 
-        return maestro
-
-    maestro_asistencia = _cargar_maestro_v1691()
-
-    def _cargar_movimientos_hasta_v1691(fecha_fin):
+    @st.cache_data(ttl=60, show_spinner=False)
+    def _movimientos_v16102():
         try:
-            dfm = pd.read_sql(
+            mov = pd.read_sql(
                 text("""
                     SELECT
                         id_movimiento,
@@ -20578,748 +21921,514 @@ def control_asistencia_albergue_v1613():
                         UPPER(TRIM(COALESCE(tipo_movimiento,''))) AS tipo_movimiento,
                         UPPER(TRIM(COALESCE(modalidad,''))) AS modalidad,
                         fecha_movimiento,
-                        hora_movimiento,
-                        usuario_registra,
                         observacion
                     FROM movimientos_habitante
-                    WHERE CAST(fecha_movimiento AS DATE) <= :fecha_fin
-                    ORDER BY
-                        numero_identificacion,
-                        fecha_movimiento,
-                        id_movimiento
-                """),
-                engine,
-                params={"fecha_fin": fecha_fin}
-            )
-        except Exception as e:
-            st.error(f"No fue posible consultar movimientos: {e}")
-            return pd.DataFrame()
-
-        if dfm.empty:
-            return dfm
-
-        dfm["documento"] = (
-            dfm["documento"].fillna("").astype(str).str.strip()
-        )
-        dfm["documento_norm"] = dfm["documento"].apply(
-            _normalizar_documento_v1693
-        )
-        dfm["tipo_norm"] = dfm["tipo_movimiento"].apply(
-            _norm_tipo_asistencia_v1691
-        )
-        dfm["modalidad"] = dfm["modalidad"].replace("", pd.NA)
-        dfm["modalidad_hist"] = (
-            dfm.groupby("documento")["modalidad"].ffill()
-        )
-        dfm["fecha_movimiento"] = pd.to_datetime(
-            dfm["fecha_movimiento"], errors="coerce"
-        )
-        return dfm
-
-    # ========================================================
-    # V16.98 - RECONSTRUCCIÓN REAL DESDE EL INICIO DE USO DE LA APP
-    # ========================================================
-    def _fecha_inicio_operacion_v1698():
-        """
-        Usa la primera fecha real registrada en movimientos_habitante como
-        inicio operativo del sistema. Desde ese día se reconstruye la atención.
-        """
-        try:
-            f = pd.read_sql(
-                text("""
-                    SELECT MIN(CAST(fecha_movimiento AS DATE)) AS fecha_inicio
-                    FROM movimientos_habitante
+                    ORDER BY fecha_movimiento, id_movimiento
                 """),
                 engine
             )
-            if not f.empty and pd.notna(f.iloc[0]["fecha_inicio"]):
-                return pd.to_datetime(f.iloc[0]["fecha_inicio"]).date()
         except Exception:
-            pass
-        return ahora_colombia().date()
+            return pd.DataFrame()
 
-    FECHA_INICIO_APP_V1698 = _fecha_inicio_operacion_v1698()
+        if mov.empty:
+            return mov
 
-    def _tipo_activa_v1698(tipo):
-        t = _norm_tipo_asistencia_v1691(tipo)
-        return t in {
-            "INGRESO",
-            "REINGRESO",
-            "REGRESO PERMISO",
-            "REGRESO DE PERMISO"
-        }
+        mov["documento"] = (
+            mov["documento"].fillna("").astype(str).str.strip()
+        )
+        mov["fecha_movimiento"] = pd.to_datetime(
+            mov["fecha_movimiento"], errors="coerce"
+        )
+        mov = mov.dropna(subset=["fecha_movimiento"])
+        return mov
 
-    def _tipo_permiso_v1698(tipo):
-        t = _norm_tipo_asistencia_v1691(tipo)
-        return t in {
-            "SALIDA PERMISO",
-            "SALIDA DE PERMISO"
-        }
+    base_actual = _base_actual_v16102()
+    movimientos = _movimientos_v16102()
 
-    def _tipo_salida_v1698(tipo):
-        t = _norm_tipo_asistencia_v1691(tipo)
-        return t in {
-            "SALIDA VOLUNTARIA",
-            "SUSPENSION",
-            "EXPULSION",
-            "EGRESO"
-        }
+    if base_actual.empty:
+        st.warning("No hay personas registradas en habitante_de_calle.")
+        return
 
-    def _estado_inicial_persona_v1698(doc, mov_doc):
+    hoy = ahora_colombia().date()
+
+    if movimientos.empty:
+        fecha_inicio_app = hoy
+    else:
+        fecha_inicio_app = movimientos["fecha_movimiento"].dt.date.min()
+
+    st.caption(
+        f"Inicio operativo detectado de la app: "
+        f"**{fecha_inicio_app.strftime('%d/%m/%Y')}**."
+    )
+
+    # --------------------------------------------------------
+    # Utilidades de reconstrucción
+    # --------------------------------------------------------
+    def _norm_tipo_v16102(valor):
+        v = str(valor or "").strip().upper()
+        v = (
+            v.replace("Á","A").replace("É","E").replace("Í","I")
+             .replace("Ó","O").replace("Ú","U").replace("Ñ","N")
+        )
+        return " ".join(v.replace("_", " ").split())
+
+    def _parse_cambio_manual_v16102(obs):
         """
-        Infere la situación al comenzar el uso de la app.
-
-        - Si el primer evento es una salida/suspensión/permiso, la persona
-          necesariamente estaba activa antes de ese evento.
-        - Si el primer evento es ingreso/reingreso, aún no estaba activa.
-        - Si nunca tuvo movimientos, usa el estado/modalidad actual del maestro.
+        Extrae valores anteriores de observaciones tipo:
+        Estado ACTIVO -> INACTIVO; modalidad GRANJA -> URBANO
         """
-        doc_norm = _normalizar_documento_v1693(doc)
+        txt = str(obs or "")
+        estado_ant = None
+        modalidad_ant = None
 
-        fila_m = pd.DataFrame()
-        if not maestro_asistencia.empty and "documento_norm" in maestro_asistencia.columns:
-            fila_m = maestro_asistencia[
-                maestro_asistencia["documento_norm"] == doc_norm
-            ].head(1)
+        m_estado = re.search(
+            r"Estado\s+([A-ZÁÉÍÓÚÑ_ ]+?)\s*->",
+            txt,
+            flags=re.IGNORECASE
+        )
+        if m_estado:
+            estado_ant = _norm_tipo_v16102(m_estado.group(1))
 
-        estado_actual = ""
-        modalidad_actual = ""
-        if not fila_m.empty:
-            estado_actual = str(
-                fila_m.iloc[0].get("estado_actual") or ""
-            ).strip().upper()
-            modalidad_actual = str(
-                fila_m.iloc[0].get("modalidad_actual") or ""
-            ).strip().upper()
+        m_mod = re.search(
+            r"modalidad\s+([A-ZÁÉÍÓÚÑ_ ]+?)\s*->",
+            txt,
+            flags=re.IGNORECASE
+        )
+        if m_mod:
+            modalidad_ant = _norm_tipo_v16102(m_mod.group(1))
 
-        activo = False
-        modalidad = modalidad_actual if modalidad_actual in ["URBANO", "GRANJA"] else ""
+        return estado_ant, modalidad_ant
 
-        if mov_doc.empty:
-            activo = estado_actual == "ACTIVO"
-            return activo, modalidad
-
-        primero = mov_doc.sort_values(
-            ["fecha_movimiento", "id_movimiento"]
-        ).iloc[0]
-
-        tipo_primero = primero.get("tipo_movimiento")
-        mod_primera = str(
-            primero.get("modalidad_hist")
-            or primero.get("modalidad")
-            or ""
-        ).strip().upper()
-
-        if mod_primera in ["URBANO", "GRANJA"]:
-            modalidad = mod_primera
-
-        if _tipo_activa_v1698(tipo_primero):
-            # Ingreso o reingreso: antes de ese evento estaba fuera.
-            activo = False
-        elif _tipo_permiso_v1698(tipo_primero) or _tipo_salida_v1698(tipo_primero):
-            # Para poder salir, suspenderse o irse con permiso, estaba activo.
-            activo = True
-        else:
-            activo = estado_actual == "ACTIVO"
-
-        return activo, modalidad
-
-    def _estado_persona_en_fecha_v1698(doc, mov_doc, fecha_objetivo):
+    def _estado_en_fecha_v16102(documento, fecha_objetivo):
         """
-        Reconstruye estado y modalidad al cierre del día indicado.
-        Los permisos mantienen activo=1 para efectos de canasta/cupo.
-        """
-        activo, modalidad = _estado_inicial_persona_v1698(doc, mov_doc)
+        Parte del estado ACTUAL (fuente autoritativa) y deshace, en reversa,
+        todos los movimientos posteriores a la fecha consultada.
 
-        if fecha_objetivo < FECHA_INICIO_APP_V1698:
+        Esto conserva correctamente a quienes permanecen en el albergue y no
+        generan permisos ni novedades: siguen contando como activos.
+        """
+        fila = base_actual[
+            base_actual["documento"] == str(documento).strip()
+        ]
+        if fila.empty:
             return False, ""
 
-        eventos = mov_doc[
-            mov_doc["fecha_movimiento"].dt.date <= fecha_objetivo
+        r = fila.iloc[0]
+        activo = str(r.get("estado_actual") or "").strip().upper() == "ACTIVO"
+        modalidad = str(r.get("modalidad_actual") or "").strip().upper()
+
+        if fecha_objetivo > hoy:
+            return False, ""
+
+        if movimientos.empty:
+            return activo, modalidad
+
+        mov_doc = movimientos[
+            (movimientos["documento"] == str(documento).strip())
+            & (movimientos["fecha_movimiento"].dt.date > fecha_objetivo)
         ].sort_values(
-            ["fecha_movimiento", "id_movimiento"]
+            ["fecha_movimiento", "id_movimiento"],
+            ascending=[False, False]
         )
 
-        for _, ev in eventos.iterrows():
-            tipo = ev.get("tipo_movimiento")
-            mod = str(
-                ev.get("modalidad_hist")
-                or ev.get("modalidad")
-                or ""
-            ).strip().upper()
+        for _, ev in mov_doc.iterrows():
+            tipo = _norm_tipo_v16102(ev.get("tipo_movimiento"))
+            mod = str(ev.get("modalidad") or "").strip().upper()
+            obs = ev.get("observacion")
 
-            if mod in ["URBANO", "GRANJA"]:
-                modalidad = mod
-
-            if _tipo_activa_v1698(tipo):
-                activo = True
-            elif _tipo_permiso_v1698(tipo):
-                # Permiso cuenta como activo para garantizar cupo/canasta.
-                activo = True
-            elif _tipo_salida_v1698(tipo):
+            # Deshacer un ingreso/reingreso:
+            # antes de ese evento la persona estaba fuera.
+            if tipo in {"INGRESO", "REINGRESO"}:
                 activo = False
-            else:
-                # Otros movimientos no alteran por sí solos la presencia.
-                pass
+
+            # Deshacer una salida/suspensión/expulsión/egreso:
+            # antes del evento estaba activa y en la modalidad registrada.
+            elif tipo in {
+                "SALIDA VOLUNTARIA",
+                "SUSPENSION",
+                "EXPULSION",
+                "EGRESO"
+            }:
+                activo = True
+                if mod in {"URBANO", "GRANJA"}:
+                    modalidad = mod
+
+            # Permisos NO sacan a la persona del conteo.
+            elif tipo in {
+                "SALIDA PERMISO",
+                "SALIDA DE PERMISO",
+                "REGRESO PERMISO",
+                "REGRESO DE PERMISO"
+            }:
+                activo = True
+                if mod in {"URBANO", "GRANJA"}:
+                    modalidad = mod
+
+            # Cambios manuales: restaurar estado/modalidad anterior si está
+            # registrado en la observación.
+            elif tipo == "CAMBIO ESTADO MANUAL":
+                est_ant, mod_ant = _parse_cambio_manual_v16102(obs)
+                if est_ant:
+                    activo = est_ant == "ACTIVO"
+                if mod_ant in {"URBANO", "GRANJA"}:
+                    modalidad = mod_ant
+
+            # Carga de activos con cambio de modalidad:
+            # si la observación contiene "X -> Y", restaurar X.
+            elif tipo == "CAMBIO MODALIDAD CARGA":
+                _, mod_ant = _parse_cambio_manual_v16102(obs)
+                if mod_ant in {"URBANO", "GRANJA"}:
+                    modalidad = mod_ant
+
+        # Antes del inicio real de la app no se certifica asistencia.
+        if fecha_objetivo < fecha_inicio_app:
+            return False, ""
 
         return activo, modalidad
 
-    # ========================================================
-    # TAB 1 · ASISTENCIA POR DÍA
-    # ========================================================
-    with tab_dia:
-        fecha_asistencia = st.date_input(
-            "Fecha a consultar",
-            value=ahora_colombia().date(),
-            key="v1691_fecha_asistencia"
-        )
-
-        mov_asistencia = _cargar_movimientos_hasta_v1691(
-            fecha_asistencia
-        )
-
-        diario = pd.DataFrame()
-
-        # Universo real: personas del maestro + personas con movimientos.
-        docs_universo = set()
-        if not maestro_asistencia.empty:
-            docs_universo.update(
-                maestro_asistencia["documento"].dropna().astype(str).str.strip().tolist()
-            )
-        if not mov_asistencia.empty:
-            docs_universo.update(
-                mov_asistencia["documento"].dropna().astype(str).str.strip().tolist()
-            )
-
-        filas_dia = []
-        for doc in sorted(docs_universo):
-            if not doc:
-                continue
-
-            if mov_asistencia.empty:
-                mov_doc = pd.DataFrame()
-            else:
-                mov_doc = mov_asistencia[
-                    mov_asistencia["documento"] == doc
-                ].copy()
-
-            activo_dia, modalidad_dia = _estado_persona_en_fecha_v1698(
+    def _construir_dia_v16102(fecha_objetivo):
+        filas = []
+        for _, p in base_actual.iterrows():
+            doc = str(p["documento"]).strip()
+            activo, modalidad = _estado_en_fecha_v16102(
                 doc,
-                mov_doc,
-                fecha_asistencia
+                fecha_objetivo
             )
-
-            if not activo_dia or modalidad_dia not in ["URBANO", "GRANJA"]:
-                continue
-
-            doc_norm = _normalizar_documento_v1693(doc)
-            nombre = ""
-            if not maestro_asistencia.empty:
-                fm = maestro_asistencia[
-                    maestro_asistencia["documento_norm"] == doc_norm
-                ]
-                if not fm.empty:
-                    nombre = str(
-                        fm.iloc[0].get("nombre_completo") or ""
-                    ).strip()
-
-            ultimo_tipo = ""
-            observacion = ""
-            if not mov_doc.empty:
-                hasta = mov_doc[
-                    mov_doc["fecha_movimiento"].dt.date <= fecha_asistencia
-                ].sort_values(
-                    ["fecha_movimiento", "id_movimiento"]
-                )
-                if not hasta.empty:
-                    ult = hasta.iloc[-1]
-                    ultimo_tipo = str(
-                        ult.get("tipo_norm") or ""
-                    ).strip()
-                    observacion = str(
-                        ult.get("observacion") or ""
-                    ).strip()
-
-            filas_dia.append({
-                "documento": doc,
-                "nombre_completo": nombre or f"CC {doc}",
-                "modalidad": modalidad_dia,
-                "tipo_norm": ultimo_tipo or "ACTIVO AL INICIO DE LA APP",
-                "observacion": observacion,
-            })
-
-        diario = pd.DataFrame(filas_dia)
-
-        if diario.empty:
-            st.info(
-                "No se encontraron personas activas reconstruidas para esa fecha."
-            )
-        else:
-            urbano = diario[diario["modalidad"] == "URBANO"].copy()
-            granja = diario[diario["modalidad"] == "GRANJA"].copy()
-
-            c1, c2, c3 = st.columns(3)
-            c1.metric("URBANO", len(urbano))
-            c2.metric("GRANJA", len(granja))
-            c3.metric("TOTAL", len(diario))
-
-            def _vista_dia_v1691(df):
-                if df.empty:
-                    return pd.DataFrame(
-                        columns=[
-                            "Documento",
-                            "Nombre completo",
-                            "Último movimiento",
-                            "Observación"
-                        ]
-                    )
-
-                return (
-                    df[
-                        [
-                            "documento",
-                            "nombre_completo",
-                            "tipo_norm",
-                            "observacion"
-                        ]
-                    ]
-                    .rename(columns={
-                        "documento": "Documento",
-                        "nombre_completo": "Nombre completo",
-                        "tipo_norm": "Último movimiento",
-                        "observacion": "Observación"
-                    })
-                    .sort_values("Nombre completo")
-                )
-
-            st.markdown("##### 🏢 URBANO")
-            st.dataframe(
-                _vista_dia_v1691(urbano),
-                use_container_width=True,
-                hide_index=True
-            )
-
-            st.markdown("##### 🌱 GRANJA")
-            st.dataframe(
-                _vista_dia_v1691(granja),
-                use_container_width=True,
-                hide_index=True
-            )
-
-            export_dia = diario[
-                [
-                    "documento",
-                    "nombre_completo",
-                    "modalidad",
-                    "tipo_norm",
-                    "observacion"
-                ]
-            ].copy()
-            export_dia.insert(
-                0,
-                "Fecha",
-                fecha_asistencia.strftime("%d/%m/%Y")
-            )
-            export_dia = export_dia.rename(columns={
-                "documento": "Documento",
-                "nombre_completo": "Nombre completo",
-                "modalidad": "Modalidad",
-                "tipo_norm": "Último movimiento",
-                "observacion": "Observación"
-            }).sort_values(
-                ["Modalidad", "Nombre completo"]
-            )
-
-            e1, e2 = st.columns(2)
-
-            e1.download_button(
-                "⬇️ Exportar día CSV",
-                export_dia.to_csv(
-                    index=False
-                ).encode("utf-8-sig"),
-                file_name=(
-                    "asistencia_diaria_"
-                    + fecha_asistencia.strftime("%Y_%m_%d")
-                    + ".csv"
-                ),
-                mime="text/csv",
-                use_container_width=True,
-                key="v1691_export_dia_csv"
-            )
-
-            try:
-                buffer_dia = BytesIO()
-                with pd.ExcelWriter(
-                    buffer_dia,
-                    engine="openpyxl"
-                ) as writer:
-                    export_dia.to_excel(
-                        writer,
-                        sheet_name="ASISTENCIA",
-                        index=False
-                    )
-                    _vista_dia_v1691(urbano).to_excel(
-                        writer,
-                        sheet_name="URBANO",
-                        index=False
-                    )
-                    _vista_dia_v1691(granja).to_excel(
-                        writer,
-                        sheet_name="GRANJA",
-                        index=False
-                    )
-
-                e2.download_button(
-                    "📗 Exportar día Excel",
-                    data=buffer_dia.getvalue(),
-                    file_name=(
-                        "asistencia_diaria_"
-                        + fecha_asistencia.strftime("%Y_%m_%d")
-                        + ".xlsx"
-                    ),
-                    mime=(
-                        "application/vnd.openxmlformats-officedocument."
-                        "spreadsheetml.sheet"
-                    ),
-                    use_container_width=True,
-                    key="v1691_export_dia_xlsx"
-                )
-            except Exception as e:
-                e2.warning(f"No fue posible generar Excel: {e}")
+            if activo and modalidad in {"URBANO", "GRANJA"}:
+                filas.append({
+                    "Documento": doc,
+                    "Nombre completo": p["nombre_completo"],
+                    "Modalidad": modalidad,
+                    "Activo": 1
+                })
+        return pd.DataFrame(filas)
 
     # ========================================================
-    # TAB 2 · CONSOLIDADO MENSUAL
+    # ASISTENCIA POR DÍA
     # ========================================================
-    with tab_mes:
-        st.markdown("### 📆 Consolidado mensual")
+    if vista_asistencia == "📅 Asistencia por día":
+        fecha = st.date_input(
+            "Fecha a consultar",
+            value=hoy,
+            min_value=fecha_inicio_app,
+            max_value=hoy,
+            key="v16102_fecha_dia"
+        )
+
+        with st.spinner("Reconstruyendo activos de la fecha..."):
+            dia_df = _construir_dia_v16102(fecha)
+
+        if dia_df.empty:
+            st.info("No se reconstruyeron personas activas para esa fecha.")
+            return
+
+        urbano = dia_df[dia_df["Modalidad"] == "URBANO"].copy()
+        granja = dia_df[dia_df["Modalidad"] == "GRANJA"].copy()
+
+        c1, c2, c3 = st.columns(3)
+        c1.metric("🏢 Urbano", len(urbano))
+        c2.metric("🌱 Granja", len(granja))
+        c3.metric("👥 Total activos", len(dia_df))
+
+        st.markdown("##### 🏢 URBANO")
+        st.dataframe(
+            urbano[["Documento", "Nombre completo"]],
+            use_container_width=True,
+            hide_index=True
+        )
+
+        st.markdown("##### 🌱 GRANJA")
+        st.dataframe(
+            granja[["Documento", "Nombre completo"]],
+            use_container_width=True,
+            hide_index=True
+        )
+
+        b1, b2 = st.columns(2)
+        b1.download_button(
+            "⬇️ Exportar día CSV",
+            dia_df.to_csv(index=False).encode("utf-8-sig"),
+            file_name=f"activos_{fecha.strftime('%Y_%m_%d')}.csv",
+            mime="text/csv",
+            use_container_width=True
+        )
+
+        buffer = BytesIO()
+        with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
+            urbano.to_excel(writer, sheet_name="URBANO", index=False)
+            granja.to_excel(writer, sheet_name="GRANJA", index=False)
+
+        b2.download_button(
+            "📗 Exportar día Excel",
+            data=buffer.getvalue(),
+            file_name=f"activos_{fecha.strftime('%Y_%m_%d')}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=True
+        )
+
+    # ========================================================
+    # CONSOLIDADO MENSUAL
+    # ========================================================
+    if vista_asistencia == "📆 Consolidado mensual":
+        st.markdown("### 📆 Consolidado mensual de activos")
         st.caption(
-            "**1 = activo para efectos de atención** · **0 = no activo**. "
-            "Los permisos se contabilizan como 1 porque se mantiene la garantía "
-            "de cupo y de la canasta durante el permiso. "
-            f"Reconstrucción operativa desde el inicio de uso de la app: "
-            f"**{FECHA_INICIO_APP_V1698.strftime('%d/%m/%Y')}**."
+            "Cada día vale 1 si la persona estaba ACTIVA en esa modalidad. "
+            "Los permisos también cuentan como 1 porque se garantiza cupo y canasta. "
+            "Los días futuros no se contabilizan."
         )
 
         mes_base = st.date_input(
             "Mes a consultar",
-            value=ahora_colombia().date().replace(day=1),
-            key="v1691_mes_asistencia"
+            value=hoy.replace(day=1),
+            min_value=fecha_inicio_app.replace(day=1),
+            max_value=hoy,
+            key="v16102_mes"
         )
-        primer_dia = mes_base.replace(day=1)
 
-        if primer_dia.month == 12:
-            siguiente_mes = primer_dia.replace(
-                year=primer_dia.year + 1,
+        primer_dia_mes = mes_base.replace(day=1)
+        if primer_dia_mes.month == 12:
+            sig_mes = primer_dia_mes.replace(
+                year=primer_dia_mes.year + 1,
                 month=1
             )
         else:
-            siguiente_mes = primer_dia.replace(
-                month=primer_dia.month + 1
+            sig_mes = primer_dia_mes.replace(
+                month=primer_dia_mes.month + 1
             )
 
-        ultimo_dia = siguiente_mes - timedelta(days=1)
+        ultimo_dia_mes = sig_mes - timedelta(days=1)
+        inicio_calculo = max(primer_dia_mes, fecha_inicio_app)
+        fin_calculo = min(ultimo_dia_mes, hoy)
 
-        mov_mes = _cargar_movimientos_hasta_v1691(
-            ultimo_dia
+        generar = st.button(
+            "▶️ Generar consolidado mensual",
+            type="primary",
+            use_container_width=True,
+            key=f"v16102_generar_{primer_dia_mes.strftime('%Y_%m')}"
         )
 
-        if mov_mes.empty:
+        cache_key = f"v16102_resultado_{primer_dia_mes.strftime('%Y_%m')}"
+
+        if generar:
+            with st.spinner("Calculando activos por día..."):
+                dias = pd.date_range(
+                    inicio_calculo,
+                    fin_calculo,
+                    freq="D"
+                )
+
+                filas_u = []
+                filas_g = []
+
+                for _, p in base_actual.iterrows():
+                    doc = str(p["documento"]).strip()
+                    nombre = p["nombre_completo"]
+
+                    fila_u = {
+                        "Documento": doc,
+                        "Nombre completo": nombre
+                    }
+                    fila_g = {
+                        "Documento": doc,
+                        "Nombre completo": nombre
+                    }
+
+                    total_u = 0
+                    total_g = 0
+                    tuvo_u = False
+                    tuvo_g = False
+
+                    for d in dias:
+                        activo, modalidad = _estado_en_fecha_v16102(
+                            doc,
+                            d.date()
+                        )
+
+                        vu = int(activo and modalidad == "URBANO")
+                        vg = int(activo and modalidad == "GRANJA")
+
+                        fila_u[str(d.day)] = vu
+                        fila_g[str(d.day)] = vg
+
+                        total_u += vu
+                        total_g += vg
+                        tuvo_u = tuvo_u or bool(vu)
+                        tuvo_g = tuvo_g or bool(vg)
+
+                    fila_u["TOTAL ATENCIONES"] = total_u
+                    fila_g["TOTAL ATENCIONES"] = total_g
+
+                    orden = (
+                        ["Documento", "Nombre completo", "TOTAL ATENCIONES"]
+                        + [str(d.day) for d in dias]
+                    )
+
+                    if tuvo_u:
+                        filas_u.append({
+                            c: fila_u.get(c, 0 if c.isdigit() else "")
+                            for c in orden
+                        })
+
+                    if tuvo_g:
+                        filas_g.append({
+                            c: fila_g.get(c, 0 if c.isdigit() else "")
+                            for c in orden
+                        })
+
+                def _cerrar_v16102(filas, dias):
+                    df = pd.DataFrame(filas)
+                    if df.empty:
+                        return df
+
+                    total = {
+                        "Documento": "",
+                        "Nombre completo": "TOTAL ACTIVOS / ATENCIONES DÍA",
+                        "TOTAL ATENCIONES": int(
+                            pd.to_numeric(
+                                df["TOTAL ATENCIONES"],
+                                errors="coerce"
+                            ).fillna(0).sum()
+                        )
+                    }
+
+                    for d in dias:
+                        c = str(d.day)
+                        total[c] = int(
+                            pd.to_numeric(
+                                df[c],
+                                errors="coerce"
+                            ).fillna(0).sum()
+                        )
+
+                    orden = (
+                        ["Documento", "Nombre completo", "TOTAL ATENCIONES"]
+                        + [str(d.day) for d in dias]
+                    )
+                    total = {
+                        c: total.get(c, 0 if c.isdigit() else "")
+                        for c in orden
+                    }
+
+                    return pd.concat(
+                        [df, pd.DataFrame([total])],
+                        ignore_index=True
+                    )
+
+                matriz_u = _cerrar_v16102(filas_u, dias)
+                matriz_g = _cerrar_v16102(filas_g, dias)
+
+                st.session_state[cache_key] = {
+                    "urbano": matriz_u,
+                    "granja": matriz_g,
+                    "inicio": inicio_calculo,
+                    "fin": fin_calculo
+                }
+
+        resultado = st.session_state.get(cache_key)
+
+        if not resultado:
             st.info(
-                "No hay movimientos suficientes para construir el consolidado."
+                "Pulse «Generar consolidado mensual». "
+                "El cálculo parte de los ACTIVOS actuales y reconstruye hacia atrás."
             )
             return
 
-        dias_mes = pd.date_range(
-            primer_dia,
-            ultimo_dia,
-            freq="D"
+        matriz_u = resultado["urbano"]
+        matriz_g = resultado["granja"]
+
+        st.success(
+            f"Periodo reconstruido: "
+            f"{resultado['inicio'].strftime('%d/%m/%Y')} a "
+            f"{resultado['fin'].strftime('%d/%m/%Y')}."
         )
 
-        maestro_map = {}
-        if not maestro_asistencia.empty:
-            maestro_map = dict(
-                zip(
-                    maestro_asistencia["documento_norm"],
-                    maestro_asistencia["nombre_completo"]
-                )
-            )
+        tu, tg = st.tabs(["🏢 URBANO", "🌱 GRANJA"])
 
-        def _matriz_modalidad_v1691(modalidad_objetivo):
-            filas = []
-
-            # Universo real: incluye quienes ya estaban activos al comenzar
-            # la app, aunque todavía no hubieran generado un movimiento.
-            docs_universo = set()
-            if not maestro_asistencia.empty:
-                docs_universo.update(
-                    maestro_asistencia[
-                        "documento"
-                    ].dropna().astype(str).str.strip().tolist()
-                )
-            if not mov_mes.empty:
-                docs_universo.update(
-                    mov_mes[
-                        "documento"
-                    ].dropna().astype(str).str.strip().tolist()
-                )
-
-            for doc in sorted(docs_universo):
-                if not doc:
-                    continue
-
-                mov_doc = (
-                    mov_mes[mov_mes["documento"] == doc].copy()
-                    if not mov_mes.empty
-                    else pd.DataFrame()
-                )
-
-                doc_norm = _normalizar_documento_v1693(doc)
-                nombre_encontrado = maestro_map.get(doc_norm, "")
-                if not nombre_encontrado:
-                    nombre_encontrado = f"CC {doc}"
-
-                fila = {
-                    "Documento": doc,
-                    "Nombre completo": nombre_encontrado
-                }
-
-                relacionado = False
-                total = 0
-
-                for dia in dias_mes:
-                    fecha_dia = dia.date()
-
-                    # Antes de que empezara a operar la app no se imputa atención.
-                    if fecha_dia < FECHA_INICIO_APP_V1698:
-                        valor = 0
-                    else:
-                        activo, modalidad_dia = _estado_persona_en_fecha_v1698(
-                            doc,
-                            mov_doc,
-                            fecha_dia
-                        )
-
-                        if modalidad_dia == modalidad_objetivo:
-                            relacionado = True
-                            valor = 1 if activo else 0
-                        else:
-                            valor = 0
-
-                    fila[str(dia.day)] = int(valor)
-                    total += int(valor)
-
-                fila["TOTAL ATENCIONES"] = int(total)
-
-                if relacionado:
-                    orden_columnas = (
-                        ["Documento", "Nombre completo", "TOTAL ATENCIONES"]
-                        + [str(d.day) for d in dias_mes]
-                    )
-                    fila = {
-                        c: fila.get(c, 0 if c.isdigit() else "")
-                        for c in orden_columnas
-                    }
-                    filas.append(fila)
-
-            matriz = pd.DataFrame(filas)
-
-            if matriz.empty:
-                return matriz
-
-            fila_total = {
-                "Documento": "",
-                "Nombre completo": "TOTAL ATENCIONES DÍA",
-                "TOTAL ATENCIONES": int(
-                    pd.to_numeric(
-                        matriz["TOTAL ATENCIONES"],
-                        errors="coerce"
-                    ).fillna(0).sum()
-                )
-            }
-
-            for dia in dias_mes:
-                col = str(dia.day)
-                fila_total[col] = int(
-                    pd.to_numeric(
-                        matriz[col],
-                        errors="coerce"
-                    ).fillna(0).sum()
-                )
-
-            orden_total = (
-                ["Documento", "Nombre completo", "TOTAL ATENCIONES"]
-                + [str(d.day) for d in dias_mes]
-            )
-            fila_total = {
-                c: fila_total.get(c, 0 if c.isdigit() else "")
-                for c in orden_total
-            }
-
-            return pd.concat(
-                [matriz, pd.DataFrame([fila_total])],
-                ignore_index=True
-            )
-
-        matriz_urbano = _matriz_modalidad_v1691("URBANO")
-        matriz_granja = _matriz_modalidad_v1691("GRANJA")
-
-        t_u, t_g = st.tabs([
-            "🏢 URBANO",
-            "🌱 GRANJA"
-        ])
-
-        with t_u:
-            if matriz_urbano.empty:
-                st.info("Sin registros reconstruidos para URBANO.")
+        with tu:
+            if matriz_u.empty:
+                st.info("Sin activos reconstruidos para Urbano.")
             else:
                 st.dataframe(
-                    matriz_urbano,
+                    matriz_u,
                     use_container_width=True,
                     hide_index=True
                 )
                 st.metric(
                     "TOTAL ATENCIONES URBANO",
-                    int(
-                        matriz_urbano.iloc[-1]["TOTAL ATENCIONES"]
-                    )
+                    int(matriz_u.iloc[-1]["TOTAL ATENCIONES"])
                 )
 
-        with t_g:
-            if matriz_granja.empty:
-                st.info("Sin registros reconstruidos para GRANJA.")
+        with tg:
+            if matriz_g.empty:
+                st.info("Sin activos reconstruidos para Granja.")
             else:
                 st.dataframe(
-                    matriz_granja,
+                    matriz_g,
                     use_container_width=True,
                     hide_index=True
                 )
                 st.metric(
                     "TOTAL ATENCIONES GRANJA",
-                    int(
-                        matriz_granja.iloc[-1]["TOTAL ATENCIONES"]
-                    )
+                    int(matriz_g.iloc[-1]["TOTAL ATENCIONES"])
                 )
 
-        if not matriz_urbano.empty or not matriz_granja.empty:
-            partes = []
+        partes = []
+        if not matriz_u.empty:
+            t = matriz_u.copy()
+            t.insert(0, "Modalidad", "URBANO")
+            partes.append(t)
+        if not matriz_g.empty:
+            t = matriz_g.copy()
+            t.insert(0, "Modalidad", "GRANJA")
+            partes.append(t)
 
-            if not matriz_urbano.empty:
-                tmp = matriz_urbano.copy()
-                tmp.insert(0, "Modalidad", "URBANO")
-                partes.append(tmp)
+        if partes:
+            consolidado = pd.concat(partes, ignore_index=True)
 
-            if not matriz_granja.empty:
-                tmp = matriz_granja.copy()
-                tmp.insert(0, "Modalidad", "GRANJA")
-                partes.append(tmp)
-
-            consolidado = pd.concat(
-                partes,
-                ignore_index=True
-            )
-
-            st.markdown("#### 📥 Exportar consolidado")
-            x1, x2 = st.columns(2)
-
-            x1.download_button(
+            ex1, ex2 = st.columns(2)
+            ex1.download_button(
                 "⬇️ Exportar consolidado CSV",
-                consolidado.to_csv(
-                    index=False
-                ).encode("utf-8-sig"),
+                consolidado.to_csv(index=False).encode("utf-8-sig"),
                 file_name=(
-                    "consolidado_asistencia_"
-                    + primer_dia.strftime("%Y_%m")
+                    "consolidado_activos_"
+                    + primer_dia_mes.strftime("%Y_%m")
                     + ".csv"
                 ),
                 mime="text/csv",
-                use_container_width=True,
-                key="v1691_export_mes_csv"
+                use_container_width=True
             )
 
-            try:
-                buffer_mes = BytesIO()
-
-                with pd.ExcelWriter(
-                    buffer_mes,
-                    engine="openpyxl"
-                ) as writer:
-                    if not matriz_urbano.empty:
-                        matriz_urbano.to_excel(
-                            writer,
-                            sheet_name="URBANO",
-                            index=False
-                        )
-
-                    if not matriz_granja.empty:
-                        matriz_granja.to_excel(
-                            writer,
-                            sheet_name="GRANJA",
-                            index=False
-                        )
-
-                    resumen = []
-
-                    if not matriz_urbano.empty:
-                        resumen.append({
-                            "Modalidad": "URBANO",
-                            "Total atenciones": int(
-                                matriz_urbano.iloc[-1][
-                                    "TOTAL ATENCIONES"
-                                ]
-                            )
-                        })
-
-                    if not matriz_granja.empty:
-                        resumen.append({
-                            "Modalidad": "GRANJA",
-                            "Total atenciones": int(
-                                matriz_granja.iloc[-1][
-                                    "TOTAL ATENCIONES"
-                                ]
-                            )
-                        })
-
-                    pd.DataFrame(resumen).to_excel(
-                        writer,
-                        sheet_name="RESUMEN",
-                        index=False
+            buffer = BytesIO()
+            with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
+                if not matriz_u.empty:
+                    matriz_u.to_excel(
+                        writer, sheet_name="URBANO", index=False
+                    )
+                if not matriz_g.empty:
+                    matriz_g.to_excel(
+                        writer, sheet_name="GRANJA", index=False
                     )
 
-                x2.download_button(
-                    "📗 Exportar consolidado Excel",
-                    data=buffer_mes.getvalue(),
-                    file_name=(
-                        "consolidado_asistencia_"
-                        + primer_dia.strftime("%Y_%m")
-                        + ".xlsx"
-                    ),
-                    mime=(
-                        "application/vnd.openxmlformats-officedocument."
-                        "spreadsheetml.sheet"
-                    ),
-                    use_container_width=True,
-                    key="v1691_export_mes_xlsx"
-                )
-            except Exception as e:
-                x2.warning(
-                    f"No fue posible generar el Excel: {e}"
-                )
+            ex2.download_button(
+                "📗 Exportar consolidado Excel",
+                data=buffer.getvalue(),
+                file_name=(
+                    "consolidado_activos_"
+                    + primer_dia_mes.strftime("%Y_%m")
+                    + ".xlsx"
+                ),
+                mime=(
+                    "application/vnd.openxmlformats-officedocument."
+                    "spreadsheetml.sheet"
+                ),
+                use_container_width=True
+            )
 
-        st.info(
-            "Los permisos no se descuentan de la asistencia consolidada. "
-            "Mientras la persona conserva el cupo, el día se contabiliza como 1."
-        )
-
-        st.caption(
-            "Nota metodológica: la asistencia histórica se reconstruye a partir "
-            "de los movimientos registrados en la plataforma. Los periodos previos "
-            "al inicio del registro operativo pueden estar incompletos."
-        )
-
-
-# V16.96 - Catálogo institucional de atenciones de Enfermería.
-# Se define de forma global antes del módulo porque lo usan tanto
-# el formulario de registro como el consolidado de reportes.
+# ============================================================
+# V16.104 - CATÁLOGO INSTITUCIONAL DE ATENCIONES DE ENFERMERÍA
+# Se define de forma global para que esté disponible tanto en
+# registro de atenciones como en reportes y consolidados.
+# ============================================================
 CATEGORIAS_ENFERMERIA_V1671 = [
     "ACOMPAÑAMIENTOS A CITAS MÉDICAS",
     "ATENCIÓN EN LA MÓVIL POR MEDICINA GENERAL",
@@ -21334,9 +22443,14 @@ CATEGORIAS_ENFERMERIA_V1671 = [
     "USUARIO CON ADHERENCIA EN EL TRATAMIENTO ITS",
     "USUARIO CON ADHERENCIA EN EL TRATAMIENTO VIH",
     "USUARIO HOSPITALIZADO",
+    "VALORACIÓN DE INGRESO",
 ]
 
 def modulo_enfermeria_v1673():
+    categorias_enfermeria_reporte = globals().get(
+        "CATEGORIAS_ENFERMERIA_V1671",
+        []
+    )
     rol = str(st.session_state.get("rol_actual", "")).strip().upper()
     if rol not in [
         "ENFERMERA",
@@ -21456,8 +22570,7 @@ def modulo_enfermeria_v1673():
         st.subheader("🧾 Valoración inicial de enfermería – ingreso al albergue")
         st.caption(
             "Se prioriza información indispensable para atención inmediata y "
-            "emergencias, evitando duplicarla en otros formularios. Cada ingreso o "
-            "reingreso puede generar una nueva valoración; las anteriores se conservan."
+            "emergencias, evitando duplicarla en otros formularios."
         )
 
         idx = st.selectbox(
@@ -21527,324 +22640,210 @@ def modulo_enfermeria_v1673():
                 st.rerun()
 
         if puede_registrar:
-            # ============================================================
-            # V16.94 - VALORACIÓN POR ETAPAS + BORRADOR PERSISTENTE
-            # El borrador se guarda en PostgreSQL/Supabase y sobrevive
-            # cierres del navegador, reruns, cambios de página y reconexiones.
-            # ============================================================
-            import json as _json_enf
+            with st.form(f"enf73_val_{doc}"):
+                st.markdown("#### 1. Datos de identificación")
+                c0, c01, c02 = st.columns([2, 1, 1])
+                c0.text_input("Nombre completo", value=p["nombre_completo"], disabled=True)
+                c01.text_input("Documento", value=doc, disabled=True)
+                c02.text_input("Edad", value=str(p.get("edad") or ""), disabled=True)
 
-            with engine.begin() as _conn_enf:
-                _conn_enf.execute(text("""
-                    CREATE TABLE IF NOT EXISTS enfermeria_valoraciones_borrador (
-                        documento_usuario TEXT PRIMARY KEY,
-                        nombre_usuario TEXT,
-                        modalidad TEXT,
-                        enfermera_documento TEXT,
-                        enfermera_nombre TEXT,
-                        datos JSONB NOT NULL DEFAULT '{}'::jsonb,
-                        seccion_actual INTEGER NOT NULL DEFAULT 1,
-                        creado_en TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                        actualizado_en TIMESTAMPTZ NOT NULL DEFAULT NOW()
-                    )
-                """))
-
-            _borrador_df = pd.read_sql(
-                text("""
-                    SELECT *
-                    FROM enfermeria_valoraciones_borrador
-                    WHERE TRIM(documento_usuario)=:doc
-                    LIMIT 1
-                """),
-                engine,
-                params={"doc": doc}
-            )
-
-            if _borrador_df.empty:
-                _draft = {}
-                _seccion_guardada = 1
-                _draft_owner = ""
-                _draft_updated = None
-            else:
-                _br = _borrador_df.iloc[0]
-                _raw = _br.get("datos")
-                if isinstance(_raw, dict):
-                    _draft = _raw
-                else:
-                    try:
-                        _draft = _json_enf.loads(_raw or "{}")
-                    except Exception:
-                        _draft = {}
-                _seccion_guardada = int(_br.get("seccion_actual") or 1)
-                _draft_owner = str(_br.get("enfermera_nombre") or "")
-                _draft_updated = pd.to_datetime(_br.get("actualizado_en"), errors="coerce", utc=True)
-
-            def _d(key, default=""):
-                val = _draft.get(key, default)
-                return default if val is None else val
-
-            def _idx(options, value, default=0):
-                try:
-                    return options.index(value)
-                except Exception:
-                    return default
-
-            def _guardar_borrador_enf(nuevos, seccion_siguiente):
-                datos = dict(_draft)
-                datos.update(nuevos)
-                with engine.begin() as _c:
-                    _c.execute(
-                        text("""
-                            INSERT INTO enfermeria_valoraciones_borrador (
-                                documento_usuario, nombre_usuario, modalidad,
-                                enfermera_documento, enfermera_nombre,
-                                datos, seccion_actual, creado_en, actualizado_en
-                            )
-                            VALUES (
-                                :doc, :nombre, :modalidad, :enf_doc, :enf_nombre,
-                                CAST(:datos AS jsonb), :seccion, NOW(), NOW()
-                            )
-                            ON CONFLICT (documento_usuario)
-                            DO UPDATE SET
-                                nombre_usuario=EXCLUDED.nombre_usuario,
-                                modalidad=EXCLUDED.modalidad,
-                                enfermera_documento=EXCLUDED.enfermera_documento,
-                                enfermera_nombre=EXCLUDED.enfermera_nombre,
-                                datos=EXCLUDED.datos,
-                                seccion_actual=EXCLUDED.seccion_actual,
-                                actualizado_en=NOW()
-                        """),
-                        {
-                            "doc": doc,
-                            "nombre": p["nombre_completo"],
-                            "modalidad": p["modalidad"],
-                            "enf_doc": enfermera_documento,
-                            "enf_nombre": enfermera_nombre,
-                            "datos": _json_enf.dumps(datos, ensure_ascii=False),
-                            "seccion": int(seccion_siguiente),
-                        }
-                    )
-                st.session_state[f"enf94_paso_{doc}"] = int(seccion_siguiente)
-                st.success("💾 Borrador guardado en la base de datos.")
-                st.rerun()
-
-            if _draft:
-                _fh_txt = ""
-                if pd.notna(_draft_updated):
-                    try:
-                        _fh_txt = _draft_updated.tz_convert("America/Bogota").strftime("%d/%m/%Y %I:%M %p")
-                    except Exception:
-                        _fh_txt = str(_draft_updated)
-                st.info(
-                    f"🟡 **BORRADOR RECUPERADO** · Último guardado: **{_fh_txt or 'registrado'}**"
-                    + (f" · Inició/actualizó: **{_draft_owner}**" if _draft_owner else "")
+                st.markdown("#### 2. Antecedentes y condiciones de salud")
+                enfermedad_conocida = st.selectbox(
+                    "¿Sufre alguna enfermedad o tiene diagnóstico conocido?",
+                    ["NO", "SÍ", "POR VERIFICAR"]
                 )
-            else:
-                st.caption("🟢 Aún no hay borrador. Al guardar una sección quedará protegido en la base de datos.")
+                enfermedad_detalle = st.text_area("¿Cuál enfermedad / diagnóstico?")
 
-            _paso = int(st.session_state.get(f"enf94_paso_{doc}", _seccion_guardada))
-            _paso = max(1, min(7, _paso))
-            _titulos = {
-                1: "Identificación",
-                2: "Antecedentes y condiciones de salud",
-                3: "Valoración física",
-                4: "Consumo de SPA",
-                5: "Restablecimiento de derechos",
-                6: "Salud integral",
-                7: "Conducta, revisión y finalización",
-            }
-            st.progress(_paso / 7)
-            st.markdown(f"### Sección {_paso} de 7 — {_titulos[_paso]}")
+                toma_medicamento = st.selectbox(
+                    "¿Toma actualmente algún medicamento?",
+                    ["NO", "SÍ", "POR VERIFICAR"]
+                )
+                medicamentos_detalle = st.text_area(
+                    "Medicamento(s): nombre, dosis y frecuencia si se conocen"
+                )
 
-            # V16.96 - La variable debe existir en todas las etapas.
-            # Solo toma True en la sección 7 al pulsar "Finalizar valoración".
-            guardar = False
-            confirmar = False
+                alergia_medicamento = st.selectbox(
+                    "¿Es alérgico a algún medicamento?",
+                    ["NO", "SÍ", "POR VERIFICAR"]
+                )
+                alergias_detalle = st.text_input("¿Cuál alergia?")
 
-            # ---------------- 1. IDENTIFICACIÓN ----------------
-            if _paso == 1:
-                with st.form(f"enf94_s1_{doc}"):
-                    c0, c01, c02 = st.columns([2, 1, 1])
-                    c0.text_input("Nombre completo", value=p["nombre_completo"], disabled=True)
-                    c01.text_input("Documento", value=doc, disabled=True)
-                    c02.text_input("Edad", value=str(p.get("edad") or ""), disabled=True)
-                    st.caption("Verifique que la persona seleccionada sea la correcta antes de continuar.")
-                    _siguiente = st.form_submit_button("💾 Guardar y continuar →", use_container_width=True, type="primary")
-                if _siguiente:
-                    _guardar_borrador_enf({}, 2)
+                c1, c2, c3 = st.columns(3)
+                sintomas_gripales = c1.selectbox(
+                    "¿Presenta actualmente síntomas gripales?",
+                    ["NO", "SÍ", "POR VERIFICAR"]
+                )
+                dificultad_respirar = c2.selectbox(
+                    "¿Presenta dificultad para respirar?",
+                    ["NO", "SÍ", "POR VERIFICAR"]
+                )
+                erupciones_cutaneas = c3.selectbox(
+                    "¿Presenta erupciones cutáneas?",
+                    ["NO", "SÍ", "POR VERIFICAR"]
+                )
 
-            # ---------------- 2. ANTECEDENTES ----------------
-            elif _paso == 2:
-                with st.form(f"enf94_s2_{doc}"):
-                    _opts3 = ["NO", "SÍ", "POR VERIFICAR"]
-                    enfermedad_conocida = st.selectbox("¿Sufre alguna enfermedad o tiene diagnóstico conocido?", _opts3, index=_idx(_opts3, _d("enfermedad_conocida", "NO")))
-                    enfermedad_detalle = st.text_area("¿Cuál enfermedad / diagnóstico?", value=str(_d("enfermedad_detalle", "")))
-                    toma_medicamento = st.selectbox("¿Toma actualmente algún medicamento?", _opts3, index=_idx(_opts3, _d("toma_medicamento", "NO")))
-                    medicamentos_detalle = st.text_area("Medicamento(s): nombre, dosis y frecuencia si se conocen", value=str(_d("medicamentos_detalle", "")))
-                    alergia_medicamento = st.selectbox("¿Es alérgico a algún medicamento?", _opts3, index=_idx(_opts3, _d("alergia_medicamento", "NO")))
-                    alergias_detalle = st.text_input("¿Cuál alergia?", value=str(_d("alergias_detalle", "")))
-                    c1,c2,c3=st.columns(3)
-                    sintomas_gripales=c1.selectbox("¿Presenta actualmente síntomas gripales?",_opts3,index=_idx(_opts3,_d("sintomas_gripales","NO")))
-                    dificultad_respirar=c2.selectbox("¿Presenta dificultad para respirar?",_opts3,index=_idx(_opts3,_d("dificultad_respirar","NO")))
-                    erupciones_cutaneas=c3.selectbox("¿Presenta erupciones cutáneas?",_opts3,index=_idx(_opts3,_d("erupciones_cutaneas","NO")))
-                    necesidad_salud=st.selectbox("¿Refiere necesidad inmediata relacionada con su salud?",_opts3,index=_idx(_opts3,_d("necesidad_salud","NO")))
-                    necesidad_salud_detalle=st.text_area("Detalle de la necesidad inmediata",value=str(_d("necesidad_salud_detalle","")))
-                    a,b=st.columns(2)
-                    _atras=a.form_submit_button("← Anterior",use_container_width=True)
-                    _sig=b.form_submit_button("💾 Guardar y continuar →",use_container_width=True,type="primary")
-                if _atras:
-                    st.session_state[f"enf94_paso_{doc}"]=1; st.rerun()
-                if _sig:
-                    _guardar_borrador_enf({
-                        "enfermedad_conocida":enfermedad_conocida,"enfermedad_detalle":enfermedad_detalle,
-                        "toma_medicamento":toma_medicamento,"medicamentos_detalle":medicamentos_detalle,
-                        "alergia_medicamento":alergia_medicamento,"alergias_detalle":alergias_detalle,
-                        "sintomas_gripales":sintomas_gripales,"dificultad_respirar":dificultad_respirar,
-                        "erupciones_cutaneas":erupciones_cutaneas,"necesidad_salud":necesidad_salud,
-                        "necesidad_salud_detalle":necesidad_salud_detalle},3)
+                necesidad_salud = st.selectbox(
+                    "¿Refiere necesidad inmediata relacionada con su salud?",
+                    ["NO", "SÍ", "POR VERIFICAR"]
+                )
+                necesidad_salud_detalle = st.text_area(
+                    "Detalle de la necesidad inmediata"
+                )
 
-            # ---------------- 3. VALORACIÓN FÍSICA ----------------
-            elif _paso == 3:
-                with st.form(f"enf94_s3_{doc}"):
-                    f1,f2=st.columns(2)
-                    peso=f1.number_input("Peso (kg)",0.0,300.0,value=float(_d("peso",0) or 0),step=0.1)
-                    talla=f2.number_input("Talla (m)",0.0,2.5,value=float(_d("talla",0) or 0),step=0.01)
-                    heridas_hallazgos=st.text_area("Heridas, lesiones, hematomas, quemaduras o signos visibles de infección",value=str(_d("heridas_hallazgos","")))
-                    d1,d2,d3=st.columns([1,2,1])
-                    _dol=["NO","SÍ"]
-                    presenta_dolor=d1.selectbox("¿Presenta dolor?",_dol,index=_idx(_dol,_d("presenta_dolor","NO")))
-                    dolor_localizacion=d2.text_input("Localización del dolor",value=str(_d("dolor_localizacion","")))
-                    dolor_intensidad=d3.number_input("Intensidad 0–10",0,10,value=int(_d("dolor_intensidad",0) or 0),step=1)
-                    m1,m2,m3=st.columns(3)
-                    _mov=["NORMAL","ALTERADA","REQUIERE APOYO","POR VERIFICAR"]
-                    movilidad_marcha=m1.selectbox("Movilidad y marcha",_mov,index=_idx(_mov,_d("movilidad_marcha","NORMAL")))
-                    _con=["ALERTA","SOMNOLIENTO","ALTERADO","OTRO"]
-                    estado_conciencia=m2.selectbox("Estado de conciencia",_con,index=_idx(_con,_d("estado_conciencia","ALERTA")))
-                    _ori=["ORIENTADO","DESORIENTADO","POR VERIFICAR"]
-                    orientacion=m3.selectbox("Orientación",_ori,index=_idx(_ori,_d("orientacion","ORIENTADO")))
-                    a,b=st.columns(2); _atras=a.form_submit_button("← Anterior",use_container_width=True); _sig=b.form_submit_button("💾 Guardar y continuar →",use_container_width=True,type="primary")
-                if _atras: st.session_state[f"enf94_paso_{doc}"]=2; st.rerun()
-                if _sig:
-                    _guardar_borrador_enf({"peso":peso,"talla":talla,"heridas_hallazgos":heridas_hallazgos,
-                        "presenta_dolor":presenta_dolor,"dolor_localizacion":dolor_localizacion,
-                        "dolor_intensidad":dolor_intensidad,"movilidad_marcha":movilidad_marcha,
-                        "estado_conciencia":estado_conciencia,"orientacion":orientacion},4)
+                st.markdown("#### 3. Valoración física")
+                f1, f2 = st.columns(2)
+                peso = f1.number_input(
+                    "Peso (kg)", min_value=0.0, max_value=300.0, step=0.1
+                )
+                talla = f2.number_input(
+                    "Talla (m)", min_value=0.0, max_value=2.5, step=0.01
+                )
 
-            # ---------------- 4. SPA ----------------
-            elif _paso == 4:
-                with st.form(f"enf94_s4_{doc}"):
-                    s1,s2=st.columns(2)
-                    _yn=["","Sí","No","No sabe / no responde"]
-                    consume_spa=s1.selectbox("¿Consume SPA actualmente?",_yn,index=_idx(_yn,_d("consume_spa","")))
-                    _sus=["","Bazuco","Marihuana","Cigarrillo / nicotina","Alcohol","Cocaína","Heroína","Inhalantes","Pepas / medicamentos","Tusi / mezclas","Otra","No aplica"]
-                    sustancia_principal=s2.selectbox("Sustancia principal",_sus,index=_idx(_sus,_d("sustancia_principal","")))
-                    _vias=["","FUMADA","INHALADA / ASPIRADA","ORAL / INGERIDA","INYECTADA / INTRAVENOSA","SUBLINGUAL","TRANSDÉRMICA","OTRA","NO SABE / POR VERIFICAR"]
-                    via_spa=st.selectbox("Vía de administración principal",_vias,index=_idx(_vias,_d("via_spa","")))
-                    otras_spa=st.text_input("Otras sustancias consumidas",value=str(_d("otras_spa","")))
-                    spa1,spa2=st.columns(2)
-                    tiempo_anos_consumo=spa1.number_input("Años aproximados de consumo",0.0,80.0,value=float(_d("tiempo_anos_consumo",0) or 0),step=0.5)
-                    _freq=["","Ocasional","1-2 días por semana","3-4 días por semana","5-6 días por semana","Diario","Varias veces al día","No aplica / no consume"]
-                    frecuencia_consumo=spa2.selectbox("Frecuencia de consumo",_freq,index=_idx(_freq,_d("frecuencia_consumo","")))
-                    tr1,tr2=st.columns(2)
-                    tratamiento_spa=tr1.selectbox("¿Ha recibido tratamiento por consumo de SPA?",_yn,index=_idx(_yn,_d("tratamiento_spa","")))
-                    _act=["","Sí","No","No aplica","No sabe / no responde"]
-                    tratamiento_spa_actual=tr2.selectbox("¿Actualmente está en tratamiento por consumo de SPA?",_act,index=_idx(_act,_d("tratamiento_spa_actual","")))
-                    a,b=st.columns(2); _atras=a.form_submit_button("← Anterior",use_container_width=True); _sig=b.form_submit_button("💾 Guardar y continuar →",use_container_width=True,type="primary")
-                if _atras: st.session_state[f"enf94_paso_{doc}"]=3; st.rerun()
-                if _sig:
-                    _guardar_borrador_enf({"consume_spa":consume_spa,"sustancia_principal":sustancia_principal,
-                        "via_spa":via_spa,"otras_spa":otras_spa,"tiempo_anos_consumo":tiempo_anos_consumo,
-                        "frecuencia_consumo":frecuencia_consumo,"tratamiento_spa":tratamiento_spa,
-                        "tratamiento_spa_actual":tratamiento_spa_actual},5)
+                heridas_hallazgos = st.text_area(
+                    "Heridas, lesiones, hematomas, quemaduras o signos visibles de infección"
+                )
 
-            # ---------------- 5. DERECHOS ----------------
-            elif _paso == 5:
-                with st.form(f"enf94_s5_{doc}"):
-                    r1,r2=st.columns(2)
-                    _reg=["","CONTRIBUTIVO","SUBSIDIADO","ESPECIAL / EXCEPCIÓN","NO ASEGURADO","NO SABE / POR VERIFICAR"]
-                    regimen_salud=r1.selectbox("Régimen de aseguramiento en salud",_reg,index=_idx(_reg,_d("regimen_salud","")))
-                    eps_nombre=r2.text_input("Nombre de la EPS / entidad aseguradora",value=str(_d("eps_nombre","")))
-                    municipio_eps=st.text_input("Municipio / ciudad donde tiene registrada la EPS",value=str(_d("municipio_eps","")))
-                    r3,r4=st.columns(2)
-                    _ced=["","SÍ","NO","EN TRÁMITE","POR VERIFICAR"]
-                    cedulado=r3.selectbox("¿Está cedulado?",_ced,index=_idx(_ced,_d("cedulado","")))
-                    _fis=["","SÍ","NO","NO APLICA","POR VERIFICAR"]
-                    documento_fisico=r4.selectbox("¿Tiene documento de identidad en físico?",_fis,index=_idx(_fis,_d("documento_fisico","")))
-                    a,b=st.columns(2); _atras=a.form_submit_button("← Anterior",use_container_width=True); _sig=b.form_submit_button("💾 Guardar y continuar →",use_container_width=True,type="primary")
-                if _atras: st.session_state[f"enf94_paso_{doc}"]=4; st.rerun()
-                if _sig:
-                    _guardar_borrador_enf({"regimen_salud":regimen_salud,"eps_nombre":eps_nombre,
-                        "municipio_eps":municipio_eps,"cedulado":cedulado,"documento_fisico":documento_fisico},6)
+                d1, d2, d3 = st.columns([1, 2, 1])
+                presenta_dolor = d1.selectbox("¿Presenta dolor?", ["NO", "SÍ"])
+                dolor_localizacion = d2.text_input("Localización del dolor")
+                dolor_intensidad = d3.number_input(
+                    "Intensidad 0–10", min_value=0, max_value=10, step=1
+                )
 
-            # ---------------- 6. SALUD INTEGRAL ----------------
-            elif _paso == 6:
-                with st.form(f"enf94_s6_{doc}"):
-                    estados_salud=["","NO REFIERE","SOSPECHA","DIAGNÓSTICO CONFIRMADO","EN TRATAMIENTO","TRATAMIENTO FINALIZADO","POR VERIFICAR"]
-                    i1,i2,i3=st.columns(3)
-                    tuberculosis=i1.selectbox("Tuberculosis (TB)",estados_salud,index=_idx(estados_salud,_d("tuberculosis","")))
-                    vih=i2.selectbox("VIH",estados_salud,index=_idx(estados_salud,_d("vih","")))
-                    its=i3.selectbox("ITS / Sífilis",estados_salud,index=_idx(estados_salud,_d("its","")))
-                    i4,i5=st.columns(2)
-                    hepatitis_b=i4.selectbox("Hepatitis B",estados_salud,index=_idx(estados_salud,_d("hepatitis_b","")))
-                    hepatitis_c=i5.selectbox("Hepatitis C",estados_salud,index=_idx(estados_salud,_d("hepatitis_c","")))
-                    otra_transmisible=st.text_input("Otra enfermedad transmisible",value=str(_d("otra_transmisible","")))
-                    mt1,mt2=st.columns(2)
-                    _med=["","NO","SÍ","POR VERIFICAR"]
-                    usa_medicacion=mt1.selectbox("¿Tiene medicación formulada actualmente?",_med,index=_idx(_med,_d("usa_medicacion","")))
-                    _adh=["","NO APLICA","ADECUADA","IRREGULAR","NO ADHERENTE","POR VERIFICAR"]
-                    adherencia_medicacion=mt2.selectbox("Adherencia a la medicación",_adh,index=_idx(_adh,_d("adherencia_medicacion","")))
-                    hospitalizacion_reciente=st.selectbox("Hospitalización reciente",_med,index=_idx(_med,_d("hospitalizacion_reciente","")))
-                    a,b=st.columns(2); _atras=a.form_submit_button("← Anterior",use_container_width=True); _sig=b.form_submit_button("💾 Guardar y continuar →",use_container_width=True,type="primary")
-                if _atras: st.session_state[f"enf94_paso_{doc}"]=5; st.rerun()
-                if _sig:
-                    _guardar_borrador_enf({"tuberculosis":tuberculosis,"vih":vih,"its":its,
-                        "hepatitis_b":hepatitis_b,"hepatitis_c":hepatitis_c,"otra_transmisible":otra_transmisible,
-                        "usa_medicacion":usa_medicacion,"adherencia_medicacion":adherencia_medicacion,
-                        "hospitalizacion_reciente":hospitalizacion_reciente},7)
+                m1, m2, m3 = st.columns(3)
+                movilidad_marcha = m1.selectbox(
+                    "Movilidad y marcha",
+                    ["NORMAL", "ALTERADA", "REQUIERE APOYO", "POR VERIFICAR"]
+                )
+                estado_conciencia = m2.selectbox(
+                    "Estado de conciencia",
+                    ["ALERTA", "SOMNOLIENTO", "ALTERADO", "OTRO"]
+                )
+                orientacion = m3.selectbox(
+                    "Orientación",
+                    ["ORIENTADO", "DESORIENTADO", "POR VERIFICAR"]
+                )
 
-            # ---------------- 7. CONDUCTA / FINALIZAR ----------------
-            elif _paso == 7:
-                # Recuperar todo lo ya guardado para que el INSERT final conserve
-                # exactamente las mismas columnas de la versión anterior.
-                enfermedad_conocida=_d("enfermedad_conocida","NO"); enfermedad_detalle=str(_d("enfermedad_detalle",""))
-                toma_medicamento=_d("toma_medicamento","NO"); medicamentos_detalle=str(_d("medicamentos_detalle",""))
-                alergia_medicamento=_d("alergia_medicamento","NO"); alergias_detalle=str(_d("alergias_detalle",""))
-                sintomas_gripales=_d("sintomas_gripales","NO"); dificultad_respirar=_d("dificultad_respirar","NO")
-                erupciones_cutaneas=_d("erupciones_cutaneas","NO"); necesidad_salud=_d("necesidad_salud","NO")
-                necesidad_salud_detalle=str(_d("necesidad_salud_detalle",""))
-                peso=float(_d("peso",0) or 0); talla=float(_d("talla",0) or 0)
-                heridas_hallazgos=str(_d("heridas_hallazgos","")); presenta_dolor=_d("presenta_dolor","NO")
-                dolor_localizacion=str(_d("dolor_localizacion","")); dolor_intensidad=int(_d("dolor_intensidad",0) or 0)
-                movilidad_marcha=_d("movilidad_marcha","NORMAL"); estado_conciencia=_d("estado_conciencia","ALERTA"); orientacion=_d("orientacion","ORIENTADO")
-                consume_spa=_d("consume_spa",""); sustancia_principal=_d("sustancia_principal",""); via_spa=_d("via_spa","")
-                otras_spa=str(_d("otras_spa","")); tiempo_anos_consumo=float(_d("tiempo_anos_consumo",0) or 0)
-                frecuencia_consumo=_d("frecuencia_consumo",""); tratamiento_spa=_d("tratamiento_spa",""); tratamiento_spa_actual=_d("tratamiento_spa_actual","")
-                regimen_salud=_d("regimen_salud",""); eps_nombre=str(_d("eps_nombre","")); municipio_eps=str(_d("municipio_eps",""))
-                cedulado=_d("cedulado",""); documento_fisico=_d("documento_fisico","")
-                tuberculosis=_d("tuberculosis",""); vih=_d("vih",""); its=_d("its",""); hepatitis_b=_d("hepatitis_b",""); hepatitis_c=_d("hepatitis_c","")
-                otra_transmisible=str(_d("otra_transmisible","")); usa_medicacion=_d("usa_medicacion",""); adherencia_medicacion=_d("adherencia_medicacion","")
-                hospitalizacion_reciente=_d("hospitalizacion_reciente","")
+                st.markdown("#### 4. Consumo de SPA")
+                s1, s2 = st.columns(2)
+                consume_spa = s1.selectbox(
+                    "¿Consume SPA actualmente?",
+                    ["", "Sí", "No", "No sabe / no responde"]
+                )
+                sustancia_principal = s2.selectbox(
+                    "Sustancia principal",
+                    ["", "Bazuco", "Marihuana", "Cigarrillo / nicotina",
+                     "Alcohol", "Cocaína", "Heroína", "Inhalantes",
+                     "Pepas / medicamentos", "Tusi / mezclas", "Otra", "No aplica"]
+                )
+                via_spa = st.selectbox(
+                    "Vía de administración principal",
+                    ["", "FUMADA", "INHALADA / ASPIRADA", "ORAL / INGERIDA",
+                     "INYECTADA / INTRAVENOSA", "SUBLINGUAL", "TRANSDÉRMICA",
+                     "OTRA", "NO SABE / POR VERIFICAR"]
+                )
+                otras_spa = st.text_input("Otras sustancias consumidas")
 
-                with st.form(f"enf94_s7_{doc}"):
-                    _rem=["NO","SÍ","PENDIENTE VALORACIÓN"]
-                    requiere_urgencias=st.selectbox("¿Requiere atención o remisión a urgencias?",_rem,index=_idx(_rem,_d("requiere_urgencias","NO")))
-                    motivo_remision=st.text_area("Motivo de la remisión",value=str(_d("motivo_remision","")))
-                    observaciones=st.text_area("Observaciones de enfermería",value=str(_d("observaciones","")))
-                    st.markdown("#### Revisión antes de finalizar")
-                    st.caption("Al finalizar se crea la valoración clínica definitiva y se conserva en la historia de Enfermería.")
-                    confirmar=st.checkbox(f"Confirmo que la valoración corresponde a {p['nombre_completo']} · CC {doc}")
-                    a,b=st.columns(2)
-                    _atras=a.form_submit_button("← Anterior",use_container_width=True)
-                    guardar=b.form_submit_button("✅ Finalizar valoración",use_container_width=True,type="primary")
-                if _atras:
-                    # Guardar también la sección final antes de volver.
-                    _guardar_borrador_enf({"requiere_urgencias":requiere_urgencias,
-                        "motivo_remision":motivo_remision,"observaciones":observaciones},6)
-                if guardar and confirmar:
-                    # Asegura que los últimos campos también queden en borrador
-                    # hasta que termine exitosamente la transacción definitiva.
-                    _draft.update({"requiere_urgencias":requiere_urgencias,
-                        "motivo_remision":motivo_remision,"observaciones":observaciones})
+                spa1, spa2 = st.columns(2)
+                tiempo_anos_consumo = spa1.number_input(
+                    "Años aproximados de consumo",
+                    min_value=0.0,
+                    max_value=80.0,
+                    value=0.0,
+                    step=0.5
+                )
+                frecuencia_consumo = spa2.selectbox(
+                    "Frecuencia de consumo",
+                    [
+                        "",
+                        "Ocasional",
+                        "1-2 días por semana",
+                        "3-4 días por semana",
+                        "5-6 días por semana",
+                        "Diario",
+                        "Varias veces al día",
+                        "No aplica / no consume"
+                    ]
+                )
+
+                tr1, tr2 = st.columns(2)
+                tratamiento_spa = tr1.selectbox(
+                    "¿Ha recibido tratamiento por consumo de SPA?",
+                    ["", "Sí", "No", "No sabe / no responde"]
+                )
+                tratamiento_spa_actual = tr2.selectbox(
+                    "¿Actualmente está en tratamiento por consumo de SPA?",
+                    ["", "Sí", "No", "No aplica", "No sabe / no responde"]
+                )
+
+                st.markdown("#### 5. Restablecimiento de derechos")
+                r1, r2 = st.columns(2)
+                regimen_salud = r1.selectbox(
+                    "Régimen de aseguramiento en salud",
+                    ["", "CONTRIBUTIVO", "SUBSIDIADO", "ESPECIAL / EXCEPCIÓN",
+                     "NO ASEGURADO", "NO SABE / POR VERIFICAR"]
+                )
+                eps_nombre = r2.text_input("Nombre de la EPS / entidad aseguradora")
+                municipio_eps = st.text_input(
+                    "Municipio / ciudad donde tiene registrada la EPS"
+                )
+                r3, r4 = st.columns(2)
+                cedulado = r3.selectbox(
+                    "¿Está cedulado?",
+                    ["", "SÍ", "NO", "EN TRÁMITE", "POR VERIFICAR"]
+                )
+                documento_fisico = r4.selectbox(
+                    "¿Tiene documento de identidad en físico?",
+                    ["", "SÍ", "NO", "NO APLICA", "POR VERIFICAR"]
+                )
+
+                st.markdown("#### 6. Salud integral")
+                st.caption("Enfermedades infectocontagiosas / transmisibles")
+                estados_salud = [
+                    "", "NO REFIERE", "SOSPECHA", "DIAGNÓSTICO CONFIRMADO",
+                    "EN TRATAMIENTO", "TRATAMIENTO FINALIZADO", "POR VERIFICAR"
+                ]
+                i1, i2, i3 = st.columns(3)
+                tuberculosis = i1.selectbox("Tuberculosis (TB)", estados_salud)
+                vih = i2.selectbox("VIH", estados_salud)
+                its = i3.selectbox("ITS / Sífilis", estados_salud)
+                i4, i5 = st.columns(2)
+                hepatitis_b = i4.selectbox("Hepatitis B", estados_salud)
+                hepatitis_c = i5.selectbox("Hepatitis C", estados_salud)
+                otra_transmisible = st.text_input("Otra enfermedad transmisible")
+
+                st.caption("Medicación y tratamiento")
+                mt1, mt2 = st.columns(2)
+                usa_medicacion = mt1.selectbox(
+                    "¿Tiene medicación formulada actualmente?",
+                    ["", "NO", "SÍ", "POR VERIFICAR"]
+                )
+                adherencia_medicacion = mt2.selectbox(
+                    "Adherencia a la medicación",
+                    ["", "NO APLICA", "ADECUADA", "IRREGULAR",
+                     "NO ADHERENTE", "POR VERIFICAR"]
+                )
+                hospitalizacion_reciente = st.selectbox(
+                    "Hospitalización reciente",
+                    ["", "NO", "SÍ", "POR VERIFICAR"]
+                )
+
+                st.markdown("#### 7. Conducta / remisión")
+                requiere_urgencias = st.selectbox(
+                    "¿Requiere atención o remisión a urgencias?",
+                    ["NO", "SÍ", "PENDIENTE VALORACIÓN"]
+                )
+                motivo_remision = st.text_area("Motivo de la remisión")
+                observaciones = st.text_area("Observaciones de enfermería")
+
+                confirmar = st.checkbox(
+                    f"Confirmo que la valoración corresponde a {p['nombre_completo']} · CC {doc}"
+                )
+                guardar = st.form_submit_button(
+                    "💾 Guardar valoración de enfermería",
+                    use_container_width=True,
+                    type="primary"
+                )
 
             # V16.91 - La foto permanece visible al FINAL del formulario.
             # Puede tomarse antes o después de guardar; es temporal y no se almacena.
@@ -22097,18 +23096,6 @@ def modulo_enfermeria_v1673():
                             }
                         )
 
-                        # V16.94 - La valoración definitiva quedó registrada:
-                        # retirar únicamente el borrador de esta persona.
-                        conn.execute(
-                            text("""
-                                DELETE FROM enfermeria_valoraciones_borrador
-                                WHERE TRIM(documento_usuario)=:doc
-                            """),
-                            {"doc": doc}
-                        )
-
-                    st.session_state.pop(f"enf94_paso_{doc}", None)
-
                     registrar_auditoria(
                         "VALORACION_INICIAL_ENFERMERIA",
                         documento=doc,
@@ -22348,13 +23335,7 @@ def modulo_enfermeria_v1673():
                 )
 
             if guardar_reg:
-                if str(tipo).strip().upper() == "VALORACIÓN DE INGRESO":
-                    st.error(
-                        "⛔ La valoración de ingreso/reingreso no se registra desde "
-                        "Atenciones. Use la pestaña «Valoración inicial» para que "
-                        "se guarde la valoración clínica completa."
-                    )
-                elif not detalle.strip():
+                if not detalle.strip():
                     st.error("Debe registrar el detalle.")
                 elif not confirmar_reg:
                     st.error("Debe confirmar la identidad de la persona.")
@@ -22412,16 +23393,10 @@ def modulo_enfermeria_v1673():
             )
 
     # ========================================================
-    # HISTORIA POR USUARIO - V16.100
-    # Valoraciones completas + PDF individual + historia completa
+    # HISTORIA POR USUARIO
     # ========================================================
     with tabs[2]:
         st.subheader("📚 Historia de Enfermería por usuario")
-        st.caption(
-            "Las valoraciones de ingreso son históricas: cada ingreso o reingreso puede "
-            "tener una nueva valoración sin reemplazar las anteriores."
-        )
-
         idx3 = st.selectbox(
             "Seleccione usuario",
             personas.index.tolist(),
@@ -22431,23 +23406,10 @@ def modulo_enfermeria_v1673():
         p3 = personas.loc[idx3]
         doc3 = str(p3["documento"]).strip()
 
-        # Todas las valoraciones iniciales del usuario. No se usa LIMIT 1:
-        # un mismo usuario puede reingresar y tener múltiples valoraciones.
-        vals_hist = pd.read_sql(
-            text("""
-                SELECT *
-                FROM enfermeria_valoraciones_iniciales
-                WHERE TRIM(CAST(documento_usuario AS TEXT))=:doc
-                ORDER BY fecha_hora DESC, id DESC
-            """),
-            engine,
-            params={"doc": doc3}
-        )
-
         hist = pd.read_sql(
             text("""
                 SELECT
-                    id, fecha_hora, tipo_atencion, cantidad, resultado, detalle,
+                    fecha_hora, tipo_atencion, cantidad, resultado, detalle,
                     enfermera_nombre, enfermera_documento
                 FROM enfermeria_registros
                 WHERE TRIM(CAST(documento_usuario AS TEXT))=:doc
@@ -22457,327 +23419,28 @@ def modulo_enfermeria_v1673():
             params={"doc": doc3}
         )
 
-        def _enf_txt(v):
-            if v is None:
-                return ""
-            try:
-                if pd.isna(v):
-                    return ""
-            except Exception:
-                pass
-            if isinstance(v, float) and v.is_integer():
-                return str(int(v))
-            return str(v).strip()
-
-        etiquetas_val = {
-            "eps": "EPS",
-            "enfermedad_conocida": "Enfermedad o diagnóstico conocido",
-            "enfermedad_detalle": "Detalle enfermedad / diagnóstico",
-            "toma_medicamento": "Toma medicamentos",
-            "medicamentos": "Medicamentos",
-            "alergia_medicamento": "Alergia a medicamentos",
-            "alergias": "Alergias",
-            "sintomas_gripales": "Síntomas gripales",
-            "dificultad_respirar": "Dificultad para respirar",
-            "erupciones_cutaneas": "Erupciones cutáneas",
-            "necesidad_salud_inmediata": "Necesidad inmediata de salud",
-            "necesidad_salud_detalle": "Detalle necesidad inmediata",
-            "peso": "Peso (kg)", "talla": "Talla (m)",
-            "heridas_hallazgos": "Heridas / lesiones / hallazgos",
-            "presenta_dolor": "Presenta dolor",
-            "dolor_localizacion": "Localización del dolor",
-            "dolor_intensidad": "Intensidad del dolor (0-10)",
-            "movilidad_marcha": "Movilidad y marcha",
-            "estado_conciencia": "Estado de conciencia",
-            "orientacion": "Orientación",
-            "consume_spa_actualmente": "Consume SPA actualmente",
-            "sustancia_principal": "Sustancia principal",
-            "via_administracion_consumo": "Vía de administración",
-            "sustancias_secundarias": "Otras sustancias",
-            "tiempo_anos_consumo": "Años aproximados de consumo",
-            "frecuencia_consumo": "Frecuencia de consumo",
-            "tratamiento_spa": "Ha recibido tratamiento SPA",
-            "tratamiento_spa_actual": "Tratamiento SPA actual",
-            "regimen_salud": "Régimen de salud",
-            "eps_nombre": "EPS / entidad aseguradora",
-            "municipio_eps": "Municipio de EPS",
-            "cedulado": "Cedulado",
-            "documento_fisico": "Documento en físico",
-            "tuberculosis": "Tuberculosis (TB)", "vih": "VIH",
-            "its_sifilis": "ITS / Sífilis", "hepatitis_b": "Hepatitis B",
-            "hepatitis_c": "Hepatitis C",
-            "otra_infectocontagiosa": "Otra enfermedad transmisible",
-            "usa_medicacion": "Medicación formulada",
-            "adherencia_medicacion": "Adherencia a medicación",
-            "hospitalizacion_reciente": "Hospitalización reciente",
-            "requiere_remision_salud": "Requiere remisión / urgencias",
-            "motivo_remision": "Motivo de remisión",
-            "observaciones": "Observaciones de enfermería",
-        }
-
-        secciones_val = [
-            ("ANTECEDENTES Y CONDICIONES DE SALUD", [
-                "eps", "enfermedad_conocida", "enfermedad_detalle",
-                "toma_medicamento", "medicamentos", "alergia_medicamento",
-                "alergias", "sintomas_gripales", "dificultad_respirar",
-                "erupciones_cutaneas", "necesidad_salud_inmediata",
-                "necesidad_salud_detalle"]),
-            ("VALORACIÓN FÍSICA", [
-                "peso", "talla", "heridas_hallazgos", "presenta_dolor",
-                "dolor_localizacion", "dolor_intensidad", "movilidad_marcha",
-                "estado_conciencia", "orientacion"]),
-            ("CONSUMO DE SPA", [
-                "consume_spa_actualmente", "sustancia_principal",
-                "via_administracion_consumo", "sustancias_secundarias",
-                "tiempo_anos_consumo", "frecuencia_consumo",
-                "tratamiento_spa", "tratamiento_spa_actual"]),
-            ("RESTABLECIMIENTO DE DERECHOS / SALUD", [
-                "regimen_salud", "eps_nombre", "municipio_eps", "cedulado",
-                "documento_fisico", "tuberculosis", "vih", "its_sifilis",
-                "hepatitis_b", "hepatitis_c", "otra_infectocontagiosa",
-                "usa_medicacion", "adherencia_medicacion",
-                "hospitalizacion_reciente"]),
-            ("CONDUCTA / REMISIÓN", [
-                "requiere_remision_salud", "motivo_remision", "observaciones"]),
-        ]
-
-        def _fecha_enf(v):
-            fh = pd.to_datetime(v, errors="coerce", utc=True)
-            if pd.isna(fh):
-                return ""
-            return fh.tz_convert("America/Bogota").strftime("%d/%m/%Y %I:%M %p")
-
-        def _pdf_valoracion_enf(row, historia_completa=False, registros=None):
-            from reportlab.lib.enums import TA_CENTER
-            from reportlab.lib.styles import ParagraphStyle
-            from reportlab.lib.units import cm
-            buffer = BytesIO()
-            doc_pdf = SimpleDocTemplate(
-                buffer, pagesize=letter, rightMargin=1.5*cm, leftMargin=1.5*cm,
-                topMargin=1.4*cm, bottomMargin=1.4*cm
-            )
-            styles = getSampleStyleSheet()
-            titulo = ParagraphStyle(
-                "EnfTitulo", parent=styles["Heading1"], alignment=TA_CENTER,
-                fontSize=13, leading=16, spaceAfter=5
-            )
-            subt = ParagraphStyle(
-                "EnfSub", parent=styles["Heading2"], fontSize=10,
-                leading=12, spaceBefore=7, spaceAfter=4
-            )
-            normal = ParagraphStyle(
-                "EnfNormal", parent=styles["BodyText"], fontSize=8.5, leading=11
-            )
-            story = [
-                Paragraph("ASOCIACIÓN CIUDAD FUTURO", titulo),
-                Paragraph("OBSERVATORIO SOCIAL", titulo),
-                Paragraph(
-                    "HISTORIA DE ENFERMERÍA" if historia_completa
-                    else "VALORACIÓN DE INGRESO / REINGRESO", titulo
-                ),
-                Spacer(1, 6),
-            ]
-
-            def tabla_identificacion(r):
-                datos = [
-                    ["Usuario", _enf_txt(r.get("nombre_usuario")) or _enf_txt(p3.get("nombre_completo"))],
-                    ["Documento", doc3],
-                    ["Modalidad", _enf_txt(r.get("modalidad"))],
-                    ["Fecha y hora", _fecha_enf(r.get("fecha_hora"))],
-                    ["Profesional", _enf_txt(r.get("enfermera_nombre"))],
-                    ["CC profesional", _enf_txt(r.get("enfermera_documento"))],
-                ]
-                t = Table(
-                    [[Paragraph(f"<b>{a}</b>", normal), Paragraph(b, normal)] for a,b in datos],
-                    colWidths=[4.3*cm, 12.2*cm]
-                )
-                t.setStyle(TableStyle([
-                    ("GRID", (0,0), (-1,-1), 0.35, colors.grey),
-                    ("VALIGN", (0,0), (-1,-1), "TOP"),
-                    ("BACKGROUND", (0,0), (0,-1), colors.whitesmoke),
-                    ("LEFTPADDING", (0,0), (-1,-1), 5),
-                    ("RIGHTPADDING", (0,0), (-1,-1), 5),
-                    ("TOPPADDING", (0,0), (-1,-1), 4),
-                    ("BOTTOMPADDING", (0,0), (-1,-1), 4),
-                ]))
-                return t
-
-            def agregar_valoracion(r, numero=None):
-                if numero is not None:
-                    story.append(Paragraph(f"VALORACIÓN No. {numero} · {_fecha_enf(r.get('fecha_hora'))}", subt))
-                story.append(tabla_identificacion(r))
-                for nombre_sec, campos in secciones_val:
-                    filas = []
-                    for campo in campos:
-                        if campo in r.index:
-                            valor = _enf_txt(r.get(campo))
-                            if valor:
-                                filas.append([
-                                    Paragraph(f"<b>{etiquetas_val.get(campo, campo)}</b>", normal),
-                                    Paragraph(valor.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;"), normal)
-                                ])
-                    if filas:
-                        story.append(Paragraph(nombre_sec, subt))
-                        tb = Table(filas, colWidths=[6.0*cm, 10.5*cm], repeatRows=0)
-                        tb.setStyle(TableStyle([
-                            ("GRID", (0,0), (-1,-1), 0.3, colors.lightgrey),
-                            ("VALIGN", (0,0), (-1,-1), "TOP"),
-                            ("LEFTPADDING", (0,0), (-1,-1), 4),
-                            ("RIGHTPADDING", (0,0), (-1,-1), 4),
-                            ("TOPPADDING", (0,0), (-1,-1), 3),
-                            ("BOTTOMPADDING", (0,0), (-1,-1), 3),
-                        ]))
-                        story.append(tb)
-                story.append(Spacer(1, 8))
-
-            if historia_completa:
-                if vals_hist.empty:
-                    story.append(Paragraph("No existen valoraciones iniciales registradas.", normal))
-                else:
-                    for n, (_, r) in enumerate(vals_hist.sort_values("fecha_hora").iterrows(), 1):
-                        agregar_valoracion(r, n)
-                if registros is not None and not registros.empty:
-                    story.append(PageBreak())
-                    story.append(Paragraph("OTRAS ATENCIONES Y NOVEDADES", subt))
-                    filas = [["Fecha", "Atención / novedad", "Resultado", "Detalle", "Registró"]]
-                    for _, rr in registros.sort_values("fecha_hora").iterrows():
-                        _tipo_pdf = _enf_txt(rr.get("tipo_atencion"))
-                        _detalle_pdf = _enf_txt(rr.get("detalle"))
-                        if (
-                            _tipo_pdf.strip().upper() == "VALORACIÓN DE INGRESO"
-                            and _detalle_pdf.strip().upper() == "REINGRESO"
-                        ):
-                            _tipo_pdf = "REGISTRO OPERATIVO DE REINGRESO (HISTÓRICO)"
-                        filas.append([
-                            _fecha_enf(rr.get("fecha_hora")), _tipo_pdf,
-                            _enf_txt(rr.get("resultado")), _detalle_pdf,
-                            f"{_enf_txt(rr.get('enfermera_nombre'))} · CC {_enf_txt(rr.get('enfermera_documento'))}"
-                        ])
-                    tabla = Table(
-                        [[Paragraph(str(x), normal) for x in fila] for fila in filas],
-                        colWidths=[3.1*cm, 3.7*cm, 2.2*cm, 4.4*cm, 3.1*cm], repeatRows=1
-                    )
-                    tabla.setStyle(TableStyle([
-                        ("GRID", (0,0), (-1,-1), 0.3, colors.grey),
-                        ("BACKGROUND", (0,0), (-1,0), colors.whitesmoke),
-                        ("VALIGN", (0,0), (-1,-1), "TOP"),
-                    ]))
-                    story.append(tabla)
-            else:
-                agregar_valoracion(row)
-
-            story.append(Spacer(1, 12))
-            story.append(Paragraph(
-                "Documento generado desde el Observatorio Social Asociación Ciudad Futuro. "
-                "Cada registro conserva la identificación del profesional que lo realizó.", normal
-            ))
-            doc_pdf.build(story)
-            buffer.seek(0)
-            return buffer.getvalue()
-
-        if vals_hist.empty and hist.empty:
+        if hist.empty:
             st.info("Este usuario aún no tiene registros de Enfermería.")
         else:
-            # Descarga integral
-            pdf_hist = _pdf_valoracion_enf(
-                vals_hist.iloc[0] if not vals_hist.empty else pd.Series(dtype=object),
-                historia_completa=True, registros=hist
-            )
-            st.download_button(
-                "📄 Descargar historia de enfermería completa en PDF",
-                data=pdf_hist,
-                file_name=f"historia_enfermeria_{doc3}.pdf",
-                mime="application/pdf",
-                use_container_width=True,
-                key=f"pdf_hist_enf_{doc3}"
-            )
+            hist["fecha_hora"] = pd.to_datetime(
+                hist["fecha_hora"], errors="coerce", utc=True
+            ).dt.tz_convert("America/Bogota")
+            hist["Fecha"] = hist["fecha_hora"].dt.strftime("%d/%m/%Y %I:%M %p")
 
-            if not vals_hist.empty:
-                st.markdown("### 🧾 Valoraciones de ingreso / reingreso")
-                st.caption(
-                    f"Se conservan **{len(vals_hist)}** valoración(es). "
-                    "Seleccione cualquiera para consultar el contenido registrado en ese momento."
-                )
-                opciones_val = vals_hist.index.tolist()
-                idx_val = st.selectbox(
-                    "Seleccione una valoración",
-                    opciones_val,
-                    format_func=lambda i: (
-                        f"{_fecha_enf(vals_hist.loc[i, 'fecha_hora'])} · "
-                        f"{_enf_txt(vals_hist.loc[i].get('enfermera_nombre'))}"
-                    ),
-                    key=f"enf_hist_val_sel_{doc3}"
-                )
-                vr = vals_hist.loc[idx_val]
-
-                with st.expander("👁️ Ver valoración completa", expanded=True):
-                    a, b, c = st.columns(3)
-                    a.metric("Fecha", _fecha_enf(vr.get("fecha_hora")))
-                    b.metric("Modalidad", _enf_txt(vr.get("modalidad")) or "—")
-                    c.metric("Profesional", _enf_txt(vr.get("enfermera_nombre")) or "—")
-                    for nombre_sec, campos in secciones_val:
-                        datos_sec = []
-                        for campo in campos:
-                            if campo in vr.index:
-                                valor = _enf_txt(vr.get(campo))
-                                if valor:
-                                    datos_sec.append({
-                                        "Campo": etiquetas_val.get(campo, campo),
-                                        "Valor registrado": valor
-                                    })
-                        if datos_sec:
-                            st.markdown(f"**{nombre_sec.title()}**")
-                            st.dataframe(pd.DataFrame(datos_sec), use_container_width=True, hide_index=True)
-
-                    st.markdown(
-                        f"**Registró:** {_enf_txt(vr.get('enfermera_nombre'))} · "
-                        f"CC {_enf_txt(vr.get('enfermera_documento'))}"
-                    )
-
-                pdf_ind = _pdf_valoracion_enf(vr)
-                fecha_arch = pd.to_datetime(vr.get("fecha_hora"), errors="coerce")
-                fecha_arch = fecha_arch.strftime("%Y%m%d_%H%M") if pd.notna(fecha_arch) else "sin_fecha"
-                st.download_button(
-                    "📄 Descargar esta valoración en PDF",
-                    data=pdf_ind,
-                    file_name=f"valoracion_enfermeria_{doc3}_{fecha_arch}.pdf",
-                    mime="application/pdf",
-                    use_container_width=True,
-                    key=f"pdf_val_enf_{doc3}_{idx_val}"
-                )
-
-            if not hist.empty:
-                st.markdown("### 📋 Cronología de atenciones y novedades")
-                hist["fecha_hora"] = pd.to_datetime(
-                    hist["fecha_hora"], errors="coerce", utc=True
-                ).dt.tz_convert("America/Bogota")
-
-                # V16.99 - Las valoraciones clínicas reales viven en
-                # enfermeria_valoraciones_iniciales. Los registros históricos
-                # creados manualmente como "VALORACIÓN DE INGRESO" se conservan
-                # por auditoría, pero se identifican como registros operativos
-                # para no contarlos como valoraciones clínicas completas.
-                _tipo_hist = hist["tipo_atencion"].fillna("").astype(str).str.strip().str.upper()
-                _detalle_hist = hist["detalle"].fillna("").astype(str).str.strip().str.upper()
-                _manual_ingreso = _tipo_hist.eq("VALORACIÓN DE INGRESO") & _detalle_hist.eq("REINGRESO")
-                hist.loc[_manual_ingreso, "tipo_atencion"] = "REGISTRO OPERATIVO DE REINGRESO (HISTÓRICO)"
-
-                hist["Fecha"] = hist["fecha_hora"].dt.strftime("%d/%m/%Y %I:%M %p")
-                mostrar = hist[
-                    ["Fecha", "tipo_atencion", "resultado", "detalle",
-                     "enfermera_nombre", "enfermera_documento"]
-                ].rename(columns={
-                    "tipo_atencion": "Atención / novedad",
-                    "resultado": "Resultado",
-                    "detalle": "Detalle",
-                    "enfermera_nombre": "Registró",
-                    "enfermera_documento": "CC enfermera",
-                })
-                st.dataframe(mostrar, use_container_width=True, hide_index=True)
-
+            mostrar = hist[
+                ["Fecha", "tipo_atencion", "resultado", "detalle",
+                 "enfermera_nombre", "enfermera_documento"]
+            ].rename(columns={
+                "tipo_atencion": "Atención / novedad",
+                "resultado": "Resultado",
+                "detalle": "Detalle",
+                "enfermera_nombre": "Registró",
+                "enfermera_documento": "CC enfermera",
+            })
+            st.dataframe(mostrar, use_container_width=True, hide_index=True)
             st.caption(
-                "Cada valoración y cada atención conserva su autoría y fecha originales. "
-                "Un reingreso genera una nueva valoración; nunca reemplaza la anterior."
+                "Cada registro conserva su autoría original. Un registro realizado "
+                "por Martha no cambia si posteriormente Jessica registra otra atención."
             )
 
     # ========================================================
@@ -22813,10 +23476,6 @@ def modulo_enfermeria_v1673():
                 WHERE fecha_hora >= :desde
                   AND fecha_hora < :hasta
                   {filtro_mod}
-                  AND NOT (
-                      UPPER(TRIM(COALESCE(tipo_atencion,'')))='VALORACIÓN DE INGRESO'
-                      AND UPPER(TRIM(COALESCE(detalle,'')))='REINGRESO'
-                  )
                 GROUP BY tipo_atencion
             """),
             engine,
@@ -22824,7 +23483,7 @@ def modulo_enfermeria_v1673():
         )
 
         base_cat = pd.DataFrame({
-            "ATENCIONES REALIZADAS": CATEGORIAS_ENFERMERIA_V1671
+            "ATENCIONES REALIZADAS": categorias_enfermeria_reporte
         })
         mapa = (
             dict(zip(rep["tipo_atencion"], rep["total"]))
@@ -22876,11 +23535,15 @@ POLITICA_PUBLICA_CATALOGO_V1678 = {
         "accion": "Registro de beneficiarios de atención psicológica y socio familiar",
         "tipo": "INDIVIDUAL",
         "responsables": [
-            "ESTEFANY SCARPETTA",
+            # V16.143: todos los psicólogos y trabajadores sociales
+            "ESTEFANY SCARPETTA TORRES",
             "DAMIAN LEANDRO ZAPATA BERMUDEZ",
-            "JHON ANDREY",
-            "MARIA ELENA LONDONO",
+            "JHON ANDREY CORREA CORTEZ",
+            "MARIA ELENA LONDOÑO GALVIS",
             "VALERIA MARTINEZ GARCIA",
+            "YUCI MARCELA MOSQUERA MOSQUERA",
+            "SAMARA HINESTROZA AGUILAR",
+            "SELMIRA MOSQUERA RENTERIA",
         ],
     },
     "2.1.2": {
@@ -22904,18 +23567,35 @@ POLITICA_PUBLICA_CATALOGO_V1678 = {
     "2.1.5": {
         "accion": "Registro de beneficiarios de procesos de reintegración familiar y social con su respectivo seguimiento",
         "tipo": "INDIVIDUAL",
-        "responsables": ["VALERIA MARTINEZ GARCIA"],
+        "responsables": [
+            # V16.143: todos los trabajadores sociales
+            "VALERIA MARTINEZ GARCIA",
+            "YUCI MARCELA MOSQUERA MOSQUERA",
+            "SAMARA HINESTROZA AGUILAR",
+            "SELMIRA MOSQUERA RENTERIA",
+        ],
     },
     "2.1.6": {
         "accion": "Registro de beneficiarios de actividades lúdicas, deportivas, de desarrollo personal y de reflexión en temas relacionados con la espiritualidad",
         "tipo": "INDIVIDUAL/ACTIVIDAD",
         "responsables": [
-            "MARCELA MOSQUERA",
-            "HUGO CASTRO",
-            "JUAN DAVID ROBLEDO PULGARIN",
-            "SAMARA HINESTROZA AGUILAR",
+            # V16.143: todos los profesionales del equipo contractual
             "VALERIA MARTINEZ GARCIA",
-            "VICTORIA SANTAMARIA",
+            "KAREN POSADA GONZALEZ",
+            "YUCI MARCELA MOSQUERA MOSQUERA",
+            "ESTEFANY SCARPETTA TORRES",
+            "MARIA ELENA LONDOÑO GALVIS",
+            "JHON ANDREY CORREA CORTEZ",
+            "SAMARA HINESTROZA AGUILAR",
+            "SELMIRA MOSQUERA RENTERIA",
+            "JUAN DAVID BOLIVAR MORALES",
+            "HUGO ARMANDO CASTRO CORTES",
+            "HUGO CASTRO",  # V16.147 alias robusto para nombre de sesión
+            "DAMIAN LEANDRO ZAPATA BERMUDEZ",
+            "CARLOS HERNAN LOPEZ GARCIA",
+            "DANA CAROLINA LOPEZ GONZALEZ",
+            "VICTORIA SANTAMARIA OSORIO",
+            "JUAN DAVID ROBLEDO PULGARIN",
         ],
     },
     "2.1.7": {
@@ -22926,7 +23606,11 @@ POLITICA_PUBLICA_CATALOGO_V1678 = {
     "2.1.8": {
         "accion": "Registro de beneficiarios de procesos de emprendimiento y empleabilidad",
         "tipo": "INDIVIDUAL/ACTIVIDAD",
-        "responsables": ["VALERIA MARTINEZ GARCIA"],
+        "responsables": [
+            "VALERIA MARTINEZ GARCIA",
+            "HUGO ARMANDO CASTRO CORTES",
+            "HUGO CASTRO",  # V16.147 alias robusto para nombre de sesión
+        ],
     },
     "2.1.9": {
         "accion": "Registro de beneficiarios de actividades de sana convivencia",
@@ -22947,8 +23631,11 @@ POLITICA_PUBLICA_CATALOGO_V1678 = {
         "accion": "Registro de beneficiarios de actividades de mitigación del daño por consumo de sustancias psicoactivas",
         "tipo": "INDIVIDUAL/ACTIVIDAD",
         "responsables": [
-            "HUGO CASTRO",
+            "HUGO ARMANDO CASTRO CORTES",
+            "HUGO CASTRO",  # V16.147 alias robusto para nombre de sesión
             "JUAN DAVID ROBLEDO PULGARIN",
+            "VICTORIA SANTAMARIA OSORIO",
+            "DANA CAROLINA LOPEZ GONZALEZ",
         ],
     },
 }
@@ -22966,13 +23653,38 @@ def _norm_nombre_pp_v1678(valor):
 
 
 def _responsable_pp_v1678(nombre_sesion, nombre_referencia):
+    """Compara el nombre completo de sesión con el nombre usado en el catálogo.
+
+    El catálogo puede guardar un nombre corto (p. ej. ``MARCELA MOSQUERA``)
+    mientras funcionarios_sistema/session_state conserva el nombre completo
+    (p. ej. ``YUCY MARCELA MOSQUERA MOSQUERA``).
+    """
     a = _norm_nombre_pp_v1678(nombre_sesion)
     b = _norm_nombre_pp_v1678(nombre_referencia)
     if not a or not b:
         return False
-    return a == b or a.startswith(b + " ") or b.startswith(a + " ")
+
+    # Coincidencias simples ya soportadas históricamente.
+    if a == b or a.startswith(b + " ") or b.startswith(a + " "):
+        return True
+
+    # V16.118: permitir que el nombre de referencia del catálogo sea una
+    # parte inequívoca del nombre completo del funcionario.  Se trabaja por
+    # tokens para no depender de que el nombre corto esté al principio.
+    tokens_a = a.split()
+    tokens_b = b.split()
+    if len(tokens_b) >= 2 and all(tok in tokens_a for tok in tokens_b):
+        return True
+
+    # También cubre el caso inverso si la sesión trae un nombre abreviado.
+    if len(tokens_a) >= 2 and all(tok in tokens_b for tok in tokens_a):
+        return True
+
+    return False
 
 
+
+# ============================================================
 # V16.122 - EXPORTACIÓN A FORMATO ALCALDÍA
 # Dos pestañas conforme al FBD suministrado:
 #   1) REGISTROS USUARIOS = atenciones/acciones individuales
@@ -23385,8 +24097,6 @@ def _excel_alcaldia_politica_publica_v16122(mes, anio):
     return out.getvalue(), len(individuales), len(grupales)
 
 
-
-
 def modulo_politica_publica_v1678():
     rol = str(st.session_state.get("rol_actual", "")).strip().upper()
     nombre_func = str(st.session_state.get("nombre_funcionario", "")).strip()
@@ -23405,13 +24115,62 @@ def modulo_politica_publica_v1678():
         "reportadas a la Alcaldía. Cada registro conserva automáticamente quién lo realizó."
     )
 
+    # V16.125: si el usuario llega desde el Informe Mensual, mostrar la evidencia exacta.
+    _rid_resaltar = st.session_state.pop("pp78_resaltar_registro", None)
+    if _rid_resaltar:
+        try:
+            _ev = pd.read_sql(
+                text("""
+                    SELECT
+                        r.id,
+                        r.fecha_accion,
+                        r.codigo_accion,
+                        r.accion,
+                        r.tipo_registro,
+                        r.nombre_actividad,
+                        r.lugar,
+                        r.descripcion,
+                        r.observacion,
+                        r.registrado_por_nombre,
+                        r.registrado_por_cc,
+                        TO_CHAR(
+                            (r.creado_en AT TIME ZONE 'America/Bogota'),
+                            'DD/MM/YYYY HH12:MI:SS AM'
+                        ) AS fecha_hora_registro,
+                        COUNT(p.id)::int AS participantes
+                    FROM politica_publica_registros r
+                    LEFT JOIN politica_publica_participantes p
+                      ON p.registro_id=r.id
+                    WHERE r.id=:rid
+                    GROUP BY r.id
+                """),
+                engine,
+                params={"rid": int(_rid_resaltar)}
+            )
+            if not _ev.empty:
+                st.success(f"🔎 Evidencia #{int(_rid_resaltar)} abierta desde el Informe Mensual")
+                st.dataframe(_ev, use_container_width=True, hide_index=True)
+                with st.expander("👥 Participantes de esta evidencia", expanded=False):
+                    _part = pd.read_sql(
+                        text("""
+                            SELECT
+                                p.documento_usuario AS documento,
+                                p.nombre_usuario AS nombre,
+                                p.modalidad_usuario AS modalidad
+                            FROM politica_publica_participantes p
+                            WHERE p.registro_id=:rid
+                            ORDER BY p.nombre_usuario
+                        """),
+                        engine,
+                        params={"rid": int(_rid_resaltar)}
+                    )
+                    st.dataframe(_part, use_container_width=True, hide_index=True)
+        except Exception as _e:
+            st.warning("No fue posible abrir el detalle de la evidencia: " + str(_e))
+
     acciones_asignadas = []
     if rol in roles_supervision:
         acciones_asignadas = list(POLITICA_PUBLICA_CATALOGO_V1678.keys())
-    elif rol in ["ENFERMERA", "COORDINACION_ENFERMERIA"]:
-        # V16.93 - Permiso institucional por ROL.
-        # Todas las enfermeras pueden registrar estas cuatro acciones.
-        acciones_asignadas = ["2.1.2", "2.1.7", "2.1.9", "2.1.11"]
     else:
         for cod, cfg in POLITICA_PUBLICA_CATALOGO_V1678.items():
             if any(
@@ -23487,6 +24246,25 @@ def modulo_politica_publica_v1678():
     ])
 
     with tabs[0]:
+        # V16.121: mensaje persistente después del rerun para que el usuario
+        # tenga confirmación inequívoca de que el registro sí quedó guardado.
+        flash_guardado = st.session_state.pop("pp78_flash_guardado", None)
+        if flash_guardado:
+            st.success(
+                f"✅ **REGISTRO GUARDADO CORRECTAMENTE** — Acción {flash_guardado['codigo']} "
+                f"con **{flash_guardado['participantes']} participante(s)**. "
+                f"ID de registro: **{flash_guardado['id']}**."
+            )
+            st.info("ℹ️ El registro ya quedó almacenado. **No es necesario volver a presionar Guardar.**")
+
+        flash_duplicado = st.session_state.pop("pp78_flash_duplicado", None)
+        if flash_duplicado:
+            st.warning(
+                f"⚠️ **NO SE CREÓ OTRO REGISTRO.** Esta misma acción ya había sido guardada "
+                f"hace pocos minutos (ID **{flash_duplicado['id']}**)."
+            )
+            st.info("La plataforma bloqueó el segundo clic para evitar duplicados.")
+
         if rol in roles_supervision:
             st.info(
                 "Coordinación/Manager puede consultar y probar el módulo. "
@@ -23508,11 +24286,20 @@ def modulo_politica_publica_v1678():
         codigo = opciones[etiqueta_accion]
         cfg = POLITICA_PUBLICA_CATALOGO_V1678[codigo]
 
-        st.caption(
-            f"Tipo permitido según matriz: **{cfg['tipo']}**"
-        )
+        # V16.129: la acción 2.1.9 permite registro INDIVIDUAL o ACTIVIDAD GRUPAL
+        # para cualquier profesional que tenga esta acción asignada en la matriz.
+        # La asignación de la acción sigue controlada por acciones_asignadas; este cambio
+        # únicamente amplía la forma de registro, no concede la acción a otros usuarios.
+        tipo_permitido = cfg["tipo"]
 
-        if cfg["tipo"] == "INDIVIDUAL/ACTIVIDAD":
+        if codigo == "2.1.9":
+            st.caption(
+                "Tipo permitido para la acción 2.1.9: **INDIVIDUAL / ACTIVIDAD GRUPAL**"
+            )
+        else:
+            st.caption(f"Tipo permitido según matriz: **{cfg['tipo']}**")
+
+        if tipo_permitido == "INDIVIDUAL/ACTIVIDAD":
             modalidad_registro = st.radio(
                 "Forma de registro",
                 ["INDIVIDUAL", "ACTIVIDAD GRUPAL"],
@@ -23610,7 +24397,67 @@ def modulo_politica_publica_v1678():
             else:
                 participantes = base.loc[seleccionados].copy()
 
+                # V16.121: protección contra doble clic / doble guardado.
+                # Consideramos duplicado el mismo formulario, del mismo funcionario,
+                # con los mismos participantes, guardado dentro de los últimos 10 minutos.
+                docs_seleccionados = sorted(
+                    participantes["documento"].astype(str).str.strip().tolist()
+                )
+                duplicado_id = None
+
                 with engine.begin() as conn:
+                    candidatos = conn.execute(
+                        text("""
+                            SELECT
+                                r.id,
+                                ARRAY_REMOVE(
+                                    ARRAY_AGG(
+                                        TRIM(CAST(p.documento_usuario AS TEXT))
+                                        ORDER BY TRIM(CAST(p.documento_usuario AS TEXT))
+                                    ),
+                                    NULL
+                                ) AS documentos
+                            FROM politica_publica_registros r
+                            LEFT JOIN politica_publica_participantes p
+                              ON p.registro_id = r.id
+                            WHERE TRIM(CAST(r.registrado_por_cc AS TEXT)) = :cc
+                              AND r.codigo_accion = :codigo
+                              AND r.tipo_registro = :tipo
+                              AND r.fecha_accion = :fecha
+                              AND COALESCE(TRIM(r.nombre_actividad), '') = :nombre_actividad
+                              AND COALESCE(TRIM(r.lugar), '') = :lugar
+                              AND COALESCE(TRIM(r.descripcion), '') = :descripcion
+                              AND COALESCE(TRIM(r.observacion), '') = :observacion
+                              AND r.creado_en >= NOW() - INTERVAL '10 minutes'
+                            GROUP BY r.id, r.creado_en
+                            ORDER BY r.creado_en DESC, r.id DESC
+                        """),
+                        {
+                            "cc": doc_func,
+                            "codigo": codigo,
+                            "tipo": modalidad_registro,
+                            "fecha": fecha_reg,
+                            "nombre_actividad": nombre_actividad.strip(),
+                            "lugar": lugar.strip(),
+                            "descripcion": descripcion.strip(),
+                            "observacion": observacion.strip(),
+                        }
+                    ).mappings().all()
+
+                    for cand in candidatos:
+                        docs_guardados = sorted(
+                            str(x).strip()
+                            for x in (cand.get("documentos") or [])
+                            if str(x).strip()
+                        )
+                        if docs_guardados == docs_seleccionados:
+                            duplicado_id = int(cand["id"])
+                            break
+
+                    if duplicado_id is not None:
+                        st.session_state["pp78_flash_duplicado"] = {"id": duplicado_id}
+                        st.rerun()
+
                     reg_id = conn.execute(
                         text("""
                             INSERT INTO politica_publica_registros (
@@ -23690,10 +24537,13 @@ def modulo_politica_publica_v1678():
                     )[:500]
                 )
 
-                st.success(
-                    f"✅ Acción {codigo} registrada por **{nombre_func}** "
-                    f"con **{len(seleccionados)}** participante(s)."
-                )
+                # V16.121: el mensaje se guarda en session_state porque st.rerun()
+                # borra los mensajes renderizados en la ejecución actual.
+                st.session_state["pp78_flash_guardado"] = {
+                    "id": int(reg_id),
+                    "codigo": codigo,
+                    "participantes": int(len(seleccionados)),
+                }
                 st.rerun()
 
     with tabs[1]:
@@ -23856,10 +24706,17 @@ def modulo_politica_publica_v1678():
         filas = []
         for cod, cfg in POLITICA_PUBLICA_CATALOGO_V1678.items():
             for resp in cfg["responsables"]:
+                # V16.130: mostrar la matriz en lenguaje operativo claro.
+                # La 2.1.9 admite ambas modalidades para TODOS sus responsables.
+                tipo_visible = (
+                    "INDIVIDUAL / GRUPAL"
+                    if cod == "2.1.9"
+                    else ("INDIVIDUAL / GRUPAL" if cfg["tipo"] == "INDIVIDUAL/ACTIVIDAD" else cfg["tipo"])
+                )
                 filas.append({
                     "Código": cod,
                     "Acción": cfg["accion"],
-                    "Tipo": cfg["tipo"],
+                    "Tipo permitido": tipo_visible,
                     "Responsable": resp,
                 })
         st.dataframe(
@@ -23869,7 +24726,8 @@ def modulo_politica_publica_v1678():
         )
         st.caption(
             "Las acciones visibles para cada operador se determinan por el nombre "
-            "de la sesión activa y este listado de responsables."
+            "de la sesión activa y este listado de responsables. En la acción 2.1.9, "
+            "todos los responsables pueden registrar tanto INDIVIDUAL como GRUPAL."
         )
 
 
@@ -23924,6 +24782,697 @@ if st.session_state.page == "egresos_impacto_v168":
     st.stop()
 
 
+
+# ============================================================
+# V16.124 - MATRIZ INDIVIDUAL DE OBLIGACIONES CONTRACTUALES
+# Fuente: contratos CPS vigencia 11/09/2026 a 10/11/2026.
+# La llave principal es la cédula normalizada (solo dígitos).
+# ============================================================
+CONTRATOS_INFORME_MENSUAL_V16124 = {
+    "1004681975": {
+        "nombre": "VALERIA MARTINEZ GARCIA",
+        "cargo": "TRABAJADORA SOCIAL",
+        "contrato": "CPS 11/09/2026 - 10/11/2026",
+        "obligaciones": [
+            "Realizar reporte del cronograma semanal de las actividades grupales y atenciones individuales de acuerdo a la disponibilidad de espacios asignados por Dirección.",
+            "2.\tEntrega mensual de las bases de datos correspondientes a la acción: 2.1.5. Registro de beneficiarios de procesos de reintegración familiar y social con su respectivo seguimiento, 2.1.6. Registro de beneficiarios de actividades lúdicas, deportivas, de desarrollo personal y de reflexión en temas relacionados con la espiritualidad. 2.1.9. Registro de beneficiarios de actividades de sana convivencia De acuerdo a las evidencias para las actividades grupales tener en cuenta la presentación de soportes como: metodología, formatos SPP en PDF y fotos.",
+            "Participar de reuniones en pro del funcionamiento, revisión de novedades, y retos a desarrollar desde el área de trabajo social y el equipo interdisciplinarios del Programa de Albergues para Habitantes de Calle de la ciudad de Pereira.",
+            "Identificar, orientar, y acompañar, con la remisión al enlace municipal de habitante de calle, los casos que requieren activación de rutas, tales como: Hogar adulto mayor, Centro de tratamiento para conductas adictivas, Plan “Retorno” a ciudad de origen, Vinculación familiar, Restablecimiento de derechos (afiliación, portabilidad, barreras en salud), Proceso de identificación plena. Sí dichas gestiones están al alcance del profesional de acuerdo a las rutas de atención que tiene la ciudad deberá hacer lo pertinente para su activación.",
+            "realizar dos (2) reuniones mensuales con el área de enfermería para hacer revisión de los casos que requieran portabilidad, afiliación, barreras en salud o cualquier trámite que desde el área de trabajo social se pueda acompañar.",
+            "Presentar informe mensual de acuerdo a las funciones del área de trabajo social, junto con los reportes del “observatorio social ASCF” lo cual debe hacer dentro de los tiempos determinados por la Asociación. Informe que será entregado de manera mensual al correo albergueh.hc.adm@gmail.com la fecha límite para enviar el informe de actividades y fotos es el 25 de cada mes.",
+            "Vinculación de redes familiares o de apoyo en el ejercicio de restablecimiento de derechos (cedulación, vinculación a salud). Para ello el contratista deberá de acuerdo al modelo de atención garantizar mínimo dos (2) encuentros semanales con grupos o redes de apoyo de usuarios que usen los servicios centro día- noche para habitantes de calle, estos encuentros podrán ser presenciales o virtuales.",
+            "Participar mínimo en dos (2) salidas restaurativas al mes.",
+            "Realizar uno (1) espacio semanal para realizar en articulación con Psicología y pedagogía estudios de caso o elaboración de PAI de acuerdo a los procesos de los usuarios del Centro día- noche urbano o rural. (Estos deberán ser reportador en el observatorio social ASCF)",
+            "Apoyar la apertura del buzón de sugerencias dos (2) veces al mes y dar respuesta a las PQR de acuerdo a las necesidades de los usuarios y usuarias del centro día noche urbano.",
+            "Realizar asesoría y acompañamiento a usuarios en procesos de empleabilidad a usuarios de urbano que se considere se puedan acompañar. (Estos deberán ser reportador en el observatorio social ASCF)",
+            "Aportar una (1) certificación actualizada (vigencia 2026) relacionada con la atención a población inmersa en el fenómeno social de consumo de sustancias psicoactivas.",
+            "Reportar los logros desarrollados desde el área de trabajo social en la plataforma “observatorio social de la Asociación Ciudad Futuro”.",
+            "Realizar caracterizaciones psicosociales en las jornadas de atención al interior de las sedes del el Programa de Albergues para Habitantes de Calle de la ciudad de Pereira. (Estos deberán ser reportador en el observatorio social ASCF)",
+            "Las demás que contribuyan al correcto funcionamiento del modelo de atención integral a la población habitante de calle.",
+        ]
+    },
+    "1192762958": {
+        "nombre": "KAREN POSADA GONZALEZ",
+        "cargo": "PROFESIONAL EN NUTRICIÓN",
+        "contrato": "CPS 11/09/2026 - 10/11/2026",
+        "obligaciones": [
+            "Realizar reporte del cronograma semanal de las actividades grupales y atenciones individuales de acuerdo a la disponibilidad de espacios asignados por Dirección.",
+            "Entregar mensualmente las bases de datos correspondientes a la acción 2.1.9 - Registro de beneficiarios de actividades de sana convivencia, con soportes de metodología, formatos SPP en PDF y fotos para actividades grupales.",
+            "Participar de reuniones en pro del funcionamiento, revisión de novedades, estudios de caso con la administración municipal y retos a desarrollar desde Nutrición y el equipo interdisciplinario.",
+            "Realizar evaluación nutricional completa, con particularidades antropométricas y seguimiento cada tres meses, en el formato de evaluación nutricional; reportar mínimo 30 usuarios al mes en el Observatorio Social ASCF.",
+            "Diseñar y hacer seguimiento al Manual de Buenas Prácticas de Manufactura, incluyendo capacitaciones a manipuladoras de alimentos, indumentaria y formatos de control de temperaturas, recepción de materias primas, PEPS, rotulación y demás controles.",
+            "Presentar informe mensual de acuerdo con las funciones del área de Nutrición, junto con los reportes del Observatorio Social ASCF, dentro de los tiempos determinados por la Asociación; fecha límite de actividades y fotos: 25 de cada mes.",
+            "Mantener actualizada una cartelera en el área del comedor de urbano y rural con el ciclo de menús e información alimentaria y nutricional.",
+            "Participar mínimo en una (1) salida restaurativa al mes relacionada con sensibilización en reducción de riesgos y daños, acompañada de brigadas de alcance, trabajo comunitario y acciones en calle.",
+            "Realizar un (1) espacio semanal, en articulación con Psicología, Trabajo Social o ciencias sociales, humanas o de la salud, para estudios de caso, elaboración o seguimiento del PAI; reportarlo en el Observatorio Social ASCF.",
+            "Diseñar y hacer seguimiento al Plan de Saneamiento Básico del servicio de alimentación o punto de servido, con diligenciamiento diario de los formatos del PSB.",
+            "Aportar una (1) certificación actualizada, vigencia 2026, relacionada con la atención a población inmersa en el fenómeno social de consumo de sustancias psicoactivas.",
+            "Reportar los logros desarrollados desde el área de ciencias sociales, humanas o de la salud en la plataforma Observatorio Social de la Asociación Ciudad Futuro.",
+            "Aportar en la construcción de planes y programas de prevención que reduzcan riesgos en salud y aumenten las probabilidades de éxito al interior de los albergues.",
+            "Realizar las demás actividades que contribuyan al correcto funcionamiento del modelo de atención integral a la población habitante de calle."
+        ]
+    },
+    "16225865": {
+        "nombre": "IVAN RENDON GIRALDO",
+        "cargo": "DIRECTOR",
+        "contrato": "CPS 11/09/2026 - 10/11/2026",
+        "obligaciones": [
+            "Asistir a todos los Consejos Municipales de Política Pública de Habitante de Calle del Municipio de Pereira.",
+            "Asistir y participar activamente en reuniones, capacitaciones, comités convocados por la administración, mesas de trabajo, estudios de caso, mesas de articulación y demás reuniones requeridas para la adecuada ejecución del contrato.",
+            "Realizar seguimiento al programa y velar por la cabal ejecución de cada una de las actividades del programa.",
+            "Elaborar y poner en funcionamiento un tablero de control y seguimiento de los indicadores del programa, con entrega periódica para ajustes y correctivos, apoyado en el Observatorio Social ASCF.",
+            "Suministrar al equipo de trabajo los insumos administrativos para el registro de las diferentes actividades desarrolladas en el programa.",
+            "Presentar informe mensual de acuerdo con las funciones del área de Dirección, junto con los reportes del Observatorio Social ASCF; fecha límite de actividades y fotos: 25 de cada mes.",
+            "Presentar los mecanismos necesarios para atender quejas o reclamos y dar respuesta a los usuarios o terceros frente al programa, mediante la apertura del buzón de sugerencias de los albergues.",
+            "Liderar la consolidación y actualización de las bases de datos del programa para su articulación con la Administración Municipal.",
+            "Hacer seguimiento y controlar la ejecución del presupuesto de acuerdo con las actividades planteadas, la propuesta y la minuta.",
+            "Socializar al talento humano los documentos que hacen parte del contrato, dejando registro en acta de actualización del talento humano y de los temas trabajados.",
+            "Mantener a disposición del talento humano los documentos propios de la contratación y verificar el conocimiento y adecuado manejo de sus contenidos.",
+            "Reportar los logros desarrollados desde el área de Dirección en la plataforma Observatorio Social de la Asociación Ciudad Futuro.",
+            "Garantizar la implementación de los lineamientos técnicos y operativos orientados a la prestación del servicio social, adoptando procedimientos técnicos y administrativos y liderando la gestión adecuada de recursos humanos, físicos y materiales.",
+            "Realizar las demás actividades que contribuyan al correcto funcionamiento del modelo de atención integral a la población habitante de calle."
+        ]
+    },
+    "1088243215": {
+        "nombre": "ELIZABETH MANSO OSPINA",
+        "cargo": "TECNÓLOGA EN INGENIERÍA / TECNOLOGÍA",
+        "contrato": "CPS 11/09/2026 - 10/11/2026",
+        "obligaciones": [
+            "Realizar apoyo en los albergues urbano y rural de acuerdo a la disponibilidad de espacios asignados por Dirección.",
+            "Consolidar las bases de datos correspondientes a la política de pública de manera mensual y suministrarlas al programa de habitante de calle adscrito a la secretaria de Desarrollo Social y Político. De acuerdo a la información registrada en el Observatorio Social de la ASCF.",
+            "Participar de reuniones en pro del funcionamiento, revisión de novedades, estudios de caso con la administración municipal y retos a desarrollar desde el área de ciencias sociales, humanas o de la salud y el equipo interdisciplinarios del Programa de Albergues para Habitantes de Calle de la ciudad de Pereira.",
+            "Verificar, consolidar y entregar las evidencias que soportan el plan de acción de la política pública de habitante de calle y entregarlas al programa de habitante de calle adscrito a la secretaria de Desarrollo Social y Político.   De acuerdo a la información registrada en el Observatorio Social de la ASCF.",
+            "Participar como enlace de políticas públicas ante la secretaria de Desarrollo Social y Político.",
+            "Presentar informe mensual de acuerdo a las funciones del área de tecnología, junto con los reportes del “observatorio social ASCF” lo cual debe hacer dentro de los tiempos determinados por la Asociación. Informe que será entregado de manera mensual al correo albergueh.hc.adm@gmail.com la fecha límite para enviar el informe de actividades y fotos es el 25 de cada mes.",
+            "Aportar una (1) certificación actualizada (vigencia 2026) relacionada con la atención a población inmersa en el fenómeno social de consumo de sustancias psicoactivas.",
+            "Consolidar los logros desarrollados desde el área de ciencias sociales, humanas o de la salud en la plataforma “observatorio social de la Asociación Ciudad Futuro”.",
+            "Brindar retroalimentación al equipo de mixto de profesionales cuando sea necesario desde el área de tecnología.",
+            "Las demás que contribuyan al correcto funcionamiento del modelo de atención integral a la población habitante de calle.",
+        ]
+    },
+    "1076382393": {
+        "nombre": "YUCI MARCELA MOSQUERA MOSQUERA",
+        "cargo": "TRABAJADORA SOCIAL",
+        "contrato": "CPS 11/09/2026 - 10/11/2026",
+        "obligaciones": [
+            "Realizar reporte del cronograma semanal de las actividades grupales y atenciones individuales de acuerdo a la disponibilidad de espacios asignados por Dirección.",
+            "Entrega mensual de las bases de datos correspondientes a la acción: 2.1.5. Registro de beneficiarios de procesos de reintegración familiar y social con su respectivo seguimiento. 2.1.9. Registro de beneficiarios de actividades de sana convivencia 2.1.4. Registro de beneficiarios de  estrategias de inclusión social para la población habitante de calle LGTBI. De acuerdo a las evidencias para las actividades grupales tener en cuenta la presentación de soportes como: metodología, formatos SPP en PDF y fotos.",
+            "Participar de reuniones en pro del funcionamiento, revisión de novedades, y retos a desarrollar desde el área de trabajo social y el equipo interdisciplinarios del Programa de Albergues para Habitantes de Calle de la ciudad de Pereira.",
+            "Identificar, orientar, y acompañar, con la remisión al enlace municipal de habitante de calle, los casos que requieren activación de rutas, tales como: Hogar adulto mayor, Centro de tratamiento para conductas adictivas, Plan “Retorno” a ciudad de origen, Vinculación familiar, Restablecimiento de derechos (afiliación, portabilidad, barreras en salud), Proceso de identificación plena. Sí dichas gestiones están al alcance del profesional de acuerdo a las rutas de atención que tiene la ciudad deberá hacer lo pertinente para su activación.",
+            "Realizar uno (1) espacio semanal para realizar en articulación con Psicología y pedagogía estudios de caso o elaboración o seguimiento al PAI de acuerdo a los procesos de los usuarios del Centro día- noche urbano o rural. (Estos deberán ser reportador en el observatorio social ASCF)",
+            "Presentar informe mensual de acuerdo a las funciones del área de trabajo social, junto con los reportes del “observatorio social ASCF” lo cual debe hacer dentro de los tiempos determinados por la Asociación. Informe que será entregado de manera mensual al correo albergueh.hc.adm@gmail.com la fecha límite para enviar el informe de actividades y fotos es el 25 de cada mes.",
+            "Participar mínimo en dos (2) jornadas de dignificación.",
+            "Realizar uno (1) espacio semanal para realizar en articulación con Psicología y pedagogía estudios de caso o elaboración de PAI de acuerdo a los procesos de los usuarios del Centro día- noche urbano o rural. (Estos deberán ser reportador en el observatorio social ASCF)",
+            "Apoyar la apertura del buzón de sugerencias dos (2) veces al mes y dar respuesta a las PQR de acuerdo a las necesidades de los usuarios y usuarias del centro día noche urbano.",
+            "Realizar asesoría y acompañamiento a usuarios en procesos de empleabilidad a usuarios de rural que se considere se puedan acompañar.  (Estos deberán ser reportador en el observatorio social ASCF)",
+            "Aportar una (1) certificación actualizada (vigencia 2026) relacionada con la atención a población inmersa en el fenómeno social de consumo de sustancias psicoactivas.",
+            "Reportar los logros desarrollados desde el área de trabajo social en la plataforma “observatorio social de la Asociación Ciudad Futuro”.",
+            "Realizar caracterizaciones psicosociales en las jornadas de atención al interior de las sedes del el Programa de Albergues para Habitantes de Calle de la ciudad de Pereira. (Estos deberán ser reportador en el observatorio social ASCF)",
+            "Las demás que contribuyan al correcto funcionamiento del modelo de atención integral a la población habitante de calle.",
+        ]
+    },
+    "1088343873": {
+        "nombre": "ESTEFANY SCARPETTA TORRES",
+        "cargo": "PSICÓLOGA",
+        "contrato": "CPS 11/09/2026 - 10/11/2026",
+        "obligaciones": [
+            "Realizar reporte del cronograma semanal de las actividades grupales y atenciones individuales de acuerdo a la disponibilidad de espacios asignados por Dirección.",
+            "Entregar mensualmente las bases de datos correspondientes a las acciones 2.1.1 y 2.1.9, con soportes de metodología, formatos SPP en PDF y fotos para actividades grupales.",
+            "Participar de reuniones en pro del funcionamiento, revisión de novedades, estudios de caso con el programa de habitante de calle y reuniones del equipo interdisciplinario.",
+            "Presentar informe mensual de acuerdo con las funciones del área de Psicología, junto con los reportes del Observatorio Social ASCF; fecha límite de actividades y fotos: 25 de cada mes.",
+            "Propiciar mínimo un (1) encuentro semanal con al menos 5 usuarios para trabajar prevención selectiva o reducción de riesgos y daños frente al consumo de SPA, mediante estrategias como meditación, reflexión colectiva, cine foros o construcciones colectivas.",
+            "Reportar a Dirección los formatos diligenciados y registro fotográfico de las secretarías o descentralizados que visitan los centros día-noche para seguimiento a actividades transversales e indicadores de política pública, correspondiente a Desarrollo Social urbano.",
+            "Realizar un (1) espacio semanal, en articulación con Psicología, Trabajo Social y Pedagogía, para estudios de caso o elaboración y seguimiento al PAI, reportándolo en el Observatorio Social ASCF.",
+            "Participar mínimo en dos (2) jornadas de dignificación.",
+            "Reportar y sensibilizar a los usuarios que por sus procesos individuales serán trasladados al centro día-noche rural, una (1) vez a la semana, mediante socialización del acuerdo de voluntades.",
+            "Aplicar encuestas de satisfacción a usuarios de los albergues, programadas en promedio cada tres meses, para evaluar los servicios prestados al interior del centro día-noche urbano.",
+            "Aportar una (1) certificación actualizada, vigencia 2026, relacionada con la atención a población inmersa en el fenómeno social de consumo de sustancias psicoactivas.",
+            "Reportar los logros desarrollados desde el área de Psicología en la plataforma Observatorio Social de la Asociación Ciudad Futuro.",
+            "Realizar las demás actividades que contribuyan al correcto funcionamiento del modelo de atención integral a la población habitante de calle."
+        ]
+    },
+    "42085283": {
+        "nombre": "MARIA ELENA LONDOÑO GALVIS",
+        "cargo": "PSICÓLOGA",
+        "contrato": "CPS 11/09/2026 - 10/11/2026",
+        "obligaciones": [
+            "Realizar reporte del cronograma semanal de las actividades grupales y atenciones individuales de acuerdo a la disponibilidad de espacios asignados por Dirección.",
+            "Entregar mensualmente las bases de datos correspondientes a las acciones 2.1.1 y 2.1.9, con soportes de metodología, formatos SPP en PDF y fotos para actividades grupales.",
+            "Participar de reuniones en pro del funcionamiento, revisión de novedades, estudios de caso con el programa de habitante de calle y reuniones del equipo interdisciplinario.",
+            "Presentar informe mensual de acuerdo con las funciones del área de Psicología, junto con los reportes del Observatorio Social ASCF; fecha límite de actividades y fotos: 25 de cada mes.",
+            "Propiciar mínimo un (1) encuentro semanal con al menos 5 usuarios para trabajar prevención selectiva o reducción de riesgos y daños frente al consumo de SPA.",
+            "Apoyar la apertura del buzón de sugerencias dos (2) veces al mes y dar respuesta a las PQR de acuerdo con las necesidades de los usuarios del centro día-noche rural.",
+            "Reportar a Dirección los formatos diligenciados y registro fotográfico de las secretarías o descentralizados que visitan los centros día-noche para seguimiento a actividades transversales e indicadores de política pública, correspondiente a Secretaría de Salud rural.",
+            "Realizar un (1) espacio semanal, en articulación con Psicología y Pedagogía, para estudios de caso o elaboración de PAI, reportándolo en el Observatorio Social ASCF.",
+            "Dar la bienvenida a los usuarios que por sus procesos individuales llegan trasladados del centro día-noche urbano, una (1) vez a la semana, con socialización y firma del acuerdo de voluntades.",
+            "Aplicar encuestas de satisfacción a usuarios de los albergues, programadas en promedio cada tres meses, para evaluar los servicios prestados al interior del centro día-noche urbano.",
+            "Aportar una (1) certificación actualizada, vigencia 2026, relacionada con la atención a población inmersa en el fenómeno social de consumo de sustancias psicoactivas.",
+            "Reportar los logros desarrollados en la plataforma Observatorio Social de la Asociación Ciudad Futuro.",
+            "Realizar las demás actividades que contribuyan al correcto funcionamiento del modelo de atención integral a la población habitante de calle."
+        ]
+    },
+    "9866284": {
+        "nombre": "JHON ANDREY CORREA CORTEZ",
+        "cargo": "PSICÓLOGO",
+        "contrato": "CPS 11/09/2026 - 10/11/2026",
+        "obligaciones": [
+            "Realizar reporte del cronograma semanal de las actividades grupales y atenciones individuales de acuerdo a la disponibilidad de espacios asignados por Dirección.",
+            "Entrega mensual de las bases de datos correspondientes a la acción: 2.1.1. Registro de beneficiarios de atención psicológica y socio familiar 2.1.9. Registro de beneficiarios de actividades de sana convivencia. De acuerdo a las evidencias para las actividades grupales tener en cuenta la presentación de soportes como: metodología, formatos SPP en PDF y fotos.",
+            "Participar de reuniones en pro del funcionamiento, revisión de novedades, estudios de caso con programa de habitante de calle de la alcaldía, reuniones de equipo interdisciplinarios del Programa de Albergues para Habitantes de Calle de la ciudad de Pereira, entre otros.",
+            "Presentar informe mensual de acuerdo a las funciones del área de psicología, junto con los reportes del “observatorio social ASCF” lo cual debe hacer dentro de los tiempos determinados por la Asociación. Informe que será entregado de manera mensual al correo albergueh.hc.adm@gmail.com  la fecha límite para enviar el informe de actividades y fotos es el 25 de cada mes.",
+            "Propiciar, mínimo, un (1) encuentro semanal con al menos 5 usuarios del Programa de Albergues para Habitantes de Calle de la ciudad de Pereira, con los cuales se trabajen temas grupales en prevención selectiva o reducción de riesgos y daños respecto al consumo de Sustancias Psicoactivas (SPA); a través de posibles estrategias como la meditación, reflexión colectiva, cine foros o construcciones colectivas.",
+            "Apoyar la apertura del buzón de sugerencias dos (2) veces al mes y dar respuesta a las PQR de acuerdo con las necesidades de los usuarios del centro día noche rural.",
+            "Reportar al área de dirección los formatos diligenciados y registro fotográfico de las diferentes secretarias o descentralizados que visitan los centros días - noche con el propósito de hacer seguimiento a las actividades que son trasversales y que aportan al cumplimiento de indicadores de la política pública de habitante de calle. (formatos correspondientes a secretaria de gobierno urbano).",
+            "Realizar uno (1) espacio semanal para realizar en articulación con Psicología, trabajo social y pedagogía estudios de caso, elaboración o seguimiento al PAI de acuerdo a los procesos de los usuarios del Centro día- noche urbano o rural. (Estos deberán ser reportador en el observatorio social ASCF)",
+            "Participar mínimo en dos (2) salidas restaurativas al mes,  relacionadas con sensibilización en reducción de riesgos y daños, acompañada de brigadas de alcance, trabajo comunitario y acciones en calle.",
+            "Reportar y sensibilizar los usuarios y usuarias que por sus procesos individuales serán trasladados al centro día – noche rural. (1 vez a la semana- socialización acuerdo de voluntades)",
+            "Aportar una (1) certificación actualizada (vigencia 2026) relacionada con la atención a población inmersa en el fenómeno social de consumo de sustancias psicoactivas.",
+            "Reportar los logros desarrollados desde el área de trabajo social en la plataforma “observatorio social de la Asociación Ciudad Futuro”.",
+            "Las demás que contribuyan al correcto funcionamiento del modelo de atención integral a la población habitante de calle.",
+        ]
+    },
+    "1129044593": {
+        "nombre": "SAMARA HINESTROZA AGUILAR",
+        "cargo": "TRABAJADORA SOCIAL",
+        "contrato": "CPS 11/09/2026 - 10/11/2026",
+        "obligaciones": [
+            "Realizar reporte del cronograma semanal de las actividades grupales y atenciones individuales de acuerdo a la disponibilidad de espacios asignados por Dirección.",
+            "Entregar mensualmente las bases de datos correspondientes a las acciones 2.1.5, 2.1.6 y 2.1.9, con soportes de metodología, formatos SPP en PDF y fotos para actividades grupales.",
+            "Participar de reuniones en pro del funcionamiento, revisión de novedades, estudios de caso y retos a desarrollar desde el área de Trabajo Social y el equipo interdisciplinario.",
+            "Identificar, orientar y acompañar, con remisión al enlace municipal de habitante de calle, los casos que requieran activación de rutas: hogar adulto mayor, tratamiento para conductas adictivas, Plan Retorno, vinculación familiar, restablecimiento de derechos e identificación plena.",
+            "Realizar dos (2) reuniones mensuales con Enfermería para revisar casos de portabilidad, afiliación, barreras en salud u otros trámites acompañables desde Trabajo Social.",
+            "Presentar informe mensual de acuerdo con las funciones del área de Trabajo Social, junto con los reportes del Observatorio Social ASCF; fecha límite de actividades y fotos: 25 de cada mes.",
+            "Realizar vinculación de redes familiares o de apoyo en el ejercicio de restablecimiento de derechos, garantizando mínimo dos (2) encuentros semanales con grupos o redes de apoyo.",
+            "Participar mínimo en dos (2) salidas restaurativas al mes.",
+            "Realizar un (1) espacio semanal, en articulación con Psicología y Pedagogía, para estudios de caso o elaboración de PAI, reportándolo en el Observatorio Social ASCF.",
+            "Realizar asesoría y acompañamiento a usuarios de rural en procesos de empleabilidad que se considere puedan acompañarse, reportándolo en el Observatorio Social ASCF.",
+            "Aplicar encuestas de satisfacción a usuarios de los albergues, programadas en promedio cada tres meses, para evaluar los servicios prestados al interior del centro día-noche urbano.",
+            "Aportar una (1) certificación actualizada, vigencia 2026, relacionada con la atención a población inmersa en el fenómeno social de consumo de sustancias psicoactivas.",
+            "Reportar los logros desarrollados desde el área de Trabajo Social en la plataforma Observatorio Social de la Asociación Ciudad Futuro.",
+            "Realizar caracterizaciones psicosociales en las jornadas de atención al interior de las sedes del Programa de Albergues para Habitantes de Calle de Pereira, reportándolas en el Observatorio Social ASCF.",
+            "Realizar las demás actividades que contribuyan al correcto funcionamiento del modelo de atención integral a la población habitante de calle."
+        ]
+    },
+    "42161455": {
+        "nombre": "SELMIRA MOSQUERA RENTERIA",
+        "cargo": "TRABAJADORA SOCIAL",
+        "contrato": "CPS 11/09/2026 - 10/11/2026",
+        "obligaciones": [
+            "Realizar reporte del cronograma semanal de las actividades grupales y atenciones individuales de acuerdo a la disponibilidad de espacios asignados por Dirección.",
+            "Entrega mensual de las bases de datos correspondientes a la acción: 2.1.5. Registro de beneficiarios de procesos de reintegración familiar y social con su respectivo seguimiento, 2.1.6. Registro de beneficiarios de actividades lúdicas, deportivas, de desarrollo personal y de reflexión en temas relacionados con la espiritualidad. 2.1.9. Registro de beneficiarios de actividades de sana convivencia De acuerdo a las evidencias para las actividades grupales tener en cuenta la presentación de soportes como: metodología, formatos SPP en PDF y fotos.",
+            "Participar de reuniones en pro del funcionamiento, revisión de novedades, estudios de caso  y retos a desarrollar desde el área de trabajo social y el equipo interdisciplinarios del Programa de Albergues para Habitantes de Calle de la ciudad de Pereira.",
+            "Identificar, orientar, y acompañar, con la remisión al enlace municipal de habitante de calle, los casos que requieren activación de rutas, tales como: Hogar adulto mayor, Centro de tratamiento para conductas adictivas, Plan “Retorno” a ciudad de origen, Vinculación familiar, Restablecimiento de derechos (afiliación, portabilidad, barreras en salud), Proceso de identificación plena. Sí dichas gestiones están al alcance del profesional de acuerdo a las rutas de atención que tiene la ciudad deberá hacer lo pertinente para su activación.",
+            "realizar dos (2) reuniones mensuales con el área de enfermería para hacer revisión de los casos que requieran portabilidad, afiliación, barreras en salud o cualquier trámite que desde el área de trabajo social se pueda acompañar.",
+            "Presentar informe mensual de acuerdo a las funciones del área de trabajo social, junto con los reportes del “observatorio social ASCF” lo cual debe hacer dentro de los tiempos determinados por la Asociación. Informe que será entregado de manera mensual al correo albergueh.hc.adm@gmail.com la fecha límite para enviar el informe de actividades y fotos es el 25 de cada mes.",
+            "Vinculación de redes familiares o de apoyo en el ejercicio de restablecimiento de derechos (cedulación, vinculación a salud). Para ello el contratista deberá de acuerdo al modelo de atención garantizar mínimo dos (2) encuentros semanales con grupos o redes de apoyo de usuarios que usen los servicios centro día- noche para habitantes de calle, estos encuentros podrán ser presenciales o virtuales.",
+            "Participar mínimo en dos (2) salidas restaurativas al mes.",
+            "Realizar uno (1) espacio semanal para realizar en articulación con Psicología y pedagogía estudios de caso o elaboración de PAI de acuerdo a los procesos de los usuarios del Centro día- noche urbano o rural. (Estos deberán ser reportador en el observatorio social ASCF)",
+            "Realizar asesoría y acompañamiento a usuarios en procesos de empleabilidad a usuarios de urbano que se considere se puedan acompañar. (Estos deberán ser reportador en el observatorio social ASCF)",
+            "Aplicar encuestas de satisfacción a usuarios de los albergues programadas en promedio para cada tres meses, con el fin de evaluar los servicios prestados al interior del centro día – noche urbano.",
+            "Aportar una (1) certificación actualizada (vigencia 2026) relacionada con la atención a población inmersa en el fenómeno social de consumo de sustancias psicoactivas.",
+            "Reportar los logros desarrollados desde el área de trabajo social en la plataforma “observatorio social de la Asociación Ciudad Futuro”.",
+            "Realizar caracterizaciones psicosociales en las jornadas de atención al interior de las sedes del el Programa de Albergues para Habitantes de Calle de la ciudad de Pereira. (Estos deberán ser reportador en el observatorio social ASCF)",
+            "Las demás que contribuyan al correcto funcionamiento del modelo de atención integral a la población habitante de calle.",
+        ]
+    },
+    "1088278205": {
+        "nombre": "JUAN DAVID BOLIVAR MORALES",
+        "cargo": "PROFESIONAL ÁREA CIENCIAS SOCIALES, HUMANAS O DE LA SALUD",
+        "contrato": "CPS 11/09/2026 - 10/11/2026",
+        "obligaciones": [
+            "Realizar reporte del cronograma semanal de las actividades grupales y atenciones individuales de acuerdo a la disponibilidad de espacios asignados por Dirección.",
+            "Participar en el espacio de bienvenida a usuarios que llegan trasladados del centro día-noche urbano, una (1) vez a la semana, con socialización y firma del acuerdo de voluntades.",
+            "Participar de reuniones en pro del funcionamiento, revisión de novedades, estudios de caso con la administración municipal y retos a desarrollar desde ciencias sociales, humanas o de la salud y el equipo interdisciplinario.",
+            "Participar de la sensibilización de usuarios que serán trasladados al centro día-noche rural, una (1) vez a la semana, mediante socialización del acuerdo de voluntades.",
+            "Realizar dos (2) espacios mensuales en los albergues Urbano y Rural para fortalecer las dinámicas grupales frente al pacto de convivencia, en apoyo con el equipo interdisciplinario.",
+            "Presentar informe mensual de acuerdo con las funciones del área, junto con los reportes del Observatorio Social ASCF; fecha límite de actividades y fotos: 25 de cada mes.",
+            "Acompañar un (1) espacio semanal, en articulación con Psicología o Trabajo Social, para estudios de caso, elaboración o seguimiento del PAI, reportándolo en el Observatorio Social ASCF.",
+            "Apoyar la aplicación de encuestas de satisfacción a usuarios de los albergues, programadas en promedio cada tres meses.",
+            "Apoyar la apertura del buzón de sugerencias dos (2) veces al mes y dar respuesta a las PQR de acuerdo con las necesidades de usuarios de centro día-noche urbano o rural.",
+            "Reportar los logros desarrollados desde el área de ciencias sociales, humanas o de la salud en la plataforma Observatorio Social de la Asociación Ciudad Futuro.",
+            "Realizar caracterizaciones psicosociales en las jornadas de atención al interior de las sedes del Programa de Albergues para Habitantes de Calle de Pereira, reportándolas en el Observatorio Social ASCF.",
+            "Realizar las demás actividades que contribuyan al correcto funcionamiento del modelo de atención integral a la población habitante de calle."
+        ]
+    },
+    "16229448": {
+        "nombre": "HUGO ARMANDO CASTRO CORTES",
+        "cargo": "PROFESIONAL ÁREA CIENCIAS SOCIALES, HUMANAS O DE LA SALUD",
+        "contrato": "CPS 11/09/2026 - 10/11/2026",
+        "obligaciones": [
+            "Realizar reporte del cronograma semanal de las actividades grupales y atenciones individuales de acuerdo a la disponibilidad de espacios asignados por Dirección.",
+            "Entrega mensual de las bases de datos correspondientes a la acción: 2.1.6. Registro de beneficiarios de actividades lúdicas, deportivas, de desarrollo personal y de reflexión en temas relacionados con la espiritualidad, 2.1.8. Registro de beneficiarios de procesos de emprendimiento y empleabilidad, 2.1.11. Registro de beneficiarios de actividades de mitigación del daño por consumo de sustancias psico activas De acuerdo a las evidencias para las actividades grupales tener en cuenta la presentación de soportes como: metodología, formatos SPP en PDF y fotos.",
+            "Participar de reuniones en pro del funcionamiento, revisión de novedades, estudios de caso con la administración municipal y retos a desarrollar desde el área de ciencias sociales, humanas o de la salud y el equipo interdisciplinarios del Programa de Albergues para Habitantes de Calle de la ciudad de Pereira.",
+            "Liderar espacios grupales y/o individuales relacionados con la reducción del daño por consumo de sustancias psicoactivas en el centro día - noche Urbano y Rural (1 encuentro semanal mínimo por albergue, para un total de 8 espacios grupales al mes en esta área específica)",
+            "Reportar al área de dirección los formatos diligenciados y registro fotográfico de las diferentes secretarias o descentralizados que visitan los centros días - noche con el propósito de hacer seguimiento a las actividades que son trasversales y que aportan al cumplimiento de indicadores de la política pública de habitante de calle. (formatos correspondientes a secretaria de educación urbano y rural).",
+            "Presentar informe mensual de acuerdo a las funciones del área de ciencias sociales humanas o de la salud, junto con los reportes del “observatorio social ASCF” lo cual debe hacer dentro de los tiempos determinados por la Asociación. Informe que será entregado de manera mensual al correo albergueh.hc.adm@gmail.com la fecha límite para enviar el informe de actividades y fotos es el 25 de cada mes.",
+            "Realizar 2 espacios mensuales en el albergue Urbano y Rural para fortalecer las dinámicas grupales frente al pacto de convivencia en apoyo con el equipo interdisciplinar.",
+            "Participar mínimo en dos (2) salidas restaurativas al mes relacionadas con sensibilización en reducción de riesgos y daños, acompañada de brigadas de alcance, trabajo comunitario y acciones en calle.",
+            "Realizar uno (1) espacio semanal para realizar en articulación con Psicología o  trabajo social  estudios de caso, elaboración o seguimiento del PAI de acuerdo a los procesos de los usuarios del Centro día- noche urbano o rural. (Estos deberán ser reportador en el observatorio social ASCF)",
+            "Participar en el espacio de dar la bienvenida los usuarios y usuarias que por sus procesos individuales llegan de traslados del centro día – noche urbano.  (1 vez a la semana- socialización y firma de  acuerdo de voluntades)",
+            "Reportar los logros desarrollados desde el área de ciencias sociales, humanas o de la salud en la plataforma “observatorio social de la Asociación Ciudad Futuro”.",
+            "Realizar caracterizaciones psicosociales en las jornadas de atención al interior de las sedes del el Programa de Albergues para Habitantes de Calle de la ciudad de Pereira. (Estos deberán ser reportador en el observatorio social ASCF)",
+            "Las demás que contribuyan al correcto funcionamiento del modelo de atención integral a la población habitante de calle.",
+        ]
+    },
+    "1112778245": {
+        "nombre": "DAMIAN LEANDRO ZAPATA BERMUDEZ",
+        "cargo": "PSICÓLOGO",
+        "contrato": "CPS 11/09/2026 - 10/11/2026",
+        "obligaciones": [
+            "Realizar reporte del cronograma semanal de las actividades grupales y atenciones individuales de acuerdo a la disponibilidad de espacios asignados por Dirección.",
+            "Entrega mensual de las bases de datos correspondientes a la acción: 2.1.1. Registro de beneficiarios de atención psicológica y socio familiar 2.1.9. Registro de beneficiarios de actividades de sana convivencia. 2.1.5. Registro de beneficiarios de procesos de reintegración familiar y social con su respectivo seguimiento. De acuerdo a las evidencias para las actividades grupales tener en cuenta la presentación de soportes como: metodología, formatos SPP en PDF y fotos.",
+            "Participar de reuniones en pro del funcionamiento, revisión de novedades, estudios de caso con programa de habitante de calle, reuniones de equipo interdisciplinarios del Programa de Albergues para Habitantes de Calle de la ciudad de Pereira, entre otros.",
+            "Presentar informe mensual de acuerdo a las funciones del área de psicología, junto con los reportes del “observatorio social ASCF” lo cual debe hacer dentro de los tiempos determinados por la Asociación. Informe que será entregado de manera mensual al correo albergueh.hc.adm@gmail.com  la fecha límite para enviar el informe de actividades y fotos es el 25 de cada mes.",
+            "Propiciar, mínimo, un (1) encuentro semanal con al menos 5 usuarios del Programa de Albergues para Habitantes de Calle de la ciudad de Pereira, con los cuales se trabajen temas grupales en prevención selectiva o reducción de riesgos y daños respecto al consumo de Sustancias Psicoactivas (SPA); a través de posibles estrategias como la meditación, reflexión colectiva, cine foros o construcciones colectivas.",
+            "Apoyar la apertura del buzón de sugerencias dos (2) veces al mes y dar respuesta a las PQR de acuerdo con las necesidades de los usuarios del centro día noche rural.",
+            "Reportar al área de dirección los formatos diligenciados y registro fotográfico de las diferentes secretarias o descentralizados que visitan los centros días - noche con el propósito de hacer seguimiento a las actividades que son trasversales y que aportan al cumplimiento de indicadores de la política pública de habitante de calle. (secretaria de salud rural)",
+            "Realizar uno (1) espacio semanal para realizar en articulación con Psicología, trabajo social y pedagogía estudios de caso, elaboración y seguimiento al PAI de acuerdo a los procesos de los usuarios del Centro día- noche urbano o rural. (Estos deberán ser reportador en el observatorio social ASCF)",
+            "Dar la bienvenida los usuarios y usuarias que por sus procesos individuales llegan de traslados del centro día – noche urbano.  (1 vez a la semana- socialización y firma de  acuerdo de voluntades)",
+            "Aplicar encuestas de satisfacción a usuarios de los albergues programadas en promedio para cada tres meses, con el fin de evaluar los servicios prestados al interior del centro día – noche urbano.",
+            "Aportar una (1) certificación actualizada (vigencia 2026) relacionada con la atención a población inmersa en el fenómeno social de consumo de sustancias psicoactivas.",
+            "Reportar los logros desarrollados desde el área de trabajo social en la plataforma “observatorio social de la Asociación Ciudad Futuro”.",
+            "Las demás que contribuyan al correcto funcionamiento del modelo de atención integral a la población habitante de calle.",
+        ]
+    },
+    "94381656": {
+        "nombre": "CARLOS HERNAN LOPEZ GARCIA",
+        "cargo": "PROFESIONAL ÁREA CIENCIAS SOCIALES, HUMANAS O DE LA SALUD",
+        "contrato": "CPS 11/09/2026 - 10/11/2026",
+        "obligaciones": [
+            "Realizar reporte del cronograma semanal de las actividades grupales y atenciones individuales de acuerdo a la disponibilidad de espacios asignados por Dirección.",
+            "Entregar mensualmente las bases de datos correspondientes a la acción 2.1.9, con soportes de metodología, formatos SPP en PDF y fotos para actividades grupales.",
+            "Participar de reuniones en pro del funcionamiento, revisión de novedades, estudios de caso con la administración municipal y retos a desarrollar desde ciencias sociales, humanas o de la salud y el equipo interdisciplinario.",
+            "Generar espacios, uno (1) por semana en cada albergue, que aporten a la participación ciudadana, prevención de vulnerabilidades, herramientas y habilidades para la resolución pacífica de conflictos y promoción de la dignidad mediante ciudadanía activa.",
+            "Generar espacios de pedagogía participativa para afianzar la cultura de la legalidad en la población beneficiaria del programa de albergues, uno (1) por semana en cada albergue.",
+            "Presentar informe mensual de acuerdo con las funciones del área de ciencias sociales, humanas o de la salud, junto con los reportes del Observatorio Social ASCF; fecha límite de actividades y fotos: 25 de cada mes.",
+            "Establecer condiciones para el reforzamiento comunitario con los usuarios del programa, facilitando bienestar individual y colectivo, gestión de vínculos y redes comunitarias y promoción del liderazgo colectivo.",
+            "Realizar un (1) espacio semanal por albergue, en articulación con Psicología o Trabajo Social, para estudios de caso, elaboración o seguimiento del PAI, reportándolo en el Observatorio Social ASCF.",
+            "Reportar y sensibilizar a los usuarios que serán trasladados al centro día-noche rural, una (1) vez a la semana, mediante socialización del acuerdo de voluntades.",
+            "Aportar una (1) certificación actualizada, vigencia 2026, relacionada con la atención a población inmersa en el fenómeno social de consumo de sustancias psicoactivas.",
+            "Reportar los logros desarrollados desde el área de ciencias sociales, humanas o de la salud en la plataforma Observatorio Social de la Asociación Ciudad Futuro.",
+            "Realizar las demás actividades que contribuyan al correcto funcionamiento del modelo de atención integral a la población habitante de calle."
+        ]
+    },
+    "1116270006": {
+        "nombre": "DANA CAROLINA LOPEZ GONZALEZ",
+        "cargo": "PROFESIONAL ÁREA CIENCIAS SOCIALES, HUMANAS O DE LA SALUD",
+        "contrato": "CPS 11/09/2026 - 10/11/2026",
+        "obligaciones": [
+            "Realizar reporte del cronograma semanal de las actividades grupales y atenciones individuales de acuerdo a la disponibilidad de espacios asignados por Dirección.",
+            "Entregar mensualmente las bases de datos correspondientes a la acción 2.1.9, con soportes de metodología, formatos SPP en PDF y fotos para actividades grupales.",
+            "Participar de reuniones en pro del funcionamiento, revisión de novedades, estudios de caso con la administración municipal y retos a desarrollar desde ciencias sociales, humanas o de la salud y el equipo interdisciplinario.",
+            "Acompañar casos específicos de usuarios que requieran defensa de derechos fundamentales, por ejemplo tutela, acceso a salud o identidad.",
+            "Reportar a Dirección los formatos diligenciados y registro fotográfico de las secretarías o descentralizados que visitan los centros día-noche, correspondiente a Secretaría de Deportes y Cultura rural.",
+            "Presentar informe mensual de acuerdo con las funciones del área de ciencias sociales, humanas o de la salud, junto con los reportes del Observatorio Social ASCF; fecha límite de actividades y fotos: 25 de cada mes.",
+            "Realizar un (1) espacio semanal grupal por albergue, urbano y rural, sobre derechos en salud, Constitución Política, política pública de habitante de calle, derechos y deberes, pacto de convivencia, política de drogas, entre otros.",
+            "Participar mínimo en dos (2) salidas restaurativas al mes relacionadas con sensibilización en reducción de riesgos y daños, brigadas de alcance, trabajo comunitario y acciones en calle.",
+            "Realizar un (1) espacio semanal por albergue, en articulación con Psicología o Trabajo Social, para estudios de caso, elaboración o seguimiento del PAI, reportándolo en el Observatorio Social ASCF.",
+            "Reportar y sensibilizar a los usuarios que serán trasladados al centro día-noche rural, una (1) vez a la semana, mediante socialización del acuerdo de voluntades.",
+            "Aportar una (1) certificación actualizada, vigencia 2026, relacionada con la atención a población inmersa en el fenómeno social de consumo de sustancias psicoactivas.",
+            "Reportar los logros desarrollados desde el área de ciencias sociales, humanas o de la salud en la plataforma Observatorio Social de la Asociación Ciudad Futuro.",
+            "Realizar caracterizaciones psicosociales en las jornadas de atención al interior de las sedes del Programa de Albergues para Habitantes de Calle de Pereira, reportándolas en el Observatorio Social ASCF.",
+            "Realizar las demás actividades que contribuyan al correcto funcionamiento del modelo de atención integral a la población habitante de calle."
+        ]
+    },
+    "1225092611": {
+        "nombre": "VICTORIA SANTAMARIA OSORIO",
+        "cargo": "PROFESIONAL ÁREA CIENCIAS SOCIALES, HUMANAS O DE LA SALUD",
+        "contrato": "CPS 11/09/2026 - 10/11/2026",
+        "obligaciones": [
+            "Realizar reporte del cronograma semanal de las actividades grupales y atenciones individuales de acuerdo a la disponibilidad de espacios asignados por Dirección.",
+            "Entrega mensual de las bases de datos correspondientes a la acción: 2.1.3. Registro de beneficiarios estrategias para mitigar la violencia física y sexual en los habitantes de calle, 2.1.6. Registro de beneficiarios de actividades lúdicas, deportivas, de desarrollo personal y de reflexión en temas relacionados con la espiritualidad. 2.1.11. Registro de beneficiarios de actividades de mitigación del daño por consumo de sustancias psico activas De acuerdo a las evidencias para las actividades grupales tener en cuenta la presentación de soportes como: metodología, formatos SPP en PDF y fotos.",
+            "Participar de reuniones en pro del funcionamiento, revisión de novedades, estudios de caso con la administración municipal y retos a desarrollar desde el área de ciencias sociales, humanas o de la salud y el equipo interdisciplinarios del Programa de Albergues para Habitantes de Calle de la ciudad de Pereira.",
+            "Abordaje del trauma con enfoque de género, mediante círculos de la palabra dirigidos exclusivamente a mujeres y mujeres trans, en articulación con otras áreas (psicología, enfermería, trabajo social, 1 espacio semanal por albergue). Los temas a trabajar incluyen:\nFalta de apoyo y estigma social.\nPareja y relaciones afectivas \nPacto de convivencia.\nDinámicas familiares y maternidad.\nViolencias, abusos y traumas.\nSexualidad y salud mental, abordando aspectos como autoestima, autoeficacia, estados anímicos y afectivos, depresión, ansiedad, estrés, autoconcepto y trastornos alimenticios.",
+            "Seguimiento a mujeres y mujeres trans usuarias del albergue, con sistematización de experiencias y violencias.",
+            "Presentar informe mensual de acuerdo a las funciones del área de ciencias sociales, humanas o de la salud, junto con los reportes del “observatorio social ASCF” lo cual debe hacer dentro de los tiempos determinados por la Asociación. Informe que será entregado de manera mensual al correo albergueh.hc.adm@gmail.com la fecha límite para enviar el informe de actividades y fotos es el 25 de cada mes.",
+            "Motivar la articulación con colectivos y dependencias institucionales, reconociendo como buena práctica el tejido de redes que garanticen a las mujeres el acceso en igualdad de condiciones a distintos recursos.",
+            "Participar mínimo en dos (2) salidas restaurativas al mes relacionadas con sensibilización en reducción de riesgos y daños, acompañada de brigadas de alcance, trabajo comunitario y acciones en calle.",
+            "Realizar uno (1) espacio semanal para realizar en articulación con Psicología o  trabajo social  estudios de caso, elaboración o seguimiento del PAI de acuerdo a los procesos de los usuarios del Centro día- noche urbano o rural. (Estos deberán ser reportador en el observatorio social ASCF)",
+            "Aplicar encuestas de satisfacción a usuarios de los albergues programadas en promedio para cada tres meses, con el fin de evaluar los servicios prestados al interior del centro día – noche urbano.",
+            "Aportar una (1) certificación actualizada (vigencia 2026) relacionada con la atención a población inmersa en el fenómeno social de consumo de sustancias psicoactivas.",
+            "Reportar los logros desarrollados desde el área de ciencias sociales, humanas o de la salud en la plataforma “observatorio social de la Asociación Ciudad Futuro”.",
+            "Realizar caracterizaciones psicosociales en las jornadas de atención al interior de las sedes del el Programa de Albergues para Habitantes de Calle de la ciudad de Pereira. (Estos deberán ser reportador en el observatorio social ASCF)",
+            "Las demás que contribuyan al correcto funcionamiento del modelo de atención integral a la población habitante de calle.",
+        ]
+    },
+    "1192771619": {
+        "nombre": "JUAN DAVID ROBLEDO PULGARIN",
+        "cargo": "PROFESIONAL ÁREA CIENCIAS SOCIALES, HUMANAS O DE LA SALUD",
+        "contrato": "CPS 11/09/2026 - 10/11/2026",
+        "obligaciones": [
+            "Realizar reporte del cronograma semanal de las actividades grupales y atenciones individuales de acuerdo a la disponibilidad de espacios asignados por Dirección.",
+            "Entrega mensual de las bases de datos correspondientes a la acción: 2.1.6. Registro de beneficiarios de actividades lúdicas, deportivas, de desarrollo personal y de reflexión en temas relacionados con la espiritualidad, 2.1.11. Registro de beneficiarios de actividades de mitigación del daño por consumo de sustancias psico activas. De acuerdo a las evidencias para las actividades grupales tener en cuenta la presentación de soportes como: metodología, formatos SPP en PDF y fotos.",
+            "Participar de reuniones en pro del funcionamiento, revisión de novedades, estudios de caso con la administración municipal y retos a desarrollar desde el área de ciencias sociales, humanas o de la salud y el equipo interdisciplinarios del Programa de Albergues para Habitantes de Calle de la ciudad de Pereira.",
+            "Reportar al área de dirección los formatos diligenciados y registro fotográfico de las diferentes secretarias o descentralizados que visitan los centros días - noche con el propósito de hacer seguimiento a las actividades que son trasversales y que aportan al cumplimiento de indicadores de la política pública de habitante de calle. (formatos correspondientes a secretaria de deportes y cultura urbano).",
+            "Presentar informe mensual de acuerdo a las funciones del área de trabajo social, junto con los reportes del “observatorio social ASCF” lo cual debe hacer dentro de los tiempos determinados por la Asociación. Informe que será entregado de manera mensual al correo albergueh.hc.adm@gmail.com la fecha límite para enviar el informe de actividades y fotos es el 25 de cada mes.",
+            "Socializar, desarrollar e implementar la estrategia denominada “CASADENTRO, CASAFUERA, dentro del marco de las narrativas y memoria del fenómeno social de habitanza en calle. Un laboratorio desde la pedagogía.  Esta estrategia deberá contar con un espacio de socialización de resultados.",
+            "Participar mínimo en dos (2) salidas restaurativas al mes relacionadas con sensibilización en reducción de riesgos y daños, acompañada de brigadas de alcance, trabajo comunitario y acciones en calle.",
+            "Realizar uno (1) espacio semanal para realizar en articulación con Psicología y trabajo social estudios de caso,  elaboración o seguimiento del PAI de acuerdo a los procesos de los usuarios del Centro día- noche urbano o rural. (Estos deberán ser reportador en el observatorio social ASCF)",
+            "Apoyar la apertura del buzón de sugerencias dos (2) veces al mes y dar respuesta a las PQR de acuerdo a las necesidades de los usuarios y usuarias del centro día noche urbano.",
+            "Aportar una (1) certificación actualizada (vigencia 2026) relacionada con la atención a población inmersa en el fenómeno social de consumo de sustancias psicoactivas.",
+            "Reportar los logros desarrollados desde el área de ciencias sociales, humanas o de la salud en la plataforma “observatorio social de la Asociación Ciudad Futuro”.",
+            "Reportar y sensibilizar los usuarios y usuarias que por sus procesos individuales serán trasladados al centro día – noche rural. (1 vez a la semana- socialización acuerdo de voluntades)",
+            "Realizar caracterizaciones psicosociales en las jornadas de atención al interior de las sedes del el Programa de Albergues para Habitantes de Calle de la ciudad de Pereira. (Estos deberán ser reportador en el observatorio social ASCF)",
+            "Las demás que contribuyan al correcto funcionamiento del modelo de atención integral a la población habitante de calle.",
+        ]
+    },
+}
+
+
+def _solo_digitos_v16124(valor):
+    return "".join(ch for ch in str(valor or "") if ch.isdigit())
+
+
+def _contrato_individual_v16124(documento, nombre=""):
+    doc = _solo_digitos_v16124(documento)
+    if doc and doc in CONTRATOS_INFORME_MENSUAL_V16124:
+        return CONTRATOS_INFORME_MENSUAL_V16124[doc]
+
+    # Respaldo únicamente cuando profesionales no tiene cédula registrada.
+    # La parametrización sigue siendo individual; no se agrupa por profesión.
+    nom = _norm_nombre_pp_v1678(nombre)
+    if nom:
+        for cfg in CONTRATOS_INFORME_MENSUAL_V16124.values():
+            if _norm_nombre_pp_v1678(cfg.get("nombre")) == nom:
+                return cfg
+    return None
+
+
+
+# ============================================================
+# V16.125 - EVIDENCIA AUTOMÁTICA PARA INFORME MENSUAL
+# ============================================================
+def _pp_codigos_desde_obligacion_v16125(texto_obligacion):
+    import re
+    codigos = re.findall(r"\b2\.1\.\d+\b", str(texto_obligacion or ""))
+    # conservar orden sin duplicados
+    vistos = set()
+    salida = []
+    for c in codigos:
+        if c not in vistos:
+            vistos.add(c)
+            salida.append(c)
+    return salida
+
+
+def _evidencia_pp_profesional_v16125(documento, fecha_inicio, fecha_fin, codigos=None):
+    """Devuelve los registros de Política Pública hechos por el profesional en el período."""
+    doc = _solo_digitos_v16124(documento)
+    if not doc:
+        return pd.DataFrame()
+    filtros_codigo = ""
+    params = {"doc": doc, "fi": fecha_inicio, "ff": fecha_fin}
+    if codigos:
+        filtros_codigo = " AND r.codigo_accion = ANY(:codigos) "
+        params["codigos"] = list(codigos)
+    try:
+        return pd.read_sql(
+            text(f"""
+                SELECT
+                    r.id AS "ID evidencia",
+                    r.fecha_accion AS "Fecha actividad",
+                    TO_CHAR(
+                        (r.creado_en AT TIME ZONE 'America/Bogota'),
+                        'DD/MM/YYYY HH12:MI:SS AM'
+                    ) AS "Fecha y hora de registro",
+                    r.codigo_accion AS "Código",
+                    r.tipo_registro AS "Tipo",
+                    COALESCE(NULLIF(TRIM(r.nombre_actividad),''), r.accion) AS "Actividad / acción",
+                    COALESCE(r.lugar,'') AS "Lugar",
+                    COUNT(p.id)::int AS "Participantes",
+                    COALESCE(r.descripcion,'') AS "Descripción",
+                    COALESCE(r.observacion,'') AS "Observación"
+                FROM politica_publica_registros r
+                LEFT JOIN politica_publica_participantes p
+                  ON p.registro_id = r.id
+                WHERE REGEXP_REPLACE(COALESCE(CAST(r.registrado_por_cc AS TEXT),''),'[^0-9]','','g') = :doc
+                  AND r.fecha_accion BETWEEN :fi AND :ff
+                  {filtros_codigo}
+                GROUP BY r.id
+                ORDER BY r.fecha_accion DESC, r.creado_en DESC, r.id DESC
+            """),
+            engine,
+            params=params
+        )
+    except Exception:
+        return pd.DataFrame()
+
+
+def _evidencia_caracterizaciones_profesional_v16125(documento, fecha_inicio, fecha_fin):
+    """Historial inmutable de caracterizaciones guardadas por el profesional."""
+    doc = _solo_digitos_v16124(documento)
+    if not doc:
+        return pd.DataFrame()
+    try:
+        return pd.read_sql(
+            text("""
+                SELECT
+                    a.numero_identificacion AS "Documento usuario",
+                    TRIM(COALESCE(h.nombres,'') || ' ' || COALESCE(h.apellidos,'')) AS "Usuario",
+                    a.accion AS "Acción",
+                    TO_CHAR(
+                        (a.fecha_hora AT TIME ZONE 'America/Bogota'),
+                        'DD/MM/YYYY HH12:MI:SS AM'
+                    ) AS "Fecha y hora",
+                    COALESCE(a.funcionario_nombre,'') AS "Profesional"
+                FROM caracterizacion_habitabilidad_auditoria a
+                LEFT JOIN habitante_de_calle h
+                  ON TRIM(CAST(h.numero_identificacion AS TEXT))
+                   = TRIM(CAST(a.numero_identificacion AS TEXT))
+                WHERE REGEXP_REPLACE(COALESCE(CAST(a.funcionario_cedula AS TEXT),''),'[^0-9]','','g') = :doc
+                  AND ((a.fecha_hora AT TIME ZONE 'America/Bogota')::date BETWEEN :fi AND :ff)
+                ORDER BY a.fecha_hora DESC
+            """),
+            engine,
+            params={"doc": doc, "fi": fecha_inicio, "ff": fecha_fin}
+        )
+    except Exception:
+        return pd.DataFrame()
+
+
+# ============================================================
+# V16.136 - DETALLE NOMINAL Y FECHADO DE EVIDENCIA PAI
+# ============================================================
+def _detalle_pai_informe_v16136(df_pai=None, df_seg=None, fecha_inicio=None, fecha_fin=None):
+    """Convierte las fuentes PAI/seguimiento en evidencia legible y auditable.
+
+    No inventa información: toma únicamente columnas realmente presentes y,
+    cuando existe documento del usuario, completa el nombre desde
+    habitante_de_calle.
+    """
+    def _col_local(df, candidatos):
+        if df is None or df.empty:
+            return None
+        mapa = {str(c).lower().strip(): c for c in df.columns}
+        for cand in candidatos:
+            if cand.lower() in mapa:
+                return mapa[cand.lower()]
+        for c in df.columns:
+            lc = str(c).lower()
+            if any(cand.lower() in lc for cand in candidatos):
+                return c
+        return None
+
+    def _txt(v):
+        if v is None or (isinstance(v, float) and pd.isna(v)):
+            return ""
+        t = str(v).strip()
+        return "" if t.lower() in ("nan", "none", "nat") else t
+
+    def _armar(df, fuente):
+        if df is None or df.empty:
+            return pd.DataFrame()
+        c_fecha = _col_local(df, ["fecha_hora", "fecha_registro", "fecha_seguimiento", "fecha_creacion", "created_at", "fecha_atencion", "fecha"])
+        c_doc = _col_local(df, ["documento_usuario", "numero_identificacion", "documento", "cedula_usuario", "cedula"])
+        c_tipo = _col_local(df, ["tipo_novedad", "tipo_seguimiento", "tipo_intervencion", "tipo", "objetivo_tipo", "estado"])
+        c_obj = _col_local(df, ["objetivo_descripcion", "objetivo", "actividad", "actividad_realizada", "intervencion", "motivo"])
+        c_desc = _col_local(df, ["descripcion", "seguimiento", "observacion", "resultado", "detalle", "evidencia"])
+        c_av = _col_local(df, ["avance_generado", "porcentaje_avance", "avance"])
+        c_prof = _col_local(df, ["profesional_responsable", "profesional", "profesional_referente", "responsable", "registrado_por_nombre"])
+
+        filas = []
+        for _, r in df.iterrows():
+            fecha_txt = ""
+            if c_fecha:
+                f = pd.to_datetime(r.get(c_fecha), errors="coerce")
+                if pd.notna(f):
+                    try:
+                        if getattr(f, "tzinfo", None) is not None:
+                            f = f.tz_convert("America/Bogota")
+                    except Exception:
+                        pass
+                    fecha_txt = f.strftime("%d/%m/%Y %I:%M %p") if (f.hour or f.minute or f.second) else f.strftime("%d/%m/%Y")
+                else:
+                    fecha_txt = _txt(r.get(c_fecha))
+            filas.append({
+                "Fecha / hora": fecha_txt,
+                "Documento usuario": _txt(r.get(c_doc)) if c_doc else "",
+                "Usuario": "",
+                "Fuente": fuente,
+                "Tipo de registro": _txt(r.get(c_tipo)) if c_tipo else fuente,
+                "Objetivo / actividad": _txt(r.get(c_obj)) if c_obj else "",
+                "Seguimiento / resultado": _txt(r.get(c_desc)) if c_desc else "",
+                "Avance": _txt(r.get(c_av)) if c_av else "",
+                "Profesional": _txt(r.get(c_prof)) if c_prof else "",
+            })
+        return pd.DataFrame(filas)
+
+    partes = []
+    p = _armar(df_pai, "PAI")
+    s = _armar(df_seg, "Seguimiento / intervención")
+    if not p.empty:
+        partes.append(p)
+    if not s.empty:
+        partes.append(s)
+    if not partes:
+        return pd.DataFrame()
+
+    det = pd.concat(partes, ignore_index=True, sort=False)
+
+    # V16.139 - SEGUNDO CANDADO DE PERÍODO.
+    # El detalle que finalmente se imprime se vuelve a filtrar por la MISMA fecha
+    # que verá el usuario. Esto evita que una fuente con varias columnas de fecha
+    # (p. ej. fecha_registro y fecha_seguimiento) deje pasar registros de otro mes.
+    if fecha_inicio is not None and fecha_fin is not None and not det.empty:
+        def _fecha_visible_estricta(v):
+            if v is None:
+                return pd.NaT
+            txt = str(v).strip()
+            if not txt:
+                return pd.NaT
+            # El detalle se formatea DD/MM/YYYY; extraemos explícitamente esa fecha
+            # para no depender de inferencias ambiguas de pandas.
+            import re as _re
+            m = _re.match(r"^(\d{2})/(\d{2})/(\d{4})", txt)
+            if not m:
+                return pd.NaT
+            try:
+                from datetime import date as _date
+                return _date(int(m.group(3)), int(m.group(2)), int(m.group(1)))
+            except Exception:
+                return pd.NaT
+        _fv = det["Fecha / hora"].apply(_fecha_visible_estricta)
+        _mask = _fv.apply(lambda d: pd.notna(d) and fecha_inicio <= d <= fecha_fin)
+        det = det.loc[_mask].copy()
+
+    # Completar nombre de la persona sin alterar el registro original.
+    docs = [d for d in det["Documento usuario"].fillna("").astype(str).str.strip().unique().tolist() if d]
+    if docs:
+        try:
+            nombres = pd.read_sql(
+                text("""
+                    SELECT TRIM(CAST(numero_identificacion AS TEXT)) AS doc,
+                           TRIM(COALESCE(nombres,'') || ' ' || COALESCE(apellidos,'')) AS nombre
+                    FROM habitante_de_calle
+                    WHERE TRIM(CAST(numero_identificacion AS TEXT)) = ANY(:docs)
+                """), engine, params={"docs": docs}
+            )
+            mapa_n = dict(zip(nombres["doc"].astype(str), nombres["nombre"].astype(str)))
+            det["Usuario"] = det["Documento usuario"].astype(str).map(mapa_n).fillna("")
+        except Exception:
+            pass
+
+    # Orden descendente cuando la fecha es interpretable.
+    try:
+        _ord = pd.to_datetime(det["Fecha / hora"], errors="coerce", dayfirst=True)
+        det = det.assign(_orden=_ord).sort_values("_orden", ascending=False, na_position="last").drop(columns=["_orden"])
+    except Exception:
+        pass
+    return det.reset_index(drop=True)
+
+
+def _resumen_evidencia_v16125(tipo, df, codigos=None):
+    if df is None or df.empty:
+        return ""
+    if tipo == "politica":
+        regs = int(len(df))
+        participantes = 0
+        try:
+            participantes = int(pd.to_numeric(df["Participantes"], errors="coerce").fillna(0).sum())
+        except Exception:
+            pass
+        cod_txt = ", ".join(codigos or [])
+        detalle = f"Registros automáticos encontrados: {regs}"
+        if cod_txt:
+            detalle += f" para {cod_txt}"
+        detalle += f"; participantes registrados: {participantes}."
+        return detalle
+    if tipo == "caracterizaciones":
+        total = int(len(df))
+        unicos = 0
+        creadas = 0
+        actualizadas = 0
+        try:
+            unicos = int(df["Documento usuario"].astype(str).nunique())
+            acciones = df["Acción"].fillna("").astype(str).str.upper()
+            creadas = int((acciones == "CREACION").sum())
+            actualizadas = int((acciones == "ACTUALIZACION").sum())
+        except Exception:
+            pass
+        return (
+            f"Caracterizaciones registradas en el período: {total}; "
+            f"personas únicas: {unicos}; creaciones: {creadas}; actualizaciones: {actualizadas}."
+        )
+    if tipo == "pai":
+        total = int(len(df))
+        personas = 0
+        try:
+            personas = int(df["Documento usuario"].fillna("").astype(str).str.strip().replace("", pd.NA).dropna().nunique())
+        except Exception:
+            pass
+        return (
+            f"Evidencia automática PAI/seguimiento: {total} registro(s) del período; "
+            f"personas únicas intervenidas: {personas}. Se detalla fecha/hora, persona, "
+            "tipo de registro, actividad/objetivo, seguimiento/resultado y avance cuando están disponibles."
+        )
+    return ""
+
+
+def _evidencia_automatica_obligacion_v16125(
+    obligacion, documento, fecha_inicio, fecha_fin, df_pai=None, df_seg=None
+):
+    """
+    Retorna dict con tipo, dataframe y resumen. Solo atribuye evidencia que puede
+    asociarse al profesional por su cédula o por los filtros ya aplicados.
+    """
+    texto_ob = str(obligacion or "")
+    texto_norm = texto_ob.upper()
+    codigos = _pp_codigos_desde_obligacion_v16125(texto_ob)
+
+    if codigos:
+        df = _evidencia_pp_profesional_v16125(
+            documento, fecha_inicio, fecha_fin, codigos=codigos
+        )
+        return {
+            "tipo": "politica",
+            "df": df,
+            "resumen": _resumen_evidencia_v16125("politica", df, codigos),
+            "codigos": codigos,
+        }
+
+    if "CARACTERIZ" in texto_norm:
+        df = _evidencia_caracterizaciones_profesional_v16125(
+            documento, fecha_inicio, fecha_fin
+        )
+        return {
+            "tipo": "caracterizaciones",
+            "df": df,
+            "resumen": _resumen_evidencia_v16125("caracterizaciones", df),
+            "codigos": [],
+        }
+
+    if "PAI" in texto_norm or "ESTUDIO DE CASO" in texto_norm:
+        df = _detalle_pai_informe_v16136(df_pai=df_pai, df_seg=df_seg, fecha_inicio=fecha_inicio, fecha_fin=fecha_fin)
+        return {
+            "tipo": "pai",
+            "df": df,
+            "resumen": _resumen_evidencia_v16125("pai", df),
+            "codigos": [],
+        }
+
+    return {"tipo": "", "df": pd.DataFrame(), "resumen": "", "codigos": []}
+
+
 def modulo_informe_mensual_profesional_piloto_v1627():
     st.title("📄 Informe Mensual Profesional")
     st.caption("Piloto para consolidar PAI, seguimientos y gestión mensual del profesional.")
@@ -23968,6 +25517,16 @@ def modulo_informe_mensual_profesional_piloto_v1627():
     except Exception:
         pass
 
+    # V16.124: si profesionales no trae documento, usar la cédula de la sesión activa.
+    if not documento_profesional_inf:
+        documento_profesional_inf = str(
+            st.session_state.get("documento_funcionario", "") or ""
+        ).strip()
+
+    contrato_individual = _contrato_individual_v16124(
+        documento_profesional_inf, nombre_profesional_inf
+    )
+
     try:
         tablas = pd.read_sql(
             text("SELECT table_name FROM information_schema.tables WHERE table_schema='public'"),
@@ -23996,21 +25555,59 @@ def modulo_informe_mensual_profesional_piloto_v1627():
         return None
 
     def filtrar_periodo(df):
+        """Filtra por la fecha LOCAL de Colombia que luego se muestra en el informe.
+
+        V16.138: evita que un timestamp UTC del 01/09 (por ejemplo 00:xx UTC)
+        pase el filtro de septiembre y después se muestre como 31/08 al convertirlo
+        a America/Bogota. Para timestamps con zona horaria, primero convertimos a
+        Colombia y SOLO DESPUÉS comparamos la fecha. Las fechas naive se conservan
+        como fechas locales, sin aplicar un desplazamiento artificial.
+        """
         if df is None or df.empty:
             return pd.DataFrame()
-        cf = col(df, ["fecha_apertura","fecha_registro","fecha_seguimiento","fecha_creacion","created_at","fecha_atencion","fecha"])
+
+        # Prioridad estricta: usar la fecha real del evento/seguimiento antes que
+        # columnas genéricas. La búsqueda aproximada anterior podía escoger otra
+        # columna que simplemente contuviera la palabra "fecha".
+        candidatos = [
+            "fecha_seguimiento", "fecha_registro", "fecha_hora", "creado_en",
+            "created_at", "fecha_creacion", "fecha_atencion", "fecha_movimiento",
+            "fecha"
+        ]
+        mapa = {str(x).lower().strip(): x for x in df.columns}
+        cf = next((mapa[c] for c in candidatos if c in mapa), None)
+        if cf is None:
+            # Solo como último recurso usar la lógica flexible existente.
+            cf = col(df, candidatos)
         if not cf:
             return df.copy()
+
         tmp = df.copy()
-        ff = pd.to_datetime(tmp[cf], errors="coerce", dayfirst=True)
-        return tmp[(ff.dt.date >= fecha_inicio) & (ff.dt.date <= fecha_fin)].copy()
+
+        def _fecha_local_colombia(v):
+            if v is None or (isinstance(v, float) and pd.isna(v)):
+                return pd.NaT
+            try:
+                ts = pd.Timestamp(v)
+            except Exception:
+                return pd.NaT
+            if pd.isna(ts):
+                return pd.NaT
+            try:
+                if ts.tzinfo is not None:
+                    ts = ts.tz_convert("America/Bogota")
+            except Exception:
+                pass
+            return ts.date()
+
+        fechas_locales = tmp[cf].apply(_fecha_local_colombia)
+        mascara = fechas_locales.apply(
+            lambda d: pd.notna(d) and fecha_inicio <= d <= fecha_fin
+        )
+        return tmp.loc[mascara].copy()
 
     # Detecta las tablas reales existentes en esta instalación.
-    # V16.101: el Informe Mensual debe leer los objetivos PAI reales,
-    # no la primera tabla cuyo nombre contenga "pai".
-    tablas_pai = (
-        ["pai_objetivos"] if "pai_objetivos" in tablas else []
-    ) + [t for t in tablas if "pai" in t.lower() and t != "pai_objetivos"]
+    tablas_pai = [t for t in tablas if "pai" in t.lower()]
     tablas_seg = [
         t for t in tablas
         if any(k in t.lower() for k in ["seguimiento","intervencion"])
@@ -24038,8 +25635,7 @@ def modulo_informe_mensual_profesional_piloto_v1627():
         if df.empty:
             return df
 
-        # profesional_referente en pai_objetivos guarda el ID de profesionales.
-        cp_id = col(df, ["profesional_id", "id_profesional", "profesional_referente"])
+        cp_id = col(df, ["profesional_id", "id_profesional"])
         if cp_id and profesional_id_inf is not None:
             ids = pd.to_numeric(df[cp_id], errors="coerce")
             mask_id = ids.eq(pd.to_numeric(pd.Series([profesional_id_inf]), errors="coerce").iloc[0])
@@ -24067,23 +25663,14 @@ def modulo_informe_mensual_profesional_piloto_v1627():
 
     docs = set()
     for df in [df_pai, df_seg]:
-        cd = col(df, ["documento_usuario","numero_identificacion","documento","cedula"])
+        cd = col(df, ["numero_identificacion","documento","cedula"])
         if cd:
             docs.update(df[cd].dropna().astype(str).str.strip().tolist())
     docs.discard("")
 
     st.markdown("### 📊 Consolidado automático")
     a,b,c,d = st.columns(4)
-    # Un PAI corresponde a una persona en el período. Una persona puede tener
-    # varios objetivos y no debe contarse varias veces.
-    _doc_pai = col(df_pai, ["documento_usuario","numero_identificacion","documento","cedula"])
-    if _doc_pai and not df_pai.empty:
-        total_pai_periodo = int(
-            df_pai[_doc_pai].dropna().astype(str).str.strip().replace("", pd.NA).dropna().nunique()
-        )
-    else:
-        total_pai_periodo = 0
-    a.metric("PAI del período", total_pai_periodo)
+    a.metric("PAI del período", len(df_pai))
     b.metric("Seguimientos / intervenciones", len(df_seg))
     c.metric("Personas únicas", len(docs))
     d.metric("Fuentes detectadas", int(bool(fuente_pai)) + int(bool(fuente_seg)))
@@ -24106,6 +25693,9 @@ def modulo_informe_mensual_profesional_piloto_v1627():
     documento = documento_profesional_inf
 
     x1, x2 = st.columns(2)
+    cargo_def = str((contrato_individual or {}).get("cargo") or "").strip()
+    contrato_def = str((contrato_individual or {}).get("contrato") or "").strip()
+
     with x1:
         if documento:
             st.text_input(
@@ -24114,8 +25704,16 @@ def modulo_informe_mensual_profesional_piloto_v1627():
                 disabled=True,
                 key="imp_doc_fijo"
             )
-        cargo = st.text_input("Cargo / perfil profesional", key="imp_cargo")
-        contrato = st.text_input("Contrato / CPS", key="imp_contrato")
+        if contrato_individual:
+            cargo = st.text_input(
+                "Cargo / perfil profesional", value=cargo_def, disabled=True, key="imp_cargo_v16124"
+            )
+            contrato = st.text_input(
+                "Contrato / CPS", value=contrato_def, disabled=True, key="imp_contrato_v16124"
+            )
+        else:
+            cargo = st.text_input("Cargo / perfil profesional", key="imp_cargo")
+            contrato = st.text_input("Contrato / CPS", key="imp_contrato")
     with x2:
         proyecto = st.text_input(
             "Proyecto / programa",
@@ -24129,25 +25727,155 @@ def modulo_informe_mensual_profesional_piloto_v1627():
         )
 
     st.markdown("### 🧾 Cumplimiento de obligaciones")
-    obligaciones = [
-        "Realizar intervenciones, valoraciones y seguimientos individuales.",
-        "Mantener actualizada la información y bases de datos de las personas atendidas.",
-        "Participar en reuniones interdisciplinarias y estudios de caso.",
-        "Presentar informe mensual e indicadores de las actividades desarrolladas.",
-        "Desarrollar acciones de prevención, educación para la salud y reducción de riesgos y daños.",
-        "Realizar las demás actividades relacionadas con el objeto contractual."
-    ]
+    if contrato_individual:
+        st.success(
+            f"✅ Obligaciones cargadas del contrato individual de **{contrato_individual['nombre']}** "
+            f"según CC **{_solo_digitos_v16124(documento)}**."
+        )
+        obligaciones = list(contrato_individual.get("obligaciones", []))
+    else:
+        st.warning(
+            "⚠️ No se encontró una parametrización contractual individual para esta cédula. "
+            "Se muestran obligaciones generales de respaldo; Coordinación debe revisar la asignación."
+        )
+        obligaciones = [
+            "Realizar intervenciones, valoraciones y seguimientos individuales.",
+            "Mantener actualizada la información y bases de datos de las personas atendidas.",
+            "Participar en reuniones interdisciplinarias y estudios de caso.",
+            "Presentar informe mensual e indicadores de las actividades desarrolladas.",
+            "Desarrollar acciones de prevención, educación para la salud y reducción de riesgos y daños.",
+            "Realizar las demás actividades relacionadas con el objeto contractual."
+        ]
     filas = []
     for i, ob in enumerate(obligaciones, 1):
         with st.expander(f"{i}. {ob}", expanded=(i==1)):
-            act = st.text_area("Actividades ejecutadas", key=f"imp_act_{i}")
-            sop = st.text_area("Evidencias / soportes", key=f"imp_sop_{i}")
-            log = st.text_area("Logros / resultados", key=f"imp_log_{i}")
+            ev_auto = _evidencia_automatica_obligacion_v16125(
+                ob,
+                documento,
+                fecha_inicio,
+                fecha_fin,
+                df_pai=df_pai,
+                df_seg=df_seg,
+            )
+
+            if ev_auto.get("tipo"):
+                st.markdown("#### 🔗 Evidencia automática del Observatorio")
+                if ev_auto.get("resumen"):
+                    st.success(ev_auto["resumen"])
+
+                df_ev = ev_auto.get("df")
+                if isinstance(df_ev, pd.DataFrame) and not df_ev.empty:
+                    st.dataframe(df_ev, use_container_width=True, hide_index=True)
+
+                    if ev_auto["tipo"] == "politica":
+                        st.caption(
+                            "Cada fila corresponde a un registro real de Acciones de Política Pública. "
+                            "La columna **ID evidencia** permite rastrear exactamente el soporte y "
+                            "**Fecha y hora de registro** corresponde a hora Colombia."
+                        )
+                        ids_ev = []
+                        try:
+                            ids_ev = [
+                                int(x) for x in df_ev["ID evidencia"].dropna().tolist()
+                            ]
+                        except Exception:
+                            ids_ev = []
+                        if ids_ev:
+                            id_abrir = st.selectbox(
+                                "Evidencia para abrir en el módulo",
+                                ids_ev,
+                                key=f"imp_ev_pp_sel_{_solo_digitos_v16124(documento)}_{i}"
+                            )
+                            if st.button(
+                                f"📋 Abrir evidencia #{id_abrir} en Acciones de Política Pública",
+                                key=f"imp_ev_pp_btn_{_solo_digitos_v16124(documento)}_{i}"
+                            ):
+                                st.session_state["pp78_resaltar_registro"] = int(id_abrir)
+                                st.session_state.page = "politica_publica_v1678"
+                                st.rerun()
+                    elif ev_auto["tipo"] == "pai":
+                        st.caption(
+                            "Cada fila corresponde a evidencia real PAI/seguimiento atribuida al profesional "
+                            "en el período. Los campos vacíos indican que la fuente original no contiene ese dato."
+                        )
+                else:
+                    st.info(
+                        "No se encontraron registros automáticos asociados a esta obligación "
+                        "para el profesional y período seleccionados."
+                    )
+
+            act = st.text_area(
+                "Actividades ejecutadas",
+                key=f"imp_act_{_solo_digitos_v16124(documento)}_{i}"
+            )
+            sop_manual = st.text_area(
+                "Evidencias / soportes adicionales",
+                key=f"imp_sop_{_solo_digitos_v16124(documento)}_{i}"
+            )
+            log = st.text_area(
+                "Logros / resultados",
+                key=f"imp_log_{_solo_digitos_v16124(documento)}_{i}"
+            )
+
+            partes_sop = []
+            if ev_auto.get("resumen"):
+                partes_sop.append("EVIDENCIA AUTOMÁTICA: " + ev_auto["resumen"])
+                df_ev = ev_auto.get("df")
+                if isinstance(df_ev, pd.DataFrame) and not df_ev.empty:
+                    # Para el PDF dejar una traza compacta y auditable.
+                    if ev_auto["tipo"] == "politica":
+                        for _, _r in df_ev.head(25).iterrows():
+                            partes_sop.append(
+                                f"ID {_r.get('ID evidencia','')} | "
+                                f"{_r.get('Código','')} | "
+                                f"{_r.get('Fecha actividad','')} | "
+                                f"registro {_r.get('Fecha y hora de registro','')} | "
+                                f"{_r.get('Tipo','')} | "
+                                f"{_r.get('Participantes',0)} participante(s)"
+                            )
+                    elif ev_auto["tipo"] == "caracterizaciones":
+                        for _, _r in df_ev.head(25).iterrows():
+                            partes_sop.append(
+                                f"{_r.get('Acción','')} | "
+                                f"{_r.get('Documento usuario','')} | "
+                                f"{_r.get('Usuario','')} | "
+                                f"{_r.get('Fecha y hora','')}"
+                            )
+                    elif ev_auto["tipo"] == "pai":
+                        for _, _r in df_ev.head(40).iterrows():
+                            _persona = str(_r.get("Usuario", "") or "").strip()
+                            _docu = str(_r.get("Documento usuario", "") or "").strip()
+                            _quien = (_persona + (f" · CC {_docu}" if _docu else "")).strip(" ·")
+                            _avance = str(_r.get("Avance", "") or "").strip()
+                            partes_sop.append(
+                                f"{_r.get('Fecha / hora','')} | "
+                                f"{_quien or 'Usuario no identificado en la fuente'} | "
+                                f"{_r.get('Fuente','')} | {_r.get('Tipo de registro','')} | "
+                                f"Actividad/objetivo: {_r.get('Objetivo / actividad','')} | "
+                                f"Seguimiento/resultado: {_r.get('Seguimiento / resultado','')}"
+                                + (f" | Avance: {_avance}" if _avance else "")
+                            )
+            if sop_manual.strip():
+                partes_sop.append("SOPORTE ADICIONAL: " + sop_manual.strip())
+            sop = "\n".join(partes_sop)
             filas.append([ob, act, sop, log])
 
     st.markdown("### 🧠 Síntesis profesional")
     analisis = st.text_area("Análisis del período", height=140, key="imp_analisis")
     compromisos = st.text_area("Compromisos / acciones siguientes", height=100, key="imp_compromisos")
+
+    st.markdown("### ✍️ Firma del profesional")
+    st.caption("Opcional: puede adjuntar una imagen de su firma (PNG, JPG o JPEG) para incluirla en el PDF. Esta es una firma gráfica insertada en el informe; no reemplaza una firma digital criptográfica/certificada.")
+    firma_archivo = st.file_uploader(
+        "Agregar firma al informe",
+        type=["png", "jpg", "jpeg"],
+        key="imp_firma_profesional_v16139"
+    )
+    if firma_archivo is not None:
+        try:
+            st.image(firma_archivo, caption="Firma que se incluirá en el PDF", width=220)
+        except Exception:
+            pass
 
     st.markdown("### 👁️ Vista previa")
     st.write(
@@ -24218,40 +25946,118 @@ def modulo_informe_mensual_profesional_piloto_v1627():
             ("FONTSIZE",(0,0),(-1,-1),8)
         ]))
         story += [ti, Spacer(1,8)]
-        data = [[Paragraph("<b>Obligación contractual</b>",body),
-                 Paragraph("<b>Actividades ejecutadas</b>",body),
-                 Paragraph("<b>Evidencias / soportes</b>",body),
-                 Paragraph("<b>Logros / resultados</b>",body)]]
-        for row in filas:
-            data.append([Paragraph(esc(x),body) for x in row])
-        tt = Table(data, colWidths=[4.5*cm,4.5*cm,3.8*cm,4.2*cm], repeatRows=1)
-        tt.setStyle(TableStyle([
-            ("GRID",(0,0),(-1,-1),0.3,colors.grey),
-            ("BACKGROUND",(0,0),(-1,0),colors.whitesmoke),
-            ("VALIGN",(0,0),(-1,-1),"TOP"),
-            ("LEFTPADDING",(0,0),(-1,-1),3),
-            ("RIGHTPADDING",(0,0),(-1,-1),3)
-        ]))
-        story += [tt, Spacer(1,8),
+        # V16.137 - PDF multipágina robusto.
+        # No usamos una sola tabla de 4 columnas para todas las obligaciones porque
+        # ReportLab no puede partir una celda cuya altura supera la página. Las
+        # evidencias automáticas (especialmente PAI) pueden contener decenas de
+        # registros y producir el error "tallest cell ... too large on page".
+        sec = ParagraphStyle(
+            "sec_obligacion_v16137", parent=body,
+            fontSize=8.2, leading=10.2, spaceBefore=6, spaceAfter=3
+        )
+        etiqueta = ParagraphStyle(
+            "etiqueta_v16137", parent=body,
+            fontSize=7.5, leading=9.2, spaceBefore=3, spaceAfter=1
+        )
+        detalle = ParagraphStyle(
+            "detalle_v16137", parent=body,
+            fontSize=7.2, leading=9.0, leftIndent=8, spaceAfter=2
+        )
+
+        story.append(Paragraph("<b>CUMPLIMIENTO DE OBLIGACIONES</b>", sec))
+        story.append(Spacer(1, 3))
+
+        for nro, row in enumerate(filas, start=1):
+            ob, act, sop, log = row
+            story.append(Paragraph(f"<b>{nro}. {esc(ob)}</b>", sec))
+
+            story.append(Paragraph("<b>Actividades ejecutadas</b>", etiqueta))
+            if str(act or "").strip():
+                for linea in str(act).splitlines():
+                    if linea.strip():
+                        story.append(Paragraph(esc(linea), detalle))
+            else:
+                story.append(Paragraph("Sin información diligenciada.", detalle))
+
+            story.append(Paragraph("<b>Evidencias / soportes</b>", etiqueta))
+            if str(sop or "").strip():
+                # Una evidencia por Flowable: ReportLab puede continuarla en la
+                # página siguiente sin intentar meter todo en una celda gigante.
+                for linea in str(sop).splitlines():
+                    if linea.strip():
+                        story.append(Paragraph("• " + esc(linea), detalle))
+            else:
+                story.append(Paragraph("Sin evidencias registradas para el período.", detalle))
+
+            story.append(Paragraph("<b>Logros / resultados</b>", etiqueta))
+            if str(log or "").strip():
+                for linea in str(log).splitlines():
+                    if linea.strip():
+                        story.append(Paragraph(esc(linea), detalle))
+            else:
+                story.append(Paragraph("Sin información diligenciada.", detalle))
+
+            story.append(Spacer(1, 7))
+
+        story += [Spacer(1,8),
                   Paragraph("<b>Análisis del período</b>",body),
                   Paragraph(esc(analisis) or "Sin observaciones.",body),
                   Spacer(1,6),
                   Paragraph("<b>Compromisos / siguiente período</b>",body),
                   Paragraph(esc(compromisos) or "Sin compromisos registrados.",body),
-                  Spacer(1,20),
-                  Paragraph("________________________________________",body),
+                  Spacer(1,16)]
+
+        # V16.140 - firma gráfica recortada y alineada sobre la línea de firma.
+        _firma_flowable = None
+        if firma_archivo is not None:
+            try:
+                from reportlab.platypus import Image as RLImage
+                from PIL import Image as PILImage, ImageChops
+                firma_archivo.seek(0)
+                _firma_bytes = firma_archivo.read()
+                _pil = PILImage.open(BytesIO(_firma_bytes)).convert("RGBA")
+                # Recorta márgenes transparentes/blancos para que la firma no quede flotando.
+                _bg = PILImage.new("RGBA", _pil.size, (255,255,255,255))
+                _diff = ImageChops.difference(_pil, _bg).convert("L")
+                _bbox = _diff.point(lambda p: 255 if p > 18 else 0).getbbox()
+                if _bbox:
+                    _pil = _pil.crop(_bbox)
+                _firma_limpia = BytesIO()
+                _pil.save(_firma_limpia, format="PNG")
+                _firma_limpia.seek(0)
+                _img_firma = RLImage(_firma_limpia)
+                _max_w, _max_h = 6.0*cm, 2.0*cm
+                _escala = min(_max_w / float(_img_firma.imageWidth), _max_h / float(_img_firma.imageHeight), 1.0)
+                _img_firma.drawWidth = float(_img_firma.imageWidth) * _escala
+                _img_firma.drawHeight = float(_img_firma.imageHeight) * _escala
+                _img_firma.hAlign = "CENTER"
+                _firma_flowable = Table([[_img_firma]], colWidths=[8.5*cm], hAlign="LEFT")
+                _firma_flowable.setStyle(TableStyle([
+                    ("ALIGN", (0,0), (-1,-1), "CENTER"),
+                    ("VALIGN", (0,0), (-1,-1), "BOTTOM"),
+                    ("LEFTPADDING", (0,0), (-1,-1), 0),
+                    ("RIGHTPADDING", (0,0), (-1,-1), 0),
+                    ("TOPPADDING", (0,0), (-1,-1), 0),
+                    ("BOTTOMPADDING", (0,0), (-1,-1), 1),
+                ]))
+            except Exception:
+                story.append(Paragraph("Firma adjunta no pudo incorporarse al PDF.", body))
+
+        if _firma_flowable is not None:
+            story += [_firma_flowable, Spacer(1,1)]
+        story += [Paragraph("________________________________________",body),
                   Paragraph(esc(nombre) or "Firma del profesional",body)]
         docpdf.build(story)
         bio.seek(0)
         st.download_button(
-            "📥 Generar PDF piloto",
+            "📥 Generar PDF del informe",
             data=bio.getvalue(),
             file_name=f"Informe_mensual_{fecha_inicio:%Y%m%d}_{fecha_fin:%Y%m%d}.pdf",
             mime="application/pdf",
             use_container_width=True
         )
     except Exception as e:
-        st.warning("No fue posible generar el PDF piloto: " + str(e))
+        st.warning("No fue posible generar el PDF del informe: " + str(e))
 
     st.info(
         "Este piloto consulta los registros existentes y genera el documento. "
@@ -24599,6 +26405,89 @@ def modulo_auditoria_sesiones_v1634():
                 ]],
                 use_container_width=True,
                 hide_index=True
+            )
+
+        # V16.108 - Mostrar también al personal activo que no registró sesión
+        # dentro del período seleccionado. Se conserva intacta la tabla principal
+        # de sesiones y se agrega esta sección de cobertura debajo.
+        try:
+            funcionarios_activos = pd.read_sql(
+                text("""
+                    SELECT
+                        TRIM(CAST(cedula AS TEXT)) AS cedula,
+                        nombre,
+                        rol,
+                        ultimo_acceso
+                    FROM public.funcionarios_sistema
+                    WHERE activo = TRUE
+                    ORDER BY nombre
+                """),
+                engine
+            )
+
+            if not funcionarios_activos.empty:
+                docs_con_sesion = set(
+                    sesiones["cedula_usuario"]
+                    .fillna("")
+                    .astype(str)
+                    .str.strip()
+                    .tolist()
+                ) if not sesiones.empty else set()
+
+                sin_sesion = funcionarios_activos[
+                    ~funcionarios_activos["cedula"].astype(str).isin(docs_con_sesion)
+                ].copy()
+
+                st.markdown("### 👥 Personal activo sin sesión en el período")
+
+                if sin_sesion.empty:
+                    st.success(
+                        "✅ Todo el personal activo registra al menos una sesión "
+                        "en el período seleccionado."
+                    )
+                else:
+                    sin_sesion["ultimo_acceso"] = pd.to_datetime(
+                        sin_sesion["ultimo_acceso"],
+                        errors="coerce",
+                        utc=True
+                    ).dt.tz_convert("America/Bogota")
+
+                    sin_sesion["Último acceso registrado"] = (
+                        sin_sesion["ultimo_acceso"].apply(
+                            lambda x: x.strftime("%d/%m/%Y %I:%M:%S %p")
+                            if pd.notna(x) else "—"
+                        )
+                    )
+                    sin_sesion["Estado"] = "🔴 Sin sesión en el período"
+
+                    st.caption(
+                        f"{len(sin_sesion)} funcionario(s) activo(s) no registran "
+                        f"inicio de sesión entre {desde.strftime('%d/%m/%Y')} "
+                        f"y {hasta.strftime('%d/%m/%Y')}."
+                    )
+
+                    st.dataframe(
+                        sin_sesion[[
+                            "nombre",
+                            "cedula",
+                            "rol",
+                            "Último acceso registrado",
+                            "Estado"
+                        ]].rename(columns={
+                            "nombre": "nombre_usuario",
+                            "cedula": "cedula_usuario",
+                            "rol": "rol_usuario"
+                        }),
+                        use_container_width=True,
+                        hide_index=True
+                    )
+            else:
+                st.info("No hay funcionarios activos registrados en el sistema.")
+
+        except Exception as e:
+            st.warning(
+                "No fue posible consultar el personal activo sin sesión: "
+                f"{e}"
             )
 
     with tab_acc:
@@ -28483,8 +30372,8 @@ with tab6:
         df_control_pai["fecha_cumplimiento_real"] = pd.to_datetime(
             df_control_pai["fecha_cumplimiento_real"], errors="coerce"
         )
-        df_control_pai["fecha_ultimo_seguimiento"] = normalizar_timestamp_colombia_v1692(
-            df_control_pai["fecha_ultimo_seguimiento"]
+        df_control_pai["fecha_ultimo_seguimiento"] = df_control_pai["fecha_ultimo_seguimiento"].apply(
+            normalizar_timestamp_pandas_sin_tz
         )
         df_control_pai["porcentaje_avance"] = pd.to_numeric(
             df_control_pai["porcentaje_avance"], errors="coerce"
