@@ -10632,7 +10632,9 @@ def comite_casos_v16():
                                 conn.execute(
                                     text("""
                                         UPDATE sanciones_usuarios
-                                        SET estado_medida = 'LEVANTADA_COMITE',
+                                        SET estado_medida = 'CUMPLIDA',
+                                            remitido_comite = FALSE,
+                                            fecha_fin = CURRENT_DATE,
                                             cerrado_en = NOW(),
                                             observacion = CONCAT_WS(
                                                 ' | ',
