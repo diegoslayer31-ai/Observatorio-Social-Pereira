@@ -24367,11 +24367,30 @@ def modulo_politica_publica_v1678():
             if cod in POLITICA_PUBLICA_CATALOGO_V1678
         ]
     else:
+        # V16.164: asignaciones críticas por cédula para que no dependan de
+        # variaciones del nombre almacenado en la sesión/base de funcionarios.
+        # Se conservan además las asignaciones generales del catálogo.
+        doc_func_pp = limpiar_documento(
+            st.session_state.get("documento_funcionario", "")
+        )
+        acciones_directas_pp = {
+            # ESTEFANY SCARPETTA TORRES - Psicología
+            # 2.1.1 y 2.1.9 contractuales + 2.1.6 asignada a todo el equipo profesional.
+            "1088343873": ["2.1.1", "2.1.6", "2.1.9"],
+            # CARLOS HERNAN LOPEZ GARCIA
+            # 2.1.9 contractual + 2.1.6 asignada a todo el equipo profesional.
+            "94381656": ["2.1.6", "2.1.9"],
+        }
+
         for cod, cfg in POLITICA_PUBLICA_CATALOGO_V1678.items():
             if any(
                 _responsable_pp_v1678(nombre_func, ref)
                 for ref in cfg["responsables"]
             ):
+                acciones_asignadas.append(cod)
+
+        for cod in acciones_directas_pp.get(doc_func_pp, []):
+            if cod in POLITICA_PUBLICA_CATALOGO_V1678 and cod not in acciones_asignadas:
                 acciones_asignadas.append(cod)
 
     if rol in roles_operativos and not acciones_asignadas:
