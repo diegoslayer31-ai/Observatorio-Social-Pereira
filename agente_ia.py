@@ -5444,22 +5444,31 @@ def registrar_egreso_profesional_v12(u, documento):
                 SELECT COUNT(*) AS total
                 FROM personas_caracterizacion
                 WHERE TRIM(CAST("{col_doc_egreso}" AS TEXT))=:doc
-                  AND "{col_fecha_egreso}"=:fecha
+                  AND CAST("{col_fecha_egreso}" AS DATE)=CAST(:fecha AS DATE)
                 """
             )
-            dup = pd.read_sql(
-                consulta_dup,
-                engine,
-                params={
-                    "doc": documento,
-                    "fecha": fecha_e
-                }
-            )
-            if int(dup.iloc[0]["total"] or 0) > 0:
-                st.error(
-                    "Ya existe un egreso para esta persona en esa fecha."
+            try:
+                dup = pd.read_sql(
+                    consulta_dup,
+                    engine,
+                    params={
+                        "doc": str(documento).strip(),
+                        "fecha": fecha_e.isoformat()
+                    }
                 )
-                return
+                if int(dup.iloc[0]["total"] or 0) > 0:
+                    st.error(
+                        "Ya existe un egreso para esta persona en esa fecha."
+                    )
+                    return
+            except Exception as e_dup:
+                # V16.148: una inconsistencia histórica de tipo de fecha no debe
+                # bloquear el egreso. Se continúa y la transacción principal
+                # conserva la trazabilidad del movimiento.
+                st.warning(
+                    "No fue posible validar automáticamente duplicados históricos; "
+                    "se continuará con el registro del egreso."
+                )
 
         meses = [
             "", "ENERO", "FEBRERO", "MARZO", "ABRIL",
@@ -5471,8 +5480,17 @@ def registrar_egreso_profesional_v12(u, documento):
         if obs_e.strip():
             observacion_final += " - " + obs_e.strip()
 
+        # V16.152 - personas_caracterizacion.cedula_validada es BOOLEAN en PostgreSQL.
+        # El formulario trabaja con SI / NO / NO APLICA; se traduce antes del INSERT
+        # para evitar DataError: invalid input syntax for type boolean: "SI".
+        cedula_validada_db = (
+            True if cedula_validada == "SI"
+            else False if cedula_validada == "NO"
+            else None
+        )
+
         datos = {
-            ce("cedula_validada"): cedula_validada,
+            ce("cedula_validada"): cedula_validada_db,
             ce("mes_validacion"): meses[fecha_e.month],
             ce("nombres"): pv("nombres", default=""),
             ce("apellidos"): pv("apellidos", default=""),
@@ -5525,6 +5543,45 @@ def registrar_egreso_profesional_v12(u, documento):
             if k and k in columnas_e
         }
 
+        # V16.150 - Normalización de tipos Pandas/NumPy antes de enviarlos
+        # a psycopg2/PostgreSQL. Evita errores como:
+        #   ProgrammingError: can't adapt type 'numpy.int64'
+        # que se presentaba, por ejemplo, al insertar la edad en el egreso.
+        def _valor_postgres_v16150(valor):
+            if valor is None:
+                return None
+
+            # NaN / NaT / pd.NA deben llegar como NULL.
+            # No dependemos del alias `np`, porque este archivo no importa numpy como np.
+            try:
+                es_nulo = pd.isna(valor)
+                if isinstance(es_nulo, bool) and es_nulo:
+                    return None
+                # numpy.bool_ y otros booleanos escalares exponen .item().
+                if hasattr(es_nulo, "item") and bool(es_nulo.item()):
+                    return None
+            except Exception:
+                pass
+
+            # Timestamp de pandas -> datetime nativo.
+            if isinstance(valor, pd.Timestamp):
+                return valor.to_pydatetime()
+
+            # Escalares NumPy (int64, float64, bool_, etc.) -> Python nativo
+            # sin requerir `import numpy as np`.
+            if type(valor).__module__ == "numpy" and hasattr(valor, "item"):
+                try:
+                    return valor.item()
+                except Exception:
+                    pass
+
+            return valor
+
+        datos = {
+            k: _valor_postgres_v16150(v)
+            for k, v in datos.items()
+        }
+
         with engine.begin() as conn:
 
             if "numero" in columnas_e:
@@ -5539,12 +5596,21 @@ def registrar_egreso_profesional_v12(u, documento):
                     """)
                 )
 
-                datos["numero"] = conn.execute(
-                    text("""
-                        SELECT COALESCE(MAX(numero),0)+1
-                        FROM personas_caracterizacion
-                    """)
-                ).scalar()
+                datos["numero"] = _valor_postgres_v16150(
+                    conn.execute(
+                        text("""
+                            SELECT COALESCE(MAX(numero),0)+1
+                            FROM personas_caracterizacion
+                        """)
+                    ).scalar()
+                )
+
+            # Segunda pasada defensiva por si durante la transacción se agregó
+            # algún valor dinámico al diccionario.
+            datos = {
+                k: _valor_postgres_v16150(v)
+                for k, v in datos.items()
+            }
 
             columnas = list(datos.keys())
             params_ins = {}
@@ -5643,11 +5709,29 @@ def registrar_egreso_profesional_v12(u, documento):
         )
 
         invalidar_cache_datos()
+
+        # V16.153 - Generar el mismo reporte operativo de WhatsApp usado
+        # por los demás movimientos de Gestión Móvil. Se conserva la
+        # modalidad previa al egreso para que el reporte indique desde qué
+        # albergue salió la persona, aunque el UPDATE ya haya liberado el cupo.
+        reporte_egreso = _texto_whatsapp_movimiento(
+            "EGRESO",
+            u.get("nombres"),
+            u.get("apellidos"),
+            documento,
+            modalidad=str(u.get("modalidad") or ""),
+            fecha=fecha_e,
+            detalle=observacion_final,
+            responsable=responsable
+        )
+        st.session_state[f"reporte_whatsapp_{documento}"] = reporte_egreso
+
         st.success(
             "✅ Egreso registrado correctamente. La persona quedó EGRESADA, "
             "se liberó su modalidad/cupo y el registro se suma a Egresos e Impacto."
         )
-        st.rerun()
+        st.info("📲 El reporte de egreso quedó listo para compartir por WhatsApp.")
+        _mostrar_reporte_movimiento_v1636(documento, "egreso")
 
 
 
@@ -10225,6 +10309,21 @@ def cierre_pai_usuario_v16(documento, profesional_id=None, profesional_nombre=No
             st.rerun()
 
 
+# V16.157 - Acceso robusto a Comité de Casos.
+# Yuci Marcela Mosquera Mosquera participa contractualmente en estudios de caso;
+# se autoriza por cédula para no depender de cómo esté parametrizado su rol en la BD.
+COMITE_CASOS_DOCUMENTOS_AUTORIZADOS_V16157 = {
+    "1076382393",  # YUCI MARCELA MOSQUERA MOSQUERA - Trabajadora Social
+}
+
+def _puede_comite_casos_v16157():
+    rol = str(st.session_state.get("rol_actual", "")).upper().strip()
+    documento = str(st.session_state.get("documento_funcionario", "")).strip()
+    return (
+        rol in ["PROFESIONAL", "COORDINACION", "MANAGER"]
+        or documento in COMITE_CASOS_DOCUMENTOS_AUTORIZADOS_V16157
+    )
+
 def comite_casos_v16():
     """
     V16.107 - Comité de Casos integrado con medidas remitidas.
@@ -10239,8 +10338,8 @@ def comite_casos_v16():
        real se registra después desde Ingreso / Reingreso.
     """
     rol = str(st.session_state.get("rol_actual", "")).upper()
-    if rol not in ["COORDINACION", "MANAGER"]:
-        st.error("Acceso exclusivo para Coordinación y Manager.")
+    if not _puede_comite_casos_v16157():
+        st.error("Acceso exclusivo para profesionales autorizados, Coordinación y Manager.")
         return
 
     st.title("🧠 Comité de Casos")
@@ -14044,6 +14143,8 @@ def dashboard_ejecutivo():
     # ========================================================
     # EGRESOS / MOVIMIENTOS
     # ========================================================
+    # V16.155: mismo criterio de Egresos e Impacto; los fallecimientos
+    # permanecen como cierre administrativo pero no suman en esta tarjeta.
     try:
         egresos_coord = int(
             pd.read_sql(
@@ -14051,6 +14152,7 @@ def dashboard_ejecutivo():
                     SELECT COUNT(*) AS total
                     FROM personas_caracterizacion
                     WHERE UPPER(TRIM(COALESCE(estado_caso,''))) = 'EGRESADO'
+                      AND UPPER(COALESCE(observaciones_egreso,'')) NOT LIKE '%FALLEC%'
                 """),
                 engine
             ).iloc[0]["total"] or 0
@@ -14274,7 +14376,7 @@ def dashboard_ejecutivo():
     c2.metric("🟢 Activos", activos_coord)
     c3.metric("🏙️ Urbano", f"{urbano_coord}/100")
     c4.metric("🌱 Granja", granja_coord)
-    c5.metric("🏆 Egresos", egresos_coord)
+    c5.metric("🏆 Egresos de impacto", egresos_coord)
     c6.metric("⛔ Medidas activas", medidas_activas_coord)
 
     with st.expander("⛔ Seguimiento de medidas activas", expanded=False):
@@ -15501,6 +15603,21 @@ with st.sidebar:
         "rol_actual", ""
     )
 
+    # V16.157 - Si Yuci tiene un rol distinto de PROFESIONAL en funcionarios_sistema,
+    # mostrar igualmente el acceso contractual a Comité de Casos.
+    _doc_menu_v16157 = str(st.session_state.get("documento_funcionario", "")).strip()
+    if (
+        _doc_menu_v16157 in COMITE_CASOS_DOCUMENTOS_AUTORIZADOS_V16157
+        and str(rol_menu).upper().strip() != "PROFESIONAL"
+    ):
+        if st.button(
+            "🧠 Comité de Casos",
+            use_container_width=True,
+            key="menu_comite_yuci_v16157"
+        ):
+            st.session_state.page = "comite_casos_v16"
+            st.rerun()
+
     if rol_menu == "INSPIRADOR":
 
         if st.button(
@@ -15615,6 +15732,14 @@ with st.sidebar:
             use_container_width=True
         ):
             st.session_state.page = "historia_integral_v12"
+            st.rerun()
+
+        if st.button(
+            "🧠 Comité de Casos",
+            use_container_width=True,
+            key="menu_comite_prof_v16149"
+        ):
+            st.session_state.page = "comite_casos_v16"
             st.rerun()
 
         # V16.78 - El informe mensual también es parte del acceso profesional.
@@ -16222,10 +16347,14 @@ def inicio_ejecutivo_v167():
     )
 
 
-# ============================================================
-# V16.8 - MÓDULOS INSTITUCIONALES RESTAURADOS
-# ============================================================
 
+
+# ============================================================
+# V16.154 - CLASIFICACIÓN DE EGRESOS DE IMPACTO
+# Fallecimientos se conservan en la base como cierre/egreso administrativo,
+# pero NO se contabilizan como egreso de impacto/caso exitoso.
+# También se normalizan motivos equivalentes para evitar categorías duplicadas.
+# ============================================================
 def _motivo_egreso_impacto_v16154(valor):
     txt = str(valor or "").strip().upper()
     try:
@@ -16255,7 +16384,6 @@ def _motivo_egreso_impacto_v16154(valor):
         return "CASO EXITOSO"
     return str(valor or "Sin observación").strip() or "Sin observación"
 
-
 def _filtrar_egresos_impacto_v16154(df):
     if df is None or df.empty or "observaciones_egreso" not in df.columns:
         return df.copy() if df is not None else pd.DataFrame()
@@ -16266,7 +16394,6 @@ def _filtrar_egresos_impacto_v16154(df):
 # ============================================================
 # V16.8 - MÓDULOS INSTITUCIONALES RESTAURADOS
 # ============================================================
-
 
 def modulo_egresos_impacto_v169():
 
@@ -24215,7 +24342,10 @@ def modulo_politica_publica_v1678():
             st.warning("No fue posible abrir el detalle de la evidencia: " + str(_e))
 
     acciones_asignadas = []
-    if rol in roles_supervision:
+    # V16.156: Enfermería debe tener acceso operativo a todas las acciones
+    # de Política Pública, sin depender de que el nombre de cada enfermera
+    # esté incluido individualmente en la matriz de responsables.
+    if rol in roles_supervision or rol in ["ENFERMERA", "COORDINACION_ENFERMERIA"]:
         acciones_asignadas = list(POLITICA_PUBLICA_CATALOGO_V1678.keys())
     else:
         for cod, cfg in POLITICA_PUBLICA_CATALOGO_V1678.items():
@@ -24224,16 +24354,6 @@ def modulo_politica_publica_v1678():
                 for ref in cfg["responsables"]
             ):
                 acciones_asignadas.append(cod)
-
-        # V16.157: candado por cédula para Estefany Scarpetta Torres.
-        # Evita que diferencias ortográficas del nombre la dejen sin acciones.
-        # V16.158: normalización local para no depender de una función
-        # definida más adelante en el archivo.
-        _doc_func_digitos = "".join(ch for ch in str(doc_func or "") if ch.isdigit())
-        if _doc_func_digitos == "1088343873":
-            for _cod_psico in ["2.1.1", "2.1.6", "2.1.9"]:
-                if _cod_psico in POLITICA_PUBLICA_CATALOGO_V1678 and _cod_psico not in acciones_asignadas:
-                    acciones_asignadas.append(_cod_psico)
 
     if rol in roles_operativos and not acciones_asignadas:
         st.warning(
@@ -24851,20 +24971,20 @@ CONTRATOS_INFORME_MENSUAL_V16124 = {
         "contrato": "CPS 11/09/2026 - 10/11/2026",
         "obligaciones": [
             "Realizar reporte del cronograma semanal de las actividades grupales y atenciones individuales de acuerdo a la disponibilidad de espacios asignados por Dirección.",
-            "2.\tEntrega mensual de las bases de datos correspondientes a la acción: 2.1.5. Registro de beneficiarios de procesos de reintegración familiar y social con su respectivo seguimiento, 2.1.6. Registro de beneficiarios de actividades lúdicas, deportivas, de desarrollo personal y de reflexión en temas relacionados con la espiritualidad. 2.1.9. Registro de beneficiarios de actividades de sana convivencia De acuerdo a las evidencias para las actividades grupales tener en cuenta la presentación de soportes como: metodología, formatos SPP en PDF y fotos.",
-            "Participar de reuniones en pro del funcionamiento, revisión de novedades, y retos a desarrollar desde el área de trabajo social y el equipo interdisciplinarios del Programa de Albergues para Habitantes de Calle de la ciudad de Pereira.",
-            "Identificar, orientar, y acompañar, con la remisión al enlace municipal de habitante de calle, los casos que requieren activación de rutas, tales como: Hogar adulto mayor, Centro de tratamiento para conductas adictivas, Plan “Retorno” a ciudad de origen, Vinculación familiar, Restablecimiento de derechos (afiliación, portabilidad, barreras en salud), Proceso de identificación plena. Sí dichas gestiones están al alcance del profesional de acuerdo a las rutas de atención que tiene la ciudad deberá hacer lo pertinente para su activación.",
-            "realizar dos (2) reuniones mensuales con el área de enfermería para hacer revisión de los casos que requieran portabilidad, afiliación, barreras en salud o cualquier trámite que desde el área de trabajo social se pueda acompañar.",
-            "Presentar informe mensual de acuerdo a las funciones del área de trabajo social, junto con los reportes del “observatorio social ASCF” lo cual debe hacer dentro de los tiempos determinados por la Asociación. Informe que será entregado de manera mensual al correo albergueh.hc.adm@gmail.com la fecha límite para enviar el informe de actividades y fotos es el 25 de cada mes.",
-            "Vinculación de redes familiares o de apoyo en el ejercicio de restablecimiento de derechos (cedulación, vinculación a salud). Para ello el contratista deberá de acuerdo al modelo de atención garantizar mínimo dos (2) encuentros semanales con grupos o redes de apoyo de usuarios que usen los servicios centro día- noche para habitantes de calle, estos encuentros podrán ser presenciales o virtuales.",
+            "Entregar mensualmente las bases de datos correspondientes a las acciones 2.1.5, 2.1.6 y 2.1.9, con los soportes exigidos para actividades grupales: metodología, formatos SPP en PDF y fotos.",
+            "Participar de reuniones en pro del funcionamiento, revisión de novedades y retos a desarrollar desde el área de trabajo social y el equipo interdisciplinario del Programa de Albergues para Habitantes de Calle de Pereira.",
+            "Identificar, orientar y acompañar, con remisión al enlace municipal de habitante de calle, los casos que requieran activación de rutas: hogar adulto mayor, tratamiento para conductas adictivas, Plan Retorno, vinculación familiar, restablecimiento de derechos y proceso de identificación plena.",
+            "Realizar dos (2) reuniones mensuales con el área de Enfermería para revisar casos que requieran portabilidad, afiliación, barreras en salud u otros trámites que puedan acompañarse desde Trabajo Social.",
+            "Presentar informe mensual de acuerdo con las funciones del área de Trabajo Social, junto con los reportes del Observatorio Social ASCF, dentro de los tiempos determinados por la Asociación; fecha límite de actividades y fotos: 25 de cada mes.",
+            "Realizar vinculación de redes familiares o de apoyo en el ejercicio de restablecimiento de derechos, garantizando mínimo dos (2) encuentros semanales con grupos o redes de apoyo de usuarios del centro día-noche.",
             "Participar mínimo en dos (2) salidas restaurativas al mes.",
-            "Realizar uno (1) espacio semanal para realizar en articulación con Psicología y pedagogía estudios de caso o elaboración de PAI de acuerdo a los procesos de los usuarios del Centro día- noche urbano o rural. (Estos deberán ser reportador en el observatorio social ASCF)",
-            "Apoyar la apertura del buzón de sugerencias dos (2) veces al mes y dar respuesta a las PQR de acuerdo a las necesidades de los usuarios y usuarias del centro día noche urbano.",
-            "Realizar asesoría y acompañamiento a usuarios en procesos de empleabilidad a usuarios de urbano que se considere se puedan acompañar. (Estos deberán ser reportador en el observatorio social ASCF)",
-            "Aportar una (1) certificación actualizada (vigencia 2026) relacionada con la atención a población inmersa en el fenómeno social de consumo de sustancias psicoactivas.",
-            "Reportar los logros desarrollados desde el área de trabajo social en la plataforma “observatorio social de la Asociación Ciudad Futuro”.",
-            "Realizar caracterizaciones psicosociales en las jornadas de atención al interior de las sedes del el Programa de Albergues para Habitantes de Calle de la ciudad de Pereira. (Estos deberán ser reportador en el observatorio social ASCF)",
-            "Las demás que contribuyan al correcto funcionamiento del modelo de atención integral a la población habitante de calle.",
+            "Realizar un (1) espacio semanal, en articulación con Psicología y Pedagogía, para estudios de caso o elaboración de PAI de usuarios de centro día-noche urbano o rural, reportándolo en el Observatorio Social ASCF.",
+            "Apoyar la apertura del buzón de sugerencias dos (2) veces al mes y dar respuesta a las PQR de acuerdo con las necesidades de los usuarios del centro día-noche urbano.",
+            "Realizar asesoría y acompañamiento a usuarios de urbano en procesos de empleabilidad que se considere puedan acompañarse, reportándolo en el Observatorio Social ASCF.",
+            "Aportar una (1) certificación actualizada, vigencia 2026, relacionada con la atención a población inmersa en el fenómeno social de consumo de sustancias psicoactivas.",
+            "Reportar los logros desarrollados desde el área de Trabajo Social en la plataforma Observatorio Social de la Asociación Ciudad Futuro.",
+            "Realizar caracterizaciones psicosociales en las jornadas de atención al interior de las sedes del Programa de Albergues para Habitantes de Calle de Pereira, reportándolas en el Observatorio Social ASCF.",
+            "Realizar las demás actividades que contribuyan al correcto funcionamiento del modelo de atención integral a la población habitante de calle."
         ]
     },
     "1192762958": {
@@ -24915,15 +25035,15 @@ CONTRATOS_INFORME_MENSUAL_V16124 = {
         "contrato": "CPS 11/09/2026 - 10/11/2026",
         "obligaciones": [
             "Realizar apoyo en los albergues urbano y rural de acuerdo a la disponibilidad de espacios asignados por Dirección.",
-            "Consolidar las bases de datos correspondientes a la política de pública de manera mensual y suministrarlas al programa de habitante de calle adscrito a la secretaria de Desarrollo Social y Político. De acuerdo a la información registrada en el Observatorio Social de la ASCF.",
-            "Participar de reuniones en pro del funcionamiento, revisión de novedades, estudios de caso con la administración municipal y retos a desarrollar desde el área de ciencias sociales, humanas o de la salud y el equipo interdisciplinarios del Programa de Albergues para Habitantes de Calle de la ciudad de Pereira.",
-            "Verificar, consolidar y entregar las evidencias que soportan el plan de acción de la política pública de habitante de calle y entregarlas al programa de habitante de calle adscrito a la secretaria de Desarrollo Social y Político.   De acuerdo a la información registrada en el Observatorio Social de la ASCF.",
-            "Participar como enlace de políticas públicas ante la secretaria de Desarrollo Social y Político.",
-            "Presentar informe mensual de acuerdo a las funciones del área de tecnología, junto con los reportes del “observatorio social ASCF” lo cual debe hacer dentro de los tiempos determinados por la Asociación. Informe que será entregado de manera mensual al correo albergueh.hc.adm@gmail.com la fecha límite para enviar el informe de actividades y fotos es el 25 de cada mes.",
-            "Aportar una (1) certificación actualizada (vigencia 2026) relacionada con la atención a población inmersa en el fenómeno social de consumo de sustancias psicoactivas.",
-            "Consolidar los logros desarrollados desde el área de ciencias sociales, humanas o de la salud en la plataforma “observatorio social de la Asociación Ciudad Futuro”.",
-            "Brindar retroalimentación al equipo de mixto de profesionales cuando sea necesario desde el área de tecnología.",
-            "Las demás que contribuyan al correcto funcionamiento del modelo de atención integral a la población habitante de calle.",
+            "Consolidar mensualmente las bases de datos correspondientes a la política pública y suministrarlas al programa de habitante de calle adscrito a la Secretaría de Desarrollo Social y Político, de acuerdo con la información del Observatorio Social ASCF.",
+            "Participar de reuniones en pro del funcionamiento, revisión de novedades, estudios de caso con la administración municipal y retos a desarrollar con el equipo interdisciplinario.",
+            "Verificar, consolidar y entregar las evidencias que soportan el plan de acción de la política pública de habitante de calle al programa adscrito a la Secretaría de Desarrollo Social y Político, de acuerdo con el Observatorio Social ASCF.",
+            "Participar como enlace de políticas públicas ante la Secretaría de Desarrollo Social y Político.",
+            "Presentar informe mensual de acuerdo con las funciones del área de Tecnología, junto con los reportes del Observatorio Social ASCF; fecha límite de actividades y fotos: 25 de cada mes.",
+            "Aportar una (1) certificación actualizada, vigencia 2026, relacionada con la atención a población inmersa en el fenómeno social de consumo de sustancias psicoactivas.",
+            "Consolidar los logros desarrollados desde las áreas de ciencias sociales, humanas o de la salud en la plataforma Observatorio Social de la Asociación Ciudad Futuro.",
+            "Brindar retroalimentación al equipo mixto de profesionales cuando sea necesario desde el área de Tecnología.",
+            "Realizar las demás actividades que contribuyan al correcto funcionamiento del modelo de atención integral a la población habitante de calle."
         ]
     },
     "1076382393": {
@@ -24932,19 +25052,19 @@ CONTRATOS_INFORME_MENSUAL_V16124 = {
         "contrato": "CPS 11/09/2026 - 10/11/2026",
         "obligaciones": [
             "Realizar reporte del cronograma semanal de las actividades grupales y atenciones individuales de acuerdo a la disponibilidad de espacios asignados por Dirección.",
-            "Entrega mensual de las bases de datos correspondientes a la acción: 2.1.5. Registro de beneficiarios de procesos de reintegración familiar y social con su respectivo seguimiento. 2.1.9. Registro de beneficiarios de actividades de sana convivencia 2.1.4. Registro de beneficiarios de  estrategias de inclusión social para la población habitante de calle LGTBI. De acuerdo a las evidencias para las actividades grupales tener en cuenta la presentación de soportes como: metodología, formatos SPP en PDF y fotos.",
-            "Participar de reuniones en pro del funcionamiento, revisión de novedades, y retos a desarrollar desde el área de trabajo social y el equipo interdisciplinarios del Programa de Albergues para Habitantes de Calle de la ciudad de Pereira.",
-            "Identificar, orientar, y acompañar, con la remisión al enlace municipal de habitante de calle, los casos que requieren activación de rutas, tales como: Hogar adulto mayor, Centro de tratamiento para conductas adictivas, Plan “Retorno” a ciudad de origen, Vinculación familiar, Restablecimiento de derechos (afiliación, portabilidad, barreras en salud), Proceso de identificación plena. Sí dichas gestiones están al alcance del profesional de acuerdo a las rutas de atención que tiene la ciudad deberá hacer lo pertinente para su activación.",
-            "Realizar uno (1) espacio semanal para realizar en articulación con Psicología y pedagogía estudios de caso o elaboración o seguimiento al PAI de acuerdo a los procesos de los usuarios del Centro día- noche urbano o rural. (Estos deberán ser reportador en el observatorio social ASCF)",
-            "Presentar informe mensual de acuerdo a las funciones del área de trabajo social, junto con los reportes del “observatorio social ASCF” lo cual debe hacer dentro de los tiempos determinados por la Asociación. Informe que será entregado de manera mensual al correo albergueh.hc.adm@gmail.com la fecha límite para enviar el informe de actividades y fotos es el 25 de cada mes.",
+            "Entregar mensualmente las bases de datos correspondientes a las acciones 2.1.5, 2.1.9 y 2.1.4, con soportes de metodología, formatos SPP en PDF y fotos para actividades grupales.",
+            "Participar de reuniones en pro del funcionamiento, revisión de novedades y retos a desarrollar desde el área de Trabajo Social y el equipo interdisciplinario.",
+            "Identificar, orientar y acompañar, con remisión al enlace municipal de habitante de calle, los casos que requieran activación de rutas: hogar adulto mayor, tratamiento para conductas adictivas, Plan Retorno, vinculación familiar, restablecimiento de derechos e identificación plena.",
+            "Realizar un (1) espacio semanal, en articulación con Psicología y Pedagogía, para estudios de caso o elaboración o seguimiento al PAI de usuarios de centro día-noche urbano o rural, reportándolo en el Observatorio Social ASCF.",
+            "Presentar informe mensual de acuerdo con las funciones del área de Trabajo Social, junto con los reportes del Observatorio Social ASCF; fecha límite de actividades y fotos: 25 de cada mes.",
             "Participar mínimo en dos (2) jornadas de dignificación.",
-            "Realizar uno (1) espacio semanal para realizar en articulación con Psicología y pedagogía estudios de caso o elaboración de PAI de acuerdo a los procesos de los usuarios del Centro día- noche urbano o rural. (Estos deberán ser reportador en el observatorio social ASCF)",
-            "Apoyar la apertura del buzón de sugerencias dos (2) veces al mes y dar respuesta a las PQR de acuerdo a las necesidades de los usuarios y usuarias del centro día noche urbano.",
-            "Realizar asesoría y acompañamiento a usuarios en procesos de empleabilidad a usuarios de rural que se considere se puedan acompañar.  (Estos deberán ser reportador en el observatorio social ASCF)",
-            "Aportar una (1) certificación actualizada (vigencia 2026) relacionada con la atención a población inmersa en el fenómeno social de consumo de sustancias psicoactivas.",
-            "Reportar los logros desarrollados desde el área de trabajo social en la plataforma “observatorio social de la Asociación Ciudad Futuro”.",
-            "Realizar caracterizaciones psicosociales en las jornadas de atención al interior de las sedes del el Programa de Albergues para Habitantes de Calle de la ciudad de Pereira. (Estos deberán ser reportador en el observatorio social ASCF)",
-            "Las demás que contribuyan al correcto funcionamiento del modelo de atención integral a la población habitante de calle.",
+            "Realizar un (1) espacio semanal, en articulación con Psicología y Pedagogía, para estudios de caso o elaboración de PAI, reportándolo en el Observatorio Social ASCF.",
+            "Apoyar la apertura del buzón de sugerencias dos (2) veces al mes y dar respuesta a las PQR de acuerdo con las necesidades de los usuarios del centro día-noche urbano.",
+            "Realizar asesoría y acompañamiento a usuarios de rural en procesos de empleabilidad que se considere puedan acompañarse, reportándolo en el Observatorio Social ASCF.",
+            "Aportar una (1) certificación actualizada, vigencia 2026, relacionada con la atención a población inmersa en el fenómeno social de consumo de sustancias psicoactivas.",
+            "Reportar los logros desarrollados desde el área de Trabajo Social en la plataforma Observatorio Social de la Asociación Ciudad Futuro.",
+            "Realizar caracterizaciones psicosociales en las jornadas de atención al interior de las sedes del Programa de Albergues para Habitantes de Calle de Pereira, reportándolas en el Observatorio Social ASCF.",
+            "Realizar las demás actividades que contribuyan al correcto funcionamiento del modelo de atención integral a la población habitante de calle."
         ]
     },
     "1088343873": {
@@ -24993,18 +25113,18 @@ CONTRATOS_INFORME_MENSUAL_V16124 = {
         "contrato": "CPS 11/09/2026 - 10/11/2026",
         "obligaciones": [
             "Realizar reporte del cronograma semanal de las actividades grupales y atenciones individuales de acuerdo a la disponibilidad de espacios asignados por Dirección.",
-            "Entrega mensual de las bases de datos correspondientes a la acción: 2.1.1. Registro de beneficiarios de atención psicológica y socio familiar 2.1.9. Registro de beneficiarios de actividades de sana convivencia. De acuerdo a las evidencias para las actividades grupales tener en cuenta la presentación de soportes como: metodología, formatos SPP en PDF y fotos.",
-            "Participar de reuniones en pro del funcionamiento, revisión de novedades, estudios de caso con programa de habitante de calle de la alcaldía, reuniones de equipo interdisciplinarios del Programa de Albergues para Habitantes de Calle de la ciudad de Pereira, entre otros.",
-            "Presentar informe mensual de acuerdo a las funciones del área de psicología, junto con los reportes del “observatorio social ASCF” lo cual debe hacer dentro de los tiempos determinados por la Asociación. Informe que será entregado de manera mensual al correo albergueh.hc.adm@gmail.com  la fecha límite para enviar el informe de actividades y fotos es el 25 de cada mes.",
-            "Propiciar, mínimo, un (1) encuentro semanal con al menos 5 usuarios del Programa de Albergues para Habitantes de Calle de la ciudad de Pereira, con los cuales se trabajen temas grupales en prevención selectiva o reducción de riesgos y daños respecto al consumo de Sustancias Psicoactivas (SPA); a través de posibles estrategias como la meditación, reflexión colectiva, cine foros o construcciones colectivas.",
-            "Apoyar la apertura del buzón de sugerencias dos (2) veces al mes y dar respuesta a las PQR de acuerdo con las necesidades de los usuarios del centro día noche rural.",
-            "Reportar al área de dirección los formatos diligenciados y registro fotográfico de las diferentes secretarias o descentralizados que visitan los centros días - noche con el propósito de hacer seguimiento a las actividades que son trasversales y que aportan al cumplimiento de indicadores de la política pública de habitante de calle. (formatos correspondientes a secretaria de gobierno urbano).",
-            "Realizar uno (1) espacio semanal para realizar en articulación con Psicología, trabajo social y pedagogía estudios de caso, elaboración o seguimiento al PAI de acuerdo a los procesos de los usuarios del Centro día- noche urbano o rural. (Estos deberán ser reportador en el observatorio social ASCF)",
-            "Participar mínimo en dos (2) salidas restaurativas al mes,  relacionadas con sensibilización en reducción de riesgos y daños, acompañada de brigadas de alcance, trabajo comunitario y acciones en calle.",
-            "Reportar y sensibilizar los usuarios y usuarias que por sus procesos individuales serán trasladados al centro día – noche rural. (1 vez a la semana- socialización acuerdo de voluntades)",
-            "Aportar una (1) certificación actualizada (vigencia 2026) relacionada con la atención a población inmersa en el fenómeno social de consumo de sustancias psicoactivas.",
-            "Reportar los logros desarrollados desde el área de trabajo social en la plataforma “observatorio social de la Asociación Ciudad Futuro”.",
-            "Las demás que contribuyan al correcto funcionamiento del modelo de atención integral a la población habitante de calle.",
+            "Entregar mensualmente las bases de datos correspondientes a las acciones 2.1.1 y 2.1.9, con soportes de metodología, formatos SPP en PDF y fotos para actividades grupales.",
+            "Participar de reuniones en pro del funcionamiento, revisión de novedades, estudios de caso con el programa de habitante de calle de la Alcaldía y reuniones del equipo interdisciplinario.",
+            "Presentar informe mensual de acuerdo con las funciones del área de Psicología, junto con los reportes del Observatorio Social ASCF; fecha límite de actividades y fotos: 25 de cada mes.",
+            "Propiciar mínimo un (1) encuentro semanal con al menos 5 usuarios para trabajar prevención selectiva o reducción de riesgos y daños frente al consumo de SPA.",
+            "Apoyar la apertura del buzón de sugerencias dos (2) veces al mes y dar respuesta a las PQR de acuerdo con las necesidades de los usuarios del centro día-noche rural.",
+            "Reportar a Dirección los formatos diligenciados y registro fotográfico de las secretarías o descentralizados que visitan los centros día-noche para seguimiento a actividades transversales e indicadores de política pública, correspondiente a Secretaría de Gobierno urbano.",
+            "Realizar un (1) espacio semanal, en articulación con Psicología, Trabajo Social y Pedagogía, para estudios de caso, elaboración o seguimiento al PAI, reportándolo en el Observatorio Social ASCF.",
+            "Participar mínimo en dos (2) salidas restaurativas al mes relacionadas con sensibilización en reducción de riesgos y daños, brigadas de alcance, trabajo comunitario y acciones en calle.",
+            "Reportar y sensibilizar a los usuarios que por sus procesos individuales serán trasladados al centro día-noche rural, una (1) vez a la semana, mediante socialización del acuerdo de voluntades.",
+            "Aportar una (1) certificación actualizada, vigencia 2026, relacionada con la atención a población inmersa en el fenómeno social de consumo de sustancias psicoactivas.",
+            "Reportar los logros desarrollados en la plataforma Observatorio Social de la Asociación Ciudad Futuro.",
+            "Realizar las demás actividades que contribuyan al correcto funcionamiento del modelo de atención integral a la población habitante de calle."
         ]
     },
     "1129044593": {
@@ -25035,20 +25155,20 @@ CONTRATOS_INFORME_MENSUAL_V16124 = {
         "contrato": "CPS 11/09/2026 - 10/11/2026",
         "obligaciones": [
             "Realizar reporte del cronograma semanal de las actividades grupales y atenciones individuales de acuerdo a la disponibilidad de espacios asignados por Dirección.",
-            "Entrega mensual de las bases de datos correspondientes a la acción: 2.1.5. Registro de beneficiarios de procesos de reintegración familiar y social con su respectivo seguimiento, 2.1.6. Registro de beneficiarios de actividades lúdicas, deportivas, de desarrollo personal y de reflexión en temas relacionados con la espiritualidad. 2.1.9. Registro de beneficiarios de actividades de sana convivencia De acuerdo a las evidencias para las actividades grupales tener en cuenta la presentación de soportes como: metodología, formatos SPP en PDF y fotos.",
-            "Participar de reuniones en pro del funcionamiento, revisión de novedades, estudios de caso  y retos a desarrollar desde el área de trabajo social y el equipo interdisciplinarios del Programa de Albergues para Habitantes de Calle de la ciudad de Pereira.",
-            "Identificar, orientar, y acompañar, con la remisión al enlace municipal de habitante de calle, los casos que requieren activación de rutas, tales como: Hogar adulto mayor, Centro de tratamiento para conductas adictivas, Plan “Retorno” a ciudad de origen, Vinculación familiar, Restablecimiento de derechos (afiliación, portabilidad, barreras en salud), Proceso de identificación plena. Sí dichas gestiones están al alcance del profesional de acuerdo a las rutas de atención que tiene la ciudad deberá hacer lo pertinente para su activación.",
-            "realizar dos (2) reuniones mensuales con el área de enfermería para hacer revisión de los casos que requieran portabilidad, afiliación, barreras en salud o cualquier trámite que desde el área de trabajo social se pueda acompañar.",
-            "Presentar informe mensual de acuerdo a las funciones del área de trabajo social, junto con los reportes del “observatorio social ASCF” lo cual debe hacer dentro de los tiempos determinados por la Asociación. Informe que será entregado de manera mensual al correo albergueh.hc.adm@gmail.com la fecha límite para enviar el informe de actividades y fotos es el 25 de cada mes.",
-            "Vinculación de redes familiares o de apoyo en el ejercicio de restablecimiento de derechos (cedulación, vinculación a salud). Para ello el contratista deberá de acuerdo al modelo de atención garantizar mínimo dos (2) encuentros semanales con grupos o redes de apoyo de usuarios que usen los servicios centro día- noche para habitantes de calle, estos encuentros podrán ser presenciales o virtuales.",
+            "Entregar mensualmente las bases de datos correspondientes a las acciones 2.1.5, 2.1.6 y 2.1.9, con soportes de metodología, formatos SPP en PDF y fotos para actividades grupales.",
+            "Participar de reuniones en pro del funcionamiento, revisión de novedades, estudios de caso y retos a desarrollar desde el área de Trabajo Social y el equipo interdisciplinario.",
+            "Identificar, orientar y acompañar, con remisión al enlace municipal de habitante de calle, los casos que requieran activación de rutas: hogar adulto mayor, tratamiento para conductas adictivas, Plan Retorno, vinculación familiar, restablecimiento de derechos e identificación plena.",
+            "Realizar dos (2) reuniones mensuales con Enfermería para revisar casos de portabilidad, afiliación, barreras en salud u otros trámites acompañables desde Trabajo Social.",
+            "Presentar informe mensual de acuerdo con las funciones del área de Trabajo Social, junto con los reportes del Observatorio Social ASCF; fecha límite de actividades y fotos: 25 de cada mes.",
+            "Realizar vinculación de redes familiares o de apoyo en el ejercicio de restablecimiento de derechos, garantizando mínimo dos (2) encuentros semanales con grupos o redes de apoyo.",
             "Participar mínimo en dos (2) salidas restaurativas al mes.",
-            "Realizar uno (1) espacio semanal para realizar en articulación con Psicología y pedagogía estudios de caso o elaboración de PAI de acuerdo a los procesos de los usuarios del Centro día- noche urbano o rural. (Estos deberán ser reportador en el observatorio social ASCF)",
-            "Realizar asesoría y acompañamiento a usuarios en procesos de empleabilidad a usuarios de urbano que se considere se puedan acompañar. (Estos deberán ser reportador en el observatorio social ASCF)",
-            "Aplicar encuestas de satisfacción a usuarios de los albergues programadas en promedio para cada tres meses, con el fin de evaluar los servicios prestados al interior del centro día – noche urbano.",
-            "Aportar una (1) certificación actualizada (vigencia 2026) relacionada con la atención a población inmersa en el fenómeno social de consumo de sustancias psicoactivas.",
-            "Reportar los logros desarrollados desde el área de trabajo social en la plataforma “observatorio social de la Asociación Ciudad Futuro”.",
-            "Realizar caracterizaciones psicosociales en las jornadas de atención al interior de las sedes del el Programa de Albergues para Habitantes de Calle de la ciudad de Pereira. (Estos deberán ser reportador en el observatorio social ASCF)",
-            "Las demás que contribuyan al correcto funcionamiento del modelo de atención integral a la población habitante de calle.",
+            "Realizar un (1) espacio semanal, en articulación con Psicología y Pedagogía, para estudios de caso o elaboración de PAI, reportándolo en el Observatorio Social ASCF.",
+            "Realizar asesoría y acompañamiento a usuarios de urbano en procesos de empleabilidad que se considere puedan acompañarse, reportándolo en el Observatorio Social ASCF.",
+            "Aplicar encuestas de satisfacción a usuarios de los albergues, programadas en promedio cada tres meses, para evaluar los servicios prestados al interior del centro día-noche urbano.",
+            "Aportar una (1) certificación actualizada, vigencia 2026, relacionada con la atención a población inmersa en el fenómeno social de consumo de sustancias psicoactivas.",
+            "Reportar los logros desarrollados desde el área de Trabajo Social en la plataforma Observatorio Social de la Asociación Ciudad Futuro.",
+            "Realizar caracterizaciones psicosociales en las jornadas de atención al interior de las sedes del Programa de Albergues para Habitantes de Calle de Pereira, reportándolas en el Observatorio Social ASCF.",
+            "Realizar las demás actividades que contribuyan al correcto funcionamiento del modelo de atención integral a la población habitante de calle."
         ]
     },
     "1088278205": {
@@ -25076,18 +25196,18 @@ CONTRATOS_INFORME_MENSUAL_V16124 = {
         "contrato": "CPS 11/09/2026 - 10/11/2026",
         "obligaciones": [
             "Realizar reporte del cronograma semanal de las actividades grupales y atenciones individuales de acuerdo a la disponibilidad de espacios asignados por Dirección.",
-            "Entrega mensual de las bases de datos correspondientes a la acción: 2.1.6. Registro de beneficiarios de actividades lúdicas, deportivas, de desarrollo personal y de reflexión en temas relacionados con la espiritualidad, 2.1.8. Registro de beneficiarios de procesos de emprendimiento y empleabilidad, 2.1.11. Registro de beneficiarios de actividades de mitigación del daño por consumo de sustancias psico activas De acuerdo a las evidencias para las actividades grupales tener en cuenta la presentación de soportes como: metodología, formatos SPP en PDF y fotos.",
-            "Participar de reuniones en pro del funcionamiento, revisión de novedades, estudios de caso con la administración municipal y retos a desarrollar desde el área de ciencias sociales, humanas o de la salud y el equipo interdisciplinarios del Programa de Albergues para Habitantes de Calle de la ciudad de Pereira.",
-            "Liderar espacios grupales y/o individuales relacionados con la reducción del daño por consumo de sustancias psicoactivas en el centro día - noche Urbano y Rural (1 encuentro semanal mínimo por albergue, para un total de 8 espacios grupales al mes en esta área específica)",
-            "Reportar al área de dirección los formatos diligenciados y registro fotográfico de las diferentes secretarias o descentralizados que visitan los centros días - noche con el propósito de hacer seguimiento a las actividades que son trasversales y que aportan al cumplimiento de indicadores de la política pública de habitante de calle. (formatos correspondientes a secretaria de educación urbano y rural).",
-            "Presentar informe mensual de acuerdo a las funciones del área de ciencias sociales humanas o de la salud, junto con los reportes del “observatorio social ASCF” lo cual debe hacer dentro de los tiempos determinados por la Asociación. Informe que será entregado de manera mensual al correo albergueh.hc.adm@gmail.com la fecha límite para enviar el informe de actividades y fotos es el 25 de cada mes.",
-            "Realizar 2 espacios mensuales en el albergue Urbano y Rural para fortalecer las dinámicas grupales frente al pacto de convivencia en apoyo con el equipo interdisciplinar.",
-            "Participar mínimo en dos (2) salidas restaurativas al mes relacionadas con sensibilización en reducción de riesgos y daños, acompañada de brigadas de alcance, trabajo comunitario y acciones en calle.",
-            "Realizar uno (1) espacio semanal para realizar en articulación con Psicología o  trabajo social  estudios de caso, elaboración o seguimiento del PAI de acuerdo a los procesos de los usuarios del Centro día- noche urbano o rural. (Estos deberán ser reportador en el observatorio social ASCF)",
-            "Participar en el espacio de dar la bienvenida los usuarios y usuarias que por sus procesos individuales llegan de traslados del centro día – noche urbano.  (1 vez a la semana- socialización y firma de  acuerdo de voluntades)",
-            "Reportar los logros desarrollados desde el área de ciencias sociales, humanas o de la salud en la plataforma “observatorio social de la Asociación Ciudad Futuro”.",
-            "Realizar caracterizaciones psicosociales en las jornadas de atención al interior de las sedes del el Programa de Albergues para Habitantes de Calle de la ciudad de Pereira. (Estos deberán ser reportador en el observatorio social ASCF)",
-            "Las demás que contribuyan al correcto funcionamiento del modelo de atención integral a la población habitante de calle.",
+            "Entregar mensualmente las bases de datos correspondientes a las acciones 2.1.6, 2.1.8 y 2.1.11, con soportes de metodología, formatos SPP en PDF y fotos para actividades grupales.",
+            "Participar de reuniones en pro del funcionamiento, revisión de novedades, estudios de caso con la administración municipal y retos a desarrollar desde ciencias sociales, humanas o de la salud y el equipo interdisciplinario.",
+            "Liderar espacios grupales y/o individuales relacionados con la reducción del daño por consumo de SPA en los centros día-noche Urbano y Rural: mínimo un encuentro semanal por albergue, para un total de ocho (8) espacios grupales al mes.",
+            "Reportar a Dirección los formatos diligenciados y registro fotográfico de las secretarías o descentralizados que visitan los centros día-noche, correspondiente a Secretaría de Educación urbano y rural.",
+            "Presentar informe mensual de acuerdo con las funciones del área de ciencias sociales, humanas o de la salud, junto con los reportes del Observatorio Social ASCF; fecha límite de actividades y fotos: 25 de cada mes.",
+            "Realizar dos (2) espacios mensuales en los albergues Urbano y Rural para fortalecer las dinámicas grupales frente al pacto de convivencia, en apoyo con el equipo interdisciplinario.",
+            "Participar mínimo en dos (2) salidas restaurativas al mes relacionadas con sensibilización en reducción de riesgos y daños, brigadas de alcance, trabajo comunitario y acciones en calle.",
+            "Realizar un (1) espacio semanal, en articulación con Psicología o Trabajo Social, para estudios de caso, elaboración o seguimiento del PAI, reportándolo en el Observatorio Social ASCF.",
+            "Participar en el espacio de bienvenida a usuarios trasladados del centro día-noche urbano, una (1) vez a la semana, con socialización y firma del acuerdo de voluntades.",
+            "Reportar los logros desarrollados desde el área de ciencias sociales, humanas o de la salud en la plataforma Observatorio Social de la Asociación Ciudad Futuro.",
+            "Realizar caracterizaciones psicosociales en las jornadas de atención al interior de las sedes del Programa de Albergues para Habitantes de Calle de Pereira, reportándolas en el Observatorio Social ASCF.",
+            "Realizar las demás actividades que contribuyan al correcto funcionamiento del modelo de atención integral a la población habitante de calle."
         ]
     },
     "1112778245": {
@@ -25096,18 +25216,18 @@ CONTRATOS_INFORME_MENSUAL_V16124 = {
         "contrato": "CPS 11/09/2026 - 10/11/2026",
         "obligaciones": [
             "Realizar reporte del cronograma semanal de las actividades grupales y atenciones individuales de acuerdo a la disponibilidad de espacios asignados por Dirección.",
-            "Entrega mensual de las bases de datos correspondientes a la acción: 2.1.1. Registro de beneficiarios de atención psicológica y socio familiar 2.1.9. Registro de beneficiarios de actividades de sana convivencia. 2.1.5. Registro de beneficiarios de procesos de reintegración familiar y social con su respectivo seguimiento. De acuerdo a las evidencias para las actividades grupales tener en cuenta la presentación de soportes como: metodología, formatos SPP en PDF y fotos.",
-            "Participar de reuniones en pro del funcionamiento, revisión de novedades, estudios de caso con programa de habitante de calle, reuniones de equipo interdisciplinarios del Programa de Albergues para Habitantes de Calle de la ciudad de Pereira, entre otros.",
-            "Presentar informe mensual de acuerdo a las funciones del área de psicología, junto con los reportes del “observatorio social ASCF” lo cual debe hacer dentro de los tiempos determinados por la Asociación. Informe que será entregado de manera mensual al correo albergueh.hc.adm@gmail.com  la fecha límite para enviar el informe de actividades y fotos es el 25 de cada mes.",
-            "Propiciar, mínimo, un (1) encuentro semanal con al menos 5 usuarios del Programa de Albergues para Habitantes de Calle de la ciudad de Pereira, con los cuales se trabajen temas grupales en prevención selectiva o reducción de riesgos y daños respecto al consumo de Sustancias Psicoactivas (SPA); a través de posibles estrategias como la meditación, reflexión colectiva, cine foros o construcciones colectivas.",
-            "Apoyar la apertura del buzón de sugerencias dos (2) veces al mes y dar respuesta a las PQR de acuerdo con las necesidades de los usuarios del centro día noche rural.",
-            "Reportar al área de dirección los formatos diligenciados y registro fotográfico de las diferentes secretarias o descentralizados que visitan los centros días - noche con el propósito de hacer seguimiento a las actividades que son trasversales y que aportan al cumplimiento de indicadores de la política pública de habitante de calle. (secretaria de salud rural)",
-            "Realizar uno (1) espacio semanal para realizar en articulación con Psicología, trabajo social y pedagogía estudios de caso, elaboración y seguimiento al PAI de acuerdo a los procesos de los usuarios del Centro día- noche urbano o rural. (Estos deberán ser reportador en el observatorio social ASCF)",
-            "Dar la bienvenida los usuarios y usuarias que por sus procesos individuales llegan de traslados del centro día – noche urbano.  (1 vez a la semana- socialización y firma de  acuerdo de voluntades)",
-            "Aplicar encuestas de satisfacción a usuarios de los albergues programadas en promedio para cada tres meses, con el fin de evaluar los servicios prestados al interior del centro día – noche urbano.",
-            "Aportar una (1) certificación actualizada (vigencia 2026) relacionada con la atención a población inmersa en el fenómeno social de consumo de sustancias psicoactivas.",
-            "Reportar los logros desarrollados desde el área de trabajo social en la plataforma “observatorio social de la Asociación Ciudad Futuro”.",
-            "Las demás que contribuyan al correcto funcionamiento del modelo de atención integral a la población habitante de calle.",
+            "Entregar mensualmente las bases de datos correspondientes a las acciones 2.1.1, 2.1.9 y 2.1.5, con soportes de metodología, formatos SPP en PDF y fotos para actividades grupales.",
+            "Participar de reuniones en pro del funcionamiento, revisión de novedades, estudios de caso con el programa de habitante de calle y reuniones del equipo interdisciplinario.",
+            "Presentar informe mensual de acuerdo con las funciones del área de Psicología, junto con los reportes del Observatorio Social ASCF; fecha límite de actividades y fotos: 25 de cada mes.",
+            "Propiciar mínimo un (1) encuentro semanal con al menos 5 usuarios para trabajar prevención selectiva o reducción de riesgos y daños frente al consumo de SPA.",
+            "Apoyar la apertura del buzón de sugerencias dos (2) veces al mes y dar respuesta a las PQR de acuerdo con las necesidades de los usuarios del centro día-noche rural.",
+            "Reportar a Dirección los formatos diligenciados y registro fotográfico de las secretarías o descentralizados que visitan los centros día-noche, correspondiente a Secretaría de Salud rural.",
+            "Realizar un (1) espacio semanal, en articulación con Psicología, Trabajo Social y Pedagogía, para estudios de caso, elaboración y seguimiento al PAI, reportándolo en el Observatorio Social ASCF.",
+            "Dar la bienvenida a los usuarios que llegan trasladados del centro día-noche urbano, una (1) vez a la semana, con socialización y firma del acuerdo de voluntades.",
+            "Aplicar encuestas de satisfacción a usuarios de los albergues, programadas en promedio cada tres meses, para evaluar los servicios prestados al interior del centro día-noche urbano.",
+            "Aportar una (1) certificación actualizada, vigencia 2026, relacionada con la atención a población inmersa en el fenómeno social de consumo de sustancias psicoactivas.",
+            "Reportar los logros desarrollados en la plataforma Observatorio Social de la Asociación Ciudad Futuro.",
+            "Realizar las demás actividades que contribuyan al correcto funcionamiento del modelo de atención integral a la población habitante de calle."
         ]
     },
     "94381656": {
@@ -25156,19 +25276,18 @@ CONTRATOS_INFORME_MENSUAL_V16124 = {
         "contrato": "CPS 11/09/2026 - 10/11/2026",
         "obligaciones": [
             "Realizar reporte del cronograma semanal de las actividades grupales y atenciones individuales de acuerdo a la disponibilidad de espacios asignados por Dirección.",
-            "Entrega mensual de las bases de datos correspondientes a la acción: 2.1.3. Registro de beneficiarios estrategias para mitigar la violencia física y sexual en los habitantes de calle, 2.1.6. Registro de beneficiarios de actividades lúdicas, deportivas, de desarrollo personal y de reflexión en temas relacionados con la espiritualidad. 2.1.11. Registro de beneficiarios de actividades de mitigación del daño por consumo de sustancias psico activas De acuerdo a las evidencias para las actividades grupales tener en cuenta la presentación de soportes como: metodología, formatos SPP en PDF y fotos.",
-            "Participar de reuniones en pro del funcionamiento, revisión de novedades, estudios de caso con la administración municipal y retos a desarrollar desde el área de ciencias sociales, humanas o de la salud y el equipo interdisciplinarios del Programa de Albergues para Habitantes de Calle de la ciudad de Pereira.",
-            "Abordaje del trauma con enfoque de género, mediante círculos de la palabra dirigidos exclusivamente a mujeres y mujeres trans, en articulación con otras áreas (psicología, enfermería, trabajo social, 1 espacio semanal por albergue). Los temas a trabajar incluyen:\nFalta de apoyo y estigma social.\nPareja y relaciones afectivas \nPacto de convivencia.\nDinámicas familiares y maternidad.\nViolencias, abusos y traumas.\nSexualidad y salud mental, abordando aspectos como autoestima, autoeficacia, estados anímicos y afectivos, depresión, ansiedad, estrés, autoconcepto y trastornos alimenticios.",
-            "Seguimiento a mujeres y mujeres trans usuarias del albergue, con sistematización de experiencias y violencias.",
-            "Presentar informe mensual de acuerdo a las funciones del área de ciencias sociales, humanas o de la salud, junto con los reportes del “observatorio social ASCF” lo cual debe hacer dentro de los tiempos determinados por la Asociación. Informe que será entregado de manera mensual al correo albergueh.hc.adm@gmail.com la fecha límite para enviar el informe de actividades y fotos es el 25 de cada mes.",
-            "Motivar la articulación con colectivos y dependencias institucionales, reconociendo como buena práctica el tejido de redes que garanticen a las mujeres el acceso en igualdad de condiciones a distintos recursos.",
-            "Participar mínimo en dos (2) salidas restaurativas al mes relacionadas con sensibilización en reducción de riesgos y daños, acompañada de brigadas de alcance, trabajo comunitario y acciones en calle.",
-            "Realizar uno (1) espacio semanal para realizar en articulación con Psicología o  trabajo social  estudios de caso, elaboración o seguimiento del PAI de acuerdo a los procesos de los usuarios del Centro día- noche urbano o rural. (Estos deberán ser reportador en el observatorio social ASCF)",
-            "Aplicar encuestas de satisfacción a usuarios de los albergues programadas en promedio para cada tres meses, con el fin de evaluar los servicios prestados al interior del centro día – noche urbano.",
-            "Aportar una (1) certificación actualizada (vigencia 2026) relacionada con la atención a población inmersa en el fenómeno social de consumo de sustancias psicoactivas.",
-            "Reportar los logros desarrollados desde el área de ciencias sociales, humanas o de la salud en la plataforma “observatorio social de la Asociación Ciudad Futuro”.",
-            "Realizar caracterizaciones psicosociales en las jornadas de atención al interior de las sedes del el Programa de Albergues para Habitantes de Calle de la ciudad de Pereira. (Estos deberán ser reportador en el observatorio social ASCF)",
-            "Las demás que contribuyan al correcto funcionamiento del modelo de atención integral a la población habitante de calle.",
+            "Entregar mensualmente las bases de datos correspondientes a las acciones 2.1.3, 2.1.6 y 2.1.11, con soportes de metodología, formatos SPP en PDF y fotos para actividades grupales.",
+            "Participar de reuniones en pro del funcionamiento, revisión de novedades, estudios de caso con la administración municipal y retos a desarrollar desde ciencias sociales, humanas o de la salud y el equipo interdisciplinario.",
+            "Realizar abordaje del trauma con enfoque de género mediante círculos de la palabra dirigidos exclusivamente a mujeres y mujeres trans, en articulación con Psicología, Enfermería y Trabajo Social, con un (1) espacio semanal por albergue.",
+            "Realizar seguimiento a mujeres y mujeres trans usuarias del albergue, con sistematización de experiencias y violencias.",
+            "Presentar informe mensual de acuerdo con las funciones del área de ciencias sociales, humanas o de la salud, junto con los reportes del Observatorio Social ASCF; fecha límite de actividades y fotos: 25 de cada mes.",
+            "Motivar la articulación con colectivos y dependencias institucionales, fortaleciendo redes que garanticen a las mujeres acceso en igualdad de condiciones a distintos recursos.",
+            "Participar mínimo en dos (2) salidas restaurativas al mes relacionadas con sensibilización en reducción de riesgos y daños, brigadas de alcance, trabajo comunitario y acciones en calle.",
+            "Realizar un (1) espacio semanal, en articulación con Psicología o Trabajo Social, para estudios de caso, elaboración o seguimiento del PAI, reportándolo en el Observatorio Social ASCF.",
+            "Aplicar encuestas de satisfacción a usuarios de los albergues, programadas en promedio cada tres meses, para evaluar los servicios prestados al interior del centro día-noche urbano.",
+            "Aportar una (1) certificación actualizada, vigencia 2026, relacionada con la atención a población inmersa en el fenómeno social de consumo de sustancias psicoactivas.",
+            "Reportar los logros desarrollados desde el área de ciencias sociales, humanas o de la salud en la plataforma Observatorio Social de la Asociación Ciudad Futuro.",
+            "Realizar las demás actividades que contribuyan al correcto funcionamiento del modelo de atención integral a la población habitante de calle."
         ]
     },
     "1192771619": {
@@ -25177,19 +25296,19 @@ CONTRATOS_INFORME_MENSUAL_V16124 = {
         "contrato": "CPS 11/09/2026 - 10/11/2026",
         "obligaciones": [
             "Realizar reporte del cronograma semanal de las actividades grupales y atenciones individuales de acuerdo a la disponibilidad de espacios asignados por Dirección.",
-            "Entrega mensual de las bases de datos correspondientes a la acción: 2.1.6. Registro de beneficiarios de actividades lúdicas, deportivas, de desarrollo personal y de reflexión en temas relacionados con la espiritualidad, 2.1.11. Registro de beneficiarios de actividades de mitigación del daño por consumo de sustancias psico activas. De acuerdo a las evidencias para las actividades grupales tener en cuenta la presentación de soportes como: metodología, formatos SPP en PDF y fotos.",
-            "Participar de reuniones en pro del funcionamiento, revisión de novedades, estudios de caso con la administración municipal y retos a desarrollar desde el área de ciencias sociales, humanas o de la salud y el equipo interdisciplinarios del Programa de Albergues para Habitantes de Calle de la ciudad de Pereira.",
-            "Reportar al área de dirección los formatos diligenciados y registro fotográfico de las diferentes secretarias o descentralizados que visitan los centros días - noche con el propósito de hacer seguimiento a las actividades que son trasversales y que aportan al cumplimiento de indicadores de la política pública de habitante de calle. (formatos correspondientes a secretaria de deportes y cultura urbano).",
-            "Presentar informe mensual de acuerdo a las funciones del área de trabajo social, junto con los reportes del “observatorio social ASCF” lo cual debe hacer dentro de los tiempos determinados por la Asociación. Informe que será entregado de manera mensual al correo albergueh.hc.adm@gmail.com la fecha límite para enviar el informe de actividades y fotos es el 25 de cada mes.",
-            "Socializar, desarrollar e implementar la estrategia denominada “CASADENTRO, CASAFUERA, dentro del marco de las narrativas y memoria del fenómeno social de habitanza en calle. Un laboratorio desde la pedagogía.  Esta estrategia deberá contar con un espacio de socialización de resultados.",
-            "Participar mínimo en dos (2) salidas restaurativas al mes relacionadas con sensibilización en reducción de riesgos y daños, acompañada de brigadas de alcance, trabajo comunitario y acciones en calle.",
-            "Realizar uno (1) espacio semanal para realizar en articulación con Psicología y trabajo social estudios de caso,  elaboración o seguimiento del PAI de acuerdo a los procesos de los usuarios del Centro día- noche urbano o rural. (Estos deberán ser reportador en el observatorio social ASCF)",
-            "Apoyar la apertura del buzón de sugerencias dos (2) veces al mes y dar respuesta a las PQR de acuerdo a las necesidades de los usuarios y usuarias del centro día noche urbano.",
-            "Aportar una (1) certificación actualizada (vigencia 2026) relacionada con la atención a población inmersa en el fenómeno social de consumo de sustancias psicoactivas.",
-            "Reportar los logros desarrollados desde el área de ciencias sociales, humanas o de la salud en la plataforma “observatorio social de la Asociación Ciudad Futuro”.",
-            "Reportar y sensibilizar los usuarios y usuarias que por sus procesos individuales serán trasladados al centro día – noche rural. (1 vez a la semana- socialización acuerdo de voluntades)",
-            "Realizar caracterizaciones psicosociales en las jornadas de atención al interior de las sedes del el Programa de Albergues para Habitantes de Calle de la ciudad de Pereira. (Estos deberán ser reportador en el observatorio social ASCF)",
-            "Las demás que contribuyan al correcto funcionamiento del modelo de atención integral a la población habitante de calle.",
+            "Entregar mensualmente las bases de datos correspondientes a las acciones 2.1.6 y 2.1.11, con soportes de metodología, formatos SPP en PDF y fotos para actividades grupales.",
+            "Participar de reuniones en pro del funcionamiento, revisión de novedades, estudios de caso con la administración municipal y retos a desarrollar desde ciencias sociales, humanas o de la salud y el equipo interdisciplinario.",
+            "Reportar a Dirección los formatos diligenciados y registro fotográfico de las secretarías o descentralizados que visitan los centros día-noche, correspondiente a Secretaría de Deportes y Cultura urbano.",
+            "Presentar informe mensual de acuerdo con las funciones del área, junto con los reportes del Observatorio Social ASCF; fecha límite de actividades y fotos: 25 de cada mes.",
+            "Socializar, desarrollar e implementar la estrategia CASADENTRO, CASAFUERA, dentro del marco de las narrativas y memoria del fenómeno social de habitanza en calle, como laboratorio desde la pedagogía, incluyendo un espacio de socialización de resultados.",
+            "Participar mínimo en dos (2) salidas restaurativas al mes relacionadas con sensibilización en reducción de riesgos y daños, brigadas de alcance, trabajo comunitario y acciones en calle.",
+            "Realizar un (1) espacio semanal, en articulación con Psicología y Trabajo Social, para estudios de caso, elaboración o seguimiento del PAI, reportándolo en el Observatorio Social ASCF.",
+            "Apoyar la apertura del buzón de sugerencias dos (2) veces al mes y dar respuesta a las PQR de acuerdo con las necesidades de los usuarios del centro día-noche urbano.",
+            "Aportar una (1) certificación actualizada, vigencia 2026, relacionada con la atención a población inmersa en el fenómeno social de consumo de sustancias psicoactivas.",
+            "Reportar los logros desarrollados desde el área de ciencias sociales, humanas o de la salud en la plataforma Observatorio Social de la Asociación Ciudad Futuro.",
+            "Reportar y sensibilizar a los usuarios que serán trasladados al centro día-noche rural, una (1) vez a la semana, mediante socialización del acuerdo de voluntades.",
+            "Realizar caracterizaciones psicosociales en las jornadas de atención al interior de las sedes del Programa de Albergues para Habitantes de Calle de Pereira, reportándolas en el Observatorio Social ASCF.",
+            "Realizar las demás actividades que contribuyan al correcto funcionamiento del modelo de atención integral a la población habitante de calle."
         ]
     },
 }
@@ -25470,32 +25589,16 @@ def _resumen_evidencia_v16125(tipo, df, codigos=None):
             f"personas únicas: {unicos}; creaciones: {creadas}; actualizaciones: {actualizadas}."
         )
     if tipo == "pai":
-        # V16.157: objetivos PAI y seguimientos se informan por separado.
-        fuente = (
-            df["Fuente"].fillna("").astype(str).str.strip()
-            if "Fuente" in df.columns else pd.Series("", index=df.index)
-        )
-        df_p = df.loc[fuente.str.upper().eq("PAI")].copy()
-        df_s = df.loc[fuente.str.upper().str.contains("SEGUIMIENTO|INTERVENCI", regex=True)].copy()
-
-        def _personas_unicas(_df):
-            if _df is None or _df.empty or "Documento usuario" not in _df.columns:
-                return 0
-            return int(
-                _df["Documento usuario"].fillna("").astype(str).str.strip()
-                .replace("", pd.NA).dropna().nunique()
-            )
-
-        pai_personas = _personas_unicas(df_p)
-        objetivos_pai = int(len(df_p))
-        seguimientos = int(len(df_s))
-        personas_seg = _personas_unicas(df_s)
+        total = int(len(df))
+        personas = 0
+        try:
+            personas = int(df["Documento usuario"].fillna("").astype(str).str.strip().replace("", pd.NA).dropna().nunique())
+        except Exception:
+            pass
         return (
-            f"PAI elaborados en el período: {pai_personas}. "
-            f"Personas con PAI: {pai_personas}. "
-            f"Objetivos formulados dentro de esos PAI: {objetivos_pai}. "
-            f"Seguimientos / intervenciones realizados en el período: {seguimientos} "
-            f"registro(s), correspondientes a {personas_seg} persona(s)."
+            f"Evidencia automática PAI/seguimiento: {total} registro(s) del período; "
+            f"personas únicas intervenidas: {personas}. Se detalla fecha/hora, persona, "
+            "tipo de registro, actividad/objetivo, seguimiento/resultado y avance cuando están disponibles."
         )
     return ""
 
@@ -25642,8 +25745,7 @@ def modulo_informe_mensual_profesional_piloto_v1627():
         # columnas genéricas. La búsqueda aproximada anterior podía escoger otra
         # columna que simplemente contuviera la palabra "fecha".
         candidatos = [
-            # Para pai_objetivos la fecha contractual/operativa del PAI es fecha_apertura.
-            "fecha_apertura", "fecha_seguimiento", "fecha_registro", "fecha_hora", "creado_en",
+            "fecha_seguimiento", "fecha_registro", "fecha_hora", "creado_en",
             "created_at", "fecha_creacion", "fecha_atencion", "fecha_movimiento",
             "fecha"
         ]
@@ -25679,11 +25781,8 @@ def modulo_informe_mensual_profesional_piloto_v1627():
         )
         return tmp.loc[mascara].copy()
 
-    # V16.150: priorizar la fuente real de objetivos PAI.
-    # Evita que el informe tome primero otra tabla cuyo nombre también contenga "pai".
-    tablas_pai = (
-        ["pai_objetivos"] if "pai_objetivos" in tablas else []
-    ) + [t for t in tablas if "pai" in t.lower() and t != "pai_objetivos"]
+    # Detecta las tablas reales existentes en esta instalación.
+    tablas_pai = [t for t in tablas if "pai" in t.lower()]
     tablas_seg = [
         t for t in tablas
         if any(k in t.lower() for k in ["seguimiento","intervencion"])
@@ -25711,8 +25810,7 @@ def modulo_informe_mensual_profesional_piloto_v1627():
         if df.empty:
             return df
 
-        # En pai_objetivos, profesional_referente contiene el ID de profesionales.
-        cp_id = col(df, ["profesional_id", "id_profesional", "profesional_referente"])
+        cp_id = col(df, ["profesional_id", "id_profesional"])
         if cp_id and profesional_id_inf is not None:
             ids = pd.to_numeric(df[cp_id], errors="coerce")
             mask_id = ids.eq(pd.to_numeric(pd.Series([profesional_id_inf]), errors="coerce").iloc[0])
@@ -25740,32 +25838,14 @@ def modulo_informe_mensual_profesional_piloto_v1627():
 
     docs = set()
     for df in [df_pai, df_seg]:
-        cd = col(df, ["documento_usuario","numero_identificacion","documento","cedula"])
+        cd = col(df, ["numero_identificacion","documento","cedula"])
         if cd:
             docs.update(df[cd].dropna().astype(str).str.strip().tolist())
     docs.discard("")
 
     st.markdown("### 📊 Consolidado automático")
     a,b,c,d = st.columns(4)
-    # Un PAI del período se cuenta por PERSONA, no por cantidad de objetivos.
-    # Ej.: 5 objetivos abiertos para una misma persona = 1 PAI.
-    _doc_pai = col(
-        df_pai,
-        ["documento_usuario","numero_identificacion","documento","cedula"]
-    )
-    if _doc_pai and not df_pai.empty:
-        total_pai_periodo = int(
-            df_pai[_doc_pai]
-            .dropna()
-            .astype(str)
-            .str.strip()
-            .replace("", pd.NA)
-            .dropna()
-            .nunique()
-        )
-    else:
-        total_pai_periodo = 0
-    a.metric("PAI del período", total_pai_periodo)
+    a.metric("PAI del período", len(df_pai))
     b.metric("Seguimientos / intervenciones", len(df_seg))
     c.metric("Personas únicas", len(docs))
     d.metric("Fuentes detectadas", int(bool(fuente_pai)) + int(bool(fuente_seg)))
@@ -25890,9 +25970,8 @@ def modulo_informe_mensual_profesional_piloto_v1627():
                                 st.rerun()
                     elif ev_auto["tipo"] == "pai":
                         st.caption(
-                            "La columna «Fuente» distingue los registros PAI de los seguimientos/intervenciones. "
-                            "Los PAI y los seguimientos se contabilizan por separado; los campos vacíos indican "
-                            "que la fuente original no contiene ese dato."
+                            "Cada fila corresponde a evidencia real PAI/seguimiento atribuida al profesional "
+                            "en el período. Los campos vacíos indican que la fuente original no contiene ese dato."
                         )
                 else:
                     st.info(
@@ -25938,35 +26017,19 @@ def modulo_informe_mensual_profesional_piloto_v1627():
                                 f"{_r.get('Fecha y hora','')}"
                             )
                     elif ev_auto["tipo"] == "pai":
-                        # V16.157: separar también en el PDF PAI y seguimientos.
-                        _df_pdf = df_ev.head(40).copy()
-                        _fuente_pdf = (
-                            _df_pdf["Fuente"].fillna("").astype(str).str.strip()
-                            if "Fuente" in _df_pdf.columns else pd.Series("", index=_df_pdf.index)
-                        )
-                        _grupos_pdf = [
-                            ("OBJETIVOS FORMULADOS DENTRO DE LOS PAI DEL PERÍODO", _df_pdf.loc[_fuente_pdf.str.upper().eq("PAI")]),
-                            ("SEGUIMIENTOS / INTERVENCIONES DEL PERÍODO",
-                             _df_pdf.loc[_fuente_pdf.str.upper().str.contains("SEGUIMIENTO|INTERVENCI", regex=True)]),
-                        ]
-                        for _titulo_pdf, _grupo_pdf in _grupos_pdf:
-                            if _grupo_pdf.empty:
-                                partes_sop.append(_titulo_pdf + ": Sin registros.")
-                                continue
-                            partes_sop.append(_titulo_pdf + ":")
-                            for _, _r in _grupo_pdf.iterrows():
-                                _persona = str(_r.get("Usuario", "") or "").strip()
-                                _docu = str(_r.get("Documento usuario", "") or "").strip()
-                                _quien = (_persona + (f" · CC {_docu}" if _docu else "")).strip(" ·")
-                                _avance = str(_r.get("Avance", "") or "").strip()
-                                partes_sop.append(
-                                    f"{_r.get('Fecha / hora','')} | "
-                                    f"{_quien or 'Usuario no identificado en la fuente'} | "
-                                    f"{_r.get('Tipo de registro','')} | "
-                                    f"Actividad/objetivo: {_r.get('Objetivo / actividad','')} | "
-                                    f"Seguimiento/resultado: {_r.get('Seguimiento / resultado','')}"
-                                    + (f" | Avance: {_avance}" if _avance else "")
-                                )
+                        for _, _r in df_ev.head(40).iterrows():
+                            _persona = str(_r.get("Usuario", "") or "").strip()
+                            _docu = str(_r.get("Documento usuario", "") or "").strip()
+                            _quien = (_persona + (f" · CC {_docu}" if _docu else "")).strip(" ·")
+                            _avance = str(_r.get("Avance", "") or "").strip()
+                            partes_sop.append(
+                                f"{_r.get('Fecha / hora','')} | "
+                                f"{_quien or 'Usuario no identificado en la fuente'} | "
+                                f"{_r.get('Fuente','')} | {_r.get('Tipo de registro','')} | "
+                                f"Actividad/objetivo: {_r.get('Objetivo / actividad','')} | "
+                                f"Seguimiento/resultado: {_r.get('Seguimiento / resultado','')}"
+                                + (f" | Avance: {_avance}" if _avance else "")
+                            )
             if sop_manual.strip():
                 partes_sop.append("SOPORTE ADICIONAL: " + sop_manual.strip())
             sop = "\n".join(partes_sop)
@@ -26872,8 +26935,8 @@ elif st.session_state.page == "tablero_ods_v16":
 
 elif st.session_state.page == "comite_casos_v16":
 
-    if rol_router not in ["COORDINACION", "MANAGER"]:
-        st.error("Acceso exclusivo para Coordinación o Manager.")
+    if not _puede_comite_casos_v16157():
+        st.error("Acceso exclusivo para profesionales autorizados, Coordinación o Manager.")
     else:
         comite_casos_v16()
 
@@ -28229,11 +28292,15 @@ with tab3:
 
     st.subheader("📊 Indicadores de Egreso")
 
-    df_impacto = pd.read_sql_query("""
+    df_impacto_todos = pd.read_sql_query("""
         SELECT *
         FROM personas_caracterizacion
         WHERE estado_caso = 'EGRESADO'
     """, engine)
+    # V16.154: el fallecimiento sigue en la historia, pero se excluye de
+    # Egresos e Impacto porque no corresponde a un caso exitoso.
+    df_impacto = _filtrar_egresos_impacto_v16154(df_impacto_todos)
+    df_egresados = df_impacto.copy()
 
     total_egresados = len(df_impacto)
     total_personas = len(df)
@@ -28242,7 +28309,7 @@ with tab3:
 
     col1, col2, col3 = st.columns(3)
 
-    col1.metric("🎓 Total Egresados", total_egresados)
+    col1.metric("🏆 Egresos de impacto", total_egresados)
     col2.metric("📈 Tasa de Egreso", f"{tasa_egreso}%")
     col3.metric("👤 Edad Promedio", round(df_impacto["edad"].mean(), 1) if len(df_impacto) > 0 else 0)
 
@@ -28255,7 +28322,7 @@ with tab3:
     st.subheader("📌 Observaciones de Egreso")
 
     obs_df = (
-        df_egresados["observaciones_egreso"]
+        df_egresados["motivo_impacto"]
         .fillna("Sin observación")
         .value_counts()
         .reset_index()
@@ -28290,7 +28357,7 @@ with tab3:
 
     st.plotly_chart(px.histogram(df_impacto, x="edad", nbins=10, title="Edad"))
 
-    st.info(f"Total egresados: {total_egresados} | Tasa: {tasa_egreso}%")
+    st.info(f"Egresos de impacto: {total_egresados} | Tasa: {tasa_egreso}% · Los fallecimientos no se contabilizan como casos exitosos.")
 with tab4:
 
     # ============================================================
