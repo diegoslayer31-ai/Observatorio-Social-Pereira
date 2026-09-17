@@ -24225,6 +24225,13 @@ def modulo_politica_publica_v1678():
             ):
                 acciones_asignadas.append(cod)
 
+        # V16.157: candado por cédula para Estefany Scarpetta Torres.
+        # Evita que diferencias ortográficas del nombre la dejen sin acciones.
+        if _solo_digitos_v16124(doc_func) == "1088343873":
+            for _cod_psico in ["2.1.1", "2.1.6", "2.1.9"]:
+                if _cod_psico in POLITICA_PUBLICA_CATALOGO_V1678 and _cod_psico not in acciones_asignadas:
+                    acciones_asignadas.append(_cod_psico)
+
     if rol in roles_operativos and not acciones_asignadas:
         st.warning(
             f"No se encontró una acción asignada a **{nombre_func}** en el listado vigente. "
@@ -25460,16 +25467,31 @@ def _resumen_evidencia_v16125(tipo, df, codigos=None):
             f"personas únicas: {unicos}; creaciones: {creadas}; actualizaciones: {actualizadas}."
         )
     if tipo == "pai":
-        total = int(len(df))
-        personas = 0
-        try:
-            personas = int(df["Documento usuario"].fillna("").astype(str).str.strip().replace("", pd.NA).dropna().nunique())
-        except Exception:
-            pass
+        # V16.157: objetivos PAI y seguimientos se informan por separado.
+        fuente = (
+            df["Fuente"].fillna("").astype(str).str.strip()
+            if "Fuente" in df.columns else pd.Series("", index=df.index)
+        )
+        df_p = df.loc[fuente.str.upper().eq("PAI")].copy()
+        df_s = df.loc[fuente.str.upper().str.contains("SEGUIMIENTO|INTERVENCI", regex=True)].copy()
+
+        def _personas_unicas(_df):
+            if _df is None or _df.empty or "Documento usuario" not in _df.columns:
+                return 0
+            return int(
+                _df["Documento usuario"].fillna("").astype(str).str.strip()
+                .replace("", pd.NA).dropna().nunique()
+            )
+
+        pai_personas = _personas_unicas(df_p)
+        objetivos_pai = int(len(df_p))
+        seguimientos = int(len(df_s))
+        personas_seg = _personas_unicas(df_s)
         return (
-            f"Evidencia automática PAI/seguimiento: {total} registro(s) del período; "
-            f"personas únicas intervenidas: {personas}. Se detalla fecha/hora, persona, "
-            "tipo de registro, actividad/objetivo, seguimiento/resultado y avance cuando están disponibles."
+            f"PAI elaborados en el período: {pai_personas} persona(s) "
+            f"({objetivos_pai} objetivo(s)/registro(s) PAI). "
+            f"Seguimientos / intervenciones realizados en el período: {seguimientos} "
+            f"registro(s), correspondientes a {personas_seg} persona(s)."
         )
     return ""
 
@@ -25864,8 +25886,9 @@ def modulo_informe_mensual_profesional_piloto_v1627():
                                 st.rerun()
                     elif ev_auto["tipo"] == "pai":
                         st.caption(
-                            "Cada fila corresponde a evidencia real PAI/seguimiento atribuida al profesional "
-                            "en el período. Los campos vacíos indican que la fuente original no contiene ese dato."
+                            "La columna «Fuente» distingue los registros PAI de los seguimientos/intervenciones. "
+                            "Los PAI y los seguimientos se contabilizan por separado; los campos vacíos indican "
+                            "que la fuente original no contiene ese dato."
                         )
                 else:
                     st.info(
@@ -25911,19 +25934,35 @@ def modulo_informe_mensual_profesional_piloto_v1627():
                                 f"{_r.get('Fecha y hora','')}"
                             )
                     elif ev_auto["tipo"] == "pai":
-                        for _, _r in df_ev.head(40).iterrows():
-                            _persona = str(_r.get("Usuario", "") or "").strip()
-                            _docu = str(_r.get("Documento usuario", "") or "").strip()
-                            _quien = (_persona + (f" · CC {_docu}" if _docu else "")).strip(" ·")
-                            _avance = str(_r.get("Avance", "") or "").strip()
-                            partes_sop.append(
-                                f"{_r.get('Fecha / hora','')} | "
-                                f"{_quien or 'Usuario no identificado en la fuente'} | "
-                                f"{_r.get('Fuente','')} | {_r.get('Tipo de registro','')} | "
-                                f"Actividad/objetivo: {_r.get('Objetivo / actividad','')} | "
-                                f"Seguimiento/resultado: {_r.get('Seguimiento / resultado','')}"
-                                + (f" | Avance: {_avance}" if _avance else "")
-                            )
+                        # V16.157: separar también en el PDF PAI y seguimientos.
+                        _df_pdf = df_ev.head(40).copy()
+                        _fuente_pdf = (
+                            _df_pdf["Fuente"].fillna("").astype(str).str.strip()
+                            if "Fuente" in _df_pdf.columns else pd.Series("", index=_df_pdf.index)
+                        )
+                        _grupos_pdf = [
+                            ("PAI ELABORADOS EN EL PERÍODO", _df_pdf.loc[_fuente_pdf.str.upper().eq("PAI")]),
+                            ("SEGUIMIENTOS / INTERVENCIONES DEL PERÍODO",
+                             _df_pdf.loc[_fuente_pdf.str.upper().str.contains("SEGUIMIENTO|INTERVENCI", regex=True)]),
+                        ]
+                        for _titulo_pdf, _grupo_pdf in _grupos_pdf:
+                            if _grupo_pdf.empty:
+                                partes_sop.append(_titulo_pdf + ": Sin registros.")
+                                continue
+                            partes_sop.append(_titulo_pdf + ":")
+                            for _, _r in _grupo_pdf.iterrows():
+                                _persona = str(_r.get("Usuario", "") or "").strip()
+                                _docu = str(_r.get("Documento usuario", "") or "").strip()
+                                _quien = (_persona + (f" · CC {_docu}" if _docu else "")).strip(" ·")
+                                _avance = str(_r.get("Avance", "") or "").strip()
+                                partes_sop.append(
+                                    f"{_r.get('Fecha / hora','')} | "
+                                    f"{_quien or 'Usuario no identificado en la fuente'} | "
+                                    f"{_r.get('Tipo de registro','')} | "
+                                    f"Actividad/objetivo: {_r.get('Objetivo / actividad','')} | "
+                                    f"Seguimiento/resultado: {_r.get('Seguimiento / resultado','')}"
+                                    + (f" | Avance: {_avance}" if _avance else "")
+                                )
             if sop_manual.strip():
                 partes_sop.append("SOPORTE ADICIONAL: " + sop_manual.strip())
             sop = "\n".join(partes_sop)
