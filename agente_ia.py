@@ -10329,7 +10329,7 @@ def _puede_comite_casos_v16157():
 
 def comite_casos_v16():
     """
-    V16.162 - Comité de Casos: pendientes reales, sin repetir casos ya estudiados.
+    V16.163 - Comité de Casos: pendientes reales cruzados con comites_casos.
 
     Flujo institucional:
     1. Las medidas ACTIVA + remitido_comite=TRUE aparecen como pendientes solo mientras no hayan sido estudiadas por Comité.
@@ -10376,13 +10376,18 @@ def comite_casos_v16():
                    = TRIM(CAST(s.numero_identificacion AS TEXT))
                 WHERE UPPER(TRIM(COALESCE(s.estado_medida,''))) = 'ACTIVA'
                   AND COALESCE(s.remitido_comite, FALSE) = TRUE
-                  -- V16.162: una medida puede seguir ACTIVA y bloqueando el
-                  -- reingreso después de ser estudiada por Comité. Eso no la
-                  -- convierte nuevamente en un caso pendiente de estudio.
-                  -- El flujo de Comité deja trazabilidad "COMITÉ #<id>" en
-                  -- la observación de la medida cuando ya fue decidido.
-                  AND UPPER(COALESCE(s.observacion, '')) NOT LIKE '%COMITÉ #%'
-                  AND UPPER(COALESCE(s.observacion, '')) NOT LIKE '%COMITE #%'
+                  -- V16.163: pendiente REAL = medida remitida que todavía no
+                  -- tiene un Comité registrado desde la fecha de esa medida.
+                  -- No dependemos de que la observación de sanciones_usuarios
+                  -- tenga el texto "COMITÉ #...", porque los Comités históricos
+                  -- pueden existir sin esa marca.
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM comites_casos c
+                      WHERE TRIM(CAST(c.documento_usuario AS TEXT))
+                            = TRIM(CAST(s.numero_identificacion AS TEXT))
+                        AND CAST(c.fecha_comite AS DATE) >= CAST(s.fecha_inicio AS DATE)
+                  )
                 ORDER BY s.creado_en ASC, s.id ASC
             """),
             engine
