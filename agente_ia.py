@@ -10329,11 +10329,10 @@ def _puede_comite_casos_v16157():
 
 def comite_casos_v16():
     """
-    V16.107 - Comité de Casos integrado con medidas remitidas.
+    V16.162 - Comité de Casos: pendientes reales, sin repetir casos ya estudiados.
 
     Flujo institucional:
-    1. Las medidas ACTIVA + remitido_comite=TRUE aparecen automáticamente
-       como casos pendientes de estudio.
+    1. Las medidas ACTIVA + remitido_comite=TRUE aparecen como pendientes solo mientras no hayan sido estudiadas por Comité.
     2. El Comité registra el análisis y la decisión en comites_casos.
     3. La misma decisión puede levantar la medida, mantenerla bloqueada o
        convertirla en una medida temporal con nueva fecha de posible reingreso.
@@ -10377,6 +10376,13 @@ def comite_casos_v16():
                    = TRIM(CAST(s.numero_identificacion AS TEXT))
                 WHERE UPPER(TRIM(COALESCE(s.estado_medida,''))) = 'ACTIVA'
                   AND COALESCE(s.remitido_comite, FALSE) = TRUE
+                  -- V16.162: una medida puede seguir ACTIVA y bloqueando el
+                  -- reingreso después de ser estudiada por Comité. Eso no la
+                  -- convierte nuevamente en un caso pendiente de estudio.
+                  -- El flujo de Comité deja trazabilidad "COMITÉ #<id>" en
+                  -- la observación de la medida cuando ya fue decidido.
+                  AND UPPER(COALESCE(s.observacion, '')) NOT LIKE '%COMITÉ #%'
+                  AND UPPER(COALESCE(s.observacion, '')) NOT LIKE '%COMITE #%'
                 ORDER BY s.creado_en ASC, s.id ASC
             """),
             engine
