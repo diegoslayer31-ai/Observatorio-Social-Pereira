@@ -24227,7 +24227,10 @@ def modulo_politica_publica_v1678():
 
         # V16.157: candado por cédula para Estefany Scarpetta Torres.
         # Evita que diferencias ortográficas del nombre la dejen sin acciones.
-        if _solo_digitos_v16124(doc_func) == "1088343873":
+        # V16.158: normalización local para no depender de una función
+        # definida más adelante en el archivo.
+        _doc_func_digitos = "".join(ch for ch in str(doc_func or "") if ch.isdigit())
+        if _doc_func_digitos == "1088343873":
             for _cod_psico in ["2.1.1", "2.1.6", "2.1.9"]:
                 if _cod_psico in POLITICA_PUBLICA_CATALOGO_V1678 and _cod_psico not in acciones_asignadas:
                     acciones_asignadas.append(_cod_psico)
@@ -25488,8 +25491,9 @@ def _resumen_evidencia_v16125(tipo, df, codigos=None):
         seguimientos = int(len(df_s))
         personas_seg = _personas_unicas(df_s)
         return (
-            f"PAI elaborados en el período: {pai_personas} persona(s) "
-            f"({objetivos_pai} objetivo(s)/registro(s) PAI). "
+            f"PAI elaborados en el período: {pai_personas}. "
+            f"Personas con PAI: {pai_personas}. "
+            f"Objetivos formulados dentro de esos PAI: {objetivos_pai}. "
             f"Seguimientos / intervenciones realizados en el período: {seguimientos} "
             f"registro(s), correspondientes a {personas_seg} persona(s)."
         )
@@ -25941,7 +25945,7 @@ def modulo_informe_mensual_profesional_piloto_v1627():
                             if "Fuente" in _df_pdf.columns else pd.Series("", index=_df_pdf.index)
                         )
                         _grupos_pdf = [
-                            ("PAI ELABORADOS EN EL PERÍODO", _df_pdf.loc[_fuente_pdf.str.upper().eq("PAI")]),
+                            ("OBJETIVOS FORMULADOS DENTRO DE LOS PAI DEL PERÍODO", _df_pdf.loc[_fuente_pdf.str.upper().eq("PAI")]),
                             ("SEGUIMIENTOS / INTERVENCIONES DEL PERÍODO",
                              _df_pdf.loc[_fuente_pdf.str.upper().str.contains("SEGUIMIENTO|INTERVENCI", regex=True)]),
                         ]
