@@ -10309,11 +10309,13 @@ def cierre_pai_usuario_v16(documento, profesional_id=None, profesional_nombre=No
             st.rerun()
 
 
-# V16.157 - Acceso robusto a Comité de Casos.
-# Yuci Marcela Mosquera Mosquera participa contractualmente en estudios de caso;
-# se autoriza por cédula para no depender de cómo esté parametrizado su rol en la BD.
+# V16.158 - Acceso robusto a Comité de Casos.
+# Yuci Marcela, María Elena y Juan David Bolívar se autorizan por cédula
+# para no depender de cómo esté parametrizado su rol en la BD.
 COMITE_CASOS_DOCUMENTOS_AUTORIZADOS_V16157 = {
     "1076382393",  # YUCI MARCELA MOSQUERA MOSQUERA - Trabajadora Social
+    "42085283",    # MARIA ELENA LONDOÑO GALVIS - Psicóloga
+    "1088278205",  # JUAN DAVID BOLIVAR MORALES - Profesional área ciencias sociales/humanas/salud
 }
 
 def _puede_comite_casos_v16157():
@@ -15603,8 +15605,8 @@ with st.sidebar:
         "rol_actual", ""
     )
 
-    # V16.157 - Si Yuci tiene un rol distinto de PROFESIONAL en funcionarios_sistema,
-    # mostrar igualmente el acceso contractual a Comité de Casos.
+    # V16.158 - Acceso directo por cédula para profesionales autorizados aunque
+    # su rol en funcionarios_sistema esté parametrizado de otra forma.
     _doc_menu_v16157 = str(st.session_state.get("documento_funcionario", "")).strip()
     if (
         _doc_menu_v16157 in COMITE_CASOS_DOCUMENTOS_AUTORIZADOS_V16157
@@ -15613,7 +15615,7 @@ with st.sidebar:
         if st.button(
             "🧠 Comité de Casos",
             use_container_width=True,
-            key="menu_comite_yuci_v16157"
+            key="menu_comite_autorizados_v16158"
         ):
             st.session_state.page = "comite_casos_v16"
             st.rerun()
