@@ -2345,7 +2345,7 @@ def gestion_usuarios():
                     [
                         "AGRESIÓN FÍSICA", "AGRESIÓN VERBAL A FUNCIONARIO",
                         "FUGA", "USO DE SPA", "PORTE DE SPA",
-                        "HURTO MENOR", "HURTO GRAVE", "VENTA DE SPA"
+                        "HURTO MENOR", "HURTO GRAVE", "ACOSO SEXUAL", "VENTA DE SPA"
                     ],
                     key=f"gestion_causal_medida_{documento}"
                 )
@@ -2356,12 +2356,12 @@ def gestion_usuarios():
                         "Si se marca, no se asigna fecha estimada de reingreso. "
                         "El reingreso dependerá de la decisión del Comité de Casos."
                     ),
-                    disabled=(causal_medida_gestion == "HURTO GRAVE"),
-                    value=(causal_medida_gestion == "HURTO GRAVE")
+                    disabled=(causal_medida_gestion in ["HURTO GRAVE", "ACOSO SEXUAL"]),
+                    value=(causal_medida_gestion in ["HURTO GRAVE", "ACOSO SEXUAL"])
                 )
-                if causal_medida_gestion == "HURTO GRAVE":
+                if causal_medida_gestion in ["HURTO GRAVE", "ACOSO SEXUAL"]:
                     remitido_comite = True
-                    st.warning("🟠 HURTO GRAVE: remisión obligatoria a Comité. No se asigna fecha de reingreso.")
+                    st.warning(f"🟠 {causal_medida_gestion}: remisión obligatoria a Comité. No se asigna fecha de reingreso.")
 
                 if remitido_comite:
                     fecha_fin_medida = None
@@ -4704,6 +4704,7 @@ CRITERIOS_REINGRESO_V1641 = {
     "PORTE DE SPA": ("dias", 1, "1 día completo de sanción"),
     "HURTO MENOR": ("dias", 3, "3 días completos de sanción"),
     "HURTO GRAVE": ("meses", 2, "2 meses completos de sanción"),
+    "ACOSO SEXUAL": ("dias", 0, "Remisión obligatoria a Comité de Casos"),
     "VENTA DE SPA": ("dias", 3, "3 días completos de sanción"),
 }
 
@@ -7651,7 +7652,7 @@ def gestion_usuarios_movil():
             "Causal / criterio *",
             [
                 "AGRESIÓN FÍSICA", "AGRESIÓN VERBAL A FUNCIONARIO", "FUGA", "USO DE SPA", "PORTE DE SPA",
-                "HURTO MENOR", "HURTO GRAVE", "VENTA DE SPA"
+                "HURTO MENOR", "HURTO GRAVE", "ACOSO SEXUAL", "VENTA DE SPA"
             ],
             key=f"movil_causal_medida_{documento}"
         )
@@ -7662,13 +7663,13 @@ def gestion_usuarios_movil():
                 "No se asignará fecha estimada de reingreso. "
                 "El reingreso dependerá de la decisión del Comité de Casos."
             ),
-            disabled=(causal_medida == "HURTO GRAVE"),
-            value=(causal_medida == "HURTO GRAVE")
+            disabled=(causal_medida in ["HURTO GRAVE", "ACOSO SEXUAL"]),
+            value=(causal_medida in ["HURTO GRAVE", "ACOSO SEXUAL"])
         )
         # V16.140: HURTO GRAVE siempre debe pasar a Comité; nunca genera días/fecha automática.
-        if causal_medida == "HURTO GRAVE":
+        if causal_medida in ["HURTO GRAVE", "ACOSO SEXUAL"]:
             remitido_comite = True
-            st.warning("🟠 HURTO GRAVE: remisión obligatoria a Comité. No se asigna fecha de reingreso.")
+            st.warning(f"🟠 {causal_medida}: remisión obligatoria a Comité. No se asigna fecha de reingreso.")
 
         if remitido_comite:
             fin = None
