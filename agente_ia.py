@@ -24344,11 +24344,16 @@ def modulo_politica_publica_v1678():
             st.warning("No fue posible abrir el detalle de la evidencia: " + str(_e))
 
     acciones_asignadas = []
-    # V16.156: Enfermería debe tener acceso operativo a todas las acciones
-    # de Política Pública, sin depender de que el nombre de cada enfermera
-    # esté incluido individualmente en la matriz de responsables.
-    if rol in roles_supervision or rol in ["ENFERMERA", "COORDINACION_ENFERMERIA"]:
+    # V16.160: Enfermería tiene acceso al módulo de Política Pública,
+    # pero contractualmente solo puede registrar las acciones 2.1.2, 2.1.7, 2.1.9 y 2.1.11.
+    # Coordinación y Manager conservan acceso completo al catálogo.
+    if rol in roles_supervision:
         acciones_asignadas = list(POLITICA_PUBLICA_CATALOGO_V1678.keys())
+    elif rol in ["ENFERMERA", "COORDINACION_ENFERMERIA"]:
+        acciones_asignadas = [
+            cod for cod in ["2.1.2", "2.1.7", "2.1.9", "2.1.11"]
+            if cod in POLITICA_PUBLICA_CATALOGO_V1678
+        ]
     else:
         for cod, cfg in POLITICA_PUBLICA_CATALOGO_V1678.items():
             if any(
