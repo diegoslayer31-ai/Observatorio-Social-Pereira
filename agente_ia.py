@@ -6808,11 +6808,13 @@ def gestion_usuarios_movil():
             "📚 Ver historia"
         ]
     elif rol_visible == "PROFESIONAL":
+        # V16.166 - Trabajo Social, Psicología y demás perfiles PROFESIONAL
+        # pueden completar/actualizar la caracterización de la persona.
         acciones = [
             "🏆 Registrar egreso",
             "🕊️ Salida por fallecimiento",
             "🎯 PAI / Seguimiento",
-            "🧾 Consultar información",
+            "🧾 Caracterización",
             "📚 Ver historia"
         ]
     else:
@@ -7937,7 +7939,9 @@ def gestion_usuarios_movil():
             st.warning("No se encontró la ficha.")
         else:
             pf = persona_full.iloc[0]
-            editable = rol_visible in ["INSPIRADOR", "COORDINACION"]
+            # V16.166 - habilitar edición de caracterización a profesionales
+            # (Trabajo Social, Psicología y demás usuarios con rol PROFESIONAL).
+            editable = rol_visible in ["INSPIRADOR", "PROFESIONAL", "COORDINACION", "MANAGER"]
 
             candidatos = [
                 ("Departamento de procedencia",
