@@ -4170,6 +4170,27 @@ def gestion_usuarios():
                 + " | ".join(revisar_catalogo)
             )
 
+        # V16.167 - Campos que admiten más de una respuesta en caracterización.
+        # Los valores se conservan en la columna TEXT separados por " | " para
+        # mantener compatibilidad con la base actual y con registros históricos.
+        def _lista_multiple_v16167(valor, catalogo):
+            txt = str(valor or "").strip()
+            if not txt or txt.lower() in ("nan", "none"):
+                return []
+            partes = [x.strip() for x in re.split(r"\s*\|\s*|\s*;\s*", txt) if x.strip()]
+            # Si un valor histórico no está en el catálogo, se conserva como opción.
+            return partes
+
+        def _opciones_multiple_v16167(catalogo, actuales):
+            opciones = list(catalogo)
+            for v in actuales:
+                if v and v not in opciones:
+                    opciones.append(v)
+            return opciones
+
+        def _guardar_multiple_v16167(valores):
+            return " | ".join(str(v).strip() for v in (valores or []) if str(v).strip())
+
         with st.form(f"completar_caracterizacion_v9_{doc_car}"):
 
             st.markdown("#### 🧍 Datos sociales y diferenciales")
@@ -4204,18 +4225,20 @@ def gestion_usuarios():
                 C["categoria_discapacidad"]
                 if C["categoria_discapacidad"] else "__none__"
             )).strip()
-            opciones_cat_disc = _opciones_catalogo_v16197(
-                CATALOGO_DISCAPACIDAD_V16197,
-                categoria_disc_actual
+            categoria_disc_default = _lista_multiple_v16167(
+                categoria_disc_actual, CATALOGO_DISCAPACIDAD_V16197
             )
-            categoria_disc_car = c3.selectbox(
-                "Categoría de discapacidad",
+            opciones_cat_disc = _opciones_multiple_v16167(
+                CATALOGO_DISCAPACIDAD_V16197, categoria_disc_default
+            )
+            categoria_disc_car = c3.multiselect(
+                "Categoría de discapacidad (puede seleccionar varias)",
                 opciones_cat_disc,
-                index=_indice_catalogo_v16197(opciones_cat_disc, categoria_disc_actual),
+                default=[] if discapacidad_car == "NO" else categoria_disc_default,
                 disabled=(discapacidad_car == "NO")
             )
             if discapacidad_car == "NO":
-                categoria_disc_car = "NINGUNA"
+                categoria_disc_car = ["NINGUNA"]
 
             c4, c5, c6 = st.columns(3)
 
@@ -4454,14 +4477,16 @@ def gestion_usuarios():
                 persona_car,
                 C["consumo"] if C["consumo"] else "__none__"
             )).strip()
-            opciones_consumo = _opciones_catalogo_v16197(
-                CATALOGO_CONSUMO_V16197,
-                consumo_actual
+            consumo_default = _lista_multiple_v16167(
+                consumo_actual, CATALOGO_CONSUMO_V16197
             )
-            consumo_car = c17.selectbox(
-                "Tipo de consumo",
+            opciones_consumo = _opciones_multiple_v16167(
+                CATALOGO_CONSUMO_V16197, consumo_default
+            )
+            consumo_car = c17.multiselect(
+                "Tipo de consumo (puede seleccionar varios)",
                 opciones_consumo,
-                index=_indice_catalogo_v16197(opciones_consumo, consumo_actual)
+                default=consumo_default
             )
 
             salud_mental_actual = str(_valor_persona(
@@ -4469,14 +4494,16 @@ def gestion_usuarios():
                 C["enfermedad_mental"]
                 if C["enfermedad_mental"] else "__none__"
             )).strip()
-            opciones_mental = _opciones_catalogo_v16197(
-                CATALOGO_ENFERMEDAD_MENTAL_V16197,
-                salud_mental_actual
+            salud_mental_default = _lista_multiple_v16167(
+                salud_mental_actual, CATALOGO_ENFERMEDAD_MENTAL_V16197
             )
-            salud_mental_car = c18.selectbox(
-                "Salud / enfermedad mental",
+            opciones_mental = _opciones_multiple_v16167(
+                CATALOGO_ENFERMEDAD_MENTAL_V16197, salud_mental_default
+            )
+            salud_mental_car = c18.multiselect(
+                "Salud / enfermedad mental (puede seleccionar varias)",
                 opciones_mental,
-                index=_indice_catalogo_v16197(opciones_mental, salud_mental_actual)
+                default=salud_mental_default
             )
 
             c19, c20, c21 = st.columns(3)
@@ -4513,14 +4540,16 @@ def gestion_usuarios():
                 persona_car,
                 C["poblacion"] if C["poblacion"] else "__none__"
             )).strip()
-            opciones_poblacion = _opciones_catalogo_v16197(
-                CATALOGO_POBLACION_V16197,
-                poblacion_actual_car
+            poblacion_default = _lista_multiple_v16167(
+                poblacion_actual_car, CATALOGO_POBLACION_V16197
             )
-            poblacion_car = c21.selectbox(
-                "Población",
+            opciones_poblacion = _opciones_multiple_v16167(
+                CATALOGO_POBLACION_V16197, poblacion_default
+            )
+            poblacion_car = c21.multiselect(
+                "Población (puede seleccionar varias)",
                 opciones_poblacion,
-                index=_indice_catalogo_v16197(opciones_poblacion, poblacion_actual_car)
+                default=poblacion_default
             )
 
             guardar_car = st.form_submit_button(
@@ -4534,7 +4563,7 @@ def gestion_usuarios():
             cambios_car = {
                 C["sisben"]: sisben_car.strip(),
                 C["discapacidad"]: discapacidad_car,
-                C["categoria_discapacidad"]: categoria_disc_car,
+                C["categoria_discapacidad"]: _guardar_multiple_v16167(categoria_disc_car),
                 C["cabeza_familia"]: cabeza_car,
                 C["gestante"]: gestante_car,
                 C["migracion"]: migracion_car,
@@ -4548,8 +4577,8 @@ def gestion_usuarios():
                 C["telefono"]: telefono_car.strip(),
                 C["correo"]: correo_car.strip(),
                 C["salud"]: salud_car,
-                C["consumo"]: consumo_car,
-                C["enfermedad_mental"]: salud_mental_car,
+                C["consumo"]: _guardar_multiple_v16167(consumo_car),
+                C["enfermedad_mental"]: _guardar_multiple_v16167(salud_mental_car),
                 C["etnia"]: etnia_car,
                 C["orientacion"]: orientacion_car,
                 C["poblacion"]: poblacion_car
