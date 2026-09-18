@@ -8013,16 +8013,84 @@ def gestion_usuarios_movil():
                     existentes.append((etiqueta, encontrada))
 
             if editable:
+                # V16.168 - La caracterización desde Gestión Móvil debe respetar
+                # los catálogos y tipos de control de la caracterización principal.
+                # Antes todos estos campos se dibujaban como text_input, por eso
+                # el profesional no veía listas ni selección múltiple.
+                _cat_respuesta = ['SI', 'NO']
+                _cat_etnia = ['1 - Indígena', '2 - ROM (gitano)', '3 - Raizal (archipiélago de San Andrés y Providencia)', '4 - Palanquero de San Basilio', '5 - Negro(a), Mulato(a), Afrocolombiano(a) o Afro descendiente', '6 Mestizo']
+                _cat_orientacion = ['ASEXUAL', 'BISEXUAL', 'HETEROSEXUAL', 'HOMOSEXUAL', 'OTRO']
+                _cat_educacion = ['1- Preescolar', '2- Básica Primaria', '3- Básica Secundaria', '4- Media Académica o Clásica', '5- Media Técnica (Bachillerato Técnico)', '6- Normalista', '7- Técnica Profesional', '8- Tecnológica', '9- Profesional', '10- Especialización', '11- Maestría', '12- Doctorado', '13-Univerisitario', '14- Ninguno']
+                _cat_ocupacion = ['AMA DE CASA', 'BUSCANDO EMPLEO', 'DESEMPLEADO', 'EMPLEADO', 'ESTUDIANTE', 'INDEPENDIENTE', 'NINGUNO', 'PENSIONADO']
+                _cat_discapacidad = ['AUDITIVA', 'FISICA', 'INTELECTUAL', 'MULTIPLE', 'PSICOSOCIAL', 'SORDOCEGUERA', 'VISUAL', 'NINGUNA']
+                _cat_departamento = ['AMAZONAS', 'ANTIOQUIA', 'ARAUCA', 'ATLANTICO', 'BOGOTA', 'BOLIVAR', 'BOYACA', 'CALDAS', 'CAQUETA', 'CASANARE', 'CAUCA', 'CESAR', 'CHOCO', 'CORDOBA', 'CUNDINAMARCA', 'GUAINIA', 'GUAVIARE', 'HUILA', 'LA GUAJIRA', 'MAGDALENA', 'META', 'N. DE SANTANDER', 'NARIÑO', 'PUTUMAYO', 'QUINDIO', 'RISARALDA', 'SAN ANDRES', 'SANTANDER', 'SUCRE', 'TOLIMA', 'VALLE DEL CAUCA', 'VAUPES', 'VICHADA']
+                _cat_consumo = ['ALCOHOL', 'BAZUCO', 'COCAINA', 'HEROÍNA', 'MARIHUANA', 'NINGUNA', 'OTRA DROGA', 'PEGANTE/SACOL', 'POLICONSUMO', 'POLICONSUMO CON HEROÍNA', 'TABACO/CIGARRILLO']
+
+                def _actuales_multi_movil(valor):
+                    txt = "" if pd.isna(valor) else str(valor).strip()
+                    if not txt or txt.lower() in ('nan', 'none'):
+                        return []
+                    return [x.strip() for x in re.split(r"\s*\|\s*|\s*;\s*", txt) if x.strip()]
+
+                def _opciones_con_historico_movil(catalogo, valor_actual):
+                    opciones = list(catalogo)
+                    actuales = _actuales_multi_movil(valor_actual)
+                    for v in actuales:
+                        if v and v not in opciones:
+                            opciones.append(v)
+                    return opciones, actuales
+
+                def _select_catalogo_movil(etiqueta, col, catalogo):
+                    valor = pf.get(col)
+                    actual = "" if pd.isna(valor) else str(valor).strip()
+                    opciones = [""] + list(catalogo)
+                    if actual and actual not in opciones:
+                        opciones.append(actual)
+                    return st.selectbox(
+                        etiqueta, opciones,
+                        index=opciones.index(actual) if actual in opciones else 0,
+                        key=f"m_{col}_{documento}"
+                    )
+
                 with st.form(f"movil_car_{documento}"):
                     nuevos = {}
                     for etiqueta, col in existentes:
                         valor = pf.get(col)
-                        valor = "" if pd.isna(valor) else str(valor)
-                        nuevos[col] = st.text_input(
-                            etiqueta,
-                            value=valor,
-                            key=f"m_{col}_{documento}"
-                        )
+                        valor_txt = "" if pd.isna(valor) else str(valor).strip()
+
+                        if etiqueta == "Consumo":
+                            opciones, actuales = _opciones_con_historico_movil(_cat_consumo, valor)
+                            seleccion = st.multiselect(
+                                "Consumo (puede seleccionar varias)",
+                                opciones, default=actuales,
+                                key=f"m_{col}_{documento}"
+                            )
+                            nuevos[col] = " | ".join(seleccion)
+                        elif etiqueta == "Categoría discapacidad":
+                            opciones, actuales = _opciones_con_historico_movil(_cat_discapacidad, valor)
+                            seleccion = st.multiselect(
+                                "Categoría discapacidad (puede seleccionar varias)",
+                                opciones, default=actuales,
+                                key=f"m_{col}_{documento}"
+                            )
+                            nuevos[col] = " | ".join(seleccion)
+                        elif etiqueta == "Departamento de procedencia":
+                            nuevos[col] = _select_catalogo_movil(etiqueta, col, _cat_departamento)
+                        elif etiqueta == "Discapacidad":
+                            nuevos[col] = _select_catalogo_movil(etiqueta, col, _cat_respuesta)
+                        elif etiqueta == "Nivel educativo":
+                            nuevos[col] = _select_catalogo_movil(etiqueta, col, _cat_educacion)
+                        elif etiqueta == "Condición ocupacional":
+                            nuevos[col] = _select_catalogo_movil(etiqueta, col, _cat_ocupacion)
+                        elif etiqueta == "Grupo étnico":
+                            nuevos[col] = _select_catalogo_movil(etiqueta, col, _cat_etnia)
+                        elif etiqueta == "Orientación sexual":
+                            nuevos[col] = _select_catalogo_movil(etiqueta, col, _cat_orientacion)
+                        else:
+                            nuevos[col] = st.text_input(
+                                etiqueta, value=valor_txt,
+                                key=f"m_{col}_{documento}"
+                            )
 
                     save = st.form_submit_button(
                         "💾 Guardar información",
