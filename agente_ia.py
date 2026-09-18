@@ -15830,11 +15830,14 @@ with st.sidebar:
             st.session_state.page = "panel_profesional_v15"
             st.rerun()
 
+        # V16.169 - Los profesionales acceden al módulo central de Gestión de Usuarios.
+        # Así utilizan la misma ficha y la misma caracterización institucional,
+        # evitando mantener un formulario paralelo dentro de Gestión Móvil.
         if st.button(
-            "👤 Gestión Profesional",
+            "👥 Gestión de Usuarios",
             use_container_width=True
         ):
-            st.session_state.page = "gestion_movil"
+            st.session_state.page = "gestion_usuarios"
             st.rerun()
 
         if st.button(
@@ -27105,9 +27108,12 @@ elif st.session_state.page == "dashboard_ejecutivo":
 
 elif st.session_state.page == "gestion_usuarios":
 
-    if rol_router not in ["COORDINACION", "MANAGER"]:
+    # V16.169 - Gestión de Usuarios disponible también para PROFESIONAL.
+    # Incluye Psicología, Trabajo Social y Pedagogía cuando están registrados
+    # institucionalmente con el rol PROFESIONAL.
+    if rol_router not in ["PROFESIONAL", "COORDINACION", "MANAGER"]:
         st.error(
-            "Acceso exclusivo para Coordinación o Manager."
+            "No tiene permisos para Gestión de Usuarios."
         )
     else:
         gestion_usuarios()
