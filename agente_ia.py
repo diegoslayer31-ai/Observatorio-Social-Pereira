@@ -12982,6 +12982,15 @@ def panel_profesional_v15(doc_forzado=None, incrustado=False):
             ]
         }
 
+        # V16.170: confirmación persistente después del rerun.
+        flash_obj = st.session_state.pop(f"pai_obj_flash_{doc_sel}", None)
+        if flash_obj:
+            st.success(flash_obj)
+            try:
+                st.toast("Objetivo guardado y formulario listo para uno nuevo", icon="✅")
+            except Exception:
+                pass
+
         # V16.142: todos los campos dependientes se renderizan fuera de st.form
         # para que línea de política, ODS e hitos cambien inmediatamente.
         tipo_obj = st.selectbox(
@@ -13028,9 +13037,34 @@ def panel_profesional_v15(doc_forzado=None, incrustado=False):
             elif not actividades:
                 st.error("Debe registrar al menos una actividad o hito.")
             else:
-                with engine.begin() as conn:
-                    conn.execute(
-                        text("""
+                # V16.170: impedir que el mismo objetivo activo se cree dos veces.
+                duplicado = pd.read_sql(
+                    text("""
+                        SELECT id, fecha_apertura
+                        FROM pai_objetivos
+                        WHERE TRIM(CAST(documento_usuario AS TEXT)) = TRIM(CAST(:doc AS TEXT))
+                          AND LOWER(TRIM(COALESCE(objetivo_tipo, ''))) = LOWER(TRIM(:tipo))
+                          AND LOWER(TRIM(COALESCE(objetivo_descripcion, ''))) = LOWER(TRIM(:descripcion))
+                          AND UPPER(TRIM(COALESCE(estado, 'ACTIVO'))) NOT IN ('CUMPLIDO', 'CERRADO', 'CANCELADO')
+                        ORDER BY id DESC
+                        LIMIT 1
+                    """),
+                    engine,
+                    params={
+                        "doc": str(doc_sel),
+                        "tipo": tipo_obj,
+                        "descripcion": descripcion.strip()
+                    }
+                )
+                if not duplicado.empty:
+                    st.warning(
+                        f"⚠️ Este objetivo ya está registrado (ID #{int(duplicado.iloc[0]['id'])}). "
+                        "No se creó otra copia. Puede verlo abajo en ‘Objetivos registrados’."
+                    )
+                else:
+                    with engine.begin() as conn:
+                        conn.execute(
+                            text("""
                             INSERT INTO pai_objetivos(
                                 documento_usuario,
                                 objetivo_tipo,
@@ -13085,10 +13119,18 @@ def panel_profesional_v15(doc_forzado=None, incrustado=False):
                 except Exception:
                     pass
 
-                st.success(
-                    f"✅ Objetivo creado para {nombre_usuario} · CC {doc_sel}."
-                )
-                st.rerun()
+                    st.session_state[f"pai_obj_flash_{doc_sel}"] = (
+                        f"✅ Objetivo guardado correctamente para {nombre_usuario} · CC {doc_sel}. "
+                        "El formulario quedó limpio para crear otro objetivo."
+                    )
+                    # Limpiar campos que inducían a pensar que no se había guardado.
+                    for _k in (
+                        f"v16_2_desc_obj_{doc_sel}",
+                        f"v16_2_extra_obj_{doc_sel}"
+                    ):
+                        st.session_state.pop(_k, None)
+                    invalidar_cache_datos()
+                    st.rerun()
 
         if not objetivos.empty:
             st.markdown("#### Objetivos registrados")
@@ -31029,6 +31071,13 @@ with tab6:
         # =========================
         # CREAR OBJETIVO
         # =========================
+        flash_obj = st.session_state.pop(f"pai_obj_flash_supervision_{usuario_sel}", None)
+        if flash_obj:
+            st.success(flash_obj)
+            try:
+                st.toast("Objetivo guardado y formulario listo para uno nuevo", icon="✅")
+            except Exception:
+                pass
         st.subheader("➕ Crear objetivo")
 
         objetivo_tipo = st.selectbox(
@@ -31072,69 +31121,81 @@ with tab6:
                 ].values[0],
             key="prof_objetivo"
         )
-        crear_objetivo = st.button("💾 Crear objetivo")
+        crear_objetivo = st.button("💾 Guardar objetivo", type="primary", use_container_width=True)
         if crear_objetivo:
-    
-            with engine.begin() as conn:
-
-                conn.execute(text("""
-                    INSERT INTO pai_objetivos(
-                        documento_usuario,
-                        objetivo_tipo,
-                        objetivo_descripcion,
-                        actividades,
-                        avance_hitos,
-                        porcentaje_avance,
-                        estado,
-                        linea_politica,
-                        ods_principal,
-                        profesional_referente,
-                        fecha_apertura,
-                        fecha_meta
-                    )
-                    VALUES(
-                        :documento_usuario,
-                        :objetivo_tipo,
-                        :objetivo_descripcion,
-                        :actividades,
-                        :avance_hitos,
-                        :porcentaje_avance,
-                        :estado,
-                        :linea_politica,
-                        :ods_principal,
-                        :profesional_referente,
-                        NOW(),
-                        :fecha_meta
-                    )
-                """), {
-
-                    "documento_usuario": usuario_sel,
-                    "objetivo_tipo": objetivo_tipo,
-                    "objetivo_descripcion": descripcion_objetivo,
-                    "actividades": json.dumps(actividades),
-                    "avance_hitos": json.dumps([]),
-                    "porcentaje_avance": 0,
-                    "estado": "Activo",
-                    "linea_politica": linea_politica,
-                    "ods_principal": ", ".join(ods),
-                    "profesional_referente": profesional_referente,
-                    "fecha_meta": fecha_cumplimiento
-
-                })
-
-            registrar_auditoria(
-                "CREAR_OBJETIVO_PAI",
-                documento=usuario_sel,
-                modulo="PAI",
-                valor_nuevo=objetivo_tipo,
-                observacion=(
-                    f"Profesional ID {profesional_referente}; "
-                    f"fecha meta {fecha_cumplimiento}"
+            descripcion_limpia = (descripcion_objetivo or "").strip()
+            if not descripcion_limpia:
+                st.error("Debe escribir la descripción del objetivo antes de guardarlo.")
+            else:
+                duplicado = pd.read_sql(
+                    text("""
+                        SELECT id, fecha_apertura
+                        FROM pai_objetivos
+                        WHERE TRIM(CAST(documento_usuario AS TEXT)) = TRIM(CAST(:doc AS TEXT))
+                          AND LOWER(TRIM(COALESCE(objetivo_tipo, ''))) = LOWER(TRIM(:tipo))
+                          AND LOWER(TRIM(COALESCE(objetivo_descripcion, ''))) = LOWER(TRIM(:descripcion))
+                          AND UPPER(TRIM(COALESCE(estado, 'ACTIVO'))) NOT IN ('CUMPLIDO', 'CERRADO', 'CANCELADO')
+                        ORDER BY id DESC
+                        LIMIT 1
+                    """),
+                    engine,
+                    params={
+                        "doc": str(usuario_sel),
+                        "tipo": objetivo_tipo,
+                        "descripcion": descripcion_limpia
+                    }
                 )
-            )
-            invalidar_cache_datos()
-            st.success("✅ Objetivo creado correctamente.")
-            st.rerun()
+                if not duplicado.empty:
+                    st.warning(
+                        f"⚠️ Este objetivo ya está registrado (ID #{int(duplicado.iloc[0]['id'])}). "
+                        "No se creó otra copia. Revíselo en ‘Objetivos activos’."
+                    )
+                else:
+                    with engine.begin() as conn:
+                        conn.execute(text("""
+                            INSERT INTO pai_objetivos(
+                                documento_usuario, objetivo_tipo, objetivo_descripcion,
+                                actividades, avance_hitos, porcentaje_avance, estado,
+                                linea_politica, ods_principal, profesional_referente,
+                                fecha_apertura, fecha_meta
+                            )
+                            VALUES(
+                                :documento_usuario, :objetivo_tipo, :objetivo_descripcion,
+                                :actividades, :avance_hitos, :porcentaje_avance, :estado,
+                                :linea_politica, :ods_principal, :profesional_referente,
+                                NOW(), :fecha_meta
+                            )
+                        """), {
+                            "documento_usuario": usuario_sel,
+                            "objetivo_tipo": objetivo_tipo,
+                            "objetivo_descripcion": descripcion_limpia,
+                            "actividades": json.dumps(actividades),
+                            "avance_hitos": json.dumps([]),
+                            "porcentaje_avance": 0,
+                            "estado": "Activo",
+                            "linea_politica": linea_politica,
+                            "ods_principal": ", ".join(ods),
+                            "profesional_referente": profesional_referente,
+                            "fecha_meta": fecha_cumplimiento
+                        })
+
+                    registrar_auditoria(
+                        "CREAR_OBJETIVO_PAI",
+                        documento=usuario_sel,
+                        modulo="PAI",
+                        valor_nuevo=objetivo_tipo,
+                        observacion=(
+                            f"Profesional ID {profesional_referente}; "
+                            f"fecha meta {fecha_cumplimiento}"
+                        )
+                    )
+                    invalidar_cache_datos()
+                    st.session_state[f"pai_obj_flash_supervision_{usuario_sel}"] = (
+                        "✅ Objetivo guardado correctamente. Ya aparece en ‘Objetivos activos’. "
+                        "El campo de descripción quedó limpio para registrar uno nuevo."
+                    )
+                    st.session_state.pop("descripcion_objetivo", None)
+                    st.rerun()
         st.divider()
         st.markdown("## 🎯 Objetivos activos")
 
