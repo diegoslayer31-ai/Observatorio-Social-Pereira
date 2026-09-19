@@ -1599,12 +1599,29 @@ def gestion_usuarios():
 
     st.divider()
 
-    tab_consulta, tab_nuevo, tab_caracterizacion, tab_listado = st.tabs([
-        "🔎 Consultar / actualizar",
-        "➕ Nuevo ingreso",
-        "🧾 Completar caracterización",
-        "📋 Listado"
-    ])
+    # V16.175 - Si el profesional llega desde «Mis tareas» para completar
+    # caracterización general, abrir DIRECTAMENTE esa pestaña. Streamlit abre
+    # siempre la primera pestaña, por eso se reordena solo durante la tarea.
+    _doc_tarea_directa_v16175 = str(
+        st.session_state.get("tarea_objetivo_doc_v16171", "") or ""
+    ).strip()
+    _id_tarea_directa_v16175 = st.session_state.get("tarea_objetivo_id_v16171")
+
+    if _doc_tarea_directa_v16175 and _id_tarea_directa_v16175:
+        _tabs_gestion_v16175 = st.tabs([
+            "🧾 Completar caracterización",
+            "🔎 Consultar / actualizar",
+            "➕ Nuevo ingreso",
+            "📋 Listado"
+        ])
+        tab_caracterizacion, tab_consulta, tab_nuevo, tab_listado = _tabs_gestion_v16175
+    else:
+        tab_consulta, tab_nuevo, tab_caracterizacion, tab_listado = st.tabs([
+            "🔎 Consultar / actualizar",
+            "➕ Nuevo ingreso",
+            "🧾 Completar caracterización",
+            "📋 Listado"
+        ])
 
     # ========================================================
     # 1. CONSULTAR / ACTUALIZAR
@@ -4053,6 +4070,15 @@ def gestion_usuarios():
                 indice_preseleccionado = _coinc_tarea[0]
         if indice_preseleccionado in indices_gestion:
             indice_default = indices_gestion.index(indice_preseleccionado)
+
+        if _doc_tarea_v16171 and indice_preseleccionado in indices_gestion:
+            _persona_tarea_v16175 = df_gestion.loc[indice_preseleccionado]
+            st.success(
+                "📌 Tarea asignada: complete la caracterización de "
+                f"{_persona_tarea_v16175.get('nombre_completo', '')} · "
+                f"Documento {_doc_tarea_v16171} · "
+                f"{str(_persona_tarea_v16175.get('modalidad', '') or '').strip()}."
+            )
 
         indice_car = st.selectbox(
             "Seleccione usuario",
