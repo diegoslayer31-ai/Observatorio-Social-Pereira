@@ -26692,13 +26692,52 @@ def panel_tareas_coordinacion_v16171():
                 WHERE activo=TRUE AND UPPER(TRIM(COALESCE(rol,'')))='PROFESIONAL'
                 ORDER BY nombre
             """), engine)
+            # V16.172: para asignación solo se trabaja con población ACTIVA.
+            # Se carga la fila completa porque la caracterización general necesita
+            # calcular la misma completitud usada en Gestión de Usuarios.
             personas = pd.read_sql(text("""
-                SELECT TRIM(CAST(numero_identificacion AS TEXT)) AS documento,
-                       TRIM(COALESCE(nombres,'') || ' ' || COALESCE(apellidos,'')) AS nombre,
-                       COALESCE(modalidad,'') AS modalidad, COALESCE(estado_caso,'') AS estado_caso
+                SELECT *
                 FROM habitante_de_calle
+                WHERE UPPER(TRIM(COALESCE(estado_caso,''))) = 'ACTIVO'
+                  AND UPPER(TRIM(COALESCE(modalidad,''))) IN ('URBANO','GRANJA')
                 ORDER BY nombres, apellidos
             """), engine)
+            if not personas.empty:
+                personas["documento"] = personas["numero_identificacion"].fillna("").astype(str).str.strip().str.replace(r"\.0$", "", regex=True)
+                personas["nombre"] = (personas["nombres"].fillna("").astype(str).str.strip() + " " + personas["apellidos"].fillna("").astype(str).str.strip()).str.strip()
+                personas["modalidad"] = personas["modalidad"].fillna("").astype(str).str.upper().str.strip()
+
+                # Misma canasta de variables que usa el seguimiento de completitud
+                # de Gestión de Usuarios (17 variables cuando existen en el esquema).
+                candidatos_comp = [
+                    ("Tipo identificación", ["tipo_identificacion", "tipo_de_identificacion"]),
+                    ("Fecha nacimiento", ["fecha_nacimiento", "fecha_de_nacimiento_dd_mm_aa"]),
+                    ("Seguridad social", ["tipo_seguridad_salud", "tipo_de_seguridad_social_en_salud"]),
+                    ("Procedencia", ["departamento_procedencia", "departamento_de_procedencia"]),
+                    ("Consumo", ["tipo_consumo", "tipo_de_consumo"]),
+                    ("SISBÉN", ["grupo_sisben"]),
+                    ("Discapacidad", ["personas_con_discapacidad"]),
+                    ("Etnia", ["grupos_etnicos", "grupos_etnicos_afro_indigena"]),
+                    ("Educación", ["nivel_educativo", "nivel_educativo_que_tiene_o_cursa"]),
+                    ("Ocupación", ["condicion_ocupacional", "perfil_ocupacional_su_principal_fuente_de_ingreso_es"]),
+                    ("Barrio / vereda", ["barrio_vereda", "barrio_o_vereda_de_residencia"]),
+                    ("Comuna", ["comuna_corregimiento", "comuna_o_corregimiento_de_residencia"]),
+                    ("Teléfono", ["telefono", "telefono_y_o_celular"]),
+                    ("Orientación sexual", ["orientacion_sexual_lgtbi", "orientacion_lgbti", "orientacion_sexual"]),
+                    ("Población diferencial", ["poblacion"]),
+                    ("Salud mental", ["enfermedad_mental"]),
+                ]
+                columnas_comp=[]
+                for _et, _cands in candidatos_comp:
+                    _real=next((c for c in _cands if c in personas.columns), None)
+                    if _real: columnas_comp.append(_real)
+                vacios={"", "nan", "none", "null"}
+                def _pct_comp_v16172(row):
+                    if not columnas_comp: return 0.0
+                    completos=sum(1 for c in columnas_comp if pd.notna(row.get(c)) and str(row.get(c)).strip().lower() not in vacios)
+                    return round(completos/len(columnas_comp)*100,1)
+                personas["completitud"] = personas.apply(_pct_comp_v16172, axis=1)
+                personas["prioridad_completitud"] = personas["completitud"].apply(lambda x: 0 if float(x) < 93 else 1)
         except Exception as e:
             st.error(f"No fue posible cargar profesionales/usuarios: {e}")
             return
@@ -26708,11 +26747,27 @@ def panel_tareas_coordinacion_v16171():
             st.warning("No hay usuarios para asignar.")
         else:
             prof_map={f"{r.nombre} · CC {r.cedula}":(str(r.cedula),str(r.nombre)) for r in profesionales.itertuples()}
-            per_map={f"{r.nombre} · {r.documento} · {r.modalidad or 'SIN MODALIDAD'}":str(r.documento) for r in personas.itertuples()}
             with st.form("asignar_tareas_car_v16171"):
                 c1,c2=st.columns(2)
                 prof_lbl=c1.selectbox("Profesional responsable", list(prof_map))
                 tipo_lbl=c2.selectbox("Tipo de tarea", list(TIPOS_TAREA_CAR_V16171.values()))
+                tipo_sel=next(k for k,v in TIPOS_TAREA_CAR_V16171.items() if v==tipo_lbl)
+
+                # V16.172: ambos tipos cruzan exclusivamente contra ACTIVOS.
+                # En caracterización general se ordenan primero quienes están <93%.
+                if tipo_sel == "COMPLETAR_CARACTERIZACION":
+                    personas_vista=personas.sort_values(["prioridad_completitud","completitud","nombre"], ascending=[True,True,True]).copy()
+                    per_map={
+                        f"{'🔴 PRIORIDAD' if float(r.completitud)<93 else '🟢'} · {r.nombre} · {r.documento} · {r.modalidad or 'SIN MODALIDAD'} · Completitud {float(r.completitud):.1f}%":str(r.documento)
+                        for r in personas_vista.itertuples()
+                    }
+                    prioritarios=int((personas_vista["completitud"] < 93).sum())
+                    st.caption(f"🎯 Solo usuarios ACTIVOS. Se muestran primero los {prioritarios} usuarios con completitud inferior al 93%.")
+                else:
+                    personas_vista=personas.sort_values(["nombre"]).copy()
+                    per_map={f"{r.nombre} · {r.documento} · {r.modalidad or 'SIN MODALIDAD'}":str(r.documento) for r in personas_vista.itertuples()}
+                    st.caption(f"🧭 Solo usuarios ACTIVOS de Urbano o Granja. Disponibles para asignar: {len(personas_vista)}.")
+
                 usuarios_lbl=st.multiselect("Usuarios a asignar", list(per_map), placeholder="Puede seleccionar uno o varios usuarios")
                 c3,c4=st.columns(2)
                 fecha_limite=c3.date_input("Fecha límite", value=date.today()+timedelta(days=7))
