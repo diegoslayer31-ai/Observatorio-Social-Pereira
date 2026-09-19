@@ -3976,7 +3976,17 @@ def gestion_usuarios():
 
         df_seg_car = pd.DataFrame(filas_seg)
 
-        if not df_seg_car.empty:
+        # V16.177 - MODO TAREA: cuando el profesional llega desde «Mis tareas»,
+        # no mostrar el seguimiento/selector general. La persona asignada queda bloqueada.
+        _doc_tarea_bloqueada_v16177 = str(
+            st.session_state.get("tarea_objetivo_doc_v16171", "") or ""
+        ).strip()
+        _id_tarea_bloqueada_v16177 = st.session_state.get("tarea_objetivo_id_v16171")
+        _modo_tarea_bloqueada_v16177 = bool(
+            _doc_tarea_bloqueada_v16177 and _id_tarea_bloqueada_v16177
+        )
+
+        if (not _modo_tarea_bloqueada_v16177) and (not df_seg_car.empty):
             # Los históricos anteriores a la implementación NO se consideran
             # pendientes automáticamente. Solo entran población actual o nuevos ingresos.
             df_seg_obj = df_seg_car[df_seg_car["_debe_caracterizar"]].copy()
@@ -4110,22 +4120,34 @@ def gestion_usuarios():
         if _doc_tarea_v16171 and indice_preseleccionado in indices_gestion:
             _persona_tarea_v16175 = df_gestion.loc[indice_preseleccionado]
             st.success(
-                "📌 Tarea asignada: complete la caracterización de "
-                f"{_persona_tarea_v16175.get('nombre_completo', '')} · "
-                f"Documento {_doc_tarea_v16171} · "
-                f"{str(_persona_tarea_v16175.get('modalidad', '') or '').strip()}."
+                "📌 TAREA ASIGNADA · PERSONA BLOQUEADA\n\n"
+                f"**{_persona_tarea_v16175.get('nombre_completo', '')}** · "
+                f"Documento **{_doc_tarea_v16171}** · "
+                f"{str(_persona_tarea_v16175.get('modalidad', '') or '').strip()}\n\n"
+                "Complete únicamente la caracterización de esta persona."
             )
-
-        indice_car = st.selectbox(
-            "Seleccione usuario",
-            indices_gestion,
-            index=indice_default,
-            key="caracterizacion_usuario_v16195",
-            format_func=lambda i: (
-                f"{df_gestion.loc[i, 'nombre_completo']} - "
-                f"{df_gestion.loc[i, 'numero_identificacion']}"
+            if st.button(
+                "← Volver a Mis tareas",
+                key="volver_mis_tareas_car_v16177",
+                use_container_width=True
+            ):
+                st.session_state.pop("tarea_objetivo_doc_v16171", None)
+                st.session_state.pop("tarea_objetivo_id_v16171", None)
+                st.session_state.page = "mis_tareas_profesional_v16171"
+                st.rerun()
+            # En modo tarea NO existe selector: el formulario queda ligado al documento asignado.
+            indice_car = indice_preseleccionado
+        else:
+            indice_car = st.selectbox(
+                "Seleccione usuario",
+                indices_gestion,
+                index=indice_default,
+                key="caracterizacion_usuario_v16195",
+                format_func=lambda i: (
+                    f"{df_gestion.loc[i, 'nombre_completo']} - "
+                    f"{df_gestion.loc[i, 'numero_identificacion']}"
+                )
             )
-        )
 
         persona_car = df_gestion.loc[indice_car]
         doc_car = str(persona_car["numero_identificacion"]).strip()
@@ -20494,11 +20516,31 @@ def caracterizacion_habitabilidad_v1611():
         if not _match_hab.empty:
             st.session_state["habcalle_persona_v1611"] = _match_hab.iloc[0]
 
-    seleccion = st.selectbox(
-        "Persona",
-        personas["etiqueta"].tolist(),
-        key="habcalle_persona_v1611"
-    )
+    if _doc_tarea_hab_v16171 and not _match_hab.empty:
+        seleccion = _match_hab.iloc[0]
+        _fila_tarea_hab_v16177 = personas.loc[personas["etiqueta"] == seleccion].iloc[0]
+        st.success(
+            "📌 TAREA ASIGNADA · PERSONA BLOQUEADA\n\n"
+            f"**{_fila_tarea_hab_v16177['nombre_completo']}** · "
+            f"Documento **{_doc_tarea_hab_v16171}**"
+            + (f" · {_fila_tarea_hab_v16177['modalidad']}" if str(_fila_tarea_hab_v16177['modalidad']).strip() else "")
+            + "\n\nComplete únicamente la caracterización de Habitabilidad en Calle de esta persona."
+        )
+        if st.button(
+            "← Volver a Mis tareas",
+            key="volver_mis_tareas_hab_v16177",
+            use_container_width=True
+        ):
+            st.session_state.pop("tarea_objetivo_doc_v16171", None)
+            st.session_state.pop("tarea_objetivo_id_v16171", None)
+            st.session_state.page = "mis_tareas_profesional_v16171"
+            st.rerun()
+    else:
+        seleccion = st.selectbox(
+            "Persona",
+            personas["etiqueta"].tolist(),
+            key="habcalle_persona_v1611"
+        )
     fila = personas.loc[personas["etiqueta"] == seleccion].iloc[0]
     documento = str(fila["documento"]).strip()
     nombre = fila["nombre_completo"]
