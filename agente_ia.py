@@ -4827,7 +4827,7 @@ CRITERIOS_REINGRESO_V1641 = {
     # V16.78: la sanción empieza a contarse desde el DÍA SIGUIENTE
     # a la salida. La fecha calculada es el primer día en que puede
     # VOLVER A SOLICITAR CUPO, no una garantía automática de reingreso.
-    "SALIDA VOLUNTARIA": ("dias", 1, "1 día completo de sanción"),
+    # V16.179: SALIDA VOLUNTARIA no genera sanción ni tiempo de espera para reingreso.
     "AGRESIÓN FÍSICA": ("dias", 3, "3 días completos de sanción"),
     "AGRESIÓN VERBAL A FUNCIONARIO": ("dias", 3, "3 días completos de sanción"),
     "FUGA": ("dias", 1, "1 día completo de sanción"),
@@ -6013,6 +6013,8 @@ def panel_inspirador_simple_v14():
                                 numero_identificacion,
                                 tipo_movimiento,
                                 modalidad,
+                                fecha_movimiento,
+                                hora_movimiento,
                                 usuario_registra,
                                 observacion
                             )
@@ -6020,6 +6022,8 @@ def panel_inspirador_simple_v14():
                                 :doc,
                                 'REGRESO_PERMISO',
                                 :modalidad,
+                                :fecha_movimiento,
+                                :hora_movimiento,
                                 :usuario,
                                 'REGRESA AL ALBERGUE'
                             )
@@ -6027,6 +6031,8 @@ def panel_inspirador_simple_v14():
                         {
                             "doc": str(fila.get("documento", "")).strip(),
                             "modalidad": fila.get("modalidad"),
+                            "fecha_movimiento": ahora_colombia().date(),
+                            "hora_movimiento": ahora_colombia().replace(tzinfo=None),
                             "usuario": responsable
                         }
                     )
@@ -7527,6 +7533,8 @@ def gestion_usuarios_movil():
                                     numero_identificacion,
                                     tipo_movimiento,
                                     modalidad,
+                                    fecha_movimiento,
+                                    hora_movimiento,
                                     usuario_registra,
                                     observacion
                                 )
@@ -7534,6 +7542,8 @@ def gestion_usuarios_movil():
                                     :doc,
                                     'SALIDA_PERMISO',
                                     :modalidad,
+                                    :fecha_movimiento,
+                                    :hora_movimiento,
                                     :usuario,
                                     :observacion
                                 )
@@ -7541,6 +7551,8 @@ def gestion_usuarios_movil():
                             {
                                 "doc": documento,
                                 "modalidad": u.get("modalidad"),
+                                "fecha_movimiento": fecha_salida,
+                                "hora_movimiento": datetime.combine(fecha_salida, hora_salida),
                                 "usuario": usuario_registra,
                                 "observacion": motivo_permiso.strip()
                             }
@@ -7685,6 +7697,8 @@ def gestion_usuarios_movil():
                                     numero_identificacion,
                                     tipo_movimiento,
                                     modalidad,
+                                    fecha_movimiento,
+                                    hora_movimiento,
                                     usuario_registra,
                                     observacion
                                 )
@@ -7692,6 +7706,8 @@ def gestion_usuarios_movil():
                                     :doc,
                                     'REGRESO_PERMISO',
                                     :modalidad,
+                                    :fecha_movimiento,
+                                    :hora_movimiento,
                                     :usuario,
                                     :observacion
                                 )
@@ -7699,6 +7715,8 @@ def gestion_usuarios_movil():
                             {
                                 "doc": documento,
                                 "modalidad": u.get("modalidad"),
+                                "fecha_movimiento": fecha_regreso_real,
+                                "hora_movimiento": datetime.combine(fecha_regreso_real, hora_regreso_real),
                                 "usuario": usuario_registra,
                                 "observacion": obs_regreso.strip()
                             }
@@ -9733,6 +9751,8 @@ def control_turno_v13():
                                     numero_identificacion,
                                     tipo_movimiento,
                                     modalidad,
+                                    fecha_movimiento,
+                                    hora_movimiento,
                                     usuario_registra,
                                     observacion
                                 )
@@ -9740,6 +9760,8 @@ def control_turno_v13():
                                     :documento,
                                     'REGRESO_PERMISO',
                                     :modalidad,
+                                    :fecha_movimiento,
+                                    :hora_movimiento,
                                     :usuario,
                                     :observacion
                                 )
@@ -9747,6 +9769,8 @@ def control_turno_v13():
                             {
                                 "documento": doc_regreso,
                                 "modalidad": fila_regreso.get("modalidad"),
+                                "fecha_movimiento": ahora_colombia().date(),
+                                "hora_movimiento": ahora_colombia().replace(tzinfo=None),
                                 "usuario": responsable,
                                 "observacion": obs_regreso_rapido.strip()
                             }
