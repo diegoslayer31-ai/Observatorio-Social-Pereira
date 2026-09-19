@@ -26755,43 +26755,35 @@ def panel_tareas_coordinacion_v16171():
                 tipo_lbl=c2.selectbox("Tipo de tarea", list(TIPOS_TAREA_CAR_V16171.values()))
                 tipo_sel=next(k for k,v in TIPOS_TAREA_CAR_V16171.items() if v==tipo_lbl)
 
-                # V16.173: excluir GLOBALMENTE usuarios que ya tienen esta misma
-                # tarea PENDIENTE o EN PROCESO, sin importar qué profesional la recibió.
-                # Esto evita asignar simultáneamente la misma caracterización a dos personas.
-                try:
-                    ya_asignados_tipo = pd.read_sql(text("""
-                        SELECT DISTINCT
-                               REGEXP_REPLACE(UPPER(TRIM(CAST(numero_identificacion AS TEXT))), '[^A-Z0-9]', '', 'g') AS doc_norm
-                        FROM tareas_profesionales
-                        WHERE tipo_tarea=:tipo
-                          AND UPPER(COALESCE(estado,'')) IN ('PENDIENTE','EN PROCESO')
-                    """), engine, params={"tipo": tipo_sel})
-                    docs_asignados = set(ya_asignados_tipo["doc_norm"].dropna().astype(str)) if not ya_asignados_tipo.empty else set()
-                except Exception:
-                    docs_asignados = set()
+                # V16.174 - Las dos caracterizaciones son tareas INDEPENDIENTES.
+                # Se excluye un usuario solamente si YA tiene PENDIENTE/EN PROCESO
+                # EL MISMO tipo de tarea, sin importar a qué profesional fue asignado.
+                # Por tanto, una persona puede tener simultáneamente una tarea GENERAL
+                # y otra de HABITABILIDAD, porque son instrumentos diferentes.
+                asignadas_mismo_tipo = pd.read_sql(text("""
+                    SELECT DISTINCT TRIM(CAST(numero_identificacion AS TEXT)) AS documento
+                    FROM tareas_profesionales
+                    WHERE tipo_tarea=:tipo
+                      AND UPPER(TRIM(COALESCE(estado,''))) IN ('PENDIENTE','EN PROCESO')
+                """), engine, params={"tipo": tipo_sel})
+                docs_asignados = set(asignadas_mismo_tipo["documento"].astype(str).str.strip().tolist()) if not asignadas_mismo_tipo.empty else set()
+                personas_vista_base = personas[~personas["documento"].astype(str).str.strip().isin(docs_asignados)].copy()
+                ya_asignados_tipo = len(set(personas["documento"].astype(str).str.strip()) & docs_asignados)
 
-                personas["doc_norm_tarea"] = (
-                    personas["documento"].fillna("").astype(str).str.upper()
-                    .str.replace(r"[^A-Z0-9]", "", regex=True)
-                )
-                total_antes_asignacion = len(personas)
-                personas_disponibles = personas[~personas["doc_norm_tarea"].isin(docs_asignados)].copy()
-                ya_asignados_activos = total_antes_asignacion - len(personas_disponibles)
-
-                # V16.172: ambos tipos cruzan exclusivamente contra ACTIVOS.
-                # En caracterización general se ordenan primero quienes están <93%.
+                # General: solo activos disponibles y prioridad <93%.
+                # Habitabilidad: solo activos disponibles, sin usar completitud general.
                 if tipo_sel == "COMPLETAR_CARACTERIZACION":
-                    personas_vista=personas_disponibles.sort_values(["prioridad_completitud","completitud","nombre"], ascending=[True,True,True]).copy()
+                    personas_vista=personas_vista_base.sort_values(["prioridad_completitud","completitud","nombre"], ascending=[True,True,True]).copy()
                     per_map={
                         f"{'🔴 PRIORIDAD' if float(r.completitud)<93 else '🟢'} · {r.nombre} · {r.documento} · {r.modalidad or 'SIN MODALIDAD'} · Completitud {float(r.completitud):.1f}%":str(r.documento)
                         for r in personas_vista.itertuples()
                     }
                     prioritarios=int((personas_vista["completitud"] < 93).sum())
-                    st.caption(f"🎯 {len(personas_vista)} disponibles · {ya_asignados_activos} ya asignados a otro profesional para esta tarea · {prioritarios} disponibles con completitud inferior al 93%.")
+                    st.caption(f"🎯 Caracterización GENERAL · solo ACTIVOS. {prioritarios} disponibles con completitud <93%. {ya_asignados_tipo} usuario(s) ya tienen esta misma tarea asignada y no se muestran.")
                 else:
-                    personas_vista=personas_disponibles.sort_values(["nombre"]).copy()
+                    personas_vista=personas_vista_base.sort_values(["nombre"]).copy()
                     per_map={f"{r.nombre} · {r.documento} · {r.modalidad or 'SIN MODALIDAD'}":str(r.documento) for r in personas_vista.itertuples()}
-                    st.caption(f"🧭 Solo usuarios ACTIVOS de Urbano o Granja · {len(personas_vista)} disponibles · {ya_asignados_activos} ya asignados a otro profesional para esta tarea.")
+                    st.caption(f"🧭 HABITABILIDAD EN CALLE · solo ACTIVOS. Disponibles: {len(personas_vista)}. {ya_asignados_tipo} usuario(s) ya tienen esta misma tarea asignada y no se muestran. La caracterización general NO los excluye.")
 
                 usuarios_lbl=st.multiselect("Usuarios a asignar", list(per_map), placeholder="Puede seleccionar uno o varios usuarios")
                 c3,c4=st.columns(2)
@@ -26811,8 +26803,7 @@ def panel_tareas_coordinacion_v16171():
                             doc=per_map[ul]
                             existe=conn.execute(text("""
                                 SELECT id FROM tareas_profesionales
-                                WHERE REGEXP_REPLACE(UPPER(TRIM(CAST(numero_identificacion AS TEXT))), '[^A-Z0-9]', '', 'g')
-                                      = REGEXP_REPLACE(UPPER(TRIM(CAST(:doc AS TEXT))), '[^A-Z0-9]', '', 'g')
+                                WHERE TRIM(CAST(numero_identificacion AS TEXT))=:doc
                                   AND tipo_tarea=:tipo
                                   AND UPPER(COALESCE(estado,'')) IN ('PENDIENTE','EN PROCESO')
                                 LIMIT 1
@@ -26826,7 +26817,7 @@ def panel_tareas_coordinacion_v16171():
                             """),{"tipo":tipo,"doc":doc,"cc":cc_prof,"nombre":nombre_prof,"prioridad":prioridad,"limite":fecha_limite,"asignado":st.session_state.get('usuario_actual','sistema'),"obs":obs.strip() or None})
                             creadas+=1
                             registrar_auditoria("ASIGNAR_TAREA_PROFESIONAL", documento=doc, modulo="Tareas Profesionales", valor_nuevo=f"{tipo} → {nombre_prof} CC {cc_prof}", observacion=obs[:500])
-                    st.success(f"✅ {creadas} tarea(s) creada(s) para {nombre_prof} · CC {cc_prof}." + (f" {omitidas} usuario(s) ya tenían esta tarea asignada y se omitieron." if omitidas else ""))
+                    st.success(f"✅ {creadas} tarea(s) de {TIPOS_TAREA_CAR_V16171.get(tipo,tipo)} asignada(s) a {nombre_prof} · CC {cc_prof}." + (f" {omitidas} usuario(s) ya tenían ESTA MISMA tarea pendiente/en proceso y no se duplicaron." if omitidas else ""))
                     st.rerun()
 
     with tr:
@@ -26886,10 +26877,7 @@ def mis_tareas_profesional_v16171():
               = REGEXP_REPLACE(UPPER(TRIM(CAST(:cc AS TEXT))), '[^A-Z0-9]', '', 'g')
         ORDER BY CASE WHEN UPPER(t.estado)='PENDIENTE' THEN 1 WHEN UPPER(t.estado)='EN PROCESO' THEN 2 ELSE 3 END, t.fecha_limite NULLS LAST
     """),engine,params={"cc":cc})
-    if df.empty:
-        st.success("✅ No tiene tareas asignadas actualmente.")
-        st.caption(f"Consulta realizada para la cédula autenticada: {cc}")
-        return
+    if df.empty: st.success("✅ No tiene tareas asignadas actualmente."); return
     pendientes=df[df["estado"].str.upper().isin(["PENDIENTE","EN PROCESO"])].copy()
     c1,c2,c3=st.columns(3); c1.metric("Pendientes",len(pendientes)); c2.metric("Completadas",int(df["estado"].str.upper().eq("COMPLETADA").sum())); c3.metric("Total",len(df))
     if pendientes.empty: st.success("✅ Todas sus tareas están completadas.")
