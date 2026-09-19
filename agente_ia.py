@@ -317,6 +317,28 @@ def limpiar_documento(valor):
     return valor
 
 
+def valor_postgres_seguro_v16176(valor):
+    """Convierte escalares Pandas/NumPy a tipos nativos compatibles con psycopg2."""
+    if valor is None:
+        return None
+    try:
+        es_nulo = pd.isna(valor)
+        if isinstance(es_nulo, bool) and es_nulo:
+            return None
+        if hasattr(es_nulo, "item") and bool(es_nulo.item()):
+            return None
+    except Exception:
+        pass
+    if isinstance(valor, pd.Timestamp):
+        return valor.to_pydatetime()
+    if type(valor).__module__ == "numpy" and hasattr(valor, "item"):
+        try:
+            return valor.item()
+        except Exception:
+            pass
+    return valor
+
+
 def registrar_auditoria(
     accion,
     documento=None,
@@ -2124,8 +2146,15 @@ def gestion_usuarios():
                     if detalle_egreso_form.strip():
                         observacion_final += " - " + detalle_egreso_form.strip()
 
+                    # V16.176 - La columna cedula_validada es BOOLEAN en PostgreSQL.
+                    cedula_validada_db = (
+                        True if cedula_validada_form == "SÍ"
+                        else False if cedula_validada_form == "NO"
+                        else None
+                    )
+
                     datos_egreso = {
-                        CE["cedula_validada"]: cedula_validada_form,
+                        CE["cedula_validada"]: cedula_validada_db,
                         CE["mes_validacion"]: meses_es[fecha_egreso_form.month],
                         CE["nombres"]: _p("nombres", default=""),
                         CE["apellidos"]: _p("apellidos", default=""),
@@ -2186,6 +2215,13 @@ def gestion_usuarios():
                         datos_egreso = {
                             k: v for k, v in datos_egreso.items()
                             if k and k in columnas_egreso
+                        }
+
+                        # V16.176 - Pandas devuelve algunos campos (p. ej. edad)
+                        # como numpy.int64; psycopg2 no los adapta directamente.
+                        datos_egreso = {
+                            k: valor_postgres_seguro_v16176(v)
+                            for k, v in datos_egreso.items()
                         }
 
                         cols_ins = list(datos_egreso.keys())
@@ -5622,34 +5658,8 @@ def registrar_egreso_profesional_v12(u, documento):
         #   ProgrammingError: can't adapt type 'numpy.int64'
         # que se presentaba, por ejemplo, al insertar la edad en el egreso.
         def _valor_postgres_v16150(valor):
-            if valor is None:
-                return None
-
-            # NaN / NaT / pd.NA deben llegar como NULL.
-            # No dependemos del alias `np`, porque este archivo no importa numpy como np.
-            try:
-                es_nulo = pd.isna(valor)
-                if isinstance(es_nulo, bool) and es_nulo:
-                    return None
-                # numpy.bool_ y otros booleanos escalares exponen .item().
-                if hasattr(es_nulo, "item") and bool(es_nulo.item()):
-                    return None
-            except Exception:
-                pass
-
-            # Timestamp de pandas -> datetime nativo.
-            if isinstance(valor, pd.Timestamp):
-                return valor.to_pydatetime()
-
-            # Escalares NumPy (int64, float64, bool_, etc.) -> Python nativo
-            # sin requerir `import numpy as np`.
-            if type(valor).__module__ == "numpy" and hasattr(valor, "item"):
-                try:
-                    return valor.item()
-                except Exception:
-                    pass
-
-            return valor
+            # V16.176 - usar la misma normalización central en todos los egresos.
+            return valor_postgres_seguro_v16176(valor)
 
         datos = {
             k: _valor_postgres_v16150(v)
