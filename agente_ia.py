@@ -4043,6 +4043,14 @@ def gestion_usuarios():
 
         indices_gestion = df_gestion.index.tolist()
         indice_default = 0
+        # V16.171 - Si llega desde Mis tareas, abrir directamente la persona asignada.
+        _doc_tarea_v16171 = str(st.session_state.get("tarea_objetivo_doc_v16171", "")).strip()
+        if _doc_tarea_v16171:
+            _coinc_tarea = df_gestion.index[
+                df_gestion["numero_identificacion"].astype(str).str.strip().eq(_doc_tarea_v16171)
+            ].tolist()
+            if _coinc_tarea:
+                indice_preseleccionado = _coinc_tarea[0]
         if indice_preseleccionado in indices_gestion:
             indice_default = indices_gestion.index(indice_preseleccionado)
 
@@ -4598,7 +4606,17 @@ def gestion_usuarios():
                 )
 
                 invalidar_cache_datos()
-                st.success("✅ Caracterización actualizada.")
+                _n_tareas = _completar_tarea_automatica_v16171(
+                    doc_car,
+                    "COMPLETAR_CARACTERIZACION",
+                    "Caracterización general guardada desde Gestión de Usuarios."
+                )
+                st.session_state.pop("tarea_objetivo_doc_v16171", None)
+                st.session_state.pop("tarea_objetivo_id_v16171", None)
+                if _n_tareas:
+                    st.success("✅ Caracterización actualizada y tarea marcada como COMPLETADA.")
+                else:
+                    st.success("✅ Caracterización actualizada.")
                 st.rerun()
             else:
                 st.warning(
@@ -15872,6 +15890,14 @@ with st.sidebar:
             st.session_state.page = "panel_profesional_v15"
             st.rerun()
 
+        if st.button(
+            "📌 Mis tareas",
+            use_container_width=True,
+            key="menu_mis_tareas_v16171"
+        ):
+            st.session_state.page = "mis_tareas_profesional_v16171"
+            st.rerun()
+
         # V16.169 - Los profesionales acceden al módulo central de Gestión de Usuarios.
         # Así utilizan la misma ficha y la misma caracterización institucional,
         # evitando mantener un formulario paralelo dentro de Gestión Móvil.
@@ -20425,6 +20451,13 @@ def caracterizacion_habitabilidad_v1611():
         )
     )
 
+    # V16.171 - Abrir directamente la persona cuando la tarea viene de Mis tareas.
+    _doc_tarea_hab_v16171 = str(st.session_state.get("tarea_objetivo_doc_v16171", "")).strip()
+    if _doc_tarea_hab_v16171:
+        _match_hab = personas.loc[personas["documento"].astype(str).str.strip().eq(_doc_tarea_hab_v16171), "etiqueta"]
+        if not _match_hab.empty:
+            st.session_state["habcalle_persona_v1611"] = _match_hab.iloc[0]
+
     seleccion = st.selectbox(
         "Persona",
         personas["etiqueta"].tolist(),
@@ -21328,8 +21361,16 @@ def caracterizacion_habitabilidad_v1611():
                         "sesion": usuario,
                     }
                 )
+            _n_tareas_hab = _completar_tarea_automatica_v16171(
+                documento,
+                "CARACTERIZACION_HABITABILIDAD",
+                "Caracterización especializada de Habitabilidad en Calle guardada."
+            )
+            st.session_state.pop("tarea_objetivo_doc_v16171", None)
+            st.session_state.pop("tarea_objetivo_id_v16171", None)
             st.session_state["habcalle_flash_v1630"] = (
                 f"✅ Caracterización especializada de {nombre} guardada correctamente."
+                + (" La tarea asignada quedó COMPLETADA." if _n_tareas_hab else "")
             )
             st.rerun()
         except Exception as e:
@@ -26541,6 +26582,255 @@ def _v1634_cerrar_sesion_registro():
     st.session_state.pop("sesion_sistema_id_v1634", None)
 
 
+
+
+# ============================================================
+# V16.171 - ASIGNACIÓN Y SEGUIMIENTO DE CARACTERIZACIONES
+# ============================================================
+TIPOS_TAREA_CAR_V16171 = {
+    "COMPLETAR_CARACTERIZACION": "🧾 Completar caracterización general",
+    "CARACTERIZACION_HABITABILIDAD": "🧭 Caracterización de Habitabilidad en Calle",
+}
+
+def _asegurar_tareas_caracterizacion_v16171():
+    """Crea la estructura de tareas sin afectar módulos existentes."""
+    with engine.begin() as conn:
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS tareas_profesionales (
+                id BIGSERIAL PRIMARY KEY,
+                tipo_tarea TEXT NOT NULL,
+                numero_identificacion TEXT NOT NULL,
+                profesional_cedula TEXT NOT NULL,
+                profesional_nombre TEXT,
+                estado TEXT NOT NULL DEFAULT 'PENDIENTE',
+                prioridad TEXT NOT NULL DEFAULT 'NORMAL',
+                fecha_asignacion TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                fecha_limite DATE,
+                fecha_inicio TIMESTAMPTZ,
+                fecha_completada TIMESTAMPTZ,
+                asignado_por TEXT,
+                completado_por TEXT,
+                observacion TEXT,
+                evidencia TEXT,
+                actualizado_en TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )
+        """))
+        conn.execute(text("""
+            CREATE INDEX IF NOT EXISTS idx_tareas_profesional_estado_v16171
+            ON tareas_profesionales (profesional_cedula, estado)
+        """))
+        conn.execute(text("""
+            CREATE INDEX IF NOT EXISTS idx_tareas_persona_tipo_v16171
+            ON tareas_profesionales (numero_identificacion, tipo_tarea)
+        """))
+
+def _completar_tarea_automatica_v16171(documento, tipo_tarea, evidencia=""):
+    """Cierra tareas del profesional autenticado cuando realmente guarda el formulario."""
+    doc = limpiar_documento(documento)
+    cc = limpiar_documento(st.session_state.get("documento_funcionario", ""))
+    usuario = st.session_state.get("usuario_actual", "sistema")
+    if not doc or not cc:
+        return 0
+    try:
+        _asegurar_tareas_caracterizacion_v16171()
+        with engine.begin() as conn:
+            filas = conn.execute(text("""
+                UPDATE tareas_profesionales
+                   SET estado='COMPLETADA',
+                       fecha_inicio=COALESCE(fecha_inicio, NOW()),
+                       fecha_completada=NOW(),
+                       completado_por=:usuario,
+                       evidencia=:evidencia,
+                       actualizado_en=NOW()
+                 WHERE TRIM(CAST(numero_identificacion AS TEXT))=:doc
+                   AND tipo_tarea=:tipo
+                   AND TRIM(CAST(profesional_cedula AS TEXT))=:cc
+                   AND UPPER(COALESCE(estado,'')) IN ('PENDIENTE','EN PROCESO')
+                RETURNING id
+            """), {"doc":doc,"tipo":tipo_tarea,"cc":cc,"usuario":usuario,"evidencia":evidencia}).fetchall()
+        if filas:
+            registrar_auditoria(
+                "COMPLETAR_TAREA_PROFESIONAL",
+                documento=doc,
+                modulo="Tareas Profesionales",
+                valor_nuevo=tipo_tarea,
+                observacion=f"Tarea(s) completada(s) automáticamente: {[r[0] for r in filas]}"
+            )
+        return len(filas)
+    except Exception:
+        return 0
+
+def _datos_tareas_v16171():
+    _asegurar_tareas_caracterizacion_v16171()
+    return pd.read_sql(text("""
+        SELECT t.*,
+               TRIM(COALESCE(h.nombres,'') || ' ' || COALESCE(h.apellidos,'')) AS nombre_usuario,
+               COALESCE(h.modalidad,'') AS modalidad
+        FROM tareas_profesionales t
+        LEFT JOIN habitante_de_calle h
+          ON TRIM(CAST(h.numero_identificacion AS TEXT))=TRIM(CAST(t.numero_identificacion AS TEXT))
+        ORDER BY CASE WHEN UPPER(t.estado)='PENDIENTE' THEN 1 WHEN UPPER(t.estado)='EN PROCESO' THEN 2 ELSE 3 END,
+                 t.fecha_limite NULLS LAST, t.fecha_asignacion DESC
+    """), engine)
+
+def panel_tareas_coordinacion_v16171():
+    """Asignación y reporte para Coordinación/Manager. Se incrusta en Auditoría."""
+    st.markdown("### 📋 Asignación y seguimiento de caracterizaciones")
+    st.caption("Asigne la caracterización general o la caracterización especializada de Habitabilidad en Calle y consulte el cumplimiento por profesional.")
+    try:
+        _asegurar_tareas_caracterizacion_v16171()
+    except Exception as e:
+        st.error(f"No fue posible preparar el módulo de tareas: {e}")
+        return
+
+    ta, tr = st.tabs(["➕ Asignar tareas", "📊 Reporte de tareas"])
+    with ta:
+        try:
+            profesionales = pd.read_sql(text("""
+                SELECT TRIM(CAST(cedula AS TEXT)) AS cedula, nombre
+                FROM funcionarios_sistema
+                WHERE activo=TRUE AND UPPER(TRIM(COALESCE(rol,'')))='PROFESIONAL'
+                ORDER BY nombre
+            """), engine)
+            personas = pd.read_sql(text("""
+                SELECT TRIM(CAST(numero_identificacion AS TEXT)) AS documento,
+                       TRIM(COALESCE(nombres,'') || ' ' || COALESCE(apellidos,'')) AS nombre,
+                       COALESCE(modalidad,'') AS modalidad, COALESCE(estado_caso,'') AS estado_caso
+                FROM habitante_de_calle
+                ORDER BY nombres, apellidos
+            """), engine)
+        except Exception as e:
+            st.error(f"No fue posible cargar profesionales/usuarios: {e}")
+            return
+        if profesionales.empty:
+            st.warning("No hay funcionarios activos con rol PROFESIONAL.")
+        elif personas.empty:
+            st.warning("No hay usuarios para asignar.")
+        else:
+            prof_map={f"{r.nombre} · CC {r.cedula}":(str(r.cedula),str(r.nombre)) for r in profesionales.itertuples()}
+            per_map={f"{r.nombre} · {r.documento} · {r.modalidad or 'SIN MODALIDAD'}":str(r.documento) for r in personas.itertuples()}
+            with st.form("asignar_tareas_car_v16171"):
+                c1,c2=st.columns(2)
+                prof_lbl=c1.selectbox("Profesional responsable", list(prof_map))
+                tipo_lbl=c2.selectbox("Tipo de tarea", list(TIPOS_TAREA_CAR_V16171.values()))
+                usuarios_lbl=st.multiselect("Usuarios a asignar", list(per_map), placeholder="Puede seleccionar uno o varios usuarios")
+                c3,c4=st.columns(2)
+                fecha_limite=c3.date_input("Fecha límite", value=date.today()+timedelta(days=7))
+                prioridad=c4.selectbox("Prioridad", ["NORMAL","ALTA","URGENTE"])
+                obs=st.text_area("Observación / instrucción", placeholder="Indicaciones para el profesional (opcional)")
+                asignar=st.form_submit_button("📌 Asignar tarea(s)", type="primary", use_container_width=True)
+            if asignar:
+                if not usuarios_lbl:
+                    st.warning("Seleccione al menos un usuario.")
+                else:
+                    cc_prof,nombre_prof=prof_map[prof_lbl]
+                    tipo=next(k for k,v in TIPOS_TAREA_CAR_V16171.items() if v==tipo_lbl)
+                    creadas=omitidas=0
+                    with engine.begin() as conn:
+                        for ul in usuarios_lbl:
+                            doc=per_map[ul]
+                            existe=conn.execute(text("""
+                                SELECT id FROM tareas_profesionales
+                                WHERE TRIM(CAST(numero_identificacion AS TEXT))=:doc
+                                  AND tipo_tarea=:tipo
+                                  AND TRIM(CAST(profesional_cedula AS TEXT))=:cc
+                                  AND UPPER(COALESCE(estado,'')) IN ('PENDIENTE','EN PROCESO')
+                                LIMIT 1
+                            """),{"doc":doc,"tipo":tipo,"cc":cc_prof}).first()
+                            if existe:
+                                omitidas+=1; continue
+                            conn.execute(text("""
+                                INSERT INTO tareas_profesionales
+                                (tipo_tarea,numero_identificacion,profesional_cedula,profesional_nombre,estado,prioridad,fecha_limite,asignado_por,observacion)
+                                VALUES (:tipo,:doc,:cc,:nombre,'PENDIENTE',:prioridad,:limite,:asignado,:obs)
+                            """),{"tipo":tipo,"doc":doc,"cc":cc_prof,"nombre":nombre_prof,"prioridad":prioridad,"limite":fecha_limite,"asignado":st.session_state.get('usuario_actual','sistema'),"obs":obs.strip() or None})
+                            creadas+=1
+                            registrar_auditoria("ASIGNAR_TAREA_PROFESIONAL", documento=doc, modulo="Tareas Profesionales", valor_nuevo=f"{tipo} → {nombre_prof} CC {cc_prof}", observacion=obs[:500])
+                    st.success(f"✅ {creadas} tarea(s) asignada(s)." + (f" {omitidas} ya estaban pendientes y no se duplicaron." if omitidas else ""))
+                    st.rerun()
+
+    with tr:
+        try: df=_datos_tareas_v16171()
+        except Exception as e:
+            st.error(f"No fue posible cargar el reporte: {e}"); return
+        if df.empty:
+            st.info("Todavía no hay tareas asignadas.")
+        else:
+            f1,f2,f3=st.columns(3)
+            profs=["TODOS"]+sorted(df["profesional_nombre"].fillna("").astype(str).unique().tolist())
+            tipos=["TODOS"]+list(TIPOS_TAREA_CAR_V16171.keys())
+            estados=["TODOS","PENDIENTE","EN PROCESO","COMPLETADA","CANCELADA"]
+            fp=f1.selectbox("Profesional",profs,key="rep_tarea_prof_v16171")
+            ft=f2.selectbox("Tipo",tipos,format_func=lambda x: TIPOS_TAREA_CAR_V16171.get(x,x),key="rep_tarea_tipo_v16171")
+            fe=f3.selectbox("Estado",estados,key="rep_tarea_estado_v16171")
+            vista=df.copy()
+            if fp!="TODOS": vista=vista[vista["profesional_nombre"]==fp]
+            if ft!="TODOS": vista=vista[vista["tipo_tarea"]==ft]
+            if fe!="TODOS": vista=vista[vista["estado"].str.upper()==fe]
+            total=len(vista); comp=int(vista["estado"].str.upper().eq("COMPLETADA").sum()); pend=int(vista["estado"].str.upper().isin(["PENDIENTE","EN PROCESO"]).sum())
+            hoy=pd.Timestamp(date.today())
+            limite=pd.to_datetime(vista["fecha_limite"],errors="coerce")
+            venc=int(((limite<hoy)&vista["estado"].str.upper().isin(["PENDIENTE","EN PROCESO"])).sum())
+            a,b,c,d=st.columns(4); a.metric("Asignadas",total); b.metric("Completadas",comp); c.metric("Pendientes",pend); d.metric("Vencidas",venc)
+            if total: st.progress(comp/total, text=f"Cumplimiento: {(comp/total)*100:.1f}%")
+            mostrar=vista.copy()
+            mostrar["Tarea"]=mostrar["tipo_tarea"].map(TIPOS_TAREA_CAR_V16171).fillna(mostrar["tipo_tarea"])
+            mostrar["Fecha asignación"]=pd.to_datetime(mostrar["fecha_asignacion"],errors="coerce",utc=True).dt.tz_convert("America/Bogota").dt.strftime("%d/%m/%Y %I:%M %p")
+            mostrar["Fecha completada"]=pd.to_datetime(mostrar["fecha_completada"],errors="coerce",utc=True).dt.tz_convert("America/Bogota").dt.strftime("%d/%m/%Y %I:%M %p")
+            cols=["id","profesional_nombre","nombre_usuario","numero_identificacion","Tarea","estado","prioridad","Fecha asignación","fecha_limite","Fecha completada","observacion"]
+            st.dataframe(mostrar[cols],use_container_width=True,hide_index=True)
+            st.download_button("⬇️ Descargar reporte CSV", data=mostrar[cols].to_csv(index=False).encode('utf-8-sig'), file_name=f"reporte_tareas_caracterizacion_{date.today().isoformat()}.csv", mime="text/csv", use_container_width=True)
+
+            st.markdown("#### 📈 Cumplimiento por profesional")
+            resumen=(df.assign(completada=df["estado"].str.upper().eq("COMPLETADA").astype(int))
+                     .groupby(["profesional_cedula","profesional_nombre"],dropna=False)
+                     .agg(asignadas=("id","count"),completadas=("completada","sum")).reset_index())
+            resumen["pendientes"]=resumen["asignadas"]-resumen["completadas"]
+            resumen["cumplimiento_%"]=(resumen["completadas"]/resumen["asignadas"]*100).round(1)
+            st.dataframe(resumen,use_container_width=True,hide_index=True)
+
+def mis_tareas_profesional_v16171():
+    rol=str(st.session_state.get("rol_actual","")).upper().strip()
+    if rol not in ["PROFESIONAL","COORDINACION","MANAGER"]:
+        st.error("No tiene permisos para este módulo."); return
+    st.title("📌 Mis tareas de caracterización")
+    st.caption("Aquí aparecen las tareas asignadas por Coordinación. Al guardar el formulario correspondiente, la tarea se marca automáticamente como completada.")
+    try: _asegurar_tareas_caracterizacion_v16171()
+    except Exception as e: st.error(f"No fue posible preparar las tareas: {e}"); return
+    cc=limpiar_documento(st.session_state.get("documento_funcionario",""))
+    df=pd.read_sql(text("""
+        SELECT t.*, TRIM(COALESCE(h.nombres,'') || ' ' || COALESCE(h.apellidos,'')) AS nombre_usuario, COALESCE(h.modalidad,'') AS modalidad
+        FROM tareas_profesionales t LEFT JOIN habitante_de_calle h
+          ON TRIM(CAST(h.numero_identificacion AS TEXT))=TRIM(CAST(t.numero_identificacion AS TEXT))
+        WHERE TRIM(CAST(t.profesional_cedula AS TEXT))=:cc
+        ORDER BY CASE WHEN UPPER(t.estado)='PENDIENTE' THEN 1 WHEN UPPER(t.estado)='EN PROCESO' THEN 2 ELSE 3 END, t.fecha_limite NULLS LAST
+    """),engine,params={"cc":cc})
+    if df.empty: st.success("✅ No tiene tareas asignadas actualmente."); return
+    pendientes=df[df["estado"].str.upper().isin(["PENDIENTE","EN PROCESO"])].copy()
+    c1,c2,c3=st.columns(3); c1.metric("Pendientes",len(pendientes)); c2.metric("Completadas",int(df["estado"].str.upper().eq("COMPLETADA").sum())); c3.metric("Total",len(df))
+    if pendientes.empty: st.success("✅ Todas sus tareas están completadas.")
+    for _,r in pendientes.iterrows():
+        tipo=str(r["tipo_tarea"]); titulo=TIPOS_TAREA_CAR_V16171.get(tipo,tipo); limite=pd.to_datetime(r.get("fecha_limite"),errors="coerce")
+        limite_txt=limite.strftime("%d/%m/%Y") if pd.notna(limite) else "Sin fecha límite"
+        with st.container(border=True):
+            st.markdown(f"**{titulo}**")
+            st.write(f"👤 {r.get('nombre_usuario','')} · Documento {r['numero_identificacion']} · {r.get('modalidad','')}")
+            st.caption(f"Estado: {r['estado']} · Prioridad: {r['prioridad']} · Fecha límite: {limite_txt}")
+            if str(r.get('observacion') or '').strip(): st.info(str(r['observacion']))
+            if st.button("▶️ Abrir y realizar tarea",key=f"abrir_tarea_v16171_{int(r['id'])}",use_container_width=True,type="primary"):
+                with engine.begin() as conn:
+                    conn.execute(text("UPDATE tareas_profesionales SET estado='EN PROCESO', fecha_inicio=COALESCE(fecha_inicio,NOW()), actualizado_en=NOW() WHERE id=:id AND estado='PENDIENTE'"),{"id":int(r['id'])})
+                st.session_state["tarea_objetivo_doc_v16171"]=str(r["numero_identificacion"])
+                st.session_state["tarea_objetivo_id_v16171"]=int(r["id"])
+                if tipo=="CARACTERIZACION_HABITABILIDAD": st.session_state.page="caracterizacion_habitabilidad_v1611"
+                else: st.session_state.page="gestion_usuarios"
+                st.rerun()
+    with st.expander("✅ Ver tareas completadas"):
+        comp=df[df["estado"].str.upper().eq("COMPLETADA")].copy()
+        if comp.empty: st.caption("Aún no hay tareas completadas.")
+        else: st.dataframe(comp[["nombre_usuario","numero_identificacion","tipo_tarea","fecha_completada","evidencia"]],use_container_width=True,hide_index=True)
+
+
 def modulo_auditoria_sesiones_v1634():
     rol = str(st.session_state.get("rol_actual", "")).upper()
 
@@ -26708,10 +26998,11 @@ def modulo_auditoria_sesiones_v1634():
     m3.metric("Actividad últimos 15 min", conectados_recientes)
     m4.metric("Acciones registradas", acciones_total)
 
-    tab_ses, tab_acc, tab_res = st.tabs([
+    tab_ses, tab_acc, tab_res, tab_tareas = st.tabs([
         "👤 Sesiones",
         "🧾 Acciones realizadas",
-        "📊 Resumen por usuario"
+        "📊 Resumen por usuario",
+        "📋 Tareas de caracterización"
     ])
 
     with tab_ses:
@@ -27009,6 +27300,9 @@ def modulo_auditoria_sesiones_v1634():
                 hide_index=True
             )
 
+    with tab_tareas:
+        panel_tareas_coordinacion_v16171()
+
     st.caption(
         "La auditoría registra qué acción se realizó y sobre qué usuario cuando aplica. "
         "No replica notas clínicas, diagnósticos ni contenido sensible completo."
@@ -27061,6 +27355,15 @@ if st.session_state.page == "gestion_movil":
         st.error("No tiene permisos para este módulo.")
     else:
         gestion_usuarios_movil()
+
+    st.stop()
+
+elif st.session_state.page == "mis_tareas_profesional_v16171":
+
+    if rol_router not in ["PROFESIONAL", "COORDINACION", "MANAGER"]:
+        st.error("No tiene permisos para este módulo.")
+    else:
+        mis_tareas_profesional_v16171()
 
     st.stop()
 
