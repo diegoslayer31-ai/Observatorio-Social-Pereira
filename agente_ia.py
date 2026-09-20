@@ -17885,10 +17885,19 @@ def modulo_reportes_institucionales_v169():
                                 mapa, lat="lat", lon="lon", size="Personas", color="Personas",
                                 hover_name="sector", hover_data={"Personas": True, "% con sector informado": True, "lat": False, "lon": False},
                                 size_max=42, zoom=11, height=520,
+                                center={"lat": 4.8143, "lon": -75.6946},
                                 title="Aglomeración reportada de habitantes de calle",
                                 map_style="open-street-map"
                             )
-                            fig_mapa.update_layout(margin={"r":0,"t":45,"l":0,"b":0})
+                            # V16.182 - Fijar explícitamente la vista en Pereira, Risaralda.
+                            # Evita que Plotly/MapLibre recalcule el centro hacia otra región.
+                            fig_mapa.update_layout(
+                                map={
+                                    "center": {"lat": 4.8143, "lon": -75.6946},
+                                    "zoom": 11,
+                                },
+                                margin={"r":0,"t":45,"l":0,"b":0}
+                            )
                             st.plotly_chart(fig_mapa, use_container_width=True)
 
                         no_mapeados = conteo_sector[~conteo_sector["sector"].isin(coords_sector)]
