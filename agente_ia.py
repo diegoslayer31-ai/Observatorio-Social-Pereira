@@ -17772,6 +17772,7 @@ def modulo_reportes_institucionales_v169():
         else:
             hab_tabs = st.tabs([
                 "Trayectoria",
+                "📍 Distribución territorial",
                 "Consumo y reducción de daños",
                 "Derechos y salud",
                 "Redes y superación",
@@ -17782,7 +17783,7 @@ def modulo_reportes_institucionales_v169():
                 for col_h, titulo_h in [
                     ("causa_inicio_calle", "Causas de inicio de vida en calle"),
                     ("causa_permanencia_calle", "Causas de permanencia en calle"),
-                    ("numero_episodios_calle", "Número de episodios de calle")
+                    ("numero_episodios_calle", "Personas según número de episodios en situación de calle")
                 ]:
                     top_h = _hab_top(col_h, 10)
                     if top_h:
@@ -17793,7 +17794,110 @@ def modulo_reportes_institucionales_v169():
                         st.markdown(f"**{titulo_h}**")
                         st.dataframe(tabla_h, use_container_width=True, hide_index=True)
 
+            # V16.180 - Distribución territorial desde la caracterización especializada.
+            # No modifica datos: solo normaliza nombres para análisis y ubica únicamente
+            # sectores con coordenadas de referencia conocidas.
             with hab_tabs[1]:
+                st.markdown("### 📍 Distribución territorial y puntos de concentración")
+                st.caption(
+                    "Construido con el municipio y el barrio/sector donde la persona reportó "
+                    "que pernoctaba en situación de calle. No corresponde necesariamente a su residencia actual."
+                )
+
+                if "barrio_pernocta_calle" not in df_hab_rep.columns:
+                    st.info("La caracterización especializada no contiene el campo de barrio/sector de pernocta.")
+                else:
+                    territorial = df_hab_rep.copy()
+                    territorial["sector_original"] = territorial["barrio_pernocta_calle"].fillna("").astype(str).str.strip()
+                    if "municipio_pernocta_calle" in territorial.columns:
+                        territorial["municipio_pernocta"] = territorial["municipio_pernocta_calle"].fillna("").astype(str).str.strip()
+                    else:
+                        territorial["municipio_pernocta"] = ""
+
+                    def _normalizar_sector_hab_v16180(valor):
+                        import unicodedata
+                        txt = str(valor or "").strip().upper()
+                        txt = "".join(c for c in unicodedata.normalize("NFD", txt) if unicodedata.category(c) != "Mn")
+                        txt = " ".join(txt.replace(".", " ").replace(",", " ").split())
+                        aliases = {
+                            "PARQUE LIBERTAD": "PARQUE LA LIBERTAD",
+                            "LA LIBERTAD": "PARQUE LA LIBERTAD",
+                            "LIBERTAD": "PARQUE LA LIBERTAD",
+                            "PARQUE BOLIVAR": "PLAZA DE BOLIVAR",
+                            "PLAZA BOLIVAR": "PLAZA DE BOLIVAR",
+                            "BOLIVAR": "PLAZA DE BOLIVAR",
+                            "PUENTE DE LA 12": "PUENTES DE LA 12",
+                            "PUENTE 12": "PUENTES DE LA 12",
+                            "PUENTES 12": "PUENTES DE LA 12",
+                            "EL LAGO": "PARQUE EL LAGO",
+                            "LAGO": "PARQUE EL LAGO",
+                            "VIADUCTO CESAR GAVIRIA": "VIADUCTO",
+                            "VIADUCTO CESAR GAVIRIA TRUJILLO": "VIADUCTO",
+                            "CENTRO DE PEREIRA": "CENTRO",
+                        }
+                        return aliases.get(txt, txt)
+
+                    territorial["sector"] = territorial["sector_original"].apply(_normalizar_sector_hab_v16180)
+                    territorial = territorial[~territorial["sector"].isin(["", "NAN", "NONE", "SIN DATO", "NO SABE", "NO APLICA"])]
+
+                    if territorial.empty:
+                        st.info("Todavía no hay sectores de pernocta diligenciados para la población filtrada.")
+                    else:
+                        conteo_sector = (
+                            territorial.groupby("sector", dropna=False)
+                            .size().reset_index(name="Personas")
+                            .sort_values("Personas", ascending=False)
+                        )
+                        total_sector = int(conteo_sector["Personas"].sum())
+                        conteo_sector["% con sector informado"] = (conteo_sector["Personas"] / total_sector * 100).round(1)
+
+                        tcol1, tcol2 = st.columns([1.05, 1.45])
+                        with tcol1:
+                            st.markdown("#### Sectores de pernocta reportados")
+                            st.dataframe(conteo_sector, use_container_width=True, hide_index=True)
+                        with tcol2:
+                            top_sector = conteo_sector.head(15).sort_values("Personas")
+                            fig_sector = px.bar(
+                                top_sector, x="Personas", y="sector", orientation="h",
+                                text="Personas", title="Principales puntos/sectores de pernocta"
+                            )
+                            fig_sector.update_layout(xaxis_title="Personas", yaxis_title="")
+                            st.plotly_chart(fig_sector, use_container_width=True)
+
+                        # Coordenadas de referencia de puntos recurrentes de Pereira.
+                        # Se usan solo para visualización; los sectores no reconocidos permanecen en la tabla.
+                        coords_sector = {
+                            "CENTRO": (4.8143, -75.6946),
+                            "PLAZA DE BOLIVAR": (4.8144, -75.6943),
+                            "PARQUE LA LIBERTAD": (4.8177, -75.6925),
+                            "PARQUE EL LAGO": (4.8122, -75.6994),
+                            "PUENTES DE LA 12": (4.8114, -75.6879),
+                            "VIADUCTO": (4.8192, -75.6847),
+                            "CUBA": (4.7974, -75.7364),
+                        }
+                        mapa = conteo_sector[conteo_sector["sector"].isin(coords_sector)].copy()
+                        if not mapa.empty:
+                            mapa["lat"] = mapa["sector"].map(lambda x: coords_sector[x][0])
+                            mapa["lon"] = mapa["sector"].map(lambda x: coords_sector[x][1])
+                            fig_mapa = px.scatter_mapbox(
+                                mapa, lat="lat", lon="lon", size="Personas", color="Personas",
+                                hover_name="sector", hover_data={"Personas": True, "% con sector informado": True, "lat": False, "lon": False},
+                                size_max=42, zoom=11, height=520,
+                                title="Aglomeración reportada de habitantes de calle"
+                            )
+                            fig_mapa.update_layout(mapbox_style="open-street-map", margin={"r":0,"t":45,"l":0,"b":0})
+                            st.plotly_chart(fig_mapa, use_container_width=True)
+
+                        no_mapeados = conteo_sector[~conteo_sector["sector"].isin(coords_sector)]
+                        if not no_mapeados.empty:
+                            with st.expander(f"🧭 Sectores pendientes de georreferenciar ({len(no_mapeados)})"):
+                                st.caption(
+                                    "Estos sectores sí cuentan en las estadísticas, pero no se ubican automáticamente "
+                                    "en el mapa hasta asociarlos a una coordenada de referencia."
+                                )
+                                st.dataframe(no_mapeados, use_container_width=True, hide_index=True)
+
+            with hab_tabs[2]:
                 for col_h, titulo_h in [
                     ("sustancia_principal", "Sustancia principal"),
                     ("frecuencia_consumo", "Frecuencia de consumo"),
@@ -17814,7 +17918,7 @@ def modulo_reportes_institucionales_v169():
                             hide_index=True
                         )
 
-            with hab_tabs[2]:
+            with hab_tabs[3]:
                 for col_h, titulo_h in [
                     ("regimen_salud", "Régimen de aseguramiento"),
                     ("eps_nombre", "EPS / entidad aseguradora"),
@@ -17838,7 +17942,7 @@ def modulo_reportes_institucionales_v169():
                             hide_index=True
                         )
 
-            with hab_tabs[3]:
+            with hab_tabs[4]:
                 for col_h, titulo_h in [
                     ("tiene_red_apoyo", "Red de apoyo"),
                     ("posibilidad_retorno_familiar", "Posibilidad de retorno familiar"),
@@ -17858,7 +17962,7 @@ def modulo_reportes_institucionales_v169():
                             hide_index=True
                         )
 
-            with hab_tabs[4]:
+            with hab_tabs[5]:
                 if df_gen_rep.empty:
                     st.info("No hay registros de Género y Diversidad para la población filtrada.")
                 else:
