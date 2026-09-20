@@ -17879,13 +17879,16 @@ def modulo_reportes_institucionales_v169():
                         if not mapa.empty:
                             mapa["lat"] = mapa["sector"].map(lambda x: coords_sector[x][0])
                             mapa["lon"] = mapa["sector"].map(lambda x: coords_sector[x][1])
-                            fig_mapa = px.scatter_mapbox(
+                            # V16.181 - Plotly moderno: scatter_mapbox fue retirado en versiones recientes.
+                            # px.scatter_map usa MapLibre y evita el AttributeError en Streamlit Cloud.
+                            fig_mapa = px.scatter_map(
                                 mapa, lat="lat", lon="lon", size="Personas", color="Personas",
                                 hover_name="sector", hover_data={"Personas": True, "% con sector informado": True, "lat": False, "lon": False},
                                 size_max=42, zoom=11, height=520,
-                                title="Aglomeración reportada de habitantes de calle"
+                                title="Aglomeración reportada de habitantes de calle",
+                                map_style="open-street-map"
                             )
-                            fig_mapa.update_layout(mapbox_style="open-street-map", margin={"r":0,"t":45,"l":0,"b":0})
+                            fig_mapa.update_layout(margin={"r":0,"t":45,"l":0,"b":0})
                             st.plotly_chart(fig_mapa, use_container_width=True)
 
                         no_mapeados = conteo_sector[~conteo_sector["sector"].isin(coords_sector)]
