@@ -19211,6 +19211,285 @@ def modulo_reportes_institucionales_v169():
                                 seccion += 1
 
                     # ------------------------------------------------
+                    # V16.183 - HABITABILIDAD EN CALLE EN EL PDF
+                    # ------------------------------------------------
+                    # Integra la caracterización especializada al informe institucional
+                    # sin modificar datos ni la lógica de los demás módulos.
+                    if not df_hab_rep.empty:
+                        contenido.append(PageBreak())
+                        contenido.append(
+                            Paragraph(
+                                f"{seccion}. Caracterización especializada de Habitabilidad en Calle",
+                                estilo_h1
+                            )
+                        )
+
+                        cobertura_hab_pdf = len(df_hab_rep)
+                        pct_cobertura_hab_pdf = (
+                            round(cobertura_hab_pdf / len(df_f) * 100, 1)
+                            if len(df_f) else 0
+                        )
+                        anos_calle_pdf = pd.to_numeric(
+                            df_hab_rep.get("tiempo_anos_calle", pd.Series(dtype=float)),
+                            errors="coerce"
+                        ).dropna()
+                        anos_consumo_pdf = pd.to_numeric(
+                            df_hab_rep.get("tiempo_anos_consumo", pd.Series(dtype=float)),
+                            errors="coerce"
+                        ).dropna()
+
+                        datos_hab_kpi = [
+                            ["Indicador", "Resultado"],
+                            ["Caracterizaciones especializadas", _fmt_num(cobertura_hab_pdf)],
+                            ["Cobertura sobre población filtrada", f"{pct_cobertura_hab_pdf:.1f}%"],
+                            [
+                                "Promedio de años en situación de calle",
+                                f"{anos_calle_pdf.mean():.1f}" if not anos_calle_pdf.empty else "Sin dato"
+                            ],
+                            [
+                                "Promedio de años de consumo",
+                                f"{anos_consumo_pdf.mean():.1f}" if not anos_consumo_pdf.empty else "Sin dato"
+                            ],
+                        ]
+                        contenido.append(
+                            _tabla_pdf(
+                                datos_hab_kpi,
+                                anchos=[11 * cm, 5.5 * cm],
+                                fontsize=8.5
+                            )
+                        )
+                        contenido.append(Spacer(1, 8))
+                        contenido.append(
+                            Paragraph(
+                                "Esta sección utiliza exclusivamente los registros de la caracterización "
+                                "especializada de Habitabilidad en Calle disponibles para la población filtrada.",
+                                estilo_nota
+                            )
+                        )
+
+                        # Trayectoria: número de episodios de calle.
+                        if "numero_episodios_calle" in df_hab_rep.columns:
+                            episodios_pdf = pd.to_numeric(
+                                df_hab_rep["numero_episodios_calle"], errors="coerce"
+                            ).dropna()
+                            if not episodios_pdf.empty:
+                                episodios_pdf = episodios_pdf.astype(int)
+                                ep_tabla = (
+                                    episodios_pdf.value_counts()
+                                    .sort_index()
+                                    .rename_axis("Número de episodios")
+                                    .reset_index(name="Personas")
+                                )
+                                ep_tabla["% válido"] = (
+                                    ep_tabla["Personas"] / len(episodios_pdf) * 100
+                                ).round(1)
+
+                                contenido.append(
+                                    Paragraph(
+                                        "Personas según número de episodios en situación de calle",
+                                        estilo_h2
+                                    )
+                                )
+                                fig, ax = plt.subplots(figsize=(8.2, 4.4))
+                                ax.bar(
+                                    ep_tabla["Número de episodios"].astype(str),
+                                    ep_tabla["Personas"]
+                                )
+                                ax.set_xlabel("Número de episodios")
+                                ax.set_ylabel("Personas")
+                                ax.set_title("Personas según número de episodios en situación de calle")
+                                ax.grid(axis="y", alpha=0.18)
+                                for i, valor in enumerate(ep_tabla["Personas"]):
+                                    ax.text(i, valor, f"{int(valor)}", ha="center", va="bottom", fontsize=8)
+                                ruta = _guardar_fig_mpl(fig)
+                                contenido.append(Image(ruta, width=17 * cm, height=8.8 * cm))
+
+                                ep_datos = [["Número de episodios", "Personas", "% válido"]]
+                                for _, r in ep_tabla.head(15).iterrows():
+                                    ep_datos.append([
+                                        str(int(r["Número de episodios"])),
+                                        str(int(r["Personas"])),
+                                        f'{float(r["% válido"]):.1f}%'
+                                    ])
+                                contenido.append(
+                                    _tabla_pdf(
+                                        ep_datos,
+                                        anchos=[7 * cm, 4.5 * cm, 4.5 * cm],
+                                        fontsize=8
+                                    )
+                                )
+                                if 1 in set(ep_tabla["Número de episodios"].tolist()):
+                                    r1 = ep_tabla[ep_tabla["Número de episodios"] == 1].iloc[0]
+                                    contenido.append(
+                                        Paragraph(
+                                            f"La categoría '1 episodio' corresponde a <b>{int(r1['Personas'])} personas</b> "
+                                            f"({float(r1['% válido']):.1f}% de quienes tienen respuesta válida); "
+                                            "no representa el total de episodios acumulados.",
+                                            estilo_cuerpo
+                                        )
+                                    )
+
+                        # Distribución territorial de pernocta.
+                        if "barrio_pernocta_calle" in df_hab_rep.columns:
+                            import unicodedata
+                            territorial_pdf = df_hab_rep.copy()
+                            territorial_pdf["sector_original"] = (
+                                territorial_pdf["barrio_pernocta_calle"]
+                                .fillna("").astype(str).str.strip()
+                            )
+
+                            def _normalizar_sector_pdf_v16183(valor):
+                                txt = str(valor or "").strip().upper()
+                                txt = "".join(
+                                    c for c in unicodedata.normalize("NFD", txt)
+                                    if unicodedata.category(c) != "Mn"
+                                )
+                                txt = " ".join(txt.replace(".", " ").replace(",", " ").split())
+                                aliases = {
+                                    "PARQUE LIBERTAD": "PARQUE LA LIBERTAD",
+                                    "LA LIBERTAD": "PARQUE LA LIBERTAD",
+                                    "LIBERTAD": "PARQUE LA LIBERTAD",
+                                    "PARQUE BOLIVAR": "PLAZA DE BOLIVAR",
+                                    "PLAZA BOLIVAR": "PLAZA DE BOLIVAR",
+                                    "BOLIVAR": "PLAZA DE BOLIVAR",
+                                    "PUENTE DE LA 12": "PUENTES DE LA 12",
+                                    "PUENTE 12": "PUENTES DE LA 12",
+                                    "PUENTES 12": "PUENTES DE LA 12",
+                                    "EL LAGO": "PARQUE EL LAGO",
+                                    "LAGO": "PARQUE EL LAGO",
+                                    "VIADUCTO CESAR GAVIRIA": "VIADUCTO",
+                                    "VIADUCTO CESAR GAVIRIA TRUJILLO": "VIADUCTO",
+                                    "CENTRO DE PEREIRA": "CENTRO",
+                                }
+                                return aliases.get(txt, txt)
+
+                            territorial_pdf["sector"] = territorial_pdf["sector_original"].apply(
+                                _normalizar_sector_pdf_v16183
+                            )
+                            territorial_pdf = territorial_pdf[
+                                ~territorial_pdf["sector"].isin(
+                                    ["", "NAN", "NONE", "SIN DATO", "NO SABE", "NO APLICA"]
+                                )
+                            ]
+
+                            if not territorial_pdf.empty:
+                                conteo_sector_pdf = (
+                                    territorial_pdf.groupby("sector", dropna=False)
+                                    .size().reset_index(name="Personas")
+                                    .sort_values("Personas", ascending=False)
+                                )
+                                total_sector_pdf = int(conteo_sector_pdf["Personas"].sum())
+                                conteo_sector_pdf["% con sector informado"] = (
+                                    conteo_sector_pdf["Personas"] / total_sector_pdf * 100
+                                ).round(1)
+
+                                contenido.append(PageBreak())
+                                contenido.append(
+                                    Paragraph(
+                                        "Distribución territorial y puntos de concentración",
+                                        estilo_h2
+                                    )
+                                )
+                                contenido.append(
+                                    Paragraph(
+                                        "La distribución corresponde al barrio o sector donde la persona reportó "
+                                        "que pernoctaba en situación de calle; no necesariamente corresponde a su residencia actual.",
+                                        estilo_nota
+                                    )
+                                )
+
+                                top_sector_pdf = conteo_sector_pdf.head(15).sort_values("Personas")
+                                fig, ax = plt.subplots(figsize=(8.2, 5.0))
+                                ax.barh(top_sector_pdf["sector"], top_sector_pdf["Personas"])
+                                ax.set_xlabel("Personas")
+                                ax.set_ylabel("")
+                                ax.set_title("Principales sectores de pernocta reportados")
+                                ax.grid(axis="x", alpha=0.18)
+                                for i, valor in enumerate(top_sector_pdf["Personas"]):
+                                    ax.text(valor, i, f" {int(valor)}", va="center", fontsize=8)
+                                ruta = _guardar_fig_mpl(fig)
+                                contenido.append(Image(ruta, width=17 * cm, height=9.6 * cm))
+
+                                terr_datos = [["Sector reportado", "Personas", "%"]]
+                                for _, r in conteo_sector_pdf.head(15).iterrows():
+                                    terr_datos.append([
+                                        Paragraph(_texto_pdf(r["sector"]), estilo_cuerpo),
+                                        str(int(r["Personas"])),
+                                        f'{float(r["% con sector informado"]):.1f}%'
+                                    ])
+                                contenido.append(
+                                    _tabla_pdf(
+                                        terr_datos,
+                                        anchos=[10.5 * cm, 3 * cm, 3 * cm],
+                                        fontsize=7.8
+                                    )
+                                )
+
+                                # Mapa esquemático: solo puntos con coordenadas validadas en Pereira.
+                                coords_sector_pdf = {
+                                    "CENTRO": (4.8143, -75.6946),
+                                    "PLAZA DE BOLIVAR": (4.8144, -75.6943),
+                                    "PARQUE LA LIBERTAD": (4.8177, -75.6925),
+                                    "PARQUE EL LAGO": (4.8122, -75.6994),
+                                    "PUENTES DE LA 12": (4.8114, -75.6879),
+                                    "VIADUCTO": (4.8192, -75.6847),
+                                    "CUBA": (4.7974, -75.7364),
+                                }
+                                mapa_pdf = conteo_sector_pdf[
+                                    conteo_sector_pdf["sector"].isin(coords_sector_pdf)
+                                ].copy()
+                                if not mapa_pdf.empty:
+                                    mapa_pdf["lat"] = mapa_pdf["sector"].map(
+                                        lambda x: coords_sector_pdf[x][0]
+                                    )
+                                    mapa_pdf["lon"] = mapa_pdf["sector"].map(
+                                        lambda x: coords_sector_pdf[x][1]
+                                    )
+                                    fig, ax = plt.subplots(figsize=(8.2, 5.4))
+                                    tamanos = 70 + mapa_pdf["Personas"] * 70
+                                    ax.scatter(
+                                        mapa_pdf["lon"], mapa_pdf["lat"],
+                                        s=tamanos, alpha=0.62, edgecolors="black", linewidths=0.6
+                                    )
+                                    for _, r in mapa_pdf.iterrows():
+                                        ax.annotate(
+                                            f"{r['sector']} ({int(r['Personas'])})",
+                                            (r["lon"], r["lat"]),
+                                            xytext=(5, 5), textcoords="offset points", fontsize=7
+                                        )
+                                    ax.set_title("Aglomeración reportada - Pereira, Risaralda")
+                                    ax.set_xlabel("Longitud")
+                                    ax.set_ylabel("Latitud")
+                                    ax.set_xlim(-75.745, -75.678)
+                                    ax.set_ylim(4.792, 4.824)
+                                    ax.grid(alpha=0.18)
+                                    ruta = _guardar_fig_mpl(fig)
+                                    contenido.append(Spacer(1, 8))
+                                    contenido.append(Image(ruta, width=17 * cm, height=10.2 * cm))
+                                    contenido.append(
+                                        Paragraph(
+                                            "Mapa esquemático centrado en Pereira. Solo se representan sectores con "
+                                            "coordenadas de referencia validadas en el aplicativo; los demás sectores "
+                                            "permanecen en las estadísticas y no se ubican automáticamente.",
+                                            estilo_nota
+                                        )
+                                    )
+
+                                pendientes_pdf = conteo_sector_pdf[
+                                    ~conteo_sector_pdf["sector"].isin(coords_sector_pdf)
+                                ]
+                                if not pendientes_pdf.empty:
+                                    contenido.append(
+                                        Paragraph(
+                                            f"Sectores pendientes de georreferenciar: <b>{len(pendientes_pdf)}</b>. "
+                                            "Estos registros sí se incluyen en las frecuencias territoriales.",
+                                            estilo_cuerpo
+                                        )
+                                    )
+
+                        seccion += 1
+
+                    # ------------------------------------------------
                     # ESTADO Y MODALIDAD
                     # ------------------------------------------------
                     if col_estado or col_modalidad:
