@@ -26403,6 +26403,97 @@ def _resumen_evidencia_v16125(tipo, df, codigos=None):
     return ""
 
 
+# ============================================================
+# V16.180 - CONSOLIDADO REAL DE GESTIÓN PARA INFORME MENSUAL
+# Incluye TODAS las acciones de Política Pública y las tareas de
+# caracterización asignadas/completadas, sin inventar actividades.
+# ============================================================
+def _evidencia_tareas_profesional_v16180(documento, fecha_inicio, fecha_fin):
+    """Tareas de caracterización del profesional con trazabilidad de asignación/cumplimiento."""
+    doc = _solo_digitos_v16124(documento)
+    if not doc:
+        return pd.DataFrame()
+    try:
+        return pd.read_sql(
+            text("""
+                SELECT
+                    t.id AS "ID tarea",
+                    t.tipo_tarea AS "Tipo de tarea",
+                    t.numero_identificacion AS "Documento usuario",
+                    TRIM(COALESCE(h.nombres,'') || ' ' || COALESCE(h.apellidos,'')) AS "Usuario",
+                    COALESCE(h.modalidad,'') AS "Modalidad",
+                    t.estado AS "Estado",
+                    TO_CHAR((t.fecha_asignacion AT TIME ZONE 'America/Bogota'),'DD/MM/YYYY HH12:MI AM') AS "Fecha asignación",
+                    TO_CHAR((t.fecha_completada AT TIME ZONE 'America/Bogota'),'DD/MM/YYYY HH12:MI AM') AS "Fecha completada",
+                    COALESCE(t.evidencia,'') AS "Evidencia"
+                FROM tareas_profesionales t
+                LEFT JOIN habitante_de_calle h
+                  ON TRIM(CAST(h.numero_identificacion AS TEXT)) = TRIM(CAST(t.numero_identificacion AS TEXT))
+                WHERE REGEXP_REPLACE(COALESCE(CAST(t.profesional_cedula AS TEXT),''),'[^0-9]','','g') = :doc
+                  AND (
+                        ((t.fecha_completada AT TIME ZONE 'America/Bogota')::date BETWEEN :fi AND :ff)
+                        OR (
+                            t.fecha_completada IS NULL
+                            AND (t.fecha_asignacion AT TIME ZONE 'America/Bogota')::date BETWEEN :fi AND :ff
+                        )
+                  )
+                ORDER BY COALESCE(t.fecha_completada,t.fecha_asignacion) DESC, t.id DESC
+            """), engine, params={"doc": doc, "fi": fecha_inicio, "ff": fecha_fin}
+        )
+    except Exception:
+        return pd.DataFrame()
+
+
+def _resumen_gestion_automatica_v16180(documento, fecha_inicio, fecha_fin):
+    """Consolida evidencia verificable y redacta actividades sin inferir hechos no registrados."""
+    pp = _evidencia_pp_profesional_v16125(documento, fecha_inicio, fecha_fin, codigos=None)
+    tareas = _evidencia_tareas_profesional_v16180(documento, fecha_inicio, fecha_fin)
+    frases = []
+    soportes = []
+
+    if not pp.empty:
+        try:
+            conteos = pp.groupby("Código", dropna=False).size().sort_index()
+            detalle = ", ".join(f"{cod}: {int(n)} registro(s)" for cod, n in conteos.items())
+            total_part = int(pd.to_numeric(pp.get("Participantes", 0), errors="coerce").fillna(0).sum())
+            frases.append(
+                f"Registró {len(pp)} actuación(es) de Política Pública durante el período ({detalle}), "
+                f"con {total_part} participante(s) registrados en los soportes del sistema."
+            )
+            for _, r in pp.head(60).iterrows():
+                soportes.append(
+                    f"POLÍTICA PÚBLICA · ID {r.get('ID evidencia','')} · {r.get('Código','')} · "
+                    f"{r.get('Fecha actividad','')} · {r.get('Actividad / acción','')} · "
+                    f"{r.get('Participantes',0)} participante(s)"
+                )
+        except Exception:
+            frases.append(f"Registró {len(pp)} actuación(es) de Política Pública durante el período.")
+
+    if not tareas.empty:
+        est = tareas["Estado"].fillna("").astype(str).str.upper().str.strip()
+        comp = tareas.loc[est.eq("COMPLETADA")].copy()
+        pend = tareas.loc[~est.eq("COMPLETADA")].copy()
+        if not comp.empty:
+            try:
+                por_tipo = comp.groupby("Tipo de tarea", dropna=False).size().sort_index()
+                detalle_t = ", ".join(f"{tipo}: {int(n)}" for tipo, n in por_tipo.items())
+                frases.append(
+                    f"Completó {len(comp)} tarea(s) de caracterización asignadas por Coordinación ({detalle_t})."
+                )
+            except Exception:
+                frases.append(f"Completó {len(comp)} tarea(s) de caracterización asignadas por Coordinación.")
+        if not pend.empty:
+            frases.append(f"Registra {len(pend)} tarea(s) asignada(s) en el período que aún no figuran como completadas.")
+        for _, r in tareas.head(60).iterrows():
+            soportes.append(
+                f"TAREA #{r.get('ID tarea','')} · {r.get('Tipo de tarea','')} · {r.get('Estado','')} · "
+                f"{r.get('Usuario','')} · CC {r.get('Documento usuario','')} · "
+                f"asignada {r.get('Fecha asignación','')} · completada {r.get('Fecha completada','')}"
+            )
+
+    return {"pp": pp, "tareas": tareas, "actividades": "\n".join(frases), "soportes": "\n".join(soportes)}
+
+
 def _evidencia_automatica_obligacion_v16125(
     obligacion, documento, fecha_inicio, fecha_fin, df_pai=None, df_seg=None
 ):
@@ -26701,6 +26792,28 @@ def modulo_informe_mensual_profesional_piloto_v1627():
             key="imp_modalidad"
         )
 
+    # V16.180 - Evidencia transversal: no depende de que el texto contractual
+    # mencione literalmente un código (por ejemplo 2.1.1).
+    gestion_auto_v16180 = _resumen_gestion_automatica_v16180(
+        documento, fecha_inicio, fecha_fin
+    )
+    st.markdown("### 🧩 Gestión automática registrada en el Observatorio")
+    st.caption(
+        "Este bloque consolida trabajo verificable del período. Incluye todas las acciones "
+        "de Política Pública —también 2.1.1 cuando exista— y las tareas de caracterización "
+        "asignadas/completadas. La redacción se construye únicamente con registros existentes."
+    )
+    if gestion_auto_v16180["actividades"]:
+        st.success(gestion_auto_v16180["actividades"])
+    else:
+        st.info("No se encontró gestión automática adicional para este profesional y período.")
+    if not gestion_auto_v16180["pp"].empty:
+        with st.expander("📋 Ver todas las acciones de Política Pública del período"):
+            st.dataframe(gestion_auto_v16180["pp"], use_container_width=True, hide_index=True)
+    if not gestion_auto_v16180["tareas"].empty:
+        with st.expander("📌 Ver tareas de caracterización asignadas/completadas"):
+            st.dataframe(gestion_auto_v16180["tareas"], use_container_width=True, hide_index=True)
+
     st.markdown("### 🧾 Cumplimiento de obligaciones")
     if contrato_individual:
         st.success(
@@ -26834,6 +26947,15 @@ def modulo_informe_mensual_profesional_piloto_v1627():
                 partes_sop.append("SOPORTE ADICIONAL: " + sop_manual.strip())
             sop = "\n".join(partes_sop)
             filas.append([ob, act, sop, log])
+
+    # V16.180 - Llevar el consolidado al informe/PDF como actividad verificable.
+    if gestion_auto_v16180.get("actividades") or gestion_auto_v16180.get("soportes"):
+        filas.append([
+            "Gestión registrada y verificable en el Observatorio Social durante el período.",
+            gestion_auto_v16180.get("actividades", ""),
+            gestion_auto_v16180.get("soportes", ""),
+            "Resultados cuantitativos consolidados automáticamente a partir de los registros del sistema."
+        ])
 
     st.markdown("### 🧠 Síntesis profesional")
     analisis = st.text_area("Análisis del período", height=140, key="imp_analisis")
