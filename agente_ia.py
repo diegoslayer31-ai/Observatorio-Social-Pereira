@@ -26520,6 +26520,20 @@ def _evidencia_automatica_obligacion_v16125(
         df = _evidencia_caracterizaciones_profesional_v16125(
             documento, fecha_inicio, fecha_fin
         )
+        # V16.181: sumar también las tareas de caracterización realmente completadas
+        # (general o habitabilidad), pues son evidencia contractual del numeral.
+        tareas = _evidencia_tareas_profesional_v16180(documento, fecha_inicio, fecha_fin)
+        if isinstance(tareas, pd.DataFrame) and not tareas.empty:
+            tareas = tareas[tareas["Estado"].fillna("").astype(str).str.upper().eq("COMPLETADA")].copy()
+            if not tareas.empty:
+                t2 = pd.DataFrame({
+                    "Documento usuario": tareas["Documento usuario"],
+                    "Usuario": tareas["Usuario"],
+                    "Acción": tareas["Tipo de tarea"].astype(str).map(lambda x: "TAREA COMPLETADA · " + x),
+                    "Fecha y hora": tareas["Fecha completada"],
+                    "Profesional": str(st.session_state.get("nombre_funcionario", "") or "")
+                })
+                df = pd.concat([df, t2], ignore_index=True, sort=False) if not df.empty else t2
         return {
             "tipo": "caracterizaciones",
             "df": df,
@@ -26538,6 +26552,98 @@ def _evidencia_automatica_obligacion_v16125(
 
     return {"tipo": "", "df": pd.DataFrame(), "resumen": "", "codigos": []}
 
+
+
+
+# ============================================================
+# V16.181 - FUENTES PAI DIRECTAS PARA INFORME MENSUAL
+# Evita escoger "la primera tabla" cuyo nombre contenga seguimiento.
+# ============================================================
+def _cargar_pai_informe_profesional_v16181(profesional_id, nombre_profesional, fecha_inicio, fecha_fin):
+    """Carga objetivos y seguimientos PAI reales del profesional en el período."""
+    nombre = str(nombre_profesional or "").strip()
+    df_pai = pd.DataFrame()
+    df_seg = pd.DataFrame()
+
+    try:
+        df_pai = pd.read_sql(text("""
+            SELECT
+                o.id,
+                o.documento_usuario,
+                o.objetivo_tipo,
+                o.objetivo_descripcion,
+                o.porcentaje_avance,
+                o.estado,
+                o.fecha_apertura,
+                o.fecha_ultimo_seguimiento,
+                o.profesional_referente,
+                pr.nombre AS profesional
+            FROM pai_objetivos o
+            LEFT JOIN profesionales pr ON pr.id=o.profesional_referente
+            WHERE o.profesional_referente=:pid
+              AND CAST(o.fecha_apertura AS DATE) BETWEEN :fi AND :ff
+              AND COALESCE(o.origen_registro,'ACTUAL') <> 'MIGRADO PAI 2026'
+            ORDER BY o.fecha_apertura DESC, o.id DESC
+        """), engine, params={"pid": profesional_id, "fi": fecha_inicio, "ff": fecha_fin})
+    except Exception:
+        df_pai = pd.DataFrame()
+
+    # Las intervenciones/seguimientos operativos se guardan realmente en pai_novedades.
+    # Se atribuyen por el nombre del profesional almacenado en la propia novedad.
+    try:
+        df_seg = pd.read_sql(text("""
+            SELECT
+                n.id,
+                o.documento_usuario,
+                n.fecha,
+                n.profesional,
+                n.tipo_novedad,
+                n.descripcion,
+                n.avance_generado,
+                n.evidencia,
+                o.objetivo_tipo,
+                o.objetivo_descripcion
+            FROM pai_novedades n
+            JOIN pai_objetivos o ON o.id=n.id_objetivo
+            WHERE UPPER(TRIM(COALESCE(n.profesional,''))) = UPPER(TRIM(:nombre))
+              AND ((n.fecha AT TIME ZONE 'America/Bogota')::date BETWEEN :fi AND :ff)
+            ORDER BY n.fecha DESC, n.id DESC
+        """), engine, params={"nombre": nombre, "fi": fecha_inicio, "ff": fecha_fin})
+    except Exception:
+        df_seg = pd.DataFrame()
+
+    return df_pai, df_seg
+
+
+def _actividad_automatica_obligacion_v16181(ev_auto):
+    """Redacta actividad ejecutada solo con evidencia existente."""
+    if not ev_auto or not ev_auto.get("tipo"):
+        return ""
+    df = ev_auto.get("df")
+    if not isinstance(df, pd.DataFrame) or df.empty:
+        return ""
+    tipo = ev_auto.get("tipo")
+    if tipo == "politica":
+        try:
+            conteos = df.groupby("Código", dropna=False).size().sort_index()
+            detalle = ", ".join(f"{c}: {int(n)} registro(s)" for c,n in conteos.items())
+            participantes = int(pd.to_numeric(df["Participantes"], errors="coerce").fillna(0).sum())
+            return f"Se desarrollaron y registraron acciones de Política Pública correspondientes a {detalle}, con {participantes} participaciones registradas en el período."
+        except Exception:
+            return f"Se desarrollaron {len(df)} acción(es) de Política Pública registradas en el Observatorio Social."
+    if tipo == "pai":
+        try:
+            personas = df["Documento usuario"].fillna("").astype(str).str.strip().replace("", pd.NA).dropna().nunique()
+        except Exception:
+            personas = 0
+        return f"Se realizaron {len(df)} registro(s) verificables de elaboración, seguimiento o intervención PAI, correspondientes a {int(personas)} persona(s) única(s)."
+    if tipo == "caracterizaciones":
+        try:
+            personas = df["Documento usuario"].fillna("").astype(str).str.strip().replace("", pd.NA).dropna().nunique()
+        except Exception:
+            personas = 0
+        return f"Se realizaron o actualizaron {len(df)} caracterización(es) psicosocial(es) verificables, correspondientes a {int(personas)} persona(s) única(s)."
+    return ""
 
 def modulo_informe_mensual_profesional_piloto_v1627():
     st.title("📄 Informe Mensual Profesional")
@@ -26727,6 +26833,25 @@ def modulo_informe_mensual_profesional_piloto_v1627():
     df_pai = filtrar_prof(df_pai)
     df_seg = filtrar_prof(df_seg)
 
+    # V16.181: para el informe mensual usar las fuentes PAI reales y no una tabla
+    # elegida por coincidencia de nombre. Esto corrige seguimientos en 0 cuando
+    # sí existen novedades/intervenciones del profesional.
+    _pai_directo, _seg_directo = _cargar_pai_informe_profesional_v16181(
+        profesional_id_inf, nombre_profesional_inf, fecha_inicio, fecha_fin
+    )
+    if not _pai_directo.empty:
+        df_pai = _pai_directo
+        fuente_pai = "pai_objetivos"
+    else:
+        df_pai = _pai_directo
+        fuente_pai = "pai_objetivos"
+    if not _seg_directo.empty:
+        df_seg = _seg_directo
+        fuente_seg = "pai_novedades"
+    else:
+        df_seg = _seg_directo
+        fuente_seg = "pai_novedades"
+
     docs = set()
     for df in [df_pai, df_seg]:
         cd = col(df, ["numero_identificacion","documento","cedula"])
@@ -26892,8 +27017,12 @@ def modulo_informe_mensual_profesional_piloto_v1627():
                         "para el profesional y período seleccionados."
                     )
 
+            # V16.181: la evidencia no debe quedar solo como soporte; también
+            # redacta la actividad ejecutada del numeral correspondiente.
+            actividad_auto = _actividad_automatica_obligacion_v16181(ev_auto)
             act = st.text_area(
                 "Actividades ejecutadas",
+                value=actividad_auto,
                 key=f"imp_act_{_solo_digitos_v16124(documento)}_{i}"
             )
             sop_manual = st.text_area(
