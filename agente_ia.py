@@ -27350,11 +27350,20 @@ def panel_tareas_coordinacion_v16171():
             st.download_button("⬇️ Descargar reporte CSV", data=mostrar[cols].to_csv(index=False).encode('utf-8-sig'), file_name=f"reporte_tareas_caracterizacion_{date.today().isoformat()}.csv", mime="text/csv", use_container_width=True)
 
             st.markdown("#### 📈 Cumplimiento por profesional")
-            resumen=(df.assign(completada=df["estado"].str.upper().eq("COMPLETADA").astype(int))
+            # V16.178 - Las tareas CANCELADAS se conservan para trazabilidad,
+            # pero no cuentan como asignadas, pendientes ni afectan el cumplimiento.
+            df_cumplimiento = df[
+                ~df["estado"].fillna("").astype(str).str.upper().str.strip().eq("CANCELADA")
+            ].copy()
+            resumen=(df_cumplimiento.assign(
+                        completada=df_cumplimiento["estado"].fillna("").astype(str).str.upper().str.strip().eq("COMPLETADA").astype(int),
+                        pendiente=df_cumplimiento["estado"].fillna("").astype(str).str.upper().str.strip().isin(["PENDIENTE","EN PROCESO"]).astype(int)
+                     )
                      .groupby(["profesional_cedula","profesional_nombre"],dropna=False)
-                     .agg(asignadas=("id","count"),completadas=("completada","sum")).reset_index())
-            resumen["pendientes"]=resumen["asignadas"]-resumen["completadas"]
-            resumen["cumplimiento_%"]=(resumen["completadas"]/resumen["asignadas"]*100).round(1)
+                     .agg(asignadas=("id","count"),completadas=("completada","sum"),pendientes=("pendiente","sum")).reset_index())
+            resumen["cumplimiento_%"] = (
+                resumen["completadas"] / resumen["asignadas"].replace(0, pd.NA) * 100
+            ).fillna(0).round(1)
             st.dataframe(resumen,use_container_width=True,hide_index=True)
 
 def mis_tareas_profesional_v16171():
