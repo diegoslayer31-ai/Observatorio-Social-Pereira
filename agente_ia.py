@@ -1381,6 +1381,82 @@ def _panel_medidas_activas_v1647(clave="medidas_activas"):
         )
 
 
+
+# ============================================================
+# V16.179 - Helpers de tareas disponibles antes de los formularios
+# Evita NameError al guardar caracterización general/especializada.
+# ============================================================
+def _asegurar_tareas_caracterizacion_v16171():
+    """Crea la estructura de tareas sin afectar módulos existentes."""
+    with engine.begin() as conn:
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS tareas_profesionales (
+                id BIGSERIAL PRIMARY KEY,
+                tipo_tarea TEXT NOT NULL,
+                numero_identificacion TEXT NOT NULL,
+                profesional_cedula TEXT NOT NULL,
+                profesional_nombre TEXT,
+                estado TEXT NOT NULL DEFAULT 'PENDIENTE',
+                prioridad TEXT NOT NULL DEFAULT 'NORMAL',
+                fecha_asignacion TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                fecha_limite DATE,
+                fecha_inicio TIMESTAMPTZ,
+                fecha_completada TIMESTAMPTZ,
+                asignado_por TEXT,
+                completado_por TEXT,
+                observacion TEXT,
+                evidencia TEXT,
+                actualizado_en TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )
+        """))
+        conn.execute(text("""
+            CREATE INDEX IF NOT EXISTS idx_tareas_profesional_estado_v16171
+            ON tareas_profesionales (profesional_cedula, estado)
+        """))
+        conn.execute(text("""
+            CREATE INDEX IF NOT EXISTS idx_tareas_persona_tipo_v16171
+            ON tareas_profesionales (numero_identificacion, tipo_tarea)
+        """))
+
+def _completar_tarea_automatica_v16171(documento, tipo_tarea, evidencia=""):
+    """Cierra tareas del profesional autenticado cuando realmente guarda el formulario."""
+    doc = limpiar_documento(documento)
+    cc = limpiar_documento(st.session_state.get("documento_funcionario", ""))
+    usuario = st.session_state.get("usuario_actual", "sistema")
+    if not doc or not cc:
+        return 0
+    try:
+        _asegurar_tareas_caracterizacion_v16171()
+        with engine.begin() as conn:
+            filas = conn.execute(text("""
+                UPDATE tareas_profesionales
+                   SET estado='COMPLETADA',
+                       fecha_inicio=COALESCE(fecha_inicio, NOW()),
+                       fecha_completada=NOW(),
+                       completado_por=:usuario,
+                       evidencia=:evidencia,
+                       actualizado_en=NOW()
+                 WHERE REGEXP_REPLACE(UPPER(TRIM(CAST(numero_identificacion AS TEXT))), '[^A-Z0-9]', '', 'g')
+                       = REGEXP_REPLACE(UPPER(TRIM(CAST(:doc AS TEXT))), '[^A-Z0-9]', '', 'g')
+                   AND tipo_tarea=:tipo
+                   AND REGEXP_REPLACE(UPPER(TRIM(CAST(profesional_cedula AS TEXT))), '[^A-Z0-9]', '', 'g')
+                       = REGEXP_REPLACE(UPPER(TRIM(CAST(:cc AS TEXT))), '[^A-Z0-9]', '', 'g')
+                   AND UPPER(COALESCE(estado,'')) IN ('PENDIENTE','EN PROCESO')
+                RETURNING id
+            """), {"doc":doc,"tipo":tipo_tarea,"cc":cc,"usuario":usuario,"evidencia":evidencia}).fetchall()
+        if filas:
+            registrar_auditoria(
+                "COMPLETAR_TAREA_PROFESIONAL",
+                documento=doc,
+                modulo="Tareas Profesionales",
+                valor_nuevo=tipo_tarea,
+                observacion=f"Tarea(s) completada(s) automáticamente: {[r[0] for r in filas]}"
+            )
+        return len(filas)
+    except Exception:
+        return 0
+
+
 def gestion_usuarios():
 
     st.title("👥 Gestión Integral de Usuarios")
@@ -27088,76 +27164,6 @@ TIPOS_TAREA_CAR_V16171 = {
     "COMPLETAR_CARACTERIZACION": "🧾 Completar caracterización general",
     "CARACTERIZACION_HABITABILIDAD": "🧭 Caracterización de Habitabilidad en Calle",
 }
-
-def _asegurar_tareas_caracterizacion_v16171():
-    """Crea la estructura de tareas sin afectar módulos existentes."""
-    with engine.begin() as conn:
-        conn.execute(text("""
-            CREATE TABLE IF NOT EXISTS tareas_profesionales (
-                id BIGSERIAL PRIMARY KEY,
-                tipo_tarea TEXT NOT NULL,
-                numero_identificacion TEXT NOT NULL,
-                profesional_cedula TEXT NOT NULL,
-                profesional_nombre TEXT,
-                estado TEXT NOT NULL DEFAULT 'PENDIENTE',
-                prioridad TEXT NOT NULL DEFAULT 'NORMAL',
-                fecha_asignacion TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                fecha_limite DATE,
-                fecha_inicio TIMESTAMPTZ,
-                fecha_completada TIMESTAMPTZ,
-                asignado_por TEXT,
-                completado_por TEXT,
-                observacion TEXT,
-                evidencia TEXT,
-                actualizado_en TIMESTAMPTZ NOT NULL DEFAULT NOW()
-            )
-        """))
-        conn.execute(text("""
-            CREATE INDEX IF NOT EXISTS idx_tareas_profesional_estado_v16171
-            ON tareas_profesionales (profesional_cedula, estado)
-        """))
-        conn.execute(text("""
-            CREATE INDEX IF NOT EXISTS idx_tareas_persona_tipo_v16171
-            ON tareas_profesionales (numero_identificacion, tipo_tarea)
-        """))
-
-def _completar_tarea_automatica_v16171(documento, tipo_tarea, evidencia=""):
-    """Cierra tareas del profesional autenticado cuando realmente guarda el formulario."""
-    doc = limpiar_documento(documento)
-    cc = limpiar_documento(st.session_state.get("documento_funcionario", ""))
-    usuario = st.session_state.get("usuario_actual", "sistema")
-    if not doc or not cc:
-        return 0
-    try:
-        _asegurar_tareas_caracterizacion_v16171()
-        with engine.begin() as conn:
-            filas = conn.execute(text("""
-                UPDATE tareas_profesionales
-                   SET estado='COMPLETADA',
-                       fecha_inicio=COALESCE(fecha_inicio, NOW()),
-                       fecha_completada=NOW(),
-                       completado_por=:usuario,
-                       evidencia=:evidencia,
-                       actualizado_en=NOW()
-                 WHERE REGEXP_REPLACE(UPPER(TRIM(CAST(numero_identificacion AS TEXT))), '[^A-Z0-9]', '', 'g')
-                       = REGEXP_REPLACE(UPPER(TRIM(CAST(:doc AS TEXT))), '[^A-Z0-9]', '', 'g')
-                   AND tipo_tarea=:tipo
-                   AND REGEXP_REPLACE(UPPER(TRIM(CAST(profesional_cedula AS TEXT))), '[^A-Z0-9]', '', 'g')
-                       = REGEXP_REPLACE(UPPER(TRIM(CAST(:cc AS TEXT))), '[^A-Z0-9]', '', 'g')
-                   AND UPPER(COALESCE(estado,'')) IN ('PENDIENTE','EN PROCESO')
-                RETURNING id
-            """), {"doc":doc,"tipo":tipo_tarea,"cc":cc,"usuario":usuario,"evidencia":evidencia}).fetchall()
-        if filas:
-            registrar_auditoria(
-                "COMPLETAR_TAREA_PROFESIONAL",
-                documento=doc,
-                modulo="Tareas Profesionales",
-                valor_nuevo=tipo_tarea,
-                observacion=f"Tarea(s) completada(s) automáticamente: {[r[0] for r in filas]}"
-            )
-        return len(filas)
-    except Exception:
-        return 0
 
 def _datos_tareas_v16171():
     _asegurar_tareas_caracterizacion_v16171()
