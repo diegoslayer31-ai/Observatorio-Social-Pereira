@@ -16067,14 +16067,6 @@ with st.sidebar:
             st.rerun()
 
         if st.button(
-            "🏥 Portabilidad en Salud",
-            use_container_width=True,
-            key="menu_portabilidad_prof_v16197"
-        ):
-            st.session_state.page = "portabilidad_salud_v16197"
-            st.rerun()
-
-        if st.button(
             "📌 Mis tareas",
             use_container_width=True,
             key="menu_mis_tareas_v16171"
@@ -27950,8 +27942,8 @@ def mis_tareas_profesional_v16171():
     rol=str(st.session_state.get("rol_actual","")).upper().strip()
     if rol not in ["PROFESIONAL","COORDINACION","MANAGER"]:
         st.error("No tiene permisos para este módulo."); return
-    st.title("📌 Mis tareas de caracterización")
-    st.caption("Aquí aparecen las tareas asignadas por Coordinación. Al guardar el formulario correspondiente, la tarea se marca automáticamente como completada.")
+    st.title("📌 Tareas")
+    st.caption("Aquí aparecen las tareas asignadas. Las remisiones de Portabilidad en Salud se gestionan desde esta bandeja y se relacionan con el objetivo PAI correspondiente.")
     try: _asegurar_tareas_caracterizacion_v16171()
     except Exception as e: st.error(f"No fue posible preparar las tareas: {e}"); return
     cc=limpiar_documento(st.session_state.get("documento_funcionario",""))
@@ -28540,7 +28532,9 @@ elif st.session_state.page == "pai_portabilidad_tarea_v16197":
                 st.session_state.pop("pai_portabilidad_doc_v16197", None)
                 st.session_state.page = "mis_tareas_profesional_v16171"
                 st.rerun()
-            panel_profesional_v15(doc_forzado=_doc_port)
+            # V16.199 - La tarea de portabilidad debe abrir exclusivamente el PAI
+            # del usuario asociado a la tarea, sin mostrar/usar el selector global.
+            panel_profesional_v15(doc_forzado=_doc_port, incrustado=True)
     st.stop()
 
 elif st.session_state.page == "mis_tareas_profesional_v16171":
