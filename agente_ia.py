@@ -10787,15 +10787,36 @@ def comite_casos_v16():
                 "Decisión motivada del Comité *",
                 key=f"v16107_decision_{id_medida_sel}",
             )
+            # V16.200 - Decisión segura de Comité.
+            # No dejar una decisión sustantiva preseleccionada: obliga al Comité
+            # a escoger expresamente el resultado y reduce cierres accidentales.
             resultado = st.selectbox(
                 "Resultado institucional *",
                 [
+                    "— SELECCIONE LA DECISIÓN DEL COMITÉ —",
+                    "MANTENER MEDIDA Y NO HABILITAR REINGRESO POR AHORA",
                     "LEVANTAR MEDIDA Y HABILITAR REINGRESO",
-                    "MANTENER MEDIDA / NO AUTORIZAR REINGRESO POR AHORA",
                     "FIJAR NUEVA FECHA DE POSIBLE REINGRESO",
                 ],
                 key=f"v16107_resultado_{id_medida_sel}",
             )
+
+            if resultado == "MANTENER MEDIDA Y NO HABILITAR REINGRESO POR AHORA":
+                st.warning(
+                    "⚠️ Esta decisión MANTENDRÁ la medida ACTIVA y NO habilitará "
+                    "el reingreso. La persona continuará INACTIVA hasta una nueva "
+                    "decisión formal del Comité."
+                )
+            elif resultado == "LEVANTAR MEDIDA Y HABILITAR REINGRESO":
+                st.warning(
+                    "⚠️ Esta decisión CERRARÁ la medida activa y habilitará a la "
+                    "persona para SOLICITAR reingreso. No la reactiva automáticamente."
+                )
+            elif resultado == "FIJAR NUEVA FECHA DE POSIBLE REINGRESO":
+                st.info(
+                    "ℹ️ La medida continuará ACTIVA y se fijará una nueva fecha desde "
+                    "la cual podrá solicitarse el reingreso."
+                )
 
             nueva_fecha = None
             if resultado == "FIJAR NUEVA FECHA DE POSIBLE REINGRESO":
@@ -10829,6 +10850,8 @@ def comite_casos_v16():
                 st.error("Debe registrar la decisión motivada.")
             elif not participantes.strip():
                 st.error("Debe registrar los participantes del Comité.")
+            elif resultado == "— SELECCIONE LA DECISIÓN DEL COMITÉ —":
+                st.error("Debe seleccionar expresamente el resultado institucional del Comité.")
             elif not confirmar:
                 st.error("Debe confirmar la decisión formal del Comité.")
             elif (
@@ -10956,25 +10979,28 @@ def comite_casos_v16():
                                     },
                                 )
 
-                            else:
-                                # Se mantiene ACTIVA + remitido_comite=TRUE para conservar
-                                # el bloqueo institucional hasta una nueva decisión formal.
+                            elif resultado == "MANTENER MEDIDA Y NO HABILITAR REINGRESO POR AHORA":
+                                # V16.200 - Mantener significa mantener de forma explícita:
+                                # ACTIVA, sin cierre y con bloqueo de reingreso.
                                 conn.execute(
                                     text("""
                                         UPDATE sanciones_usuarios
-                                        SET observacion = CONCAT_WS(
+                                        SET estado_medida = 'ACTIVA',
+                                            remitido_comite = TRUE,
+                                            fecha_fin = NULL,
+                                            cerrado_en = NULL,
+                                            observacion = CONCAT_WS(
                                                 ' | ',
                                                 NULLIF(TRIM(COALESCE(observacion,'')), ''),
                                                 :obs_comite
                                             )
                                         WHERE id = :id_medida
-                                          AND UPPER(TRIM(COALESCE(estado_medida,''))) = 'ACTIVA'
                                     """),
                                     {
                                         "id_medida": int(id_medida_sel),
                                         "obs_comite": (
-                                            f"COMITÉ #{comite_id}: se mantiene la medida; "
-                                            "reingreso no autorizado por ahora."
+                                            f"COMITÉ #{comite_id}: se mantiene la medida y "
+                                            "no se habilita reingreso por ahora."
                                         ),
                                     },
                                 )
@@ -11014,7 +11040,7 @@ def comite_casos_v16():
                             "✅ Decisión registrada. La medida continúa ACTIVA hasta la "
                             f"fecha definida: {nueva_fecha.strftime('%d/%m/%Y')}."
                         )
-                    else:
+                    elif resultado == "MANTENER MEDIDA Y NO HABILITAR REINGRESO POR AHORA":
                         st.success(
                             "✅ Decisión registrada. La medida continúa ACTIVA y el "
                             "reingreso permanece bloqueado hasta una nueva decisión del Comité."
