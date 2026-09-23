@@ -23292,87 +23292,175 @@ def control_asistencia_albergue_v1613():
             f"{resultado['fin'].strftime('%d/%m/%Y')}."
         )
 
-        tu, tg = st.tabs(["🏢 URBANO", "🌱 GRANJA"])
+        # V16.196 - Consolidado mensual por USUARIOS ÚNICOS.
+        # Se conserva exactamente la reconstrucción diaria del módulo para
+        # determinar quién estuvo activo en el periodo, pero ya no se muestra
+        # la matriz día por día. Cada documento aparece una sola vez y se
+        # complementa con toda la caracterización general de habitante_de_calle.
+        resumenes = []
 
-        with tu:
-            if matriz_u.empty:
-                st.info("Sin activos reconstruidos para Urbano.")
-            else:
-                st.dataframe(
-                    matriz_u,
-                    use_container_width=True,
-                    hide_index=True
+        def _resumen_modalidad_v16196(matriz, modalidad):
+            if matriz is None or matriz.empty:
+                return pd.DataFrame(
+                    columns=["documento", "modalidad_periodo", "total_atenciones_mes"]
                 )
-                st.metric(
-                    "TOTAL ATENCIONES URBANO",
-                    int(matriz_u.iloc[-1]["TOTAL ATENCIONES"])
+            df = matriz.copy()
+            df = df[
+                df["Documento"].fillna("").astype(str).str.strip() != ""
+            ].copy()
+            if df.empty:
+                return pd.DataFrame(
+                    columns=["documento", "modalidad_periodo", "total_atenciones_mes"]
                 )
+            return pd.DataFrame({
+                "documento": df["Documento"].astype(str).str.strip(),
+                "modalidad_periodo": modalidad,
+                "total_atenciones_mes": pd.to_numeric(
+                    df["TOTAL ATENCIONES"], errors="coerce"
+                ).fillna(0).astype(int)
+            })
 
-        with tg:
-            if matriz_g.empty:
-                st.info("Sin activos reconstruidos para Granja.")
-            else:
-                st.dataframe(
-                    matriz_g,
-                    use_container_width=True,
-                    hide_index=True
-                )
-                st.metric(
-                    "TOTAL ATENCIONES GRANJA",
-                    int(matriz_g.iloc[-1]["TOTAL ATENCIONES"])
-                )
+        ru = _resumen_modalidad_v16196(matriz_u, "URBANO")
+        rg = _resumen_modalidad_v16196(matriz_g, "GRANJA")
+        if not ru.empty:
+            resumenes.append(ru)
+        if not rg.empty:
+            resumenes.append(rg)
 
-        partes = []
-        if not matriz_u.empty:
-            t = matriz_u.copy()
-            t.insert(0, "Modalidad", "URBANO")
-            partes.append(t)
-        if not matriz_g.empty:
-            t = matriz_g.copy()
-            t.insert(0, "Modalidad", "GRANJA")
-            partes.append(t)
+        if not resumenes:
+            st.info("No se encontraron usuarios activos reconstruidos en el periodo.")
+            return
 
-        if partes:
-            consolidado = pd.concat(partes, ignore_index=True)
-
-            ex1, ex2 = st.columns(2)
-            ex1.download_button(
-                "⬇️ Exportar consolidado CSV",
-                consolidado.to_csv(index=False).encode("utf-8-sig"),
-                file_name=(
-                    "consolidado_activos_"
-                    + primer_dia_mes.strftime("%Y_%m")
-                    + ".csv"
+        resumen_mov = pd.concat(resumenes, ignore_index=True)
+        resumen_unico = (
+            resumen_mov.groupby("documento", as_index=False)
+            .agg(
+                modalidad_periodo=(
+                    "modalidad_periodo",
+                    lambda x: " / ".join(sorted(set(str(v) for v in x if str(v).strip())))
                 ),
-                mime="text/csv",
-                use_container_width=True
+                total_atenciones_mes=("total_atenciones_mes", "sum")
+            )
+        )
+
+        try:
+            caracterizacion = pd.read_sql(
+                text("SELECT * FROM habitante_de_calle"),
+                engine
+            )
+        except Exception as e:
+            st.error(f"No fue posible cargar la caracterización general: {e}")
+            return
+
+        if caracterizacion.empty:
+            st.warning("No hay información de caracterización general disponible.")
+            return
+
+        if "numero_identificacion" not in caracterizacion.columns:
+            st.error(
+                "La caracterización general no contiene la columna "
+                "numero_identificacion."
+            )
+            return
+
+        caracterizacion["_documento_union"] = (
+            caracterizacion["numero_identificacion"]
+            .fillna("").astype(str).str.strip()
+        )
+        caracterizacion = caracterizacion.drop_duplicates(
+            subset=["_documento_union"], keep="first"
+        )
+
+        usuarios_unicos = resumen_unico.merge(
+            caracterizacion,
+            left_on="documento",
+            right_on="_documento_union",
+            how="left"
+        )
+        usuarios_unicos = usuarios_unicos.drop(
+            columns=["_documento_union"], errors="ignore"
+        )
+
+        # Nombre completo visible al inicio, conservando también nombres y apellidos.
+        if "nombres" in usuarios_unicos.columns or "apellidos" in usuarios_unicos.columns:
+            nombres = (
+                usuarios_unicos["nombres"].fillna("").astype(str).str.strip()
+                if "nombres" in usuarios_unicos.columns
+                else pd.Series("", index=usuarios_unicos.index)
+            )
+            apellidos = (
+                usuarios_unicos["apellidos"].fillna("").astype(str).str.strip()
+                if "apellidos" in usuarios_unicos.columns
+                else pd.Series("", index=usuarios_unicos.index)
+            )
+            usuarios_unicos.insert(
+                1,
+                "nombre_completo",
+                (nombres + " " + apellidos).str.replace(
+                    r"\s+", " ", regex=True
+                ).str.strip()
             )
 
-            buffer = BytesIO()
-            with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
-                if not matriz_u.empty:
-                    matriz_u.to_excel(
-                        writer, sheet_name="URBANO", index=False
-                    )
-                if not matriz_g.empty:
-                    matriz_g.to_excel(
-                        writer, sheet_name="GRANJA", index=False
-                    )
+        # Ordenar primero los campos del consolidado y luego toda la caracterización.
+        primeras = [
+            c for c in [
+                "documento", "nombre_completo", "modalidad_periodo",
+                "total_atenciones_mes"
+            ] if c in usuarios_unicos.columns
+        ]
+        resto = [c for c in usuarios_unicos.columns if c not in primeras]
+        usuarios_unicos = usuarios_unicos[primeras + resto]
+        if "nombre_completo" in usuarios_unicos.columns:
+            usuarios_unicos = usuarios_unicos.sort_values(
+                "nombre_completo", na_position="last"
+            ).reset_index(drop=True)
 
-            ex2.download_button(
-                "📗 Exportar consolidado Excel",
-                data=buffer.getvalue(),
-                file_name=(
-                    "consolidado_activos_"
-                    + primer_dia_mes.strftime("%Y_%m")
-                    + ".xlsx"
-                ),
-                mime=(
-                    "application/vnd.openxmlformats-officedocument."
-                    "spreadsheetml.sheet"
-                ),
-                use_container_width=True
+        st.markdown("### 👥 Usuarios únicos del mes")
+        st.caption(
+            "Una persona aparece una sola vez. El universo se obtiene con la misma "
+            "reconstrucción del Control Diario de Asistencia y se complementa con "
+            "toda la caracterización general disponible."
+        )
+        st.metric("USUARIOS ÚNICOS DEL PERIODO", int(len(usuarios_unicos)))
+        st.dataframe(
+            usuarios_unicos,
+            use_container_width=True,
+            hide_index=True
+        )
+
+        ex1, ex2 = st.columns(2)
+        ex1.download_button(
+            "⬇️ Exportar usuarios únicos CSV",
+            usuarios_unicos.to_csv(index=False).encode("utf-8-sig"),
+            file_name=(
+                "usuarios_unicos_caracterizacion_"
+                + primer_dia_mes.strftime("%Y_%m")
+                + ".csv"
+            ),
+            mime="text/csv",
+            use_container_width=True
+        )
+
+        buffer = BytesIO()
+        with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
+            usuarios_unicos.to_excel(
+                writer, sheet_name="USUARIOS_UNICOS", index=False
             )
+
+        ex2.download_button(
+            "📗 Exportar usuarios únicos Excel",
+            data=buffer.getvalue(),
+            file_name=(
+                "usuarios_unicos_caracterizacion_"
+                + primer_dia_mes.strftime("%Y_%m")
+                + ".xlsx"
+            ),
+            mime=(
+                "application/vnd.openxmlformats-officedocument."
+                "spreadsheetml.sheet"
+            ),
+            use_container_width=True
+        )
 
 # ============================================================
 # V16.104 - CATÁLOGO INSTITUCIONAL DE ATENCIONES DE ENFERMERÍA
