@@ -13014,6 +13014,7 @@ def panel_profesional_v15(doc_forzado=None, incrustado=False):
             "Documentación y ciudadanía",
             "Cedulación",
             "Aseguramiento en salud",
+            "Portabilidad en salud",
             "Salud mental",
             "Tratamiento consumo SPA",
             "Reducción de riesgos y daños",
@@ -13034,6 +13035,7 @@ def panel_profesional_v15(doc_forzado=None, incrustado=False):
             "Documentación y ciudadanía": "Derechos e inclusión social",
             "Cedulación": "Derechos e inclusión social",
             "Aseguramiento en salud": "Salud",
+            "Portabilidad en salud": "Salud",
             "Salud mental": "Salud",
             "Tratamiento consumo SPA": "Salud",
             "Reducción de riesgos y daños": "Salud",
@@ -13054,6 +13056,7 @@ def panel_profesional_v15(doc_forzado=None, incrustado=False):
             "Documentación y ciudadanía": "ODS 16",
             "Cedulación": "ODS 16",
             "Aseguramiento en salud": "ODS 3",
+            "Portabilidad en salud": "ODS 3",
             "Salud mental": "ODS 3",
             "Tratamiento consumo SPA": "ODS 3",
             "Reducción de riesgos y daños": "ODS 3",
@@ -13085,6 +13088,12 @@ def panel_profesional_v15(doc_forzado=None, incrustado=False):
                 "Verificar afiliación",
                 "Gestionar afiliación o traslado",
                 "Confirmar aseguramiento activo"
+            ],
+            "Portabilidad en salud": [
+                "Verificar EPS y municipio de afiliación",
+                "Gestionar solicitud de portabilidad",
+                "Hacer seguimiento a la solicitud",
+                "Confirmar activación de la portabilidad y acceso efectivo a salud"
             ],
             "Salud mental": [
                 "Valoración inicial",
@@ -16019,6 +16028,14 @@ with st.sidebar:
             st.rerun()
 
         if st.button(
+            "🏥 Portabilidad en Salud",
+            use_container_width=True,
+            key="menu_portabilidad_enf_v16197"
+        ):
+            st.session_state.page = "portabilidad_salud_v16197"
+            st.rerun()
+
+        if st.button(
             "📚 Historia Integral",
             use_container_width=True
         ):
@@ -16047,6 +16064,14 @@ with st.sidebar:
             type="primary"
         ):
             st.session_state.page = "panel_profesional_v15"
+            st.rerun()
+
+        if st.button(
+            "🏥 Portabilidad en Salud",
+            use_container_width=True,
+            key="menu_portabilidad_prof_v16197"
+        ):
+            st.session_state.page = "portabilidad_salud_v16197"
             st.rerun()
 
         if st.button(
@@ -27503,7 +27528,216 @@ def _v1634_cerrar_sesion_registro():
 TIPOS_TAREA_CAR_V16171 = {
     "COMPLETAR_CARACTERIZACION": "🧾 Completar caracterización general",
     "CARACTERIZACION_HABITABILIDAD": "🧭 Caracterización de Habitabilidad en Calle",
+    "PORTABILIDAD_SALUD": "🏥 Gestionar portabilidad en salud / Objetivo PAI",
 }
+
+def modulo_portabilidad_salud_v16197():
+    """Remite usuarios ACTIVOS a Trabajo Social y abre el objetivo PAI de portabilidad."""
+    rol = str(st.session_state.get("rol_actual", "")).upper().strip()
+    if rol not in ["ENFERMERA", "COORDINACION_ENFERMERIA", "PROFESIONAL", "COORDINACION", "MANAGER"]:
+        st.error("No tiene permisos para este módulo.")
+        return
+
+    st.title("🏥 Portabilidad en Salud")
+    st.caption(
+        "Remita únicamente usuarios ACTIVOS a Trabajo Social. Cada remisión crea una tarea "
+        "y abre un objetivo PAI de Portabilidad en salud para la misma persona."
+    )
+    _asegurar_tareas_caracterizacion_v16171()
+
+    personas = pd.read_sql(text("""
+        SELECT TRIM(CAST(numero_identificacion AS TEXT)) AS documento,
+               TRIM(COALESCE(nombres,'') || ' ' || COALESCE(apellidos,'')) AS nombre,
+               UPPER(TRIM(COALESCE(modalidad,''))) AS modalidad,
+               COALESCE(tipo_seguridad_salud,'') AS seguridad_salud
+        FROM habitante_de_calle
+        WHERE UPPER(TRIM(COALESCE(estado_caso,'')))='ACTIVO'
+          AND UPPER(TRIM(COALESCE(modalidad,''))) IN ('URBANO','GRANJA')
+        ORDER BY nombres, apellidos
+    """), engine)
+
+    # Trabajadoras sociales institucionales identificadas en el catálogo vigente.
+    nombres_ts = [
+        "VALERIA MARTINEZ GARCIA",
+        "YUCI MARCELA MOSQUERA MOSQUERA",
+        "SAMARA HINESTROZA AGUILAR",
+        "SELMIRA MOSQUERA RENTERIA",
+    ]
+    profesionales = pd.read_sql(text("""
+        SELECT TRIM(CAST(cedula AS TEXT)) AS cedula, nombre
+        FROM funcionarios_sistema
+        WHERE activo=TRUE
+          AND UPPER(TRIM(COALESCE(rol,'')))='PROFESIONAL'
+        ORDER BY nombre
+    """), engine)
+    if not profesionales.empty:
+        profesionales = profesionales[
+            profesionales["nombre"].fillna("").astype(str).str.upper().str.strip().isin(nombres_ts)
+        ].copy()
+
+    if personas.empty:
+        st.warning("No hay usuarios ACTIVOS en URBANO o GRANJA para remitir.")
+        return
+    if profesionales.empty:
+        st.warning("No hay trabajadoras sociales activas identificadas en funcionarios_sistema.")
+        return
+
+    # No mostrar usuarios que ya tengan una portabilidad abierta, sea por tarea o por PAI.
+    ocupados = pd.read_sql(text("""
+        SELECT DISTINCT TRIM(CAST(numero_identificacion AS TEXT)) AS documento
+        FROM tareas_profesionales
+        WHERE tipo_tarea='PORTABILIDAD_SALUD'
+          AND UPPER(TRIM(COALESCE(estado,''))) IN ('PENDIENTE','EN PROCESO')
+        UNION
+        SELECT DISTINCT TRIM(CAST(documento_usuario AS TEXT)) AS documento
+        FROM pai_objetivos
+        WHERE UPPER(TRIM(COALESCE(objetivo_tipo,'')))='PORTABILIDAD EN SALUD'
+          AND UPPER(TRIM(COALESCE(estado,'ACTIVO'))) NOT IN ('CUMPLIDO','CERRADO','CANCELADO')
+    """), engine)
+    docs_ocupados = set(ocupados["documento"].astype(str).str.strip()) if not ocupados.empty else set()
+    disponibles = personas[~personas["documento"].isin(docs_ocupados)].copy()
+
+    st.info(
+        f"Usuarios activos: {len(personas)} · Disponibles para nueva remisión: {len(disponibles)} · "
+        f"Con portabilidad ya abierta: {len(personas)-len(disponibles)}"
+    )
+    if disponibles.empty:
+        st.success("Todos los usuarios que requieren gestión ya tienen una portabilidad abierta.")
+        return
+
+    prof_map = {f"{r.nombre} · CC {r.cedula}": (str(r.cedula), str(r.nombre)) for r in profesionales.itertuples()}
+    per_map = {
+        f"{r.nombre} · {r.documento} · {r.modalidad} · Salud: {r.seguridad_salud or 'SIN DATO'}": str(r.documento)
+        for r in disponibles.itertuples()
+    }
+
+    with st.form("remitir_portabilidad_v16197"):
+        prof_lbl = st.selectbox("Trabajadora social responsable", list(prof_map))
+        usuarios_lbl = st.multiselect(
+            "Usuarios ACTIVOS que requieren portabilidad",
+            list(per_map),
+            placeholder="Seleccione uno o varios usuarios"
+        )
+        c1, c2 = st.columns(2)
+        fecha_limite = c1.date_input("Fecha límite de gestión", value=date.today()+timedelta(days=7))
+        prioridad = c2.selectbox("Prioridad", ["NORMAL", "ALTA", "URGENTE"])
+        observacion = st.text_area(
+            "Motivo / observación de la remisión",
+            placeholder="Ej.: usuario afiliado en otro municipio y requiere acceso a servicios de salud en Pereira."
+        )
+        enviar = st.form_submit_button(
+            "📨 Remitir a Trabajo Social y abrir objetivo PAI",
+            type="primary", use_container_width=True
+        )
+
+    if enviar:
+        if not usuarios_lbl:
+            st.warning("Seleccione al menos un usuario.")
+            return
+        cc_prof, nombre_prof = prof_map[prof_lbl]
+        creadas = omitidas = 0
+        with engine.begin() as conn:
+            # Resolver el id PAI de la trabajadora social si ya existe el vínculo.
+            prof_id = conn.execute(text("""
+                SELECT ppf.profesional_id
+                FROM pai_profesional_funcionario ppf
+                WHERE TRIM(CAST(ppf.cedula_funcionario AS TEXT))=:cc
+                  AND COALESCE(ppf.activo,TRUE)=TRUE
+                LIMIT 1
+            """), {"cc": cc_prof}).scalar()
+
+            for etiqueta in usuarios_lbl:
+                doc = per_map[etiqueta]
+                existe = conn.execute(text("""
+                    SELECT 1 FROM tareas_profesionales
+                    WHERE TRIM(CAST(numero_identificacion AS TEXT))=:doc
+                      AND tipo_tarea='PORTABILIDAD_SALUD'
+                      AND UPPER(TRIM(COALESCE(estado,''))) IN ('PENDIENTE','EN PROCESO')
+                    LIMIT 1
+                """), {"doc": doc}).first()
+                existe_pai = conn.execute(text("""
+                    SELECT 1 FROM pai_objetivos
+                    WHERE TRIM(CAST(documento_usuario AS TEXT))=:doc
+                      AND UPPER(TRIM(COALESCE(objetivo_tipo,'')))='PORTABILIDAD EN SALUD'
+                      AND UPPER(TRIM(COALESCE(estado,'ACTIVO'))) NOT IN ('CUMPLIDO','CERRADO','CANCELADO')
+                    LIMIT 1
+                """), {"doc": doc}).first()
+                if existe or existe_pai:
+                    omitidas += 1
+                    continue
+
+                conn.execute(text("""
+                    INSERT INTO tareas_profesionales
+                    (tipo_tarea,numero_identificacion,profesional_cedula,profesional_nombre,
+                     estado,prioridad,fecha_limite,asignado_por,observacion)
+                    VALUES ('PORTABILIDAD_SALUD',:doc,:cc,:nombre,'PENDIENTE',:prioridad,
+                            :limite,:asignado,:obs)
+                """), {
+                    "doc": doc, "cc": cc_prof, "nombre": nombre_prof,
+                    "prioridad": prioridad, "limite": fecha_limite,
+                    "asignado": st.session_state.get("usuario_actual", "sistema"),
+                    "obs": observacion.strip() or None
+                })
+
+                conn.execute(text("""
+                    INSERT INTO pai_objetivos(
+                        documento_usuario, objetivo_tipo, objetivo_descripcion, actividades,
+                        avance_hitos, porcentaje_avance, estado, linea_politica, ods_principal,
+                        profesional_referente, fecha_apertura, fecha_meta
+                    ) VALUES (
+                        :doc, 'Portabilidad en salud', :descripcion, CAST(:actividades AS JSON),
+                        CAST(:avance AS JSON), 0, 'Activo', 'Salud', 'ODS 3',
+                        :prof, NOW(), :fecha_meta
+                    )
+                """), {
+                    "doc": doc,
+                    "descripcion": "Gestionar la portabilidad en salud del usuario para garantizar el acceso efectivo a los servicios de salud.",
+                    "actividades": json.dumps([
+                        "Verificar EPS y municipio de afiliación",
+                        "Gestionar solicitud de portabilidad",
+                        "Hacer seguimiento a la solicitud",
+                        "Confirmar activación de la portabilidad y acceso efectivo a salud"
+                    ], ensure_ascii=False),
+                    "avance": json.dumps([], ensure_ascii=False),
+                    "prof": prof_id,
+                    "fecha_meta": fecha_limite
+                })
+                creadas += 1
+
+        for etiqueta in usuarios_lbl:
+            doc = per_map[etiqueta]
+            registrar_auditoria(
+                "REMITIR_PORTABILIDAD_SALUD",
+                documento=doc,
+                modulo="Portabilidad en Salud",
+                valor_nuevo=f"Trabajo Social: {nombre_prof} · Objetivo PAI Portabilidad en salud",
+                observacion=observacion[:500]
+            )
+        st.success(
+            f"✅ {creadas} remisión(es) creadas con su objetivo PAI y asignadas a {nombre_prof}."
+            + (f" {omitidas} caso(s) ya tenían portabilidad abierta y no se duplicaron." if omitidas else "")
+        )
+        st.rerun()
+
+    st.divider()
+    st.markdown("### 📋 Portabilidades abiertas")
+    abiertas = pd.read_sql(text("""
+        SELECT t.id, t.numero_identificacion,
+               TRIM(COALESCE(h.nombres,'') || ' ' || COALESCE(h.apellidos,'')) AS usuario,
+               COALESCE(h.modalidad,'') AS modalidad, t.profesional_nombre, t.estado,
+               t.prioridad, t.fecha_asignacion, t.fecha_limite, t.observacion
+        FROM tareas_profesionales t
+        LEFT JOIN habitante_de_calle h
+          ON TRIM(CAST(h.numero_identificacion AS TEXT))=TRIM(CAST(t.numero_identificacion AS TEXT))
+        WHERE t.tipo_tarea='PORTABILIDAD_SALUD'
+          AND UPPER(TRIM(COALESCE(t.estado,''))) IN ('PENDIENTE','EN PROCESO')
+        ORDER BY t.fecha_asignacion DESC
+    """), engine)
+    if abiertas.empty:
+        st.caption("No hay portabilidades abiertas.")
+    else:
+        st.dataframe(abiertas, use_container_width=True, hide_index=True)
+
 
 def _datos_tareas_v16171():
     _asegurar_tareas_caracterizacion_v16171()
@@ -27746,8 +27980,13 @@ def mis_tareas_profesional_v16171():
                     conn.execute(text("UPDATE tareas_profesionales SET estado='EN PROCESO', fecha_inicio=COALESCE(fecha_inicio,NOW()), actualizado_en=NOW() WHERE id=:id AND estado='PENDIENTE'"),{"id":int(r['id'])})
                 st.session_state["tarea_objetivo_doc_v16171"]=str(r["numero_identificacion"])
                 st.session_state["tarea_objetivo_id_v16171"]=int(r["id"])
-                if tipo=="CARACTERIZACION_HABITABILIDAD": st.session_state.page="caracterizacion_habitabilidad_v1611"
-                else: st.session_state.page="gestion_usuarios"
+                if tipo=="CARACTERIZACION_HABITABILIDAD":
+                    st.session_state.page="caracterizacion_habitabilidad_v1611"
+                elif tipo=="PORTABILIDAD_SALUD":
+                    st.session_state["pai_portabilidad_doc_v16197"] = str(r["numero_identificacion"])
+                    st.session_state.page="pai_portabilidad_tarea_v16197"
+                else:
+                    st.session_state.page="gestion_usuarios"
                 st.rerun()
     with st.expander("✅ Ver tareas completadas"):
         comp=df[df["estado"].str.upper().eq("COMPLETADA")].copy()
@@ -28280,6 +28519,28 @@ if st.session_state.page == "gestion_movil":
     else:
         gestion_usuarios_movil()
 
+    st.stop()
+
+elif st.session_state.page == "portabilidad_salud_v16197":
+    if rol_router not in ["ENFERMERA", "COORDINACION_ENFERMERIA", "PROFESIONAL", "COORDINACION", "MANAGER"]:
+        st.error("No tiene permisos para este módulo.")
+    else:
+        modulo_portabilidad_salud_v16197()
+    st.stop()
+
+elif st.session_state.page == "pai_portabilidad_tarea_v16197":
+    if rol_router not in ["PROFESIONAL", "COORDINACION", "MANAGER"]:
+        st.error("No tiene permisos para este módulo.")
+    else:
+        _doc_port = str(st.session_state.get("pai_portabilidad_doc_v16197", "")).strip()
+        if not _doc_port:
+            st.warning("No hay usuario de portabilidad seleccionado.")
+        else:
+            if st.button("← Volver a Mis tareas", use_container_width=True, key="volver_port_pai_v16197"):
+                st.session_state.pop("pai_portabilidad_doc_v16197", None)
+                st.session_state.page = "mis_tareas_profesional_v16171"
+                st.rerun()
+            panel_profesional_v15(doc_forzado=_doc_port)
     st.stop()
 
 elif st.session_state.page == "mis_tareas_profesional_v16171":
