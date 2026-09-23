@@ -5524,12 +5524,13 @@ def registrar_egreso_profesional_v12(u, documento):
         key=f"v12_fecha_egreso_{documento}"
     )
 
-    # V16.145 - Los Inspiradores pueden registrar egresos definitivos
-    # únicamente cuando la persona es trasladada sin fecha de regreso a
+    # V16.195 - Los Inspiradores pueden registrar egresos definitivos
+    # por Plan Retorno o por traslado sin fecha de regreso a
     # Centro de Protección de Adulto Mayor o Albergue de Víctimas.
     rol_egreso = str(st.session_state.get("rol_actual", "")).strip().upper()
     if rol_egreso == "INSPIRADOR":
         opciones_motivo_egreso = [
+            "PLAN RETORNO",
             "TRASLADO A CENTRO DE PROTECCIÓN DE ADULTO MAYOR",
             "TRASLADO A ALBERGUE DE VÍCTIMAS"
         ]
