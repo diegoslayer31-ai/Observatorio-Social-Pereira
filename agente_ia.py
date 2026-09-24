@@ -23335,6 +23335,75 @@ def control_asistencia_albergue_v1613():
             f"{resultado['fin'].strftime('%d/%m/%Y')}."
         )
 
+        # ========================================================
+        # V16.201 - REPORTE CLÁSICO 1/0 + TOTAL DE ATENCIONES
+        # Se restaura la matriz diaria anterior SIN retirar el reporte
+        # de usuarios únicos incorporado en V16.196.
+        # ========================================================
+        st.markdown("### 🔢 Reporte diario 1/0 y total de atenciones")
+        st.caption(
+            "Formato clásico: 1 = persona activa/atendida en esa modalidad durante "
+            "el día; 0 = no contabilizada en esa modalidad. TOTAL ATENCIONES suma "
+            "los días del periodo. Se conserva separado para URBANO y GRANJA."
+        )
+
+        tab_u, tab_g = st.tabs(["🏢 URBANO · 1/0", "🌱 GRANJA · 1/0"])
+
+        with tab_u:
+            if matriz_u is None or matriz_u.empty:
+                st.info("No hay registros URBANO reconstruidos para este periodo.")
+            else:
+                st.dataframe(matriz_u, use_container_width=True, hide_index=True)
+
+        with tab_g:
+            if matriz_g is None or matriz_g.empty:
+                st.info("No hay registros GRANJA reconstruidos para este periodo.")
+            else:
+                st.dataframe(matriz_g, use_container_width=True, hide_index=True)
+
+        exp_m1, exp_m2 = st.columns(2)
+        matriz_csv = pd.concat(
+            [
+                matriz_u.assign(Modalidad="URBANO") if matriz_u is not None and not matriz_u.empty else pd.DataFrame(),
+                matriz_g.assign(Modalidad="GRANJA") if matriz_g is not None and not matriz_g.empty else pd.DataFrame(),
+            ],
+            ignore_index=True
+        )
+        exp_m1.download_button(
+            "⬇️ Exportar reporte 1/0 CSV",
+            data=matriz_csv.to_csv(index=False).encode("utf-8-sig"),
+            file_name="asistencia_1_0_" + primer_dia_mes.strftime("%Y_%m") + ".csv",
+            mime="text/csv",
+            use_container_width=True,
+            key="v16201_csv_matriz_" + primer_dia_mes.strftime("%Y_%m")
+        )
+
+        buffer_matriz = BytesIO()
+        with pd.ExcelWriter(buffer_matriz, engine="openpyxl") as writer:
+            if matriz_u is not None and not matriz_u.empty:
+                matriz_u.to_excel(writer, sheet_name="URBANO_1_0", index=False)
+            else:
+                pd.DataFrame(columns=["Sin registros"]).to_excel(
+                    writer, sheet_name="URBANO_1_0", index=False
+                )
+            if matriz_g is not None and not matriz_g.empty:
+                matriz_g.to_excel(writer, sheet_name="GRANJA_1_0", index=False)
+            else:
+                pd.DataFrame(columns=["Sin registros"]).to_excel(
+                    writer, sheet_name="GRANJA_1_0", index=False
+                )
+
+        exp_m2.download_button(
+            "📗 Exportar reporte 1/0 Excel",
+            data=buffer_matriz.getvalue(),
+            file_name="asistencia_1_0_" + primer_dia_mes.strftime("%Y_%m") + ".xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=True,
+            key="v16201_xlsx_matriz_" + primer_dia_mes.strftime("%Y_%m")
+        )
+
+        st.divider()
+
         # V16.196 - Consolidado mensual por USUARIOS ÚNICOS.
         # Se conserva exactamente la reconstrucción diaria del módulo para
         # determinar quién estuvo activo en el periodo, pero ya no se muestra
