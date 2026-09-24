@@ -6766,10 +6766,9 @@ def gestion_usuarios_movil():
                             "La foto era opcional y no afecta el registro."
                         )
 
-        # V14.1: herramientas operativas debajo de Gestión de usuarios.
-        if rol_visible == "INSPIRADOR":
-            st.divider()
-            panel_inspirador_simple_v14()
+        # V16.203: se retira del rol INSPIRADOR el panel global de permisos/
+        # novedades/reporte rápido. Las acciones por usuario continúan disponibles
+        # en Gestión Móvil (salida y regreso de permiso, según corresponda).
         return
 
     # ========================================================
@@ -8478,10 +8477,8 @@ def gestion_usuarios_movil():
 # ============================================================
 # V12 - ADMINISTRACIÓN DE USUARIOS DEL SISTEMA
 # ============================================================
-    # V14.1: herramientas operativas al final de Gestión Móvil.
-    if rol_visible == "INSPIRADOR":
-        st.divider()
-        panel_inspirador_simple_v14()
+    # V16.203: panel global de permisos/novedades/reporte rápido retirado
+    # de la vista de INSPIRADORES.
 
 
 def gestion_personal_v12_1():
