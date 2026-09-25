@@ -33908,6 +33908,22 @@ with tab9:
         except Exception:
             auditoria_hist = pd.DataFrame()
 
+        # V16.204 - Historia Integral: auditoría siempre visible en hora Colombia.
+        # La base conserva TIMESTAMPTZ/UTC; solo se transforma la presentación.
+        if not auditoria_hist.empty and "fecha_hora" in auditoria_hist.columns:
+            _fh_col = pd.to_datetime(
+                auditoria_hist["fecha_hora"], errors="coerce", utc=True
+            ).dt.tz_convert("America/Bogota")
+            auditoria_hist["Fecha y hora (Colombia)"] = _fh_col.dt.strftime(
+                "%d/%m/%Y %H:%M:%S"
+            )
+            auditoria_hist = auditoria_hist.drop(columns=["fecha_hora"])
+            _cols_aud = ["Fecha y hora (Colombia)"] + [
+                c for c in auditoria_hist.columns
+                if c != "Fecha y hora (Colombia)"
+            ]
+            auditoria_hist = auditoria_hist[_cols_aud]
+
         avance_pai_hist = 0.0
         if (
             not objetivos_hist.empty
