@@ -291,6 +291,13 @@ def normalizar_timestamp_pandas_sin_tz(valor):
 # ============================================================
 # CONFIGURACIÓN Y UTILIDADES CENTRALES
 # ============================================================
+# V16.205 - Optimización conservadora de lecturas Supabase.
+# Conserva TODAS las columnas y funcionalidades, pero evita descargar
+# habitante_de_calle varias veces dentro del mismo ciclo de uso.
+@st.cache_data(ttl=60, show_spinner=False)
+def cargar_habitante_completo_v16205():
+    return pd.read_sql(text('SELECT * FROM habitante_de_calle'), engine)
+
 @st.cache_data(ttl=60, show_spinner=False)
 def cargar_tabla(nombre_tabla: str):
     """Carga una tabla completa con caché corta para reducir consultas repetidas."""
@@ -304,6 +311,8 @@ def cargar_tabla(nombre_tabla: str):
     }
     if nombre_tabla not in tablas_permitidas:
         raise ValueError("Tabla no autorizada.")
+    if nombre_tabla == "habitante_de_calle":
+        return cargar_habitante_completo_v16205().copy()
     return pd.read_sql(text(f'SELECT * FROM "{nombre_tabla}"'), engine)
 
 
@@ -842,6 +851,10 @@ def invalidar_cache_datos():
     """Limpia la caché después de operaciones de escritura."""
     try:
         cargar_tabla.clear()
+    except Exception:
+        pass
+    try:
+        cargar_habitante_completo_v16205.clear()
     except Exception:
         pass
 
@@ -1596,14 +1609,9 @@ def gestion_usuarios():
     # ========================================================
     # BASE GENERAL
     # ========================================================
-    df_gestion = pd.read_sql(
-        text("""
-            SELECT *
-            FROM habitante_de_calle
-            ORDER BY nombres, apellidos
-        """),
-        engine
-    )
+    df_gestion = cargar_habitante_completo_v16205().copy()
+    if not df_gestion.empty and {"nombres", "apellidos"}.issubset(df_gestion.columns):
+        df_gestion = df_gestion.sort_values(["nombres", "apellidos"], na_position="last")
 
     if df_gestion.empty:
         st.warning("No hay usuarios registrados.")
@@ -16784,7 +16792,7 @@ def _filtrar_egresos_impacto_v16154(df):
 
 def modulo_egresos_impacto_v169():
 
-    df = pd.read_sql("SELECT * FROM habitante_de_calle", engine)
+    df = cargar_habitante_completo_v16205().copy()
     df = df.drop_duplicates()
     df.columns = (
         df.columns
@@ -16809,11 +16817,7 @@ def modulo_egresos_impacto_v169():
 
     st.subheader("📊 Indicadores de Egreso")
 
-    df_impacto_todos = pd.read_sql_query("""
-        SELECT *
-        FROM personas_caracterizacion
-        WHERE estado_caso = 'EGRESADO'
-    """, engine)
+    df_impacto_todos = df_egresados.copy()
     # V16.154: el fallecimiento sigue en la historia, pero se excluye de
     # Egresos e Impacto porque no corresponde a un caso exitoso.
     df_impacto = _filtrar_egresos_impacto_v16154(df_impacto_todos)
@@ -16878,7 +16882,7 @@ def modulo_egresos_impacto_v169():
 
 def modulo_reportes_institucionales_v169():
 
-    df = pd.read_sql("SELECT * FROM habitante_de_calle", engine)
+    df = cargar_habitante_completo_v16205().copy()
     df = df.drop_duplicates()
     df.columns = (
         df.columns
@@ -20483,7 +20487,7 @@ def modulo_reportes_institucionales_v169():
 
 def modulo_carga_activos_v169():
 
-    df = pd.read_sql("SELECT * FROM habitante_de_calle", engine)
+    df = cargar_habitante_completo_v16205().copy()
     df = df.drop_duplicates()
     df.columns = (
         df.columns
@@ -23453,10 +23457,7 @@ def control_asistencia_albergue_v1613():
         )
 
         try:
-            caracterizacion = pd.read_sql(
-                text("SELECT * FROM habitante_de_calle"),
-                engine
-            )
+            caracterizacion = cargar_habitante_completo_v16205().copy()
         except Exception as e:
             st.error(f"No fue posible cargar la caracterización general: {e}")
             return
@@ -29031,7 +29032,7 @@ st.caption("📍 Territorio: Pereira · Vigencia: 2026")
 # =========================
 # CARGAR DATOS
 # =========================
-df = pd.read_sql("SELECT * FROM habitante_de_calle", engine)
+df = cargar_habitante_completo_v16205().copy()
 df = df.drop_duplicates()
 
 # =========================
@@ -29100,7 +29101,7 @@ def generar_resumen(df):
 
 
 def cargar_datos():
-    df = pd.read_sql("SELECT * FROM habitante_de_calle", engine)
+    df = cargar_habitante_completo_v16205().copy()
 
     df["estado_caso"] = (
         df["estado_caso"]
