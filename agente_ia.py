@@ -27147,52 +27147,45 @@ def modulo_informe_mensual_profesional_piloto_v1627(modo_final_ivan=False):
             st.error("La fecha inicial no puede ser posterior a la fecha final.")
             return
 
-    profesional_pai = _profesional_actual_v15()
-    if not profesional_pai:
-        if modo_final_ivan and _solo_digitos_v16124(
+    if modo_final_ivan:
+        # V16.211 - Dirección es un perfil administrativo/directivo, NO un profesional PAI.
+        documento_sesion = _solo_digitos_v16124(
             st.session_state.get("documento_funcionario", "")
-        ) == "16225865":
-            profesional_pai = {
-                "profesional_id": None,
-                "nombre": "IVAN RENDON GIRALDO",
-                "rol": "DIRECTOR",
-            }
-        else:
+        )
+        if documento_sesion != "16225865":
+            st.error("Este informe mensual está habilitado únicamente para IVÁN RENDÓN GIRALDO.")
+            return
+        profesional_id_inf = None
+        nombre_profesional_inf = "JORGE IVÁN RENDÓN GIRALDO"
+        rol_profesional_inf = "DIRECCIÓN"
+    else:
+        profesional_pai = _profesional_actual_v15()
+        if not profesional_pai:
             st.error(
                 "No se encontró un profesional PAI asociado a este acceso. "
                 "Debe existir la asignación en pai_profesional_funcionario."
             )
             return
-
-    profesional_id_inf = profesional_pai.get("profesional_id")
-    nombre_profesional_inf = str(profesional_pai.get("nombre") or "").strip()
-    rol_profesional_inf = str(profesional_pai.get("rol") or "").strip()
-
-    if modo_final_ivan:
-        documento_sesion = _solo_digitos_v16124(
-            st.session_state.get("documento_funcionario", "")
-        )
-        if documento_sesion != "16225865":
-            st.error("Este informe final está habilitado únicamente para IVÁN RENDÓN GIRALDO.")
-            return
-        nombre_profesional_inf = "IVAN RENDON GIRALDO"
-        rol_profesional_inf = "DIRECTOR"
+        profesional_id_inf = profesional_pai.get("profesional_id")
+        nombre_profesional_inf = str(profesional_pai.get("nombre") or "").strip()
+        rol_profesional_inf = str(profesional_pai.get("rol") or "").strip()
 
     # Documento del profesional, si está disponible en la tabla profesionales.
     documento_profesional_inf = ""
-    try:
-        _dp = pd.read_sql(
-            text("SELECT * FROM profesionales WHERE id = :id LIMIT 1"),
-            engine,
-            params={"id": profesional_id_inf}
-        )
-        if not _dp.empty:
-            for _c in ["numero_identificacion", "cedula", "documento"]:
-                if _c in _dp.columns and pd.notna(_dp.iloc[0][_c]):
-                    documento_profesional_inf = str(_dp.iloc[0][_c]).strip()
-                    break
-    except Exception:
-        pass
+    if not modo_final_ivan:
+        try:
+            _dp = pd.read_sql(
+                text("SELECT * FROM profesionales WHERE id = :id LIMIT 1"),
+                engine,
+                params={"id": profesional_id_inf}
+            )
+            if not _dp.empty:
+                for _c in ["numero_identificacion", "cedula", "documento"]:
+                    if _c in _dp.columns and pd.notna(_dp.iloc[0][_c]):
+                        documento_profesional_inf = str(_dp.iloc[0][_c]).strip()
+                        break
+        except Exception:
+            pass
 
     # V16.124: si profesionales no trae documento, usar la cédula de la sesión activa.
     if not documento_profesional_inf:
@@ -27286,106 +27279,96 @@ def modulo_informe_mensual_profesional_piloto_v1627(modo_final_ivan=False):
         )
         return tmp.loc[mascara].copy()
 
-    # Detecta las tablas reales existentes en esta instalación.
-    tablas_pai = [t for t in tablas if "pai" in t.lower()]
-    tablas_seg = [
-        t for t in tablas
-        if any(k in t.lower() for k in ["seguimiento","intervencion"])
-        and "asistencia" not in t.lower()
-    ]
-
+    # V16.211 - PAI y seguimientos aplican únicamente al informe de profesionales.
+    # Dirección no realiza PAI y por tanto no consulta ni muestra estos indicadores.
     df_pai = pd.DataFrame()
-    fuente_pai = ""
-    for t in tablas_pai:
-        x = leer(t)
-        if not x.empty:
-            df_pai, fuente_pai = filtrar_periodo(x), t
-            break
-
     df_seg = pd.DataFrame()
+    fuente_pai = ""
     fuente_seg = ""
-    for t in tablas_seg:
-        x = leer(t)
-        if not x.empty:
-            df_seg, fuente_seg = filtrar_periodo(x), t
-            break
-
-    # Filtrar exclusivamente la gestión del profesional PAI asignado.
-    def filtrar_prof(df):
-        if df.empty:
-            return df
-
-        cp_id = col(df, ["profesional_id", "id_profesional"])
-        if cp_id and profesional_id_inf is not None:
-            ids = pd.to_numeric(df[cp_id], errors="coerce")
-            mask_id = ids.eq(pd.to_numeric(pd.Series([profesional_id_inf]), errors="coerce").iloc[0])
-            if mask_id.any():
-                return df.loc[mask_id].copy()
-
-        cp = col(
-            df,
-            ["profesional_responsable", "profesional", "profesional_referente",
-             "responsable", "registrado_por_nombre"]
-        )
-        if cp and nombre_profesional_inf:
-            s = df[cp].fillna("").astype(str).str.strip().str.upper()
-            mask = s.eq(nombre_profesional_inf.upper()) | s.str.contains(
-                nombre_profesional_inf.upper(), regex=False
-            )
-            if mask.any():
-                return df.loc[mask].copy()
-
-        # Si la tabla no identifica profesional, no atribuir registros ajenos.
-        return df.iloc[0:0].copy()
-
-    df_pai = filtrar_prof(df_pai)
-    df_seg = filtrar_prof(df_seg)
-
-    # V16.181: para el informe mensual usar las fuentes PAI reales y no una tabla
-    # elegida por coincidencia de nombre. Esto corrige seguimientos en 0 cuando
-    # sí existen novedades/intervenciones del profesional.
-    _pai_directo, _seg_directo = _cargar_pai_informe_profesional_v16181(
-        profesional_id_inf, nombre_profesional_inf, fecha_inicio, fecha_fin
-    )
-    if not _pai_directo.empty:
-        df_pai = _pai_directo
-        fuente_pai = "pai_objetivos"
-    else:
-        df_pai = _pai_directo
-        fuente_pai = "pai_objetivos"
-    if not _seg_directo.empty:
-        df_seg = _seg_directo
-        fuente_seg = "pai_novedades"
-    else:
-        df_seg = _seg_directo
-        fuente_seg = "pai_novedades"
-
     docs = set()
-    for df in [df_pai, df_seg]:
-        cd = col(df, ["numero_identificacion","documento","cedula"])
-        if cd:
-            docs.update(df[cd].dropna().astype(str).str.strip().tolist())
-    docs.discard("")
 
-    st.markdown("### 📊 Consolidado automático")
-    a,b,c,d = st.columns(4)
-    a.metric("PAI del período", len(df_pai))
-    b.metric("Seguimientos / intervenciones", len(df_seg))
-    c.metric("Personas únicas", len(docs))
-    d.metric("Fuentes detectadas", int(bool(fuente_pai)) + int(bool(fuente_seg)))
+    if not modo_final_ivan:
+        tablas_pai = [t for t in tablas if "pai" in t.lower()]
+        tablas_seg = [
+            t for t in tablas
+            if any(k in t.lower() for k in ["seguimiento","intervencion"])
+            and "asistencia" not in t.lower()
+        ]
 
-    with st.expander("🔎 Revisar registros que alimentan el informe"):
-        st.write("Fuente PAI:", fuente_pai or "No detectada")
-        st.write("Fuente seguimientos:", fuente_seg or "No detectada")
-        if not df_pai.empty:
-            st.dataframe(df_pai, use_container_width=True, hide_index=True)
-        if not df_seg.empty:
-            st.dataframe(df_seg, use_container_width=True, hide_index=True)
+        for t in tablas_pai:
+            x = leer(t)
+            if not x.empty:
+                df_pai, fuente_pai = filtrar_periodo(x), t
+                break
 
-    st.markdown("### 👤 Profesional responsable del informe")
+        for t in tablas_seg:
+            x = leer(t)
+            if not x.empty:
+                df_seg, fuente_seg = filtrar_periodo(x), t
+                break
+
+        def filtrar_prof(df):
+            if df.empty:
+                return df
+            cp_id = col(df, ["profesional_id", "id_profesional"])
+            if cp_id and profesional_id_inf is not None:
+                ids = pd.to_numeric(df[cp_id], errors="coerce")
+                objetivo_id = pd.to_numeric(
+                    pd.Series([profesional_id_inf]), errors="coerce"
+                ).iloc[0]
+                mask_id = ids.eq(objetivo_id)
+                if mask_id.any():
+                    return df.loc[mask_id].copy()
+            cp = col(
+                df,
+                ["profesional_responsable", "profesional", "profesional_referente",
+                 "responsable", "registrado_por_nombre"]
+            )
+            if cp and nombre_profesional_inf:
+                s = df[cp].fillna("").astype(str).str.strip().str.upper()
+                mask = s.eq(nombre_profesional_inf.upper()) | s.str.contains(
+                    nombre_profesional_inf.upper(), regex=False
+                )
+                if mask.any():
+                    return df.loc[mask].copy()
+            return df.iloc[0:0].copy()
+
+        df_pai = filtrar_prof(df_pai)
+        df_seg = filtrar_prof(df_seg)
+
+        _pai_directo, _seg_directo = _cargar_pai_informe_profesional_v16181(
+            profesional_id_inf, nombre_profesional_inf, fecha_inicio, fecha_fin
+        )
+        df_pai = _pai_directo
+        df_seg = _seg_directo
+        fuente_pai = "pai_objetivos"
+        fuente_seg = "pai_novedades"
+
+        for df in [df_pai, df_seg]:
+            cd = col(df, ["numero_identificacion","documento","cedula"])
+            if cd:
+                docs.update(df[cd].dropna().astype(str).str.strip().tolist())
+        docs.discard("")
+
+        st.markdown("### 📊 Consolidado automático")
+        a,b,c,d = st.columns(4)
+        a.metric("PAI del período", len(df_pai))
+        b.metric("Seguimientos / intervenciones", len(df_seg))
+        c.metric("Personas únicas", len(docs))
+        d.metric("Fuentes detectadas", int(bool(fuente_pai)) + int(bool(fuente_seg)))
+
+        with st.expander("🔎 Revisar registros que alimentan el informe"):
+            st.write("Fuente PAI:", fuente_pai or "No detectada")
+            st.write("Fuente seguimientos:", fuente_seg or "No detectada")
+            if not df_pai.empty:
+                st.dataframe(df_pai, use_container_width=True, hide_index=True)
+            if not df_seg.empty:
+                st.dataframe(df_seg, use_container_width=True, hide_index=True)
+
+    st.markdown("### 👤 Responsable del informe" if modo_final_ivan else "### 👤 Profesional responsable del informe")
     st.success(f"**{nombre_profesional_inf}**")
     if rol_profesional_inf:
-        st.caption(f"Perfil PAI: {rol_profesional_inf}")
+        st.caption((f"Perfil: {rol_profesional_inf}") if modo_final_ivan else (f"Perfil PAI: {rol_profesional_inf}"))
 
     # Nombre y documento no son editables: provienen de la asignación profesional.
     nombre = nombre_profesional_inf
@@ -27427,25 +27410,32 @@ def modulo_informe_mensual_profesional_piloto_v1627(modo_final_ivan=False):
 
     # V16.180 - Evidencia transversal: no depende de que el texto contractual
     # mencione literalmente un código (por ejemplo 2.1.1).
-    gestion_auto_v16180 = _resumen_gestion_automatica_v16180(
-        documento, fecha_inicio, fecha_fin
-    )
-    st.markdown("### 🧩 Gestión automática registrada en el Observatorio")
-    st.caption(
-        "Este bloque consolida trabajo verificable del período. Incluye todas las acciones "
-        "de Política Pública —también 2.1.1 cuando exista— y las tareas de caracterización "
-        "asignadas/completadas. La redacción se construye únicamente con registros existentes."
-    )
-    if gestion_auto_v16180["actividades"]:
-        st.success(gestion_auto_v16180["actividades"])
+    if modo_final_ivan:
+        # Dirección no recibe tareas profesionales ni genera PAI.
+        gestion_auto_v16180 = {
+            "actividades": "",
+            "pp": pd.DataFrame(),
+            "tareas": pd.DataFrame(),
+        }
     else:
-        st.info("No se encontró gestión automática adicional para este profesional y período.")
-    if not gestion_auto_v16180["pp"].empty:
-        with st.expander("📋 Ver todas las acciones de Política Pública del período"):
-            st.dataframe(gestion_auto_v16180["pp"], use_container_width=True, hide_index=True)
-    if not gestion_auto_v16180["tareas"].empty:
-        with st.expander("📌 Ver tareas de caracterización asignadas/completadas"):
-            st.dataframe(gestion_auto_v16180["tareas"], use_container_width=True, hide_index=True)
+        gestion_auto_v16180 = _resumen_gestion_automatica_v16180(
+            documento, fecha_inicio, fecha_fin
+        )
+        st.markdown("### 🧩 Gestión automática registrada en el Observatorio")
+        st.caption(
+            "Este bloque consolida trabajo verificable del período. Incluye todas las acciones "
+            "de Política Pública y las tareas de caracterización asignadas/completadas."
+        )
+        if gestion_auto_v16180["actividades"]:
+            st.success(gestion_auto_v16180["actividades"])
+        else:
+            st.info("No se encontró gestión automática adicional para este profesional y período.")
+        if not gestion_auto_v16180["pp"].empty:
+            with st.expander("📋 Ver todas las acciones de Política Pública del período"):
+                st.dataframe(gestion_auto_v16180["pp"], use_container_width=True, hide_index=True)
+        if not gestion_auto_v16180["tareas"].empty:
+            with st.expander("📌 Ver tareas de caracterización asignadas/completadas"):
+                st.dataframe(gestion_auto_v16180["tareas"], use_container_width=True, hide_index=True)
 
     # V16.210 - Gestión propia de Dirección: tareas que Iván asignó al personal.
     tareas_direccion_v16210 = pd.DataFrame()
@@ -27735,12 +27725,29 @@ def modulo_informe_mensual_profesional_piloto_v1627(modo_final_ivan=False):
             ("VALIGN",(0,0),(-1,-1),"TOP")
         ]))
         story += [t, Spacer(1,8)]
-        inds = [
-            ["Indicador","Resultado"],
-            ["PAI registrados",str(len(df_pai))],
-            ["Seguimientos / intervenciones",str(len(df_seg))],
-            ["Personas únicas",str(len(docs))]
-        ]
+        if modo_final_ivan:
+            # V16.211 - Indicadores propios de Dirección; nunca PAI.
+            estados_dir = (
+                tareas_direccion_v16210["Estado"].fillna("").astype(str).str.upper().str.strip()
+                if isinstance(tareas_direccion_v16210, pd.DataFrame)
+                and not tareas_direccion_v16210.empty
+                and "Estado" in tareas_direccion_v16210.columns
+                else pd.Series(dtype=str)
+            )
+            inds = [
+                ["Indicador de gestión de Dirección","Resultado"],
+                ["Tareas asignadas al talento humano", str(len(tareas_direccion_v16210))],
+                ["Tareas completadas", str(int(estados_dir.eq("COMPLETADA").sum()))],
+                ["Tareas en proceso", str(int(estados_dir.eq("EN PROCESO").sum()))],
+                ["Tareas pendientes", str(int(estados_dir.eq("PENDIENTE").sum()))],
+            ]
+        else:
+            inds = [
+                ["Indicador","Resultado"],
+                ["PAI registrados",str(len(df_pai))],
+                ["Seguimientos / intervenciones",str(len(df_seg))],
+                ["Personas únicas",str(len(docs))]
+            ]
         ti = Table(inds, colWidths=[11*cm,6*cm])
         ti.setStyle(TableStyle([
             ("GRID",(0,0),(-1,-1),0.35,colors.grey),
@@ -29016,6 +29023,11 @@ elif st.session_state.page == "pai_portabilidad_tarea_v16197":
     st.stop()
 
 elif st.session_state.page == "mis_tareas_profesional_v16171":
+    # V16.211 - Dirección no tiene bandeja de tareas profesionales.
+    if "".join(ch for ch in str(st.session_state.get("documento_funcionario", "") or "") if ch.isdigit()) == "16225865":
+        st.session_state.page = "home"
+        st.info("El perfil de Dirección no tiene tareas profesionales asignadas.")
+        st.rerun()
 
     if rol_router not in ["PROFESIONAL", "COORDINACION", "MANAGER"]:
         st.error("No tiene permisos para este módulo.")
