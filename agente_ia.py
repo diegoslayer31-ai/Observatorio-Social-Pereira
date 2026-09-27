@@ -1513,6 +1513,151 @@ def _completar_tarea_automatica_v16171(documento, tipo_tarea, evidencia=""):
         return 0
 
 
+# ============================================================
+# V16.207 - SINCRONIZACIÓN TAREA PORTABILIDAD <-> SEGUIMIENTO PAI
+# ============================================================
+def _texto_confirma_portabilidad_realizada_v16207(*textos):
+    """Detecta únicamente expresiones explícitas de portabilidad ya realizada.
+
+    No cierra por menciones genéricas como solicitud, trámite, pendiente o seguimiento.
+    """
+    combinado = " ".join(str(t or "") for t in textos).strip().lower()
+    if not combinado:
+        return False
+    # Evitar cierres ante negaciones explícitas frecuentes.
+    negaciones = [
+        "no se realiza portabilidad",
+        "no se realizó portabilidad",
+        "no fue realizada la portabilidad",
+        "portabilidad no realizada",
+    ]
+    if any(x in combinado for x in negaciones):
+        return False
+    confirmaciones = [
+        "se realiza portabilidad",
+        "se realizó portabilidad",
+        "portabilidad realizada",
+        "portabilidad fue realizada",
+        "portabilidad efectiva",
+        "portabilidad activada",
+        "se hizo portabilidad",
+    ]
+    return any(x in combinado for x in confirmaciones)
+
+
+def _cerrar_tarea_portabilidad_por_seguimiento_v16207(
+    documento, objetivo_id, actividad="", descripcion="", evidencia=""
+):
+    """Cierra SOLO la tarea PORTABILIDAD_SALUD del profesional autenticado
+    cuando el seguimiento del objetivo Portabilidad en salud confirma que ya se realizó.
+    """
+    doc = limpiar_documento(documento)
+    cc = limpiar_documento(st.session_state.get("documento_funcionario", ""))
+    usuario = st.session_state.get("usuario_actual", "sistema")
+    if not doc or not cc or not objetivo_id:
+        return 0
+    if not _texto_confirma_portabilidad_realizada_v16207(actividad, descripcion, evidencia):
+        return 0
+    try:
+        with engine.begin() as conn:
+            objetivo = conn.execute(text("""
+                SELECT objetivo_tipo
+                FROM pai_objetivos
+                WHERE id=:id
+                  AND TRIM(CAST(documento_usuario AS TEXT))=:doc
+                LIMIT 1
+            """), {"id": int(objetivo_id), "doc": doc}).scalar()
+            if str(objetivo or "").strip().upper() != "PORTABILIDAD EN SALUD":
+                return 0
+
+            filas = conn.execute(text("""
+                UPDATE tareas_profesionales
+                   SET estado='COMPLETADA',
+                       fecha_inicio=COALESCE(fecha_inicio, NOW()),
+                       fecha_completada=NOW(),
+                       completado_por=:usuario,
+                       evidencia=:evidencia,
+                       actualizado_en=NOW()
+                 WHERE tipo_tarea='PORTABILIDAD_SALUD'
+                   AND REGEXP_REPLACE(UPPER(TRIM(CAST(numero_identificacion AS TEXT))), '[^A-Z0-9]', '', 'g')
+                       = REGEXP_REPLACE(UPPER(TRIM(CAST(:doc AS TEXT))), '[^A-Z0-9]', '', 'g')
+                   AND REGEXP_REPLACE(UPPER(TRIM(CAST(profesional_cedula AS TEXT))), '[^A-Z0-9]', '', 'g')
+                       = REGEXP_REPLACE(UPPER(TRIM(CAST(:cc AS TEXT))), '[^A-Z0-9]', '', 'g')
+                   AND UPPER(COALESCE(estado,'')) IN ('PENDIENTE','EN PROCESO')
+                RETURNING id
+            """), {
+                "doc": doc,
+                "cc": cc,
+                "usuario": usuario,
+                "evidencia": (
+                    f"Seguimiento PAI objetivo #{int(objetivo_id)} confirma portabilidad realizada. "
+                    f"{str(descripcion or '').strip()}"
+                )[:1000],
+            }).fetchall()
+        if filas:
+            registrar_auditoria(
+                "COMPLETAR_TAREA_PORTABILIDAD",
+                documento=doc,
+                modulo="Tareas Profesionales / PAI",
+                valor_nuevo="PORTABILIDAD_SALUD - COMPLETADA",
+                observacion=f"Cierre automático por seguimiento PAI. Tarea(s): {[r[0] for r in filas]}",
+            )
+        return len(filas)
+    except Exception:
+        return 0
+
+
+def _reconciliar_portabilidades_ya_realizadas_v16207():
+    """Corrige tareas antiguas abiertas del profesional cuando ya existe en PAI
+    un seguimiento explícito que confirma que la portabilidad fue realizada.
+    """
+    cc = limpiar_documento(st.session_state.get("documento_funcionario", ""))
+    if not cc:
+        return 0
+    try:
+        candidatos = pd.read_sql(text("""
+            SELECT DISTINCT
+                   t.id AS tarea_id,
+                   t.numero_identificacion,
+                   o.id AS objetivo_id,
+                   n.tipo_novedad,
+                   n.descripcion,
+                   n.evidencia
+            FROM tareas_profesionales t
+            JOIN pai_objetivos o
+              ON TRIM(CAST(o.documento_usuario AS TEXT))=TRIM(CAST(t.numero_identificacion AS TEXT))
+             AND UPPER(TRIM(COALESCE(o.objetivo_tipo,'')))='PORTABILIDAD EN SALUD'
+            JOIN pai_novedades n ON n.id_objetivo=o.id
+            WHERE t.tipo_tarea='PORTABILIDAD_SALUD'
+              AND UPPER(COALESCE(t.estado,'')) IN ('PENDIENTE','EN PROCESO')
+              AND REGEXP_REPLACE(UPPER(TRIM(CAST(t.profesional_cedula AS TEXT))), '[^A-Z0-9]', '', 'g')
+                  = REGEXP_REPLACE(UPPER(TRIM(CAST(:cc AS TEXT))), '[^A-Z0-9]', '', 'g')
+            ORDER BY t.id, o.id
+        """), engine, params={"cc": cc})
+        if candidatos.empty:
+            return 0
+        total = 0
+        vistos = set()
+        for _, r in candidatos.iterrows():
+            tid = int(r["tarea_id"])
+            if tid in vistos:
+                continue
+            if _texto_confirma_portabilidad_realizada_v16207(
+                r.get("tipo_novedad"), r.get("descripcion"), r.get("evidencia")
+            ):
+                total += _cerrar_tarea_portabilidad_por_seguimiento_v16207(
+                    r.get("numero_identificacion"),
+                    int(r["objetivo_id"]),
+                    r.get("tipo_novedad"),
+                    r.get("descripcion"),
+                    r.get("evidencia"),
+                )
+                vistos.add(tid)
+        return total
+    except Exception:
+        return 0
+
+
 def gestion_usuarios():
 
     st.title("👥 Gestión Integral de Usuarios")
@@ -13741,9 +13886,18 @@ def panel_profesional_v15(doc_forzado=None, incrustado=False):
                     except Exception:
                         pass
 
+                    _n_port_cerradas = _cerrar_tarea_portabilidad_por_seguimiento_v16207(
+                        str(doc_sel),
+                        int(objetivo_seg),
+                        actividad.strip(),
+                        descripcion_seg.strip(),
+                        evidencia.strip(),
+                    )
+
                     st.success(
                         f"✅ Seguimiento registrado para "
                         f"{nombre_usuario} · CC {doc_sel}."
+                        + (" La tarea de Portabilidad en Salud quedó COMPLETADA." if _n_port_cerradas else "")
                     )
                     st.rerun()
 
@@ -28074,6 +28228,9 @@ def mis_tareas_profesional_v16171():
     st.caption("Aquí aparecen las tareas asignadas. Las remisiones de Portabilidad en Salud se gestionan desde esta bandeja y se relacionan con el objetivo PAI correspondiente.")
     try: _asegurar_tareas_caracterizacion_v16171()
     except Exception as e: st.error(f"No fue posible preparar las tareas: {e}"); return
+    # V16.207: antes de mostrar la bandeja, reconciliar tareas antiguas que
+    # ya tienen un seguimiento PAI explícito de portabilidad realizada.
+    _reconciliar_portabilidades_ya_realizadas_v16207()
     cc=limpiar_documento(st.session_state.get("documento_funcionario",""))
     df=pd.read_sql(text("""
         SELECT t.*, TRIM(COALESCE(h.nombres,'') || ' ' || COALESCE(h.apellidos,'')) AS nombre_usuario, COALESCE(h.modalidad,'') AS modalidad
