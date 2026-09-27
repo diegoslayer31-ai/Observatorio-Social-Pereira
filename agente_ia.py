@@ -299,6 +299,45 @@ def cargar_habitante_completo_v16205():
     return pd.read_sql(text('SELECT * FROM habitante_de_calle'), engine)
 
 @st.cache_data(ttl=60, show_spinner=False)
+def cargar_indice_usuarios_v16206():
+    """Índice liviano para búsquedas/listados operativos.
+
+    V16.206: evita descargar la caracterización completa cuando solo se
+    necesitan datos básicos para identificar y seleccionar una persona.
+    No reemplaza la ficha completa en módulos que sí requieren caracterización.
+    """
+    return pd.read_sql(
+        text("""
+            SELECT
+                numero_identificacion,
+                nombres,
+                apellidos,
+                edad,
+                estado_caso,
+                modalidad
+            FROM habitante_de_calle
+            ORDER BY nombres, apellidos
+        """),
+        engine
+    )
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def columnas_habitante_v16206():
+    """Columnas reales de habitante_de_calle con caché de esquema."""
+    cols = pd.read_sql(
+        text("""
+            SELECT column_name
+            FROM information_schema.columns
+            WHERE table_schema='public'
+              AND table_name='habitante_de_calle'
+        """),
+        engine
+    )
+    return set(cols["column_name"].astype(str).tolist())
+
+
+@st.cache_data(ttl=60, show_spinner=False)
 def cargar_tabla(nombre_tabla: str):
     """Carga una tabla completa con caché corta para reducir consultas repetidas."""
     tablas_permitidas = {
@@ -855,6 +894,10 @@ def invalidar_cache_datos():
         pass
     try:
         cargar_habitante_completo_v16205.clear()
+    except Exception:
+        pass
+    try:
+        cargar_indice_usuarios_v16206.clear()
     except Exception:
         pass
 
@@ -6402,17 +6445,9 @@ def gestion_usuarios_movil():
         )
 
         # Leer columnas reales de habitante_de_calle
-        cols_h = set(
-            pd.read_sql(
-                text("""
-                    SELECT column_name
-                    FROM information_schema.columns
-                    WHERE table_schema='public'
-                      AND table_name='habitante_de_calle'
-                """),
-                engine
-            )["column_name"].tolist()
-        )
+        # V16.206: el esquema cambia muy poco; reutilizarlo evita consultar
+        # information_schema en cada rerun del formulario móvil.
+        cols_h = set(columnas_habitante_v16206())
 
         def col_h(*candidatas):
             for c in candidatas:
@@ -6796,31 +6831,31 @@ def gestion_usuarios_movil():
         st.warning("Digite al menos 2 caracteres.")
         return
 
-    patron = f"%{termino.strip()}%"
+    # V16.206 - Búsqueda con datos mínimos necesarios.
+    # Se reutiliza durante 60 s un índice de solo 6 columnas; escribir letras
+    # en el buscador ya no dispara una consulta SQL distinta por cada rerun.
+    df_indice_movil = cargar_indice_usuarios_v16206().copy()
+    termino_busqueda = termino.strip()
 
-    df_resultados = pd.read_sql(
-        text("""
-            SELECT
-                numero_identificacion,
-                nombres,
-                apellidos,
-                edad,
-                estado_caso,
-                modalidad
-            FROM habitante_de_calle
-            WHERE CAST(numero_identificacion AS TEXT) ILIKE :patron
-               OR COALESCE(nombres,'') ILIKE :patron
-               OR COALESCE(apellidos,'') ILIKE :patron
-               OR (
-                    COALESCE(nombres,'') || ' ' ||
-                    COALESCE(apellidos,'')
-                  ) ILIKE :patron
-            ORDER BY nombres, apellidos
-            LIMIT 20
-        """),
-        engine,
-        params={"patron": patron}
-    )
+    if df_indice_movil.empty:
+        df_resultados = df_indice_movil
+    else:
+        doc_s = df_indice_movil["numero_identificacion"].fillna("").astype(str)
+        nom_s = df_indice_movil["nombres"].fillna("").astype(str)
+        ape_s = df_indice_movil["apellidos"].fillna("").astype(str)
+        completo_s = (nom_s.str.strip() + " " + ape_s.str.strip()).str.strip()
+        mascara = (
+            doc_s.str.contains(termino_busqueda, case=False, regex=False)
+            | nom_s.str.contains(termino_busqueda, case=False, regex=False)
+            | ape_s.str.contains(termino_busqueda, case=False, regex=False)
+            | completo_s.str.contains(termino_busqueda, case=False, regex=False)
+        )
+        df_resultados = (
+            df_indice_movil.loc[mascara]
+            .sort_values(["nombres", "apellidos"], na_position="last")
+            .head(20)
+            .copy()
+        )
 
     if df_resultados.empty:
         st.warning("No se encontraron usuarios.")
