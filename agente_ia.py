@@ -322,6 +322,24 @@ def cargar_indice_usuarios_v16206():
     )
 
 
+@st.cache_data(ttl=60, show_spinner=False)
+def cargar_ficha_usuario_v16213(documento):
+    """V16.213: carga la ficha completa únicamente de la persona seleccionada."""
+    doc = limpiar_documento(documento)
+    if not doc:
+        return pd.DataFrame()
+    return pd.read_sql(
+        text("""
+            SELECT *
+            FROM habitante_de_calle
+            WHERE TRIM(CAST(numero_identificacion AS TEXT)) = :doc
+            LIMIT 1
+        """),
+        engine,
+        params={"doc": doc}
+    )
+
+
 @st.cache_data(ttl=300, show_spinner=False)
 def columnas_habitante_v16206():
     """Columnas reales de habitante_de_calle con caché de esquema."""
@@ -898,6 +916,10 @@ def invalidar_cache_datos():
         pass
     try:
         cargar_indice_usuarios_v16206.clear()
+    except Exception:
+        pass
+    try:
+        cargar_ficha_usuario_v16213.clear()
     except Exception:
         pass
 
@@ -1795,9 +1817,45 @@ def gestion_usuarios():
     }
 
     # ========================================================
-    # BASE GENERAL
+    # BASE GENERAL - V16.213 OPTIMIZACIÓN EGRESS
     # ========================================================
-    df_gestion = cargar_habitante_completo_v16205().copy()
+    # Gestión Usuarios ya NO descarga SELECT * de toda habitante_de_calle.
+    # Solo trae los campos necesarios para listado, indicadores y seguimiento
+    # general de caracterización. La ficha completa se consulta únicamente
+    # cuando se selecciona una persona.
+    _cols_resumen_v16213 = [
+        "numero_identificacion", "nombres", "apellidos",
+        "edad", "sexo_al_nacer", "estado_caso", "modalidad"
+    ]
+    for _c_v16213 in [
+        C["salud"], C["procedencia"], C["consumo"], C["sisben"],
+        C["discapacidad"], C["categoria_discapacidad"],
+        C["cabeza_familia"], C["gestante"], C["migracion"], C["etnia"],
+        C["educacion"], C["ocupacion"], C["barrio"], C["comuna"],
+        C["zona"], C["direccion"], C["telefono"], C["correo"],
+        C["orientacion"], C["poblacion"], C["enfermedad_mental"],
+        C["fecha_ingreso"], C["numero_atenciones"]
+    ]:
+        if _c_v16213 and _c_v16213 in columnas_bd and _c_v16213 not in _cols_resumen_v16213:
+            _cols_resumen_v16213.append(_c_v16213)
+
+    _cols_resumen_v16213 = [
+        c for c in _cols_resumen_v16213 if c in columnas_bd
+    ]
+    _sql_cols_v16213 = ", ".join(f'"{c}"' for c in _cols_resumen_v16213)
+
+    @st.cache_data(ttl=60, show_spinner=False)
+    def _cargar_resumen_gestion_v16213(_sql_cols):
+        return pd.read_sql(
+            text(f"""
+                SELECT {_sql_cols}
+                FROM habitante_de_calle
+                ORDER BY nombres, apellidos
+            """),
+            engine
+        )
+
+    df_gestion = _cargar_resumen_gestion_v16213(_sql_cols_v16213).copy()
     if not df_gestion.empty and {"nombres", "apellidos"}.issubset(df_gestion.columns):
         df_gestion = df_gestion.sort_values(["nombres", "apellidos"], na_position="last")
 
@@ -1932,8 +1990,16 @@ def gestion_usuarios():
             )
         )
 
-        persona = df_gestion.loc[indice_usuario]
-        documento = str(persona["numero_identificacion"]).strip()
+        persona_resumen_v16213 = df_gestion.loc[indice_usuario]
+        documento = str(persona_resumen_v16213["numero_identificacion"]).strip()
+
+        # V16.213: ficha completa únicamente de la persona elegida.
+        _ficha_v16213 = cargar_ficha_usuario_v16213(documento)
+        persona = (
+            _ficha_v16213.iloc[0]
+            if not _ficha_v16213.empty
+            else persona_resumen_v16213
+        )
 
         # PAI breve
         try:
@@ -4421,8 +4487,16 @@ def gestion_usuarios():
                 )
             )
 
-        persona_car = df_gestion.loc[indice_car]
-        doc_car = str(persona_car["numero_identificacion"]).strip()
+        persona_car_resumen_v16213 = df_gestion.loc[indice_car]
+        doc_car = str(persona_car_resumen_v16213["numero_identificacion"]).strip()
+
+        # V16.213: el formulario necesita la ficha completa, pero solo de esta persona.
+        _ficha_car_v16213 = cargar_ficha_usuario_v16213(doc_car)
+        persona_car = (
+            _ficha_car_v16213.iloc[0]
+            if not _ficha_car_v16213.empty
+            else persona_car_resumen_v16213
+        )
 
         # V16.78 - La ficha individual usa EXACTAMENTE el mismo cálculo
         # que el listado general de seguimiento.
