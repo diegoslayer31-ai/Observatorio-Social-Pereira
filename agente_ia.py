@@ -16171,6 +16171,16 @@ with st.sidebar:
     # V16.158 - Acceso directo por cédula para profesionales autorizados aunque
     # su rol en funcionarios_sistema esté parametrizado de otra forma.
     _doc_menu_v16157 = str(st.session_state.get("documento_funcionario", "")).strip()
+    # V16.208 - Informe final contractual exclusivo de Iván Rendón Giraldo.
+    if _solo_digitos_v16124(_doc_menu_v16157) == "16225865":
+        if st.button(
+            "📘 Mi Informe Final",
+            use_container_width=True,
+            key="btn_informe_final_ivan_v16208"
+        ):
+            st.session_state.page = "informe_final_ivan_v16208"
+            st.rerun()
+
     if (
         _doc_menu_v16157 in COMITE_CASOS_DOCUMENTOS_AUTORIZADOS_V16157
         and str(rol_menu).upper().strip() != "PROFESIONAL"
@@ -27033,33 +27043,61 @@ def _actividad_automatica_obligacion_v16181(ev_auto):
         return f"Se realizaron o actualizaron {len(df)} caracterización(es) psicosocial(es) verificables, correspondientes a {int(personas)} persona(s) única(s)."
     return ""
 
-def modulo_informe_mensual_profesional_piloto_v1627():
-    st.title("📄 Informe Mensual Profesional")
-    st.caption("Piloto para consolidar PAI, seguimientos y gestión mensual del profesional.")
+def modulo_informe_mensual_profesional_piloto_v1627(modo_final_ivan=False):
+    if modo_final_ivan:
+        st.title("📘 Informe Final de Gestión – Dirección del Programa")
+        st.caption(
+            "Informe final contractual de IVÁN RENDÓN GIRALDO · CC 16225865 · "
+            "Período contractual 11/09/2026 al 10/11/2026."
+        )
+        fecha_inicio = date(2026, 9, 11)
+        fecha_fin = date(2026, 11, 10)
+        st.info("📅 Período contractual fijo: 11/09/2026 al 10/11/2026.")
+    else:
+        st.title("📄 Informe Mensual Profesional")
+        st.caption("Piloto para consolidar PAI, seguimientos y gestión mensual del profesional.")
 
-    hoy = datetime.today().date()
-    inicio_mes = hoy.replace(day=1)
-    c1, c2 = st.columns(2)
-    with c1:
-        fecha_inicio = st.date_input("Fecha inicial", inicio_mes, key="imp_fecha_ini")
-    with c2:
-        fecha_fin = st.date_input("Fecha final", hoy, key="imp_fecha_fin")
-    if fecha_inicio > fecha_fin:
-        st.error("La fecha inicial no puede ser posterior a la fecha final.")
-        return
+        hoy = datetime.today().date()
+        inicio_mes = hoy.replace(day=1)
+        c1, c2 = st.columns(2)
+        with c1:
+            fecha_inicio = st.date_input("Fecha inicial", inicio_mes, key="imp_fecha_ini")
+        with c2:
+            fecha_fin = st.date_input("Fecha final", hoy, key="imp_fecha_fin")
+        if fecha_inicio > fecha_fin:
+            st.error("La fecha inicial no puede ser posterior a la fecha final.")
+            return
 
-    # El informe pertenece al PROFESIONAL PAI asignado, no al usuario que inició sesión.
     profesional_pai = _profesional_actual_v15()
     if not profesional_pai:
-        st.error(
-            "No se encontró un profesional PAI asociado a este acceso. "
-            "Debe existir la asignación en pai_profesional_funcionario."
-        )
-        return
+        if modo_final_ivan and _solo_digitos_v16124(
+            st.session_state.get("documento_funcionario", "")
+        ) == "16225865":
+            profesional_pai = {
+                "profesional_id": None,
+                "nombre": "IVAN RENDON GIRALDO",
+                "rol": "DIRECTOR",
+            }
+        else:
+            st.error(
+                "No se encontró un profesional PAI asociado a este acceso. "
+                "Debe existir la asignación en pai_profesional_funcionario."
+            )
+            return
 
     profesional_id_inf = profesional_pai.get("profesional_id")
     nombre_profesional_inf = str(profesional_pai.get("nombre") or "").strip()
     rol_profesional_inf = str(profesional_pai.get("rol") or "").strip()
+
+    if modo_final_ivan:
+        documento_sesion = _solo_digitos_v16124(
+            st.session_state.get("documento_funcionario", "")
+        )
+        if documento_sesion != "16225865":
+            st.error("Este informe final está habilitado únicamente para IVÁN RENDÓN GIRALDO.")
+            return
+        nombre_profesional_inf = "IVAN RENDON GIRALDO"
+        rol_profesional_inf = "DIRECTOR"
 
     # Documento del profesional, si está disponible en la tabla profesionales.
     documento_profesional_inf = ""
@@ -27082,6 +27120,9 @@ def modulo_informe_mensual_profesional_piloto_v1627():
         documento_profesional_inf = str(
             st.session_state.get("documento_funcionario", "") or ""
         ).strip()
+
+    if modo_final_ivan:
+        documento_profesional_inf = "16225865"
 
     contrato_individual = _contrato_individual_v16124(
         documento_profesional_inf, nombre_profesional_inf
@@ -27474,7 +27515,7 @@ def modulo_informe_mensual_profesional_piloto_v1627():
             "Resultados cuantitativos consolidados automáticamente a partir de los registros del sistema."
         ])
 
-    st.markdown("### 🧠 Síntesis profesional")
+    st.markdown("### 🧠 Síntesis final de gestión" if modo_final_ivan else "### 🧠 Síntesis profesional")
     analisis = st.text_area("Análisis del período", height=140, key="imp_analisis")
     compromisos = st.text_area("Compromisos / acciones siguientes", height=100, key="imp_compromisos")
 
@@ -27529,7 +27570,7 @@ def modulo_informe_mensual_profesional_piloto_v1627():
         body = ParagraphStyle("body", parent=ss["BodyText"], fontSize=7.6, leading=9.5)
         story = [
             Paragraph("ASOCIACIÓN CIUDAD FUTURO", tit),
-            Paragraph("INFORME MENSUAL PROFESIONAL", tit),
+            Paragraph("INFORME FINAL DE GESTIÓN - DIRECCIÓN DEL PROGRAMA" if modo_final_ivan else "INFORME MENSUAL PROFESIONAL", tit),
             Spacer(1,6)
         ]
         ident = [
@@ -28761,6 +28802,10 @@ if st.session_state.get("autenticado"):
 rol_router = str(
     st.session_state.get("rol_actual", "")
 ).upper().strip()
+
+if st.session_state.page == "informe_final_ivan_v16208":
+    modulo_informe_mensual_profesional_piloto_v1627(modo_final_ivan=True)
+    st.stop()
 
 if st.session_state.page == "informe_mensual_profesional_v1627":
     modulo_informe_mensual_profesional_piloto_v1627()
