@@ -16171,8 +16171,11 @@ with st.sidebar:
     # V16.158 - Acceso directo por cédula para profesionales autorizados aunque
     # su rol en funcionarios_sistema esté parametrizado de otra forma.
     _doc_menu_v16157 = str(st.session_state.get("documento_funcionario", "")).strip()
-    # V16.208 - Informe final contractual exclusivo de Iván Rendón Giraldo.
-    if _solo_digitos_v16124(_doc_menu_v16157) == "16225865":
+    # V16.209 - Informe final contractual exclusivo de Iván Rendón Giraldo.
+    # Aquí no usamos _solo_digitos_v16124 porque esa función se define más adelante
+    # en el archivo y el menú se ejecuta antes durante la carga de Streamlit.
+    _doc_ivan_v16209 = "".join(ch for ch in _doc_menu_v16157 if ch.isdigit())
+    if _doc_ivan_v16209 == "16225865":
         if st.button(
             "📘 Mi Informe Final",
             use_container_width=True,
