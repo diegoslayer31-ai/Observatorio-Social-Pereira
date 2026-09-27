@@ -26906,6 +26906,214 @@ def _resumen_tareas_direccion_v16210(df):
     )
 
 
+
+# ============================================================
+# V16.212 - REPORTE DEL OBSERVATORIO PARA DIRECCIÓN
+# Indicadores de población ACTIVA + movimientos del período.
+# SOLO LECTURA: no crea, actualiza ni elimina registros.
+# ============================================================
+def _reporte_observatorio_direccion_v16212(fecha_inicio, fecha_fin):
+    """
+    Consolida indicadores reales de la población que figura ACTIVA al momento
+    de generar el informe y movimientos registrados dentro del período elegido.
+
+    Importante:
+    - La base principal conserva el estado ACTUAL de cada persona.
+    - Por eso el corte poblacional se rotula expresamente como "corte actual".
+    - Los movimientos sí se filtran exactamente entre fecha_inicio y fecha_fin.
+    """
+    salida = {
+        "activos": pd.DataFrame(),
+        "movimientos": pd.DataFrame(),
+        "resumen": {},
+        "distribuciones": {},
+        "texto": "",
+        "corte": ahora_colombia(),
+    }
+
+    try:
+        cols = columnas_habitante_v16206()
+    except Exception:
+        cols = set()
+
+    # Traer únicamente variables útiles para el reporte; nunca SELECT *.
+    candidatos = [
+        "numero_identificacion", "nombres", "apellidos", "modalidad",
+        "sexo_al_nacer", "edad", "adulto_mayor",
+        "tipo_seguridad_salud", "seguridad_salud", "eps",
+        "nivel_educativo", "condicion_ocupacional",
+        "personas_con_discapacidad", "categoria_discapacidad",
+        "grupos_etnicos", "grupos_etnicos_afro_indigena",
+        "experiencia_migratoria", "indicador_migracion",
+        "grupo_sisben",
+    ]
+    seleccion = [c for c in candidatos if c in cols]
+
+    # Estas columnas son las mínimas indispensables.
+    for obligatoria in ["numero_identificacion", "modalidad"]:
+        if obligatoria in cols and obligatoria not in seleccion:
+            seleccion.append(obligatoria)
+
+    if seleccion:
+        sql_cols = ", ".join(f'"{c}"' for c in seleccion)
+        try:
+            activos = pd.read_sql(
+                text(f"""
+                    SELECT {sql_cols}
+                    FROM habitante_de_calle
+                    WHERE UPPER(TRIM(COALESCE(estado_caso,'')))='ACTIVO'
+                """),
+                engine,
+            )
+        except Exception:
+            activos = pd.DataFrame()
+    else:
+        activos = pd.DataFrame()
+
+    salida["activos"] = activos
+
+    def _serie(columna):
+        if columna not in activos.columns:
+            return pd.Series(dtype=str)
+        s = activos[columna].fillna("").astype(str).str.strip()
+        return s
+
+    def _distribucion(columna, normalizador=None, excluir_vacios=True):
+        s = _serie(columna)
+        if s.empty:
+            return pd.DataFrame(columns=["Categoría", "Personas", "%"])
+        if normalizador:
+            s = s.map(normalizador)
+        else:
+            s = s.str.upper()
+        if excluir_vacios:
+            s = s[~s.isin(["", "NAN", "NONE", "NULL", "SIN INFORMACIÓN", "SIN INFORMACION"])]
+        if s.empty:
+            return pd.DataFrame(columns=["Categoría", "Personas", "%"])
+        vc = s.value_counts(dropna=False)
+        base = max(1, len(activos))
+        return pd.DataFrame({
+            "Categoría": vc.index.astype(str),
+            "Personas": vc.values.astype(int),
+            "%": (vc.values / base * 100).round(1),
+        })
+
+    total = int(len(activos))
+    modalidad = _serie("modalidad").str.upper()
+    urbano = int(modalidad.eq("URBANO").sum()) if not modalidad.empty else 0
+    granja = int(modalidad.eq("GRANJA").sum()) if not modalidad.empty else 0
+
+    resumen = {
+        "Total población activa": total,
+        "Urbano": urbano,
+        "Granja": granja,
+    }
+
+    # Sexo
+    if "sexo_al_nacer" in activos.columns:
+        salida["distribuciones"]["Sexo al nacer"] = _distribucion(
+            "sexo_al_nacer", normalizador=normalizar_sexo_institucional
+        )
+
+    # Edad y grupos etarios.
+    if "edad" in activos.columns:
+        edades = pd.to_numeric(activos["edad"], errors="coerce")
+        edad_valida = edades.dropna()
+        if not edad_valida.empty:
+            resumen["Edad promedio"] = round(float(edad_valida.mean()), 1)
+            grupos = pd.cut(
+                edades,
+                bins=[-1, 17, 28, 59, 10_000],
+                labels=["Menor de 18", "18 a 28", "29 a 59", "60 o más"],
+            )
+            vc = grupos.value_counts(sort=False, dropna=True)
+            salida["distribuciones"]["Grupos de edad"] = pd.DataFrame({
+                "Categoría": vc.index.astype(str),
+                "Personas": vc.values.astype(int),
+                "%": (vc.values / max(1, total) * 100).round(1),
+            })
+            resumen["Personas de 60 años o más"] = int((edades >= 60).sum())
+
+    # Variables de caracterización: usar solo la primera columna realmente existente.
+    grupos_variables = [
+        ("Aseguramiento / salud", ["tipo_seguridad_salud", "seguridad_salud", "eps"]),
+        ("Nivel educativo", ["nivel_educativo"]),
+        ("Condición ocupacional", ["condicion_ocupacional"]),
+        ("Discapacidad", ["personas_con_discapacidad", "categoria_discapacidad"]),
+        ("Grupo étnico", ["grupos_etnicos", "grupos_etnicos_afro_indigena"]),
+        ("Experiencia migratoria", ["experiencia_migratoria", "indicador_migracion"]),
+        ("Grupo SISBÉN", ["grupo_sisben"]),
+    ]
+    for titulo, opciones in grupos_variables:
+        col_real = next((c for c in opciones if c in activos.columns), None)
+        if col_real:
+            dist = _distribucion(col_real)
+            if not dist.empty:
+                salida["distribuciones"][titulo] = dist
+
+    # Movimientos ocurridos exactamente dentro del período seleccionado.
+    try:
+        movimientos = pd.read_sql(
+            text("""
+                SELECT
+                    UPPER(TRIM(COALESCE(tipo_movimiento,''))) AS tipo_movimiento,
+                    COUNT(*)::int AS cantidad
+                FROM movimientos_habitante
+                WHERE (fecha_movimiento AT TIME ZONE 'America/Bogota')::date
+                      BETWEEN :fi AND :ff
+                GROUP BY UPPER(TRIM(COALESCE(tipo_movimiento,'')))
+                ORDER BY cantidad DESC, tipo_movimiento
+            """),
+            engine,
+            params={"fi": fecha_inicio, "ff": fecha_fin},
+        )
+    except Exception:
+        movimientos = pd.DataFrame(columns=["tipo_movimiento", "cantidad"])
+
+    if not movimientos.empty:
+        movimientos = movimientos.rename(
+            columns={"tipo_movimiento": "Movimiento", "cantidad": "Cantidad"}
+        )
+    salida["movimientos"] = movimientos
+    salida["resumen"] = resumen
+
+    corte_txt = salida["corte"].strftime("%d/%m/%Y %I:%M %p")
+    texto = (
+        f"Reporte del Observatorio Social ASCF. Al momento de generar el informe "
+        f"({corte_txt}, hora Colombia), la base registra {total} persona(s) ACTIVA(S): "
+        f"{urbano} en modalidad URBANO y {granja} en modalidad GRANJA. "
+        f"Los movimientos operativos se consolidan exclusivamente para el período "
+        f"{fecha_inicio:%d/%m/%Y} al {fecha_fin:%d/%m/%Y}."
+    )
+    salida["texto"] = texto
+    return salida
+
+
+def _tabla_pdf_distribucion_v16212(titulo, df, Paragraph, Table, TableStyle, colors, body):
+    """Construye una tabla compacta para el PDF; retorna lista de flowables."""
+    if not isinstance(df, pd.DataFrame) or df.empty:
+        return []
+    elementos = [Paragraph(f"<b>{titulo}</b>", body)]
+    datos = [["Categoría", "Personas", "%"]]
+    for _, r in df.head(20).iterrows():
+        datos.append([
+            str(r.get("Categoría", "")),
+            str(r.get("Personas", "")),
+            str(r.get("%", "")),
+        ])
+    tabla = Table(datos, colWidths=[280, 80, 60])
+    tabla.setStyle(TableStyle([
+        ("GRID",(0,0),(-1,-1),0.25,colors.grey),
+        ("BACKGROUND",(0,0),(-1,0),colors.whitesmoke),
+        ("FONTNAME",(0,0),(-1,0),"Helvetica-Bold"),
+        ("FONTSIZE",(0,0),(-1,-1),7),
+        ("VALIGN",(0,0),(-1,-1),"TOP"),
+    ]))
+    elementos.append(tabla)
+    elementos.append(Spacer(1,5))
+    return elementos
+
+
 def _resumen_gestion_automatica_v16180(documento, fecha_inicio, fecha_fin):
     """Consolida evidencia verificable y redacta actividades sin inferir hechos no registrados."""
     pp = _evidencia_pp_profesional_v16125(documento, fecha_inicio, fecha_fin, codigos=None)
@@ -27365,6 +27573,59 @@ def modulo_informe_mensual_profesional_piloto_v1627(modo_final_ivan=False):
             if not df_seg.empty:
                 st.dataframe(df_seg, use_container_width=True, hide_index=True)
 
+    # V16.212 - Reportes del Observatorio propios del alcance de Dirección.
+    reporte_obs_v16212 = {
+        "activos": pd.DataFrame(),
+        "movimientos": pd.DataFrame(),
+        "resumen": {},
+        "distribuciones": {},
+        "texto": "",
+        "corte": ahora_colombia(),
+    }
+    if modo_final_ivan:
+        reporte_obs_v16212 = _reporte_observatorio_direccion_v16212(
+            fecha_inicio, fecha_fin
+        )
+
+        st.markdown("### 📊 Reporte del Observatorio Social ASCF")
+        st.caption(
+            "El corte poblacional muestra el estado ACTUAL de las personas registradas como ACTIVAS "
+            "al momento de generar el informe. Los movimientos sí corresponden exactamente al período "
+            "mensual seleccionado."
+        )
+
+        _res_obs = reporte_obs_v16212.get("resumen", {})
+        _c1, _c2, _c3, _c4 = st.columns(4)
+        _c1.metric("Población activa", _res_obs.get("Total población activa", 0))
+        _c2.metric("Urbano", _res_obs.get("Urbano", 0))
+        _c3.metric("Granja", _res_obs.get("Granja", 0))
+        _c4.metric("60 años o más", _res_obs.get("Personas de 60 años o más", 0))
+
+        if reporte_obs_v16212.get("texto"):
+            st.info(reporte_obs_v16212["texto"])
+
+        _dists = reporte_obs_v16212.get("distribuciones", {})
+        if _dists:
+            with st.expander("👥 Ver caracterización de la población activa", expanded=True):
+                for _titulo_obs, _df_obs in _dists.items():
+                    if isinstance(_df_obs, pd.DataFrame) and not _df_obs.empty:
+                        st.markdown(f"**{_titulo_obs}**")
+                        st.dataframe(
+                            _df_obs,
+                            use_container_width=True,
+                            hide_index=True
+                        )
+
+        _mov_obs = reporte_obs_v16212.get("movimientos", pd.DataFrame())
+        with st.expander(
+            f"🔄 Movimientos registrados del {fecha_inicio:%d/%m/%Y} al {fecha_fin:%d/%m/%Y}",
+            expanded=False
+        ):
+            if isinstance(_mov_obs, pd.DataFrame) and not _mov_obs.empty:
+                st.dataframe(_mov_obs, use_container_width=True, hide_index=True)
+            else:
+                st.info("No se encontraron movimientos registrados en el período seleccionado.")
+
     st.markdown("### 👤 Responsable del informe" if modo_final_ivan else "### 👤 Profesional responsable del informe")
     st.success(f"**{nombre_profesional_inf}**")
     if rol_profesional_inf:
@@ -27559,6 +27820,26 @@ def modulo_informe_mensual_profesional_piloto_v1627(modo_final_ivan=False):
                     "LINEAMIENTOS TÉCNICOS Y OPERATIVOS",
                 ])
             )
+            # V16.212 - El reporte poblacional es evidencia directa para obligaciones
+            # relacionadas con tablero, indicadores, Observatorio e informe mensual.
+            aplica_observatorio_dir_v16212 = (
+                modo_final_ivan
+                and any(frase in texto_ob_dir_v16210 for frase in [
+                    "TABLERO DE CONTROL",
+                    "INDICADORES DEL PROGRAMA",
+                    "OBSERVATORIO SOCIAL",
+                    "PRESENTAR INFORME MENSUAL",
+                    "REPORTAR LOS LOGROS",
+                ])
+            )
+            if aplica_observatorio_dir_v16212:
+                actividad_auto = "\n".join(
+                    x for x in [
+                        actividad_auto,
+                        reporte_obs_v16212.get("texto", "")
+                    ] if str(x or "").strip()
+                )
+
             if aplica_tareas_dir_v16210:
                 complemento_dir = resumen_tareas_direccion_v16210
                 if "TABLERO DE CONTROL" in texto_ob_dir_v16210:
@@ -27623,6 +27904,27 @@ def modulo_informe_mensual_profesional_piloto_v1627(modo_final_ivan=False):
                                 f"Seguimiento/resultado: {_r.get('Seguimiento / resultado','')}"
                                 + (f" | Avance: {_avance}" if _avance else "")
                             )
+            if aplica_observatorio_dir_v16212:
+                _r_obs = reporte_obs_v16212.get("resumen", {})
+                partes_sop.append(
+                    "REPORTE OBSERVATORIO SOCIAL ASCF: "
+                    + reporte_obs_v16212.get("texto", "")
+                )
+                partes_sop.append(
+                    "INDICADORES DE POBLACIÓN ACTIVA: "
+                    f"Total {_r_obs.get('Total población activa', 0)} | "
+                    f"Urbano {_r_obs.get('Urbano', 0)} | "
+                    f"Granja {_r_obs.get('Granja', 0)} | "
+                    f"60 años o más {_r_obs.get('Personas de 60 años o más', 0)}"
+                )
+                _mov_pdf = reporte_obs_v16212.get("movimientos", pd.DataFrame())
+                if isinstance(_mov_pdf, pd.DataFrame) and not _mov_pdf.empty:
+                    for _, _mr in _mov_pdf.head(30).iterrows():
+                        partes_sop.append(
+                            f"MOVIMIENTO DEL PERÍODO: {_mr.get('Movimiento','')} | "
+                            f"Cantidad: {_mr.get('Cantidad',0)}"
+                        )
+
             if aplica_tareas_dir_v16210:
                 partes_sop.append(
                     "EVIDENCIA AUTOMÁTICA DE DIRECCIÓN: " + resumen_tareas_direccion_v16210
@@ -27657,7 +27959,7 @@ def modulo_informe_mensual_profesional_piloto_v1627(modo_final_ivan=False):
     analisis = st.text_area("Análisis del período", height=140, key="imp_analisis")
     compromisos = st.text_area("Compromisos / acciones siguientes", height=100, key="imp_compromisos")
 
-    st.markdown("### ✍️ Firma del profesional")
+    st.markdown("### ✍️ Firma del responsable" if modo_final_ivan else "### ✍️ Firma del profesional")
     st.caption("Opcional: puede adjuntar una imagen de su firma (PNG, JPG o JPEG) para incluirla en el PDF. Esta es una firma gráfica insertada en el informe; no reemplaza una firma digital criptográfica/certificada.")
     firma_archivo = st.file_uploader(
         "Agregar firma al informe",
@@ -27756,6 +28058,56 @@ def modulo_informe_mensual_profesional_piloto_v1627(modo_final_ivan=False):
             ("FONTSIZE",(0,0),(-1,-1),8)
         ]))
         story += [ti, Spacer(1,8)]
+        # V16.212 - Reporte del Observatorio en el PDF de Dirección.
+        if modo_final_ivan:
+            story.append(Paragraph("<b>REPORTE DEL OBSERVATORIO SOCIAL ASCF</b>", body))
+            story.append(Spacer(1,4))
+            story.append(Paragraph(esc(reporte_obs_v16212.get("texto", "")), body))
+            story.append(Spacer(1,5))
+
+            _rpdf = reporte_obs_v16212.get("resumen", {})
+            _datos_obs = [
+                ["Indicador poblacional", "Resultado"],
+                ["Población activa", str(_rpdf.get("Total población activa", 0))],
+                ["Urbano", str(_rpdf.get("Urbano", 0))],
+                ["Granja", str(_rpdf.get("Granja", 0))],
+                ["Personas de 60 años o más", str(_rpdf.get("Personas de 60 años o más", 0))],
+            ]
+            if "Edad promedio" in _rpdf:
+                _datos_obs.append(["Edad promedio", str(_rpdf.get("Edad promedio"))])
+
+            _tobs = Table(_datos_obs, colWidths=[11*cm,6*cm])
+            _tobs.setStyle(TableStyle([
+                ("GRID",(0,0),(-1,-1),0.35,colors.grey),
+                ("BACKGROUND",(0,0),(-1,0),colors.whitesmoke),
+                ("FONTNAME",(0,0),(-1,0),"Helvetica-Bold"),
+                ("FONTSIZE",(0,0),(-1,-1),8),
+            ]))
+            story += [_tobs, Spacer(1,6)]
+
+            for _titulo_pdf, _df_pdf in reporte_obs_v16212.get("distribuciones", {}).items():
+                story += _tabla_pdf_distribucion_v16212(
+                    _titulo_pdf, _df_pdf, Paragraph, Table, TableStyle, colors, body
+                )
+
+            _mov_pdf = reporte_obs_v16212.get("movimientos", pd.DataFrame())
+            if isinstance(_mov_pdf, pd.DataFrame) and not _mov_pdf.empty:
+                story.append(Paragraph("<b>Movimientos del período seleccionado</b>", body))
+                _dmov = [["Movimiento", "Cantidad"]]
+                for _, _mr in _mov_pdf.head(30).iterrows():
+                    _dmov.append([
+                        str(_mr.get("Movimiento","")),
+                        str(_mr.get("Cantidad",0))
+                    ])
+                _tmov = Table(_dmov, colWidths=[13*cm,4*cm])
+                _tmov.setStyle(TableStyle([
+                    ("GRID",(0,0),(-1,-1),0.25,colors.grey),
+                    ("BACKGROUND",(0,0),(-1,0),colors.whitesmoke),
+                    ("FONTNAME",(0,0),(-1,0),"Helvetica-Bold"),
+                    ("FONTSIZE",(0,0),(-1,-1),7),
+                ]))
+                story += [_tmov, Spacer(1,8)]
+
         # V16.137 - PDF multipágina robusto.
         # No usamos una sola tabla de 4 columnas para todas las obligaciones porque
         # ReportLab no puede partir una celda cuya altura supera la página. Las
