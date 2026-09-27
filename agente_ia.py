@@ -16177,11 +16177,11 @@ with st.sidebar:
     _doc_ivan_v16209 = "".join(ch for ch in _doc_menu_v16157 if ch.isdigit())
     if _doc_ivan_v16209 == "16225865":
         if st.button(
-            "📘 Mi Informe Final",
+            "📄 Mi Informe Mensual",
             use_container_width=True,
-            key="btn_informe_final_ivan_v16208"
+            key="btn_informe_mensual_ivan_v16210"
         ):
-            st.session_state.page = "informe_final_ivan_v16208"
+            st.session_state.page = "informe_mensual_ivan_v16210"
             st.rerun()
 
     if (
@@ -26845,6 +26845,67 @@ def _evidencia_tareas_profesional_v16180(documento, fecha_inicio, fecha_fin):
         return pd.DataFrame()
 
 
+
+def _evidencia_tareas_asignadas_por_direccion_v16210(fecha_inicio, fecha_fin):
+    """
+    Evidencia de gestión directiva: tareas que el usuario autenticado asignó al talento humano.
+    Se usa para el informe mensual de Dirección. No confunde estas tareas con las tareas
+    que le fueron asignadas personalmente a Iván.
+    """
+    usuario_actual = str(st.session_state.get("usuario_actual", "") or "").strip()
+    if not usuario_actual:
+        return pd.DataFrame()
+    try:
+        return pd.read_sql(
+            text("""
+                SELECT
+                    t.id AS "ID tarea",
+                    t.tipo_tarea AS "Tipo de tarea",
+                    t.profesional_nombre AS "Profesional asignado",
+                    t.profesional_cedula AS "Documento profesional",
+                    t.numero_identificacion AS "Documento usuario",
+                    TRIM(COALESCE(h.nombres,'') || ' ' || COALESCE(h.apellidos,'')) AS "Usuario atendido",
+                    COALESCE(h.modalidad,'') AS "Modalidad",
+                    t.estado AS "Estado",
+                    t.prioridad AS "Prioridad",
+                    TO_CHAR((t.fecha_asignacion AT TIME ZONE 'America/Bogota'),'DD/MM/YYYY HH12:MI AM') AS "Fecha asignación",
+                    TO_CHAR((t.fecha_completada AT TIME ZONE 'America/Bogota'),'DD/MM/YYYY HH12:MI AM') AS "Fecha completada",
+                    COALESCE(t.observacion,'') AS "Instrucción / observación",
+                    COALESCE(t.evidencia,'') AS "Evidencia de cumplimiento"
+                FROM tareas_profesionales t
+                LEFT JOIN habitante_de_calle h
+                  ON TRIM(CAST(h.numero_identificacion AS TEXT)) =
+                     TRIM(CAST(t.numero_identificacion AS TEXT))
+                WHERE UPPER(TRIM(COALESCE(t.asignado_por,''))) = UPPER(TRIM(:asignado_por))
+                  AND (t.fecha_asignacion AT TIME ZONE 'America/Bogota')::date BETWEEN :fi AND :ff
+                ORDER BY t.fecha_asignacion DESC, t.id DESC
+            """),
+            engine,
+            params={"asignado_por": usuario_actual, "fi": fecha_inicio, "ff": fecha_fin}
+        )
+    except Exception:
+        return pd.DataFrame()
+
+
+def _resumen_tareas_direccion_v16210(df):
+    if not isinstance(df, pd.DataFrame) or df.empty:
+        return ""
+    total = len(df)
+    estados = df["Estado"].fillna("").astype(str).str.upper().str.strip()
+    completadas = int(estados.eq("COMPLETADA").sum())
+    en_proceso = int(estados.eq("EN PROCESO").sum())
+    pendientes = int(estados.eq("PENDIENTE").sum())
+    profesionales = int(
+        df["Documento profesional"].fillna("").astype(str).str.strip()
+          .replace("", pd.NA).dropna().nunique()
+    )
+    return (
+        f"Durante el período se asignaron {total} tarea(s) al talento humano desde Dirección, "
+        f"dirigidas a {profesionales} profesional(es). Estado al consultar el informe: "
+        f"{completadas} completada(s), {en_proceso} en proceso y {pendientes} pendiente(s)."
+    )
+
+
 def _resumen_gestion_automatica_v16180(documento, fecha_inicio, fecha_fin):
     """Consolida evidencia verificable y redacta actividades sin inferir hechos no registrados."""
     pp = _evidencia_pp_profesional_v16125(documento, fecha_inicio, fecha_fin, codigos=None)
@@ -27048,14 +27109,29 @@ def _actividad_automatica_obligacion_v16181(ev_auto):
 
 def modulo_informe_mensual_profesional_piloto_v1627(modo_final_ivan=False):
     if modo_final_ivan:
-        st.title("📘 Informe Final de Gestión – Dirección del Programa")
+        st.title("📄 Informe Mensual – Dirección del Programa")
         st.caption(
-            "Informe final contractual de IVÁN RENDÓN GIRALDO · CC 16225865 · "
-            "Período contractual 11/09/2026 al 10/11/2026."
+            "Informe mensual de IVÁN RENDÓN GIRALDO · CC 16225865. "
+            "Consolida la gestión registrada en el Observatorio Social ASCF para el período seleccionado."
         )
-        fecha_inicio = date(2026, 9, 11)
-        fecha_fin = date(2026, 11, 10)
-        st.info("📅 Período contractual fijo: 11/09/2026 al 10/11/2026.")
+        hoy = datetime.today().date()
+        inicio_mes = hoy.replace(day=1)
+        c1, c2 = st.columns(2)
+        with c1:
+            fecha_inicio = st.date_input(
+                "Fecha inicial", inicio_mes, key="imp_fecha_ini_ivan_v16210"
+            )
+        with c2:
+            fecha_fin = st.date_input(
+                "Fecha final", hoy, key="imp_fecha_fin_ivan_v16210"
+            )
+        if fecha_inicio > fecha_fin:
+            st.error("La fecha inicial no puede ser posterior a la fecha final.")
+            return
+        st.info(
+            "📅 Seleccione el período que corresponda al informe mensual. "
+            "La fecha límite contractual de actividades y fotos es el día 25 de cada mes."
+        )
     else:
         st.title("📄 Informe Mensual Profesional")
         st.caption("Piloto para consolidar PAI, seguimientos y gestión mensual del profesional.")
@@ -27371,6 +27447,30 @@ def modulo_informe_mensual_profesional_piloto_v1627(modo_final_ivan=False):
         with st.expander("📌 Ver tareas de caracterización asignadas/completadas"):
             st.dataframe(gestion_auto_v16180["tareas"], use_container_width=True, hide_index=True)
 
+    # V16.210 - Gestión propia de Dirección: tareas que Iván asignó al personal.
+    tareas_direccion_v16210 = pd.DataFrame()
+    resumen_tareas_direccion_v16210 = ""
+    if modo_final_ivan:
+        tareas_direccion_v16210 = _evidencia_tareas_asignadas_por_direccion_v16210(
+            fecha_inicio, fecha_fin
+        )
+        resumen_tareas_direccion_v16210 = _resumen_tareas_direccion_v16210(
+            tareas_direccion_v16210
+        )
+        st.markdown("### 🎯 Gestión de Dirección registrada en la plataforma")
+        if resumen_tareas_direccion_v16210:
+            st.success(resumen_tareas_direccion_v16210)
+            with st.expander("📌 Ver tareas asignadas por Dirección al talento humano"):
+                st.dataframe(
+                    tareas_direccion_v16210,
+                    use_container_width=True,
+                    hide_index=True
+                )
+        else:
+            st.info(
+                "No se encontraron tareas asignadas por Dirección dentro del período seleccionado."
+            )
+
     st.markdown("### 🧾 Cumplimiento de obligaciones")
     if contrato_individual:
         st.success(
@@ -27452,6 +27552,35 @@ def modulo_informe_mensual_profesional_piloto_v1627(modo_final_ivan=False):
             # V16.181: la evidencia no debe quedar solo como soporte; también
             # redacta la actividad ejecutada del numeral correspondiente.
             actividad_auto = _actividad_automatica_obligacion_v16181(ev_auto)
+
+            # V16.210 - Las tareas asignadas por Iván son evidencia verificable de
+            # seguimiento, dirección, suministro de instrucciones y reporte de gestión.
+            texto_ob_dir_v16210 = str(ob or "").upper()
+            aplica_tareas_dir_v16210 = (
+                modo_final_ivan
+                and isinstance(tareas_direccion_v16210, pd.DataFrame)
+                and not tareas_direccion_v16210.empty
+                and any(frase in texto_ob_dir_v16210 for frase in [
+                    "REALIZAR SEGUIMIENTO AL PROGRAMA",
+                    "TABLERO DE CONTROL",
+                    "SUMINISTRAR AL EQUIPO DE TRABAJO",
+                    "PRESENTAR INFORME MENSUAL",
+                    "REPORTAR LOS LOGROS",
+                    "LINEAMIENTOS TÉCNICOS Y OPERATIVOS",
+                ])
+            )
+            if aplica_tareas_dir_v16210:
+                complemento_dir = resumen_tareas_direccion_v16210
+                if "TABLERO DE CONTROL" in texto_ob_dir_v16210:
+                    complemento_dir += (
+                        " Estas asignaciones y sus estados constituyen evidencia de seguimiento "
+                        "operativo y de acciones correctivas; no se presentan por sí solas como "
+                        "prueba de creación del tablero de indicadores."
+                    )
+                actividad_auto = "\n".join(
+                    x for x in [actividad_auto, complemento_dir] if str(x or "").strip()
+                )
+
             act = st.text_area(
                 "Actividades ejecutadas",
                 value=actividad_auto,
@@ -27504,6 +27633,22 @@ def modulo_informe_mensual_profesional_piloto_v1627(modo_final_ivan=False):
                                 f"Seguimiento/resultado: {_r.get('Seguimiento / resultado','')}"
                                 + (f" | Avance: {_avance}" if _avance else "")
                             )
+            if aplica_tareas_dir_v16210:
+                partes_sop.append(
+                    "EVIDENCIA AUTOMÁTICA DE DIRECCIÓN: " + resumen_tareas_direccion_v16210
+                )
+                for _, _td in tareas_direccion_v16210.head(60).iterrows():
+                    partes_sop.append(
+                        f"TAREA #{_td.get('ID tarea','')} | "
+                        f"{_td.get('Fecha asignación','')} | "
+                        f"{_td.get('Tipo de tarea','')} | "
+                        f"Profesional: {_td.get('Profesional asignado','')} "
+                        f"CC {_td.get('Documento profesional','')} | "
+                        f"Usuario: {_td.get('Usuario atendido','')} "
+                        f"CC {_td.get('Documento usuario','')} | "
+                        f"Estado: {_td.get('Estado','')} | "
+                        f"Prioridad: {_td.get('Prioridad','')}"
+                    )
             if sop_manual.strip():
                 partes_sop.append("SOPORTE ADICIONAL: " + sop_manual.strip())
             sop = "\n".join(partes_sop)
@@ -27518,7 +27663,7 @@ def modulo_informe_mensual_profesional_piloto_v1627(modo_final_ivan=False):
             "Resultados cuantitativos consolidados automáticamente a partir de los registros del sistema."
         ])
 
-    st.markdown("### 🧠 Síntesis final de gestión" if modo_final_ivan else "### 🧠 Síntesis profesional")
+    st.markdown("### 🧠 Síntesis de Dirección" if modo_final_ivan else "### 🧠 Síntesis profesional")
     analisis = st.text_area("Análisis del período", height=140, key="imp_analisis")
     compromisos = st.text_area("Compromisos / acciones siguientes", height=100, key="imp_compromisos")
 
@@ -27573,7 +27718,7 @@ def modulo_informe_mensual_profesional_piloto_v1627(modo_final_ivan=False):
         body = ParagraphStyle("body", parent=ss["BodyText"], fontSize=7.6, leading=9.5)
         story = [
             Paragraph("ASOCIACIÓN CIUDAD FUTURO", tit),
-            Paragraph("INFORME FINAL DE GESTIÓN - DIRECCIÓN DEL PROGRAMA" if modo_final_ivan else "INFORME MENSUAL PROFESIONAL", tit),
+            Paragraph("INFORME MENSUAL - DIRECCIÓN DEL PROGRAMA" if modo_final_ivan else "INFORME MENSUAL PROFESIONAL", tit),
             Spacer(1,6)
         ]
         ident = [
@@ -28806,7 +28951,7 @@ rol_router = str(
     st.session_state.get("rol_actual", "")
 ).upper().strip()
 
-if st.session_state.page == "informe_final_ivan_v16208":
+if st.session_state.page == "informe_mensual_ivan_v16210":
     modulo_informe_mensual_profesional_piloto_v1627(modo_final_ivan=True)
     st.stop()
 
