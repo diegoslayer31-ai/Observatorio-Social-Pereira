@@ -12352,18 +12352,34 @@ def ajuste_administrativo_pai_v16214(documento, nombre_usuario=""):
     if objetivos_admin.empty:
         st.info("Esta persona no tiene objetivos PAI para ajustar.")
     else:
+        def _etiqueta_objetivo_admin_v16216(oid):
+            r = objetivos_admin.loc[
+                objetivos_admin["id"].astype(int) == int(oid)
+            ].iloc[0]
+            tipo = str(r.get("objetivo_tipo") or "OBJETIVO").strip()
+            descripcion = str(r.get("objetivo_descripcion") or "").strip()
+            estado = str(r.get("estado") or "SIN ESTADO").strip()
+            if len(descripcion) > 110:
+                descripcion = descripcion[:107].rstrip() + "..."
+            return f"#{int(oid)} · {tipo} · {descripcion or 'Sin descripción'} · {estado}"
+
         objetivo_id = st.selectbox(
             "Objetivo PAI a corregir",
             objetivos_admin["id"].astype(int).tolist(),
-            format_func=lambda oid: (
-                f"#{oid} · "
-                + str(objetivos_admin.loc[objetivos_admin['id'].astype(int)==int(oid), 'objetivo_tipo'].iloc[0])
-            ),
+            format_func=_etiqueta_objetivo_admin_v16216,
             key=f"v16214_obj_{doc}"
         )
         fila = objetivos_admin.loc[
             objetivos_admin["id"].astype(int) == int(objetivo_id)
         ].iloc[0]
+
+        descripcion_visible = str(fila.get("objetivo_descripcion") or "").strip()
+        tipo_visible = str(fila.get("objetivo_tipo") or "OBJETIVO").strip()
+        estado_visible = str(fila.get("estado") or "SIN ESTADO").strip()
+        st.info(
+            f"🎯 **Objetivo seleccionado:** {descripcion_visible or 'Sin descripción registrada'}\n\n"
+            f"**Tipo:** {tipo_visible}  ·  **Estado:** {estado_visible}  ·  **ID:** #{int(objetivo_id)}"
+        )
 
         def _fecha_o_hoy(v):
             x = pd.to_datetime(v, errors="coerce")
