@@ -26877,6 +26877,19 @@ def modulo_informe_mensual_maria_v16221():
     logros = st.text_area("Logros del área para reporte al Observatorio Social", height=110, key="mafe_logros_v16221")
     compromisos = st.text_area("Compromisos / acciones siguientes", height=100, key="mafe_compromisos_v16221")
 
+    st.markdown("### ✍️ Firma del responsable")
+    st.caption("Opcional: adjunte una imagen de la firma (PNG, JPG o JPEG). Se insertará al final del PDF sobre la línea de firma, igual que en el informe mensual de Dirección.")
+    firma_archivo_mafe = st.file_uploader(
+        "Agregar firma al informe",
+        type=["png", "jpg", "jpeg"],
+        key="mafe_firma_v16223"
+    )
+    if firma_archivo_mafe is not None:
+        try:
+            st.image(firma_archivo_mafe, caption="Firma que se incluirá en el PDF", width=220)
+        except Exception:
+            pass
+
     st.markdown("### 👁️ Vista previa")
     resumen = pd.DataFrame([
         ["PAI bajo seguimiento",pai_activos],["Objetivos activos",objetivos_activos],
@@ -26887,7 +26900,7 @@ def modulo_informe_mensual_maria_v16221():
     ], columns=["Indicador","Resultado"])
     st.dataframe(resumen, use_container_width=True, hide_index=True)
 
-    # PDF descargable, sin alterar datos de origen.
+    # PDF descargable con el mismo lenguaje visual del informe mensual de Dirección.
     try:
         from io import BytesIO
         from reportlab.lib import colors
@@ -26895,24 +26908,133 @@ def modulo_informe_mensual_maria_v16221():
         from reportlab.lib.pagesizes import letter
         from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
         from reportlab.lib.units import cm
-        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak
+        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
         import html
         def esc(v): return html.escape(str(v or "")).replace("\n","<br/>")
+
         bio=BytesIO()
         pdf=SimpleDocTemplate(bio,pagesize=letter,leftMargin=1.2*cm,rightMargin=1.2*cm,topMargin=1.2*cm,bottomMargin=1.2*cm)
-        ss=getSampleStyleSheet(); tit=ParagraphStyle("mafe_tit",parent=ss["Heading1"],alignment=TA_CENTER,fontSize=12,leading=15)
-        body=ParagraphStyle("mafe_body",parent=ss["BodyText"],fontSize=7.5,leading=9.2)
-        story=[Paragraph("ASOCIACIÓN CIUDAD FUTURO",tit),Paragraph("INFORME MENSUAL – COORDINACIÓN Y SEGUIMIENTO TERAPÉUTICO",tit),Spacer(1,6)]
-        ident=[["Responsable","MARÍA FERNANDA SANTIAGO PABÓN"],["Documento","1090420245"],["Cargo / perfil",contrato_cfg.get("cargo","COORDINACIÓN Y SEGUIMIENTO TERAPÉUTICO")],["Contrato",contrato_cfg.get("contrato","")],["Período",f"{fecha_inicio:%d/%m/%Y} al {fecha_fin:%d/%m/%Y}"]]
-        ti=Table(ident,colWidths=[4*cm,13*cm]); ti.setStyle(TableStyle([("GRID",(0,0),(-1,-1),.35,colors.grey),("BACKGROUND",(0,0),(0,-1),colors.whitesmoke),("FONTNAME",(0,0),(0,-1),"Helvetica-Bold"),("FONTSIZE",(0,0),(-1,-1),8)])); story += [ti,Spacer(1,8)]
-        data=[["Indicador","Resultado"]]+[[str(r[0]),str(r[1])] for r in resumen.values.tolist()]
-        tm=Table(data,colWidths=[12*cm,5*cm]); tm.setStyle(TableStyle([("GRID",(0,0),(-1,-1),.35,colors.grey),("BACKGROUND",(0,0),(-1,0),colors.whitesmoke),("FONTNAME",(0,0),(-1,0),"Helvetica-Bold"),("FONTSIZE",(0,0),(-1,-1),8)])); story += [tm,Spacer(1,8)]
-        story += [Paragraph("<b>ALERTAS QUE REQUIEREN SEGUIMIENTO</b>",body),Paragraph(esc(f"Sin seguimiento >30 días: {len(sin_seg)} | Vencidos: {len(vencidos)} | Próximos a vencer: {len(proximos)}"),body),Spacer(1,8)]
-        for i,(ob,act,sop,log) in enumerate(filas,1):
-            story += [Paragraph(f"<b>Obligación {i}</b>",body),Paragraph(esc(ob),body),Paragraph("<b>Actividades:</b> "+esc(act),body),Paragraph("<b>Soportes:</b> "+esc(sop),body),Paragraph("<b>Logros:</b> "+esc(log),body),Spacer(1,6)]
-        story += [PageBreak(),Paragraph("<b>SÍNTESIS DE COORDINACIÓN TERAPÉUTICA</b>",body),Spacer(1,4),Paragraph("<b>Recomendaciones:</b> "+esc(recomendaciones),body),Paragraph("<b>Situaciones / novedades:</b> "+esc(situaciones),body),Paragraph("<b>Reuniones, comités e inducciones:</b> "+esc(comites),body),Paragraph("<b>Logros del área:</b> "+esc(logros),body),Paragraph("<b>Compromisos:</b> "+esc(compromisos),body)]
+        ss=getSampleStyleSheet()
+        tit=ParagraphStyle("mafe_tit_v16223",parent=ss["Heading1"],alignment=TA_CENTER,fontSize=12,leading=15)
+        body=ParagraphStyle("mafe_body_v16223",parent=ss["BodyText"],fontSize=7.5,leading=9.2)
+        sec=ParagraphStyle("mafe_sec_v16223",parent=body,fontSize=8.2,leading=10.2,spaceBefore=6,spaceAfter=3)
+        etiqueta=ParagraphStyle("mafe_et_v16223",parent=body,fontSize=7.5,leading=9.2,spaceBefore=3,spaceAfter=1)
+        detalle=ParagraphStyle("mafe_det_v16223",parent=body,fontSize=7.2,leading=9.0,leftIndent=8,spaceAfter=2)
+
+        story=[Paragraph("ASOCIACIÓN CIUDAD FUTURO",tit),Paragraph("INFORME MENSUAL - COORDINACIÓN Y SEGUIMIENTO TERAPÉUTICO",tit),Spacer(1,6)]
+        ident=[
+            ["Profesional","MARÍA FERNANDA SANTIAGO PABÓN"],
+            ["Documento","1090420245"],
+            ["Cargo / perfil",contrato_cfg.get("cargo","COORDINACIÓN Y SEGUIMIENTO TERAPÉUTICO")],
+            ["Contrato",contrato_cfg.get("contrato","")],
+            ["Proyecto","Habitabilidad en Calle"],
+            ["Modalidad","GENERAL"],
+            ["Período",f"{fecha_inicio:%d/%m/%Y} al {fecha_fin:%d/%m/%Y}"]
+        ]
+        ti=Table(ident,colWidths=[4*cm,13*cm])
+        ti.setStyle(TableStyle([
+            ("GRID",(0,0),(-1,-1),.35,colors.grey),("BACKGROUND",(0,0),(0,-1),colors.whitesmoke),
+            ("FONTNAME",(0,0),(0,-1),"Helvetica-Bold"),("FONTSIZE",(0,0),(-1,-1),8),("VALIGN",(0,0),(-1,-1),"TOP")
+        ]))
+        story += [ti,Spacer(1,8)]
+
+        inds=[
+            ["Indicador de gestión terapéutica","Resultado"],
+            ["PAI bajo seguimiento del proceso",str(pai_activos)],
+            ["Objetivos PAI activos",str(objetivos_activos)],
+            ["Seguimientos registrados en el período",str(seguimientos_periodo)],
+            ["Seguimientos registrados directamente por María",str(seguimientos_maria)],
+            ["Usuarios con seguimiento directo de María",str(usuarios_maria)],
+            ["Objetivos cumplidos en el período",str(cumplidos_periodo)],
+            ["PAI/personas que requieren seguimiento",str(sin_seg["documento_usuario"].astype(str).nunique() if not sin_seg.empty else 0)],
+            ["Avance promedio de objetivos activos",f"{avance_prom}%"]
+        ]
+        tm=Table(inds,colWidths=[12*cm,5*cm])
+        tm.setStyle(TableStyle([
+            ("GRID",(0,0),(-1,-1),.35,colors.grey),("BACKGROUND",(0,0),(-1,0),colors.whitesmoke),
+            ("FONTNAME",(0,0),(-1,0),"Helvetica-Bold"),("FONTSIZE",(0,0),(-1,-1),8)
+        ]))
+        story += [tm,Spacer(1,8)]
+
+        story.append(Paragraph("<b>SEGUIMIENTO Y ALERTAS DEL PROCESO TERAPÉUTICO</b>",body))
+        story.append(Spacer(1,4))
+        story.append(Paragraph(esc(
+            f"Al corte del {fecha_fin:%d/%m/%Y}, el proceso registra {pai_activos} PAI bajo seguimiento, "
+            f"{objetivos_activos} objetivos activos y {seguimientos_periodo} seguimientos durante el período. "
+            f"De estos, {seguimientos_maria} seguimientos fueron registrados directamente por María Fernanda. "
+            f"Se identifican {len(sin_seg)} objetivo(s) sin seguimiento reciente, {len(vencidos)} objetivo(s) vencido(s) "
+            f"y {len(proximos)} próximo(s) a vencer."),body))
+        story.append(Spacer(1,8))
+
+        story.append(Paragraph("<b>CUMPLIMIENTO DE OBLIGACIONES</b>",sec))
+        story.append(Spacer(1,3))
+        for nro,(ob,act,sop,log) in enumerate(filas,1):
+            story.append(Paragraph(f"<b>{nro}. {esc(ob)}</b>",sec))
+            story.append(Paragraph("<b>Actividades ejecutadas</b>",etiqueta))
+            if str(act or "").strip():
+                for linea in str(act).splitlines():
+                    if linea.strip(): story.append(Paragraph(esc(linea),detalle))
+            else: story.append(Paragraph("Sin información diligenciada.",detalle))
+            story.append(Paragraph("<b>Evidencias / soportes</b>",etiqueta))
+            if str(sop or "").strip():
+                for linea in str(sop).splitlines():
+                    if linea.strip(): story.append(Paragraph("• "+esc(linea),detalle))
+            else: story.append(Paragraph("Sin evidencias registradas para el período.",detalle))
+            story.append(Paragraph("<b>Logros / resultados</b>",etiqueta))
+            if str(log or "").strip():
+                for linea in str(log).splitlines():
+                    if linea.strip(): story.append(Paragraph(esc(linea),detalle))
+            else: story.append(Paragraph("Sin información diligenciada.",detalle))
+            story.append(Spacer(1,7))
+
+        story += [
+            Spacer(1,8),Paragraph("<b>Análisis / síntesis del período</b>",body),
+            Paragraph(esc(recomendaciones) or "Sin observaciones.",body),Spacer(1,5),
+            Paragraph("<b>Situaciones resueltas / novedades</b>",body),
+            Paragraph(esc(situaciones) or "Sin información diligenciada.",body),Spacer(1,5),
+            Paragraph("<b>Reuniones, comités, estudios de caso e inducciones</b>",body),
+            Paragraph(esc(comites) or "Sin información diligenciada.",body),Spacer(1,5),
+            Paragraph("<b>Logros del área</b>",body),Paragraph(esc(logros) or "Sin información diligenciada.",body),Spacer(1,5),
+            Paragraph("<b>Compromisos / siguiente período</b>",body),Paragraph(esc(compromisos) or "Sin compromisos registrados.",body),Spacer(1,16)
+        ]
+
+        # Firma gráfica: mismo comportamiento del informe mensual de Dirección.
+        _firma_flowable=None
+        if firma_archivo_mafe is not None:
+            try:
+                from reportlab.platypus import Image as RLImage
+                from PIL import Image as PILImage, ImageChops
+                firma_archivo_mafe.seek(0)
+                _firma_bytes=firma_archivo_mafe.read()
+                _pil=PILImage.open(BytesIO(_firma_bytes)).convert("RGBA")
+                _bg=PILImage.new("RGBA",_pil.size,(255,255,255,255))
+                _diff=ImageChops.difference(_pil,_bg).convert("L")
+                _bbox=_diff.point(lambda p:255 if p>18 else 0).getbbox()
+                if _bbox: _pil=_pil.crop(_bbox)
+                _firma_limpia=BytesIO(); _pil.save(_firma_limpia,format="PNG"); _firma_limpia.seek(0)
+                _img=RLImage(_firma_limpia)
+                _max_w,_max_h=6.0*cm,2.0*cm
+                _escala=min(_max_w/float(_img.imageWidth),_max_h/float(_img.imageHeight),1.0)
+                _img.drawWidth=float(_img.imageWidth)*_escala; _img.drawHeight=float(_img.imageHeight)*_escala
+                _img.hAlign="CENTER"
+                _firma_flowable=Table([[_img]],colWidths=[8.5*cm],hAlign="LEFT")
+                _firma_flowable.setStyle(TableStyle([
+                    ("ALIGN",(0,0),(-1,-1),"CENTER"),("VALIGN",(0,0),(-1,-1),"BOTTOM"),
+                    ("LEFTPADDING",(0,0),(-1,-1),0),("RIGHTPADDING",(0,0),(-1,-1),0),
+                    ("TOPPADDING",(0,0),(-1,-1),0),("BOTTOMPADDING",(0,0),(-1,-1),1)
+                ]))
+            except Exception:
+                story.append(Paragraph("Firma adjunta no pudo incorporarse al PDF.",body))
+        if _firma_flowable is not None:
+            story += [_firma_flowable,Spacer(1,1)]
+        story += [Paragraph("________________________________________",body),Paragraph("MARÍA FERNANDA SANTIAGO PABÓN",body)]
+
         pdf.build(story); bio.seek(0)
-        st.download_button("⬇️ Descargar informe mensual en PDF",data=bio.getvalue(),file_name=f"Informe_Mensual_Maria_Fernanda_{fecha_inicio:%Y%m%d}_{fecha_fin:%Y%m%d}.pdf",mime="application/pdf",use_container_width=True,key="descarga_mafe_v16221")
+        st.download_button(
+            "📥 Generar PDF del informe",data=bio.getvalue(),
+            file_name=f"Informe_mensual_{fecha_inicio:%Y%m%d}_{fecha_fin:%Y%m%d}.pdf",
+            mime="application/pdf",use_container_width=True,key="descarga_mafe_v16223"
+        )
     except Exception as e:
         st.warning(f"No fue posible generar el PDF en esta ejecución: {e}")
 
