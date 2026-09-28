@@ -12416,8 +12416,8 @@ def ajuste_administrativo_pai_v16214(documento, nombre_usuario=""):
                 nueva_cumplimiento = st.date_input(
                     "Fecha de cumplimiento",
                     value=_fecha_opcional(cumplimiento_actual),
-                    disabled=not tiene_cumplimiento,
-                    key=f"v16214_cump_{doc}_{objetivo_id}"
+                    key=f"v16214_cump_{doc}_{objetivo_id}",
+                    help="Seleccione la fecha. La casilla superior define si esta fecha se guarda en el PAI."
                 )
                 tiene_ultimo = st.checkbox(
                     "Registrar fecha de último seguimiento",
@@ -12427,8 +12427,8 @@ def ajuste_administrativo_pai_v16214(documento, nombre_usuario=""):
                 nuevo_ultimo = st.date_input(
                     "Fecha de último seguimiento",
                     value=_fecha_opcional(ultimo_actual),
-                    disabled=not tiene_ultimo,
-                    key=f"v16214_ult_{doc}_{objetivo_id}"
+                    key=f"v16214_ult_{doc}_{objetivo_id}",
+                    help="Seleccione la fecha. La casilla superior define si esta fecha se guarda en el PAI."
                 )
 
             estados = ["Activo", "CUMPLIDO", "CERRADO", "CANCELADO", "HISTORICO"]
