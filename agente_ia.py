@@ -16943,6 +16943,21 @@ with st.sidebar:
             st.session_state.page = "supervision_pai_v15"
             st.rerun()
 
+        # V16.219 - María Fernanda Santiago Pabón (CC 1090420245)
+        # tiene acceso especial al seguimiento integral PAI aun cuando su rol sea COORDINACION.
+        _doc_coord_v16219 = "".join(
+            ch for ch in str(st.session_state.get("documento_funcionario", "") or "")
+            if ch.isdigit()
+        )
+        if _doc_coord_v16219 == "1090420245":
+            if st.button(
+                "📋 Seguimiento general PAI",
+                use_container_width=True,
+                key="menu_maria_seguimiento_general_pai_coord_v16219"
+            ):
+                st.session_state.page = "seguimiento_general_pai_maria_v16218"
+                st.rerun()
+
         if st.button(
             "🧭 Caracterización Habitabilidad",
             use_container_width=True
