@@ -26742,7 +26742,9 @@ def modulo_informe_mensual_maria_v16221():
     if not obj.empty:
         for cc in ["fecha_apertura","fecha_meta","fecha_ultimo_seguimiento","fecha_cumplimiento_real"]:
             if cc in obj.columns:
-                obj[cc] = pd.to_datetime(obj[cc], errors="coerce")
+                # V16.222: normalizar timestamps de PostgreSQL a datetime sin zona horaria.
+                # Evita comparar series timezone-aware con Timestamp timezone-naive.
+                obj[cc] = pd.to_datetime(obj[cc], errors="coerce", utc=True).dt.tz_convert(None)
         obj["estado_norm"] = obj["estado"].fillna("").astype(str).str.upper().str.strip()
         obj["avance_num"] = pd.to_numeric(obj["porcentaje_avance"], errors="coerce").fillna(0)
     else:
