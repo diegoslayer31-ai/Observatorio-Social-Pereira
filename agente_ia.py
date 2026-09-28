@@ -16860,6 +16860,20 @@ with st.sidebar:
             st.session_state.page = "comite_casos_v16"
             st.rerun()
 
+        # V16.218 - María Fernanda Santiago: revisión integral y corrección de seguimientos PAI.
+        _doc_menu_v16218 = "".join(
+            ch for ch in str(st.session_state.get("documento_funcionario", "") or "")
+            if ch.isdigit()
+        )
+        if _doc_menu_v16218 == "1090420245":
+            if st.button(
+                "📋 Seguimiento general PAI",
+                use_container_width=True,
+                key="menu_maria_seguimiento_general_pai_v16218"
+            ):
+                st.session_state.page = "seguimiento_general_pai_maria_v16218"
+                st.rerun()
+
         # V16.78 - El informe mensual también es parte del acceso profesional.
         # No depende de una variable antigua de acceso_pai_menu.
         if st.button(
@@ -29835,6 +29849,236 @@ if st.session_state.get("autenticado"):
 
 # V16.96 - Rol de la sesión para el enrutador principal.
 # Se define aquí de forma independiente para que no dependa de ningún módulo anterior.
+
+# ============================================================
+# V16.218 - SEGUIMIENTO GENERAL PAI · MARÍA FERNANDA SANTIAGO
+# CC 1090420245
+# Consulta todos los PAI y permite corregir seguimientos existentes.
+# No concede permisos de Manager ni permite eliminar registros.
+# ============================================================
+def seguimiento_general_pai_maria_v16218():
+    doc_login = "".join(
+        ch for ch in str(st.session_state.get("documento_funcionario", "") or "")
+        if ch.isdigit()
+    )
+    rol = str(st.session_state.get("rol_actual", "") or "").strip().upper()
+    autorizado = doc_login == "1090420245" or rol in ["COORDINACION", "MANAGER"]
+    if not autorizado:
+        st.error("No tiene permisos para este módulo.")
+        return
+
+    st.title("📋 Seguimiento general PAI")
+    st.caption(
+        "Consulta integral de PAI y seguimientos. María Fernanda Santiago puede revisar "
+        "cada PAI y corregir datos de seguimiento cuando exista un error de registro. "
+        "Cada corrección queda auditada."
+    )
+    st.info("🔒 Las correcciones no eliminan seguimientos ni objetivos. Se conserva trazabilidad en auditoría.")
+
+    buscar = st.text_input(
+        "🔎 Buscar persona por nombre, apellido o documento",
+        key="maria_buscar_pai_v16218"
+    ).strip()
+    if not buscar:
+        st.caption("Escriba un nombre, apellido o documento para consultar el expediente PAI.")
+        return
+
+    patron = f"%{buscar}%"
+    personas = pd.read_sql(
+        text("""
+            SELECT
+                TRIM(CAST(numero_identificacion AS TEXT)) AS documento,
+                COALESCE(nombres,'') AS nombres,
+                COALESCE(apellidos,'') AS apellidos,
+                COALESCE(estado_caso,'') AS estado_caso,
+                COALESCE(modalidad,'') AS modalidad
+            FROM habitante_de_calle
+            WHERE CAST(numero_identificacion AS TEXT) ILIKE :patron
+               OR COALESCE(nombres,'') ILIKE :patron
+               OR COALESCE(apellidos,'') ILIKE :patron
+               OR (COALESCE(nombres,'') || ' ' || COALESCE(apellidos,'')) ILIKE :patron
+            ORDER BY nombres, apellidos
+            LIMIT 100
+        """),
+        engine,
+        params={"patron": patron}
+    )
+    if personas.empty:
+        st.warning("No se encontraron personas con esa búsqueda.")
+        return
+
+    mapa = {str(r["documento"]): r for _, r in personas.iterrows()}
+    doc = st.selectbox(
+        "Persona cuyo PAI desea revisar",
+        list(mapa.keys()),
+        format_func=lambda d: (
+            f"{str(mapa[d]['nombres']).strip()} {str(mapa[d]['apellidos']).strip()} · "
+            f"CC {d} · {str(mapa[d]['estado_caso'] or 'SIN ESTADO')} · "
+            f"{str(mapa[d]['modalidad'] or 'SIN MODALIDAD')}"
+        ),
+        key="maria_persona_pai_v16218"
+    )
+    nombre_persona = f"{str(mapa[doc]['nombres']).strip()} {str(mapa[doc]['apellidos']).strip()}".strip()
+    st.success(f"Expediente PAI: **{nombre_persona} · CC {doc}**")
+
+    objetivos = pd.read_sql(
+        text("""
+            SELECT p.*, pr.nombre AS nombre_profesional
+            FROM pai_objetivos p
+            LEFT JOIN profesionales pr ON pr.id=p.profesional_referente
+            WHERE TRIM(CAST(p.documento_usuario AS TEXT))=:doc
+            ORDER BY p.fecha_apertura DESC NULLS LAST, p.id DESC
+        """), engine, params={"doc": doc}
+    )
+    if objetivos.empty:
+        st.info("Esta persona no tiene objetivos PAI registrados en la tabla operativa.")
+    else:
+        st.markdown(f"### 🎯 PAI registrados ({len(objetivos)})")
+        etiquetas = {}
+        for _, o in objetivos.iterrows():
+            desc = " ".join(str(o.get("objetivo_descripcion") or "").split())
+            if len(desc) > 110:
+                desc = desc[:107] + "..."
+            etiquetas[int(o["id"])] = (
+                f"#{int(o['id'])} · {str(o.get('objetivo_tipo') or 'OBJETIVO')} · "
+                f"{desc or 'Sin descripción'} · {str(o.get('estado') or 'SIN ESTADO')}"
+            )
+        obj_id = st.selectbox(
+            "Seleccione el PAI / objetivo a revisar",
+            list(etiquetas.keys()),
+            format_func=lambda x: etiquetas[x],
+            key="maria_obj_pai_v16218"
+        )
+        obj = objetivos[objetivos["id"] == obj_id].iloc[0]
+        st.markdown("#### 🎯 Objetivo seleccionado")
+        st.write(str(obj.get("objetivo_descripcion") or "Sin descripción"))
+        a,b,c,d = st.columns(4)
+        a.metric("ID", f"#{int(obj_id)}")
+        b.metric("Estado", str(obj.get("estado") or "—"))
+        c.metric("Apertura", str(obj.get("fecha_apertura") or "—")[:10])
+        d.metric("Fecha meta", str(obj.get("fecha_meta") or "—")[:10])
+        st.caption(f"Profesional referente: {str(obj.get('nombre_profesional') or 'Sin asignar')}")
+
+        seguimientos = pd.read_sql(
+            text("""
+                SELECT id, id_objetivo, fecha, profesional, tipo_novedad,
+                       descripcion, avance_generado, evidencia
+                FROM pai_novedades
+                WHERE id_objetivo=:id
+                ORDER BY fecha DESC NULLS LAST, id DESC
+            """), engine, params={"id": int(obj_id)}
+        )
+        st.markdown(f"### 📝 Seguimientos ({len(seguimientos)})")
+        if seguimientos.empty:
+            st.info("Este objetivo todavía no tiene seguimientos registrados.")
+        else:
+            labels_seg={}
+            for _, n in seguimientos.iterrows():
+                fecha_txt = str(n.get("fecha") or "")[:10] or "Sin fecha"
+                desc = " ".join(str(n.get("descripcion") or "").split())
+                if len(desc)>100: desc=desc[:97]+"..."
+                labels_seg[int(n["id"])]=f"#{int(n['id'])} · {fecha_txt} · {str(n.get('profesional') or 'Sin profesional')} · {desc or str(n.get('tipo_novedad') or '')}"
+            seg_id=st.selectbox(
+                "Seleccione el seguimiento que desea revisar o corregir",
+                list(labels_seg.keys()),
+                format_func=lambda x: labels_seg[x],
+                key="maria_seg_pai_v16218"
+            )
+            seg=seguimientos[seguimientos["id"]==seg_id].iloc[0]
+            fecha_actual=pd.to_datetime(seg.get("fecha"), errors="coerce")
+            fecha_base=fecha_actual.date() if pd.notna(fecha_actual) else date.today()
+
+            with st.form(f"editar_seg_maria_v16218_{seg_id}"):
+                st.markdown("#### ✏️ Corregir seguimiento")
+                f1,f2=st.columns(2)
+                nueva_fecha=f1.date_input("Fecha del seguimiento", value=fecha_base)
+                nuevo_tipo=f2.text_input("Actividad / tipo de novedad", value=str(seg.get("tipo_novedad") or ""))
+                nueva_desc=st.text_area("Descripción del seguimiento", value=str(seg.get("descripcion") or ""), height=130)
+                nueva_evid=st.text_input("Evidencia", value=str(seg.get("evidencia") or ""))
+                avance_anterior=pd.to_numeric(seg.get("avance_generado"), errors="coerce")
+                avance_default=float(avance_anterior) if pd.notna(avance_anterior) else 0.0
+                nuevo_avance=st.number_input("Avance registrado (%)", min_value=0.0, max_value=100.0, value=max(0.0,min(100.0,avance_default)), step=1.0)
+                justificacion=st.text_area(
+                    "Justificación de la corrección *",
+                    placeholder="Ej.: Corrección de fecha por error de digitación.",
+                    key=f"just_maria_seg_{seg_id}"
+                )
+                confirmar=st.checkbox("Confirmo que revisé el seguimiento y deseo guardar esta corrección.")
+                guardar=st.form_submit_button("💾 Guardar corrección del seguimiento", type="primary", use_container_width=True)
+
+            if guardar:
+                if not str(justificacion or "").strip():
+                    st.error("Debe escribir la justificación de la corrección.")
+                elif not confirmar:
+                    st.error("Debe confirmar la corrección antes de guardarla.")
+                else:
+                    anterior={
+                        "fecha": str(seg.get("fecha") or ""),
+                        "tipo_novedad": str(seg.get("tipo_novedad") or ""),
+                        "descripcion": str(seg.get("descripcion") or ""),
+                        "evidencia": str(seg.get("evidencia") or ""),
+                        "avance_generado": str(seg.get("avance_generado") or ""),
+                    }
+                    nuevo={
+                        "fecha": str(nueva_fecha), "tipo_novedad": str(nuevo_tipo or "").strip(),
+                        "descripcion": str(nueva_desc or "").strip(), "evidencia": str(nueva_evid or "").strip(),
+                        "avance_generado": float(nuevo_avance),
+                    }
+                    with engine.begin() as conn:
+                        conn.execute(text("""
+                            UPDATE pai_novedades
+                               SET fecha=CAST(:fecha AS DATE),
+                                   tipo_novedad=:tipo,
+                                   descripcion=:descripcion,
+                                   evidencia=:evidencia,
+                                   avance_generado=:avance
+                             WHERE id=:id AND id_objetivo=:obj
+                        """), {
+                            "fecha": nueva_fecha, "tipo": nuevo["tipo_novedad"],
+                            "descripcion": nuevo["descripcion"], "evidencia": nuevo["evidencia"],
+                            "avance": float(nuevo_avance), "id": int(seg_id), "obj": int(obj_id)
+                        })
+                        # Recalcular la fecha de último seguimiento del objetivo para que el tablero quede coherente.
+                        conn.execute(text("""
+                            UPDATE pai_objetivos
+                               SET fecha_ultimo_seguimiento=(
+                                   SELECT MAX(n.fecha) FROM pai_novedades n WHERE n.id_objetivo=:obj
+                               )
+                             WHERE id=:obj
+                        """), {"obj": int(obj_id)})
+                    registrar_auditoria(
+                        "CORREGIR_SEGUIMIENTO_PAI_MARIA",
+                        documento=doc,
+                        modulo="Seguimiento general PAI",
+                        valor_anterior=json.dumps(anterior, ensure_ascii=False),
+                        valor_nuevo=json.dumps(nuevo, ensure_ascii=False),
+                        observacion=(
+                            f"Seguimiento #{int(seg_id)} del objetivo #{int(obj_id)}. "
+                            f"Justificación: {str(justificacion).strip()}"
+                        )[:1000]
+                    )
+                    invalidar_cache_datos()
+                    st.success("✅ Seguimiento corregido. La modificación quedó registrada en auditoría.")
+                    st.rerun()
+
+    # Histórico migrado: consulta integral, sin alterar la fuente histórica desde este módulo.
+    try:
+        hist_obj, hist_seg, hist_prof = _cargar_pai_historico_v1639(doc)
+    except Exception:
+        hist_obj, hist_seg, hist_prof = pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
+    if not hist_obj.empty or not hist_seg.empty:
+        st.divider()
+        st.markdown("### 📚 PAI histórico 2026")
+        st.caption("Se muestra para revisión integral. La fuente histórica migrada permanece separada del seguimiento operativo.")
+        if not hist_obj.empty:
+            cols=[c for c in ["fecha_apertura","objetivo_descripcion","elaborado_por_original"] if c in hist_obj.columns]
+            st.markdown("**Objetivos históricos**")
+            st.dataframe(hist_obj[cols], use_container_width=True, hide_index=True)
+        if not hist_seg.empty:
+            cols=[c for c in ["fecha","responsables_original","descripcion"] if c in hist_seg.columns]
+            st.markdown("**Seguimientos históricos**")
+            st.dataframe(hist_seg[cols], use_container_width=True, hide_index=True)
+
 rol_router = str(
     st.session_state.get("rol_actual", "")
 ).upper().strip()
@@ -29915,6 +30159,16 @@ elif st.session_state.page == "mis_tareas_profesional_v16171":
     else:
         mis_tareas_profesional_v16171()
 
+    st.stop()
+
+elif st.session_state.page == "seguimiento_general_pai_maria_v16218":
+    _doc_router_v16218 = "".join(
+        ch for ch in str(st.session_state.get("documento_funcionario", "") or "") if ch.isdigit()
+    )
+    if _doc_router_v16218 != "1090420245" and rol_router not in ["COORDINACION", "MANAGER"]:
+        st.error("No tiene permisos para este módulo.")
+    else:
+        seguimiento_general_pai_maria_v16218()
     st.stop()
 
 elif st.session_state.page == "ajustes_administrativos_pai_v16215":
