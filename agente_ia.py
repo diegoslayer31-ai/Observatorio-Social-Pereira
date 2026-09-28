@@ -30076,23 +30076,290 @@ def seguimiento_general_pai_maria_v16218():
                     st.success("✅ Seguimiento corregido. La modificación quedó registrada en auditoría.")
                     st.rerun()
 
-    # Histórico migrado: consulta integral, sin alterar la fuente histórica desde este módulo.
+    # ============================================================
+    # V16.220 - HISTÓRICO 2026 EDITABLE PARA MARÍA FERNANDA
+    # Corrección controlada de fechas y texto, sin borrar registros.
+    # Carga únicamente el expediente seleccionado para reducir egress.
+    # ============================================================
     try:
         hist_obj, hist_seg, hist_prof = _cargar_pai_historico_v1639(doc)
     except Exception:
         hist_obj, hist_seg, hist_prof = pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
+
     if not hist_obj.empty or not hist_seg.empty:
         st.divider()
         st.markdown("### 📚 PAI histórico 2026")
-        st.caption("Se muestra para revisión integral. La fuente histórica migrada permanece separada del seguimiento operativo.")
-        if not hist_obj.empty:
-            cols=[c for c in ["fecha_apertura","objetivo_descripcion","elaborado_por_original"] if c in hist_obj.columns]
-            st.markdown("**Objetivos históricos**")
-            st.dataframe(hist_obj[cols], use_container_width=True, hide_index=True)
-        if not hist_seg.empty:
-            cols=[c for c in ["fecha","responsables_original","descripcion"] if c in hist_seg.columns]
-            st.markdown("**Seguimientos históricos**")
-            st.dataframe(hist_seg[cols], use_container_width=True, hide_index=True)
+        st.caption(
+            "Registros migrados del PAI 2026. María Fernanda puede corregir errores de fecha "
+            "y contenido sin eliminar el registro original. Toda modificación queda auditada."
+        )
+
+        # Resumen rápido para detectar datos que requieren revisión.
+        fechas_obj_validas = pd.to_datetime(
+            hist_obj.get("fecha_apertura", pd.Series(dtype="object")), errors="coerce"
+        ) if not hist_obj.empty else pd.Series(dtype="datetime64[ns]")
+        fechas_seg_validas = pd.to_datetime(
+            hist_seg.get("fecha", pd.Series(dtype="object")), errors="coerce"
+        ) if not hist_seg.empty else pd.Series(dtype="datetime64[ns]")
+        faltan_obj = int(fechas_obj_validas.isna().sum()) if len(fechas_obj_validas) else 0
+        faltan_seg = int(fechas_seg_validas.isna().sum()) if len(fechas_seg_validas) else 0
+        r1, r2, r3, r4 = st.columns(4)
+        r1.metric("Objetivos históricos", len(hist_obj))
+        r2.metric("Seguimientos históricos", len(hist_seg))
+        r3.metric("Objetivos sin fecha", faltan_obj)
+        r4.metric("Seguimientos sin fecha", faltan_seg)
+        if faltan_obj or faltan_seg:
+            st.warning(
+                f"⚠️ Revisión sugerida: {faltan_obj} objetivo(s) y {faltan_seg} seguimiento(s) "
+                "no tienen una fecha válida. El sistema los resalta para facilitar la depuración."
+            )
+
+        tab_hist_obj, tab_hist_seg = st.tabs([
+            "🎯 Objetivos históricos", "📝 Seguimientos históricos"
+        ])
+
+        with tab_hist_obj:
+            if hist_obj.empty:
+                st.info("No hay objetivos históricos para esta persona.")
+            else:
+                etiquetas_ho = {}
+                for _, oh in hist_obj.iterrows():
+                    oid = int(oh["id"])
+                    fo = pd.to_datetime(oh.get("fecha_apertura"), errors="coerce")
+                    ftxt = fo.strftime("%d/%m/%Y") if pd.notna(fo) else "⚠️ SIN FECHA"
+                    dsc = " ".join(str(oh.get("objetivo_descripcion") or "").split())
+                    if len(dsc) > 130:
+                        dsc = dsc[:127] + "..."
+                    etiquetas_ho[oid] = f"#{oid} · {ftxt} · {dsc or 'Sin descripción'}"
+
+                oid_hist = st.selectbox(
+                    "Objetivo histórico a revisar/corregir",
+                    list(etiquetas_ho.keys()),
+                    format_func=lambda x: etiquetas_ho[x],
+                    key="maria_obj_hist_v16220"
+                )
+                oh = hist_obj[hist_obj["id"] == oid_hist].iloc[0]
+                st.info("🎯 " + str(oh.get("objetivo_descripcion") or "Sin descripción"))
+                st.caption(
+                    "Elaborado por (histórico): " +
+                    str(oh.get("elaborado_por_original") or "Sin información")
+                )
+                fo = pd.to_datetime(oh.get("fecha_apertura"), errors="coerce")
+                fecha_obj_base = fo.date() if pd.notna(fo) else date.today()
+
+                with st.form(f"editar_obj_hist_maria_v16220_{oid_hist}"):
+                    st.markdown("#### ✏️ Corregir objetivo histórico")
+                    nueva_fecha_obj = st.date_input(
+                        "Fecha de apertura",
+                        value=fecha_obj_base,
+                        help="Si el registro estaba sin fecha, verifique la fuente antes de guardar."
+                    )
+                    nueva_desc_obj = st.text_area(
+                        "Descripción del objetivo",
+                        value=str(oh.get("objetivo_descripcion") or ""),
+                        height=120
+                    )
+                    nuevo_elab_obj = st.text_input(
+                        "Elaborado por (texto histórico)",
+                        value=str(oh.get("elaborado_por_original") or "")
+                    )
+                    just_obj = st.text_area(
+                        "Justificación de la corrección *",
+                        placeholder="Ej.: Fecha incorrecta en la migración; se verifica contra el PAI físico/original.",
+                        key=f"just_obj_hist_{oid_hist}"
+                    )
+                    conf_obj = st.checkbox(
+                        "Confirmo que verifiqué el dato histórico antes de modificarlo.",
+                        key=f"conf_obj_hist_{oid_hist}"
+                    )
+                    save_obj = st.form_submit_button(
+                        "💾 Guardar corrección del objetivo histórico",
+                        type="primary", use_container_width=True
+                    )
+
+                if save_obj:
+                    if not str(just_obj or "").strip():
+                        st.error("Debe indicar la justificación de la corrección.")
+                    elif not conf_obj:
+                        st.error("Debe confirmar que verificó el dato histórico.")
+                    else:
+                        anterior = {
+                            "fecha_apertura": str(oh.get("fecha_apertura") or ""),
+                            "objetivo_descripcion": str(oh.get("objetivo_descripcion") or ""),
+                            "elaborado_por_original": str(oh.get("elaborado_por_original") or "")
+                        }
+                        nuevo = {
+                            "fecha_apertura": str(nueva_fecha_obj),
+                            "objetivo_descripcion": str(nueva_desc_obj or "").strip(),
+                            "elaborado_por_original": str(nuevo_elab_obj or "").strip()
+                        }
+                        with engine.begin() as conn:
+                            conn.execute(text("""
+                                UPDATE pai_objetivos
+                                   SET fecha_apertura=CAST(:fecha AS DATE),
+                                       objetivo_descripcion=:descripcion,
+                                       elaborado_por_original=:elaborado
+                                 WHERE id=:id
+                                   AND TRIM(CAST(documento_usuario AS TEXT))=:doc
+                                   AND COALESCE(origen_registro,'')='MIGRADO PAI 2026'
+                            """), {
+                                "fecha": nueva_fecha_obj,
+                                "descripcion": nuevo["objetivo_descripcion"],
+                                "elaborado": nuevo["elaborado_por_original"],
+                                "id": int(oid_hist), "doc": doc
+                            })
+                        registrar_auditoria(
+                            "CORREGIR_OBJETIVO_HISTORICO_PAI_MARIA",
+                            documento=doc,
+                            modulo="Seguimiento general PAI",
+                            valor_anterior=json.dumps(anterior, ensure_ascii=False),
+                            valor_nuevo=json.dumps(nuevo, ensure_ascii=False),
+                            observacion=(
+                                f"Objetivo histórico #{int(oid_hist)}. Justificación: "
+                                f"{str(just_obj).strip()}"
+                            )[:1000]
+                        )
+                        invalidar_cache_datos()
+                        st.success("✅ Objetivo histórico corregido y auditado.")
+                        st.rerun()
+
+        with tab_hist_seg:
+            if hist_seg.empty:
+                st.info("No hay seguimientos históricos para esta persona.")
+            else:
+                etiquetas_hs = {}
+                for _, sh in hist_seg.iterrows():
+                    sid = int(sh["id"])
+                    fs = pd.to_datetime(sh.get("fecha"), errors="coerce")
+                    ftxt = fs.strftime("%d/%m/%Y") if pd.notna(fs) else "⚠️ SIN FECHA"
+                    resp = " ".join(str(sh.get("responsables_original") or "").split())
+                    dsc = " ".join(str(sh.get("descripcion") or "").split())
+                    if len(dsc) > 120:
+                        dsc = dsc[:117] + "..."
+                    etiquetas_hs[sid] = (
+                        f"#{sid} · {ftxt} · {resp or 'Sin responsable'} · {dsc or 'Sin descripción'}"
+                    )
+
+                sid_hist = st.selectbox(
+                    "Seguimiento histórico a revisar/corregir",
+                    list(etiquetas_hs.keys()),
+                    format_func=lambda x: etiquetas_hs[x],
+                    key="maria_seg_hist_v16220"
+                )
+                sh = hist_seg[hist_seg["id"] == sid_hist].iloc[0]
+                fs = pd.to_datetime(sh.get("fecha"), errors="coerce")
+
+                # Asistencia de revisión: si falta la fecha, propone visualmente la apertura
+                # histórica más cercana disponible, pero NUNCA la guarda automáticamente.
+                sugerida = None
+                if pd.isna(fs) and not hist_obj.empty:
+                    posibles = pd.to_datetime(hist_obj["fecha_apertura"], errors="coerce").dropna()
+                    if not posibles.empty:
+                        sugerida = posibles.max().date()
+                fecha_seg_base = fs.date() if pd.notna(fs) else (sugerida or date.today())
+
+                if pd.isna(fs):
+                    if sugerida:
+                        st.warning(
+                            f"⚠️ Este seguimiento no tiene fecha. Como ayuda de revisión se propone "
+                            f"{sugerida.strftime('%d/%m/%Y')} porque es la fecha de apertura histórica "
+                            "disponible más reciente. Verifíquela antes de guardar; no se aplica automáticamente."
+                        )
+                    else:
+                        st.warning(
+                            "⚠️ Este seguimiento no tiene fecha y no hay una fecha histórica suficiente "
+                            "para sugerirla. Verifique la fuente original antes de guardar."
+                        )
+
+                st.markdown("#### 📝 Seguimiento histórico seleccionado")
+                st.write(str(sh.get("descripcion") or "Sin descripción"))
+                st.caption(
+                    "Responsable(s): " + str(sh.get("responsables_original") or "Sin información")
+                )
+
+                with st.form(f"editar_seg_hist_maria_v16220_{sid_hist}"):
+                    st.markdown("#### ✏️ Corregir seguimiento histórico")
+                    c1, c2 = st.columns([1, 2])
+                    nueva_fecha_hist = c1.date_input(
+                        "Fecha del seguimiento",
+                        value=fecha_seg_base
+                    )
+                    nuevos_resp_hist = c2.text_input(
+                        "Responsable(s) histórico(s)",
+                        value=str(sh.get("responsables_original") or "")
+                    )
+                    nueva_desc_hist = st.text_area(
+                        "Descripción del seguimiento",
+                        value=str(sh.get("descripcion") or ""),
+                        height=150
+                    )
+                    nuevo_elab_hist = st.text_input(
+                        "Elaborado por (texto histórico)",
+                        value=str(sh.get("elaborado_por_original") or "")
+                    )
+                    just_hist = st.text_area(
+                        "Justificación de la corrección *",
+                        placeholder="Ej.: El seguimiento quedó sin fecha durante la migración; fecha verificada en el registro original.",
+                        key=f"just_seg_hist_{sid_hist}"
+                    )
+                    conf_hist = st.checkbox(
+                        "Confirmo que verifiqué el seguimiento histórico y deseo guardar la corrección.",
+                        key=f"conf_seg_hist_{sid_hist}"
+                    )
+                    save_hist = st.form_submit_button(
+                        "💾 Guardar corrección del seguimiento histórico",
+                        type="primary", use_container_width=True
+                    )
+
+                if save_hist:
+                    if not str(just_hist or "").strip():
+                        st.error("Debe indicar la justificación de la corrección.")
+                    elif not conf_hist:
+                        st.error("Debe confirmar que verificó el seguimiento histórico.")
+                    else:
+                        anterior = {
+                            "fecha": str(sh.get("fecha") or ""),
+                            "responsables_original": str(sh.get("responsables_original") or ""),
+                            "descripcion": str(sh.get("descripcion") or ""),
+                            "elaborado_por_original": str(sh.get("elaborado_por_original") or "")
+                        }
+                        nuevo = {
+                            "fecha": str(nueva_fecha_hist),
+                            "responsables_original": str(nuevos_resp_hist or "").strip(),
+                            "descripcion": str(nueva_desc_hist or "").strip(),
+                            "elaborado_por_original": str(nuevo_elab_hist or "").strip()
+                        }
+                        with engine.begin() as conn:
+                            conn.execute(text("""
+                                UPDATE pai_seguimientos_historicos
+                                   SET fecha=CAST(:fecha AS DATE),
+                                       responsables_original=:responsables,
+                                       descripcion=:descripcion,
+                                       elaborado_por_original=:elaborado
+                                 WHERE id=:id
+                                   AND TRIM(CAST(documento_usuario AS TEXT))=:doc
+                                   AND COALESCE(fuente,'')='MIGRADO PAI 2026'
+                            """), {
+                                "fecha": nueva_fecha_hist,
+                                "responsables": nuevo["responsables_original"],
+                                "descripcion": nuevo["descripcion"],
+                                "elaborado": nuevo["elaborado_por_original"],
+                                "id": int(sid_hist), "doc": doc
+                            })
+                        registrar_auditoria(
+                            "CORREGIR_SEGUIMIENTO_HISTORICO_PAI_MARIA",
+                            documento=doc,
+                            modulo="Seguimiento general PAI",
+                            valor_anterior=json.dumps(anterior, ensure_ascii=False),
+                            valor_nuevo=json.dumps(nuevo, ensure_ascii=False),
+                            observacion=(
+                                f"Seguimiento histórico #{int(sid_hist)}. Justificación: "
+                                f"{str(just_hist).strip()}"
+                            )[:1000]
+                        )
+                        invalidar_cache_datos()
+                        st.success("✅ Seguimiento histórico corregido y auditado.")
+                        st.rerun()
 
 rol_router = str(
     st.session_state.get("rol_actual", "")
