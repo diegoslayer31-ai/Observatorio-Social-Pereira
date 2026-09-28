@@ -12312,6 +12312,337 @@ def _resumen_profesionales_historicos_v1639(df):
     return actuales, historicos
 
 
+# ============================================================
+# V16.214 - AJUSTE ADMINISTRATIVO DEL PAI
+# Solo COORDINACION / MANAGER. Corrige fechas y estado sin borrar trazabilidad.
+# ============================================================
+def ajuste_administrativo_pai_v16214(documento, nombre_usuario=""):
+    rol = str(st.session_state.get("rol_actual", "")).strip().upper()
+    if rol not in ["COORDINACION", "MANAGER"]:
+        return
+
+    doc = limpiar_documento(documento)
+    if not doc:
+        st.warning("No hay una persona seleccionada para ajustar.")
+        return
+
+    st.markdown("### 🛠️ Ajuste administrativo del PAI")
+    st.caption(
+        "Uso exclusivo de Coordinación/Manager para corregir errores de registro. "
+        "Cada cambio exige justificación y queda registrado en auditoría."
+    )
+    st.warning(
+        "Esta herramienta no elimina objetivos ni seguimientos. Corrige fechas/estado "
+        "y conserva trazabilidad del valor anterior y del valor nuevo."
+    )
+
+    objetivos_admin = pd.read_sql(
+        text("""
+            SELECT id, objetivo_tipo, objetivo_descripcion, estado,
+                   fecha_apertura, fecha_meta, fecha_cumplimiento_real,
+                   fecha_ultimo_seguimiento
+            FROM pai_objetivos
+            WHERE TRIM(CAST(documento_usuario AS TEXT)) = :doc
+            ORDER BY id DESC
+        """),
+        engine,
+        params={"doc": doc}
+    )
+
+    if objetivos_admin.empty:
+        st.info("Esta persona no tiene objetivos PAI para ajustar.")
+    else:
+        objetivo_id = st.selectbox(
+            "Objetivo PAI a corregir",
+            objetivos_admin["id"].astype(int).tolist(),
+            format_func=lambda oid: (
+                f"#{oid} · "
+                + str(objetivos_admin.loc[objetivos_admin['id'].astype(int)==int(oid), 'objetivo_tipo'].iloc[0])
+            ),
+            key=f"v16214_obj_{doc}"
+        )
+        fila = objetivos_admin.loc[
+            objetivos_admin["id"].astype(int) == int(objetivo_id)
+        ].iloc[0]
+
+        def _fecha_o_hoy(v):
+            x = pd.to_datetime(v, errors="coerce")
+            return x.date() if pd.notna(x) else ahora_colombia().date()
+
+        def _fecha_opcional(v):
+            x = pd.to_datetime(v, errors="coerce")
+            return x.date() if pd.notna(x) else ahora_colombia().date()
+
+        apertura_actual = pd.to_datetime(fila.get("fecha_apertura"), errors="coerce")
+        meta_actual = pd.to_datetime(fila.get("fecha_meta"), errors="coerce")
+        cumplimiento_actual = pd.to_datetime(fila.get("fecha_cumplimiento_real"), errors="coerce")
+        ultimo_actual = pd.to_datetime(fila.get("fecha_ultimo_seguimiento"), errors="coerce")
+
+        with st.form(f"v16214_form_obj_{doc}_{objetivo_id}"):
+            c1, c2 = st.columns(2)
+            with c1:
+                nueva_apertura = st.date_input(
+                    "Fecha de apertura",
+                    value=_fecha_o_hoy(apertura_actual),
+                    key=f"v16214_apertura_{doc}_{objetivo_id}"
+                )
+                nueva_meta = st.date_input(
+                    "Fecha meta",
+                    value=_fecha_o_hoy(meta_actual),
+                    key=f"v16214_meta_{doc}_{objetivo_id}"
+                )
+            with c2:
+                tiene_cumplimiento = st.checkbox(
+                    "Registrar fecha de cumplimiento",
+                    value=pd.notna(cumplimiento_actual),
+                    key=f"v16214_tiene_cump_{doc}_{objetivo_id}"
+                )
+                nueva_cumplimiento = st.date_input(
+                    "Fecha de cumplimiento",
+                    value=_fecha_opcional(cumplimiento_actual),
+                    disabled=not tiene_cumplimiento,
+                    key=f"v16214_cump_{doc}_{objetivo_id}"
+                )
+                tiene_ultimo = st.checkbox(
+                    "Registrar fecha de último seguimiento",
+                    value=pd.notna(ultimo_actual),
+                    key=f"v16214_tiene_ult_{doc}_{objetivo_id}"
+                )
+                nuevo_ultimo = st.date_input(
+                    "Fecha de último seguimiento",
+                    value=_fecha_opcional(ultimo_actual),
+                    disabled=not tiene_ultimo,
+                    key=f"v16214_ult_{doc}_{objetivo_id}"
+                )
+
+            estados = ["Activo", "CUMPLIDO", "CERRADO", "CANCELADO", "HISTORICO"]
+            estado_actual = str(fila.get("estado") or "Activo").strip()
+            if estado_actual not in estados:
+                estados = [estado_actual] + estados
+            nuevo_estado = st.selectbox(
+                "Estado del objetivo",
+                estados,
+                index=estados.index(estado_actual),
+                key=f"v16214_estado_{doc}_{objetivo_id}"
+            )
+            justificacion = st.text_area(
+                "Justificación del ajuste *",
+                placeholder="Ej.: corrección de fecha por registro extemporáneo verificado en soporte físico.",
+                key=f"v16214_just_obj_{doc}_{objetivo_id}"
+            )
+            confirmar = st.checkbox(
+                "Confirmo que revisé las fechas y que el ajuste corresponde al soporte del caso.",
+                key=f"v16214_conf_obj_{doc}_{objetivo_id}"
+            )
+            guardar = st.form_submit_button(
+                "💾 Guardar ajuste administrativo",
+                use_container_width=True,
+                type="primary"
+            )
+
+        if guardar:
+            if not justificacion.strip():
+                st.error("Debe registrar la justificación del ajuste.")
+            elif not confirmar:
+                st.error("Debe confirmar la revisión antes de guardar.")
+            elif nueva_meta < nueva_apertura:
+                st.error("La fecha meta no puede ser anterior a la fecha de apertura.")
+            elif tiene_cumplimiento and nueva_cumplimiento < nueva_apertura:
+                st.error("La fecha de cumplimiento no puede ser anterior a la apertura.")
+            elif tiene_ultimo and nuevo_ultimo < nueva_apertura:
+                st.error("El último seguimiento no puede ser anterior a la apertura.")
+            else:
+                anterior = {
+                    "id": int(objetivo_id),
+                    "fecha_apertura": None if pd.isna(apertura_actual) else str(apertura_actual),
+                    "fecha_meta": None if pd.isna(meta_actual) else str(meta_actual),
+                    "fecha_cumplimiento_real": None if pd.isna(cumplimiento_actual) else str(cumplimiento_actual),
+                    "fecha_ultimo_seguimiento": None if pd.isna(ultimo_actual) else str(ultimo_actual),
+                    "estado": estado_actual,
+                }
+                nuevo = {
+                    "id": int(objetivo_id),
+                    "fecha_apertura": str(nueva_apertura),
+                    "fecha_meta": str(nueva_meta),
+                    "fecha_cumplimiento_real": str(nueva_cumplimiento) if tiene_cumplimiento else None,
+                    "fecha_ultimo_seguimiento": str(nuevo_ultimo) if tiene_ultimo else None,
+                    "estado": nuevo_estado,
+                }
+                with engine.begin() as conn:
+                    conn.execute(
+                        text("""
+                            UPDATE pai_objetivos
+                            SET fecha_apertura = CAST(:apertura AS DATE),
+                                fecha_meta = CAST(:meta AS DATE),
+                                fecha_cumplimiento_real = CASE WHEN :tiene_cump THEN CAST(:cumplimiento AS DATE) ELSE NULL END,
+                                fecha_ultimo_seguimiento = CASE WHEN :tiene_ult THEN CAST(:ultimo AS DATE) ELSE NULL END,
+                                estado = :estado
+                            WHERE id = :id
+                              AND TRIM(CAST(documento_usuario AS TEXT)) = :doc
+                        """),
+                        {
+                            "apertura": nueva_apertura,
+                            "meta": nueva_meta,
+                            "tiene_cump": bool(tiene_cumplimiento),
+                            "cumplimiento": nueva_cumplimiento,
+                            "tiene_ult": bool(tiene_ultimo),
+                            "ultimo": nuevo_ultimo,
+                            "estado": nuevo_estado,
+                            "id": int(objetivo_id),
+                            "doc": doc,
+                        }
+                    )
+                registrar_auditoria(
+                    "AJUSTE_ADMINISTRATIVO_PAI_OBJETIVO",
+                    documento=doc,
+                    modulo="PAI - Ajuste administrativo",
+                    valor_anterior=json.dumps(anterior, ensure_ascii=False),
+                    valor_nuevo=json.dumps(nuevo, ensure_ascii=False),
+                    observacion=justificacion.strip()[:1000]
+                )
+                invalidar_cache_datos()
+                st.success("✅ Ajuste administrativo guardado y auditado.")
+                st.rerun()
+
+    st.markdown("#### 📝 Corregir fecha de un seguimiento")
+    seguimientos_admin = pd.read_sql(
+        text("""
+            SELECT n.id, n.id_objetivo, n.fecha, n.tipo_novedad, n.descripcion
+            FROM pai_novedades n
+            JOIN pai_objetivos o ON o.id = n.id_objetivo
+            WHERE TRIM(CAST(o.documento_usuario AS TEXT)) = :doc
+            ORDER BY n.fecha DESC, n.id DESC
+        """),
+        engine,
+        params={"doc": doc}
+    )
+    if seguimientos_admin.empty:
+        st.caption("No hay seguimientos operativos para corregir.")
+    else:
+        seg_id = st.selectbox(
+            "Seguimiento a corregir",
+            seguimientos_admin["id"].astype(int).tolist(),
+            format_func=lambda sid: (
+                f"#{sid} · "
+                + str(pd.to_datetime(seguimientos_admin.loc[seguimientos_admin['id'].astype(int)==int(sid), 'fecha'].iloc[0], errors='coerce').date())
+                + " · "
+                + str(seguimientos_admin.loc[seguimientos_admin['id'].astype(int)==int(sid), 'tipo_novedad'].iloc[0])
+            ),
+            key=f"v16214_seg_{doc}"
+        )
+        seg = seguimientos_admin.loc[seguimientos_admin["id"].astype(int)==int(seg_id)].iloc[0]
+        fecha_seg_actual = pd.to_datetime(seg.get("fecha"), errors="coerce")
+        with st.form(f"v16214_form_seg_{doc}_{seg_id}"):
+            nueva_fecha_seg = st.date_input(
+                "Nueva fecha del seguimiento",
+                value=(fecha_seg_actual.date() if pd.notna(fecha_seg_actual) else ahora_colombia().date()),
+                key=f"v16214_fecha_seg_{doc}_{seg_id}"
+            )
+            just_seg = st.text_area(
+                "Justificación del ajuste del seguimiento *",
+                key=f"v16214_just_seg_{doc}_{seg_id}"
+            )
+            conf_seg = st.checkbox(
+                "Confirmo la corrección de esta fecha.",
+                key=f"v16214_conf_seg_{doc}_{seg_id}"
+            )
+            guardar_seg = st.form_submit_button("💾 Corregir fecha del seguimiento", use_container_width=True)
+        if guardar_seg:
+            if not just_seg.strip():
+                st.error("Debe registrar la justificación.")
+            elif not conf_seg:
+                st.error("Debe confirmar la corrección.")
+            else:
+                with engine.begin() as conn:
+                    conn.execute(
+                        text("UPDATE pai_novedades SET fecha=CAST(:fecha AS DATE) WHERE id=:id"),
+                        {"fecha": nueva_fecha_seg, "id": int(seg_id)}
+                    )
+                registrar_auditoria(
+                    "AJUSTE_ADMINISTRATIVO_PAI_SEGUIMIENTO",
+                    documento=doc,
+                    modulo="PAI - Ajuste administrativo",
+                    valor_anterior=str(fecha_seg_actual),
+                    valor_nuevo=str(nueva_fecha_seg),
+                    observacion=f"Seguimiento #{int(seg_id)}. {just_seg.strip()}"[:1000]
+                )
+                invalidar_cache_datos()
+                st.success("✅ Fecha del seguimiento corregida y auditada.")
+                st.rerun()
+
+    st.markdown("#### ✅ Corregir fecha de cierre formal")
+    cierre_admin = pd.read_sql(
+        text("""
+            SELECT * FROM pai_cierres
+            WHERE TRIM(CAST(documento_usuario AS TEXT))=:doc
+            ORDER BY creado_en DESC
+            LIMIT 1
+        """),
+        engine,
+        params={"doc": doc}
+    )
+    if cierre_admin.empty:
+        st.caption("Esta persona no tiene un cierre formal PAI registrado.")
+    else:
+        cierre = cierre_admin.iloc[0]
+        fecha_cierre_actual = pd.to_datetime(cierre.get("fecha_cierre"), errors="coerce")
+        with st.form(f"v16214_form_cierre_{doc}"):
+            nueva_fecha_cierre = st.date_input(
+                "Fecha de cierre",
+                value=(fecha_cierre_actual.date() if pd.notna(fecha_cierre_actual) else ahora_colombia().date()),
+                key=f"v16214_fecha_cierre_{doc}"
+            )
+            just_cierre = st.text_area(
+                "Justificación del ajuste de cierre *",
+                key=f"v16214_just_cierre_{doc}"
+            )
+            conf_cierre = st.checkbox(
+                "Confirmo la corrección de la fecha de cierre.",
+                key=f"v16214_conf_cierre_{doc}"
+            )
+            guardar_cierre = st.form_submit_button("💾 Corregir fecha de cierre", use_container_width=True)
+        if guardar_cierre:
+            if not just_cierre.strip():
+                st.error("Debe registrar la justificación.")
+            elif not conf_cierre:
+                st.error("Debe confirmar la corrección.")
+            else:
+                # Evitar cierre anterior a la primera apertura del PAI.
+                primera_apertura = pd.read_sql(
+                    text("SELECT MIN(fecha_apertura) AS f FROM pai_objetivos WHERE TRIM(CAST(documento_usuario AS TEXT))=:doc"),
+                    engine,
+                    params={"doc": doc}
+                ).iloc[0]["f"]
+                primera_apertura = pd.to_datetime(primera_apertura, errors="coerce")
+                if pd.notna(primera_apertura) and nueva_fecha_cierre < primera_apertura.date():
+                    st.error("La fecha de cierre no puede ser anterior a la primera apertura del PAI.")
+                else:
+                    with engine.begin() as conn:
+                        conn.execute(
+                            text("""
+                                UPDATE pai_cierres
+                                SET fecha_cierre=CAST(:fecha AS DATE)
+                                WHERE TRIM(CAST(documento_usuario AS TEXT))=:doc
+                                  AND creado_en=(
+                                      SELECT MAX(creado_en) FROM pai_cierres
+                                      WHERE TRIM(CAST(documento_usuario AS TEXT))=:doc
+                                  )
+                            """),
+                            {"fecha": nueva_fecha_cierre, "doc": doc}
+                        )
+                    registrar_auditoria(
+                        "AJUSTE_ADMINISTRATIVO_PAI_CIERRE",
+                        documento=doc,
+                        modulo="PAI - Ajuste administrativo",
+                        valor_anterior=str(fecha_cierre_actual),
+                        valor_nuevo=str(nueva_fecha_cierre),
+                        observacion=just_cierre.strip()[:1000]
+                    )
+                    invalidar_cache_datos()
+                    st.success("✅ Fecha de cierre corregida y auditada.")
+                    st.rerun()
+
+
 def panel_profesional_v15(doc_forzado=None, incrustado=False):
     if not incrustado:
         st.title("🩺 Mi Panel Profesional")
@@ -13219,15 +13550,27 @@ def panel_profesional_v15(doc_forzado=None, incrustado=False):
     # ------------------------------------------------------------
     # Tabs del expediente único
     # ------------------------------------------------------------
-    tab_resumen, tab_obj, tab_seg, tab_hist, tab_cierre = st.tabs(
-        [
-            "📋 Resumen PAI",
-            "🎯 Objetivos",
-            "📝 Seguimientos",
-            "📚 Trazabilidad 2026",
-            "✅ Cierre"
-        ]
-    )
+    if rol_actual in ["COORDINACION", "MANAGER"]:
+        tab_resumen, tab_obj, tab_seg, tab_hist, tab_admin_pai, tab_cierre = st.tabs(
+            [
+                "📋 Resumen PAI",
+                "🎯 Objetivos",
+                "📝 Seguimientos",
+                "📚 Trazabilidad 2026",
+                "🛠️ Ajuste administrativo",
+                "✅ Cierre"
+            ]
+        )
+    else:
+        tab_resumen, tab_obj, tab_seg, tab_hist, tab_cierre = st.tabs(
+            [
+                "📋 Resumen PAI",
+                "🎯 Objetivos",
+                "📝 Seguimientos",
+                "📚 Trazabilidad 2026",
+                "✅ Cierre"
+            ]
+        )
 
     # ============================================================
     # RESUMEN
@@ -14170,6 +14513,13 @@ def panel_profesional_v15(doc_forzado=None, incrustado=False):
                 "La información original migrada se conserva como trazabilidad. "
                 "Los objetivos migrados sí forman parte de la gestión operativa actual."
             )
+
+    # ============================================================
+    # V16.214 - AJUSTE ADMINISTRATIVO (solo Coordinación/Manager)
+    # ============================================================
+    if rol_actual in ["COORDINACION", "MANAGER"]:
+        with tab_admin_pai:
+            ajuste_administrativo_pai_v16214(doc_sel, nombre_usuario)
 
     # ============================================================
     # CIERRE
