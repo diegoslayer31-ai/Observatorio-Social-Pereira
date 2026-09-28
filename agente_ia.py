@@ -26861,6 +26861,55 @@ def modulo_informe_mensual_maria_v16221():
         "no PAI elaborados por María Fernanda."
     )
     obligaciones = contrato_cfg.get("obligaciones", [])
+
+    # V16.224 - Evidencia automática del Observatorio Social para la obligación del informe mensual.
+    # Reutiliza el mismo consolidado de Dirección: población ACTIVA al corte y movimientos exactos del período.
+    try:
+        _obs_mafe = _reporte_observatorio_direccion_v16212(fecha_inicio, fecha_fin)
+    except Exception:
+        _obs_mafe = {"resumen": {}, "movimientos": pd.DataFrame(), "texto": ""}
+
+    _r_obs_mafe = _obs_mafe.get("resumen", {}) or {}
+    _m_obs_mafe = _obs_mafe.get("movimientos", pd.DataFrame())
+    _mov_map_mafe = {}
+    if isinstance(_m_obs_mafe, pd.DataFrame) and not _m_obs_mafe.empty:
+        try:
+            _mov_map_mafe = {
+                str(r.get("Movimiento", "")).strip().upper(): int(r.get("Cantidad", 0) or 0)
+                for _, r in _m_obs_mafe.iterrows()
+            }
+        except Exception:
+            _mov_map_mafe = {}
+
+    _obs_actividad_mafe = (
+        f"Se consolidó el reporte del Observatorio Social ASCF correspondiente al período "
+        f"{fecha_inicio:%d/%m/%Y} al {fecha_fin:%d/%m/%Y}, como soporte del seguimiento de la coordinación terapéutica. "
+        f"Al corte de generación se registran {_r_obs_mafe.get('Total población activa', 0)} personas activas: "
+        f"{_r_obs_mafe.get('Urbano', 0)} en modalidad Urbano y {_r_obs_mafe.get('Granja', 0)} en modalidad Granja. "
+        f"Durante el período se registraron {_mov_map_mafe.get('EGRESO', 0)} egreso(s), "
+        f"{_mov_map_mafe.get('INGRESO', 0)} ingreso(s), {_mov_map_mafe.get('REINGRESO', 0)} reingreso(s) y "
+        f"{_mov_map_mafe.get('SUSPENSION', 0)} suspensión(es)."
+    )
+    _obs_soportes_mafe = (
+        "• REPORTE OBSERVATORIO SOCIAL ASCF: población activa al corte y movimientos operativos del período.\n"
+        f"• POBLACIÓN ACTIVA: {_r_obs_mafe.get('Total población activa', 0)} | "
+        f"Urbano: {_r_obs_mafe.get('Urbano', 0)} | Granja: {_r_obs_mafe.get('Granja', 0)}.\n"
+        f"• EGRESOS DEL PERÍODO: {_mov_map_mafe.get('EGRESO', 0)}.\n"
+        f"• INGRESOS DEL PERÍODO: {_mov_map_mafe.get('INGRESO', 0)}.\n"
+        f"• REINGRESOS DEL PERÍODO: {_mov_map_mafe.get('REINGRESO', 0)}.\n"
+        f"• SUSPENSIONES DEL PERÍODO: {_mov_map_mafe.get('SUSPENSION', 0)}."
+    )
+    _obs_logro_mafe = (
+        f"Se dejó consolidada información verificable del Observatorio Social ASCF para el período, incluyendo "
+        f"{_mov_map_mafe.get('EGRESO', 0)} egreso(s) y el estado de la población activa, como insumo para el seguimiento, "
+        "la toma de decisiones y el reporte mensual de la coordinación terapéutica."
+    )
+
+    # Precargar solo la obligación 3 y conservar cualquier edición que María ya haya hecho en la sesión.
+    st.session_state.setdefault("mafe_ob_act_3_v16221", _obs_actividad_mafe)
+    st.session_state.setdefault("mafe_ob_sop_3_v16221", _obs_soportes_mafe)
+    st.session_state.setdefault("mafe_ob_log_3_v16221", _obs_logro_mafe)
+
     filas=[]
     for i, ob in enumerate(obligaciones, 1):
         with st.expander(f"Obligación {i}", expanded=(i in [3,4,5,9])):
