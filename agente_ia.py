@@ -16966,6 +16966,17 @@ with st.sidebar:
                 st.session_state.page = "seguimiento_general_pai_maria_v16218"
                 st.rerun()
 
+            # V16.221 - Informe exclusivo de María desde el menú de COORDINACIÓN.
+            # María inicia sesión con rol COORDINACION, por eso este acceso debe
+            # existir en esta rama y no únicamente en el menú de profesionales.
+            if st.button(
+                "📄 Mi Informe Mensual · Coordinación terapéutica",
+                use_container_width=True,
+                key="menu_informe_maria_coord_v16221"
+            ):
+                st.session_state.page = "informe_mensual_maria_v16221"
+                st.rerun()
+
         if st.button(
             "🧭 Caracterización Habitabilidad",
             use_container_width=True
