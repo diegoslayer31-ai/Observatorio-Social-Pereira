@@ -16874,6 +16874,14 @@ with st.sidebar:
                 st.session_state.page = "seguimiento_general_pai_maria_v16218"
                 st.rerun()
 
+            if st.button(
+                "📄 Mi Informe Mensual · Coordinación terapéutica",
+                use_container_width=True,
+                key="menu_informe_maria_v16221"
+            ):
+                st.session_state.page = "informe_mensual_maria_v16221"
+                st.rerun()
+
         # V16.78 - El informe mensual también es parte del acceso profesional.
         # No depende de una variable antigua de acceso_pai_menu.
         if st.button(
@@ -26668,6 +26676,234 @@ def modulo_politica_publica_v1678():
 
 
 # V16.96 - Rol de la sesión definido ANTES de cualquier ruta protegida.
+
+# ============================================================
+# V16.221 - INFORME MENSUAL · MARÍA FERNANDA SANTIAGO PABÓN
+# Coordinación y seguimiento terapéutico · CC 1090420245
+# ============================================================
+def modulo_informe_mensual_maria_v16221():
+    doc_login = _solo_digitos_v16124(st.session_state.get("documento_funcionario", ""))
+    rol = str(st.session_state.get("rol_actual", "")).upper().strip()
+    if doc_login != "1090420245" and rol not in ["COORDINACION", "MANAGER"]:
+        st.error("Este informe está habilitado para María Fernanda Santiago Pabón y perfiles de Coordinación/Manager.")
+        return
+
+    st.title("📄 Informe mensual – Coordinación y seguimiento terapéutico")
+    st.caption(
+        "MARÍA FERNANDA SANTIAGO PABÓN · CC 1090420245. "
+        "Los PAI se presentan como universo bajo seguimiento del proceso; "
+        "solo los seguimientos registrados por María se atribuyen a su gestión directa."
+    )
+    hoy = ahora_colombia().date()
+    inicio_mes = hoy.replace(day=1)
+    c1, c2 = st.columns(2)
+    fecha_inicio = c1.date_input("Fecha inicial", inicio_mes, key="mafe_inf_ini_v16221")
+    fecha_fin = c2.date_input("Fecha final", hoy, key="mafe_inf_fin_v16221")
+    if fecha_inicio > fecha_fin:
+        st.error("La fecha inicial no puede ser posterior a la fecha final.")
+        return
+
+    contrato_cfg = _contrato_individual_v16124("1090420245", "MARIA FERNANDA SANTIAGO PABON") or {}
+
+    def _leer_sql(sql, params=None):
+        try:
+            return pd.read_sql(text(sql), engine, params=params or {})
+        except Exception:
+            return pd.DataFrame()
+
+    # Universo PAI. No se atribuye su elaboración a María.
+    obj = _leer_sql("""
+        SELECT id, documento_usuario, objetivo_tipo, objetivo_descripcion, estado,
+               porcentaje_avance, fecha_apertura, fecha_meta,
+               fecha_ultimo_seguimiento, fecha_cumplimiento_real
+        FROM pai_objetivos
+        WHERE COALESCE(UPPER(TRIM(estado)),'') <> 'HISTORICO'
+    """)
+    seg = _leer_sql("""
+        SELECT n.id, n.id_objetivo, n.fecha, n.profesional, n.tipo_novedad,
+               n.descripcion, n.avance_generado, o.documento_usuario
+        FROM pai_novedades n
+        JOIN pai_objetivos o ON o.id=n.id_objetivo
+        WHERE CAST(n.fecha AS DATE) BETWEEN :ini AND :fin
+        ORDER BY n.fecha DESC
+    """, {"ini": fecha_inicio, "fin": fecha_fin})
+
+    if not obj.empty:
+        for cc in ["fecha_apertura","fecha_meta","fecha_ultimo_seguimiento","fecha_cumplimiento_real"]:
+            if cc in obj.columns:
+                obj[cc] = pd.to_datetime(obj[cc], errors="coerce")
+        obj["estado_norm"] = obj["estado"].fillna("").astype(str).str.upper().str.strip()
+        obj["avance_num"] = pd.to_numeric(obj["porcentaje_avance"], errors="coerce").fillna(0)
+    else:
+        obj = pd.DataFrame(columns=["id","documento_usuario","estado","porcentaje_avance","fecha_apertura","fecha_meta","fecha_ultimo_seguimiento","fecha_cumplimiento_real","estado_norm","avance_num"])
+
+    activos = obj[~obj["estado_norm"].isin(["CUMPLIDO","CERRADO","CANCELADO","INACTIVO"])] if not obj.empty else obj.copy()
+    personas_activas = activos["documento_usuario"].dropna().astype(str).nunique() if "documento_usuario" in activos else 0
+    objetivos_activos = len(activos)
+    pai_activos = personas_activas  # un PAI por persona; los objetivos se muestran aparte.
+
+    # Corte de inicio: aproximación transparente basada en apertura y estado disponible.
+    if not obj.empty and "fecha_apertura" in obj:
+        abiertos_inicio = obj[obj["fecha_apertura"].dt.date <= fecha_inicio]
+        pai_inicio = abiertos_inicio["documento_usuario"].dropna().astype(str).nunique()
+    else:
+        pai_inicio = 0
+
+    cumplidos_periodo = 0
+    if not obj.empty and "fecha_cumplimiento_real" in obj:
+        fc = obj["fecha_cumplimiento_real"]
+        cumplidos_periodo = int(((fc.dt.date >= fecha_inicio) & (fc.dt.date <= fecha_fin)).fillna(False).sum())
+
+    seguimientos_periodo = len(seg)
+    nombre_norm = "MARIA FERNANDA SANTIAGO"
+    if not seg.empty and "profesional" in seg:
+        sp = seg["profesional"].fillna("").astype(str).str.upper()
+        seg_maria = seg[sp.str.contains("MARIA FERNANDA", regex=False) | sp.str.contains("SANTIAGO", regex=False)].copy()
+    else:
+        seg_maria = pd.DataFrame()
+    seguimientos_maria = len(seg_maria)
+    usuarios_maria = seg_maria["documento_usuario"].dropna().astype(str).nunique() if not seg_maria.empty else 0
+
+    avance_prom = round(float(activos["avance_num"].mean()),1) if not activos.empty else 0.0
+    limite_reciente = pd.Timestamp(fecha_fin) - pd.Timedelta(days=30)
+    sin_seg = activos[
+        activos["fecha_ultimo_seguimiento"].isna() |
+        (activos["fecha_ultimo_seguimiento"] < limite_reciente)
+    ].copy() if "fecha_ultimo_seguimiento" in activos else pd.DataFrame()
+    vencidos = activos[
+        activos["fecha_meta"].notna() & (activos["fecha_meta"].dt.date < fecha_fin)
+    ].copy() if "fecha_meta" in activos else pd.DataFrame()
+    prox_lim = pd.Timestamp(fecha_fin) + pd.Timedelta(days=15)
+    proximos = activos[
+        activos["fecha_meta"].notna() &
+        (activos["fecha_meta"] >= pd.Timestamp(fecha_fin)) &
+        (activos["fecha_meta"] <= prox_lim)
+    ].copy() if "fecha_meta" in activos else pd.DataFrame()
+
+    st.markdown("### 🧭 Estado de la gestión terapéutica")
+    a,b,c,d,e = st.columns(5)
+    a.metric("PAI bajo seguimiento", pai_activos)
+    b.metric("Objetivos activos", objetivos_activos)
+    c.metric("Seguimientos del período", seguimientos_periodo)
+    d.metric("Seguimientos de María", seguimientos_maria)
+    e.metric("Avance promedio", f"{avance_prom}%")
+    st.caption(
+        f"Corte inicial calculado: {pai_inicio} persona(s) con PAI abierto al {fecha_inicio:%d/%m/%Y}. "
+        "Este valor se calcula con la fecha de apertura y el estado disponible actualmente; no se presenta como reconstrucción histórica exacta."
+    )
+
+    st.info(
+        f"**Estado de la gestión terapéutica:** {pai_activos} PAI bajo seguimiento · "
+        f"{max(pai_activos - sin_seg['documento_usuario'].astype(str).nunique() if not sin_seg.empty else pai_activos,0)} con seguimiento reciente · "
+        f"{sin_seg['documento_usuario'].astype(str).nunique() if not sin_seg.empty else 0} requieren seguimiento · "
+        f"{cumplidos_periodo} objetivos cumplidos en el período · "
+        f"{seguimientos_maria} seguimientos registrados por María."
+    )
+
+    st.markdown("### 🚦 PAI que requieren atención")
+    x,y,z = st.columns(3)
+    x.metric("Sin seguimiento > 30 días", len(sin_seg))
+    y.metric("Objetivos vencidos", len(vencidos))
+    z.metric("Vencen en próximos 15 días", len(proximos))
+    alertas = pd.concat([
+        sin_seg.assign(Alerta="Sin seguimiento reciente"),
+        vencidos.assign(Alerta="Fecha meta vencida"),
+        proximos.assign(Alerta="Fecha meta próxima")
+    ], ignore_index=True) if any(not x.empty for x in [sin_seg,vencidos,proximos]) else pd.DataFrame()
+    if not alertas.empty:
+        alertas = alertas.drop_duplicates(subset=["id","Alerta"])
+        cols_alerta=[c for c in ["documento_usuario","objetivo_tipo","porcentaje_avance","fecha_meta","fecha_ultimo_seguimiento","Alerta"] if c in alertas.columns]
+        st.dataframe(alertas[cols_alerta], use_container_width=True, hide_index=True)
+    else:
+        st.success("No se detectan alertas PAI con los criterios automáticos del período.")
+
+    st.markdown("### 👤 Gestión directa de María Fernanda")
+    g1,g2 = st.columns(2)
+    g1.metric("Seguimientos registrados directamente", seguimientos_maria)
+    g2.metric("Usuarios con intervención/seguimiento", usuarios_maria)
+    if not seg_maria.empty:
+        st.dataframe(seg_maria, use_container_width=True, hide_index=True)
+
+    # Tareas asignadas a María en el período.
+    tareas = _leer_sql("""
+        SELECT id, tipo_tarea, numero_identificacion, estado, prioridad,
+               fecha_asignacion, fecha_completada, observacion, evidencia
+        FROM tareas_profesionales
+        WHERE REGEXP_REPLACE(COALESCE(profesional_cedula,''),'[^0-9]','','g')='1090420245'
+          AND CAST(fecha_asignacion AS DATE) BETWEEN :ini AND :fin
+        ORDER BY fecha_asignacion DESC
+    """, {"ini": fecha_inicio, "fin": fecha_fin})
+    st.markdown("### 📌 Tareas y seguimiento operativo")
+    t1,t2,t3 = st.columns(3)
+    estados = tareas["estado"].fillna("").astype(str).str.upper() if not tareas.empty and "estado" in tareas else pd.Series(dtype=str)
+    t1.metric("Tareas recibidas", len(tareas))
+    t2.metric("Tareas completadas", int(estados.eq("COMPLETADA").sum()))
+    t3.metric("Pendientes / en proceso", int(estados.isin(["PENDIENTE","EN PROCESO"]).sum()))
+    if not tareas.empty:
+        st.dataframe(tareas, use_container_width=True, hide_index=True)
+
+    st.markdown("### 📝 Obligaciones y gestión del período")
+    st.caption(
+        "Complete únicamente la gestión que corresponda. Los indicadores PAI anteriores son evidencia del proceso bajo seguimiento, "
+        "no PAI elaborados por María Fernanda."
+    )
+    obligaciones = contrato_cfg.get("obligaciones", [])
+    filas=[]
+    for i, ob in enumerate(obligaciones, 1):
+        with st.expander(f"Obligación {i}", expanded=(i in [3,4,5,9])):
+            st.write(ob)
+            act=st.text_area("Actividades ejecutadas", key=f"mafe_ob_act_{i}_v16221", height=85)
+            sop=st.text_area("Evidencias / soportes", key=f"mafe_ob_sop_{i}_v16221", height=70)
+            log=st.text_area("Logros / resultados", key=f"mafe_ob_log_{i}_v16221", height=70)
+            filas.append([ob,act,sop,log])
+
+    st.markdown("### 🧠 Síntesis de coordinación terapéutica")
+    recomendaciones = st.text_area("Recomendaciones al equipo / ajustes requeridos", height=110, key="mafe_recom_v16221")
+    situaciones = st.text_area("Situaciones resueltas, convivencia, coordinación de insumos o novedades relevantes", height=110, key="mafe_situaciones_v16221")
+    comites = st.text_area("Reuniones, comités, estudios de caso, inducciones y lineamientos socializados", height=110, key="mafe_comites_v16221")
+    logros = st.text_area("Logros del área para reporte al Observatorio Social", height=110, key="mafe_logros_v16221")
+    compromisos = st.text_area("Compromisos / acciones siguientes", height=100, key="mafe_compromisos_v16221")
+
+    st.markdown("### 👁️ Vista previa")
+    resumen = pd.DataFrame([
+        ["PAI bajo seguimiento",pai_activos],["Objetivos activos",objetivos_activos],
+        ["Seguimientos del período",seguimientos_periodo],["Seguimientos de María",seguimientos_maria],
+        ["Usuarios seguidos por María",usuarios_maria],["Objetivos cumplidos en período",cumplidos_periodo],
+        ["Sin seguimiento >30 días",len(sin_seg)],["Objetivos vencidos",len(vencidos)],
+        ["Avance promedio",f"{avance_prom}%"]
+    ], columns=["Indicador","Resultado"])
+    st.dataframe(resumen, use_container_width=True, hide_index=True)
+
+    # PDF descargable, sin alterar datos de origen.
+    try:
+        from io import BytesIO
+        from reportlab.lib import colors
+        from reportlab.lib.enums import TA_CENTER
+        from reportlab.lib.pagesizes import letter
+        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+        from reportlab.lib.units import cm
+        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak
+        import html
+        def esc(v): return html.escape(str(v or "")).replace("\n","<br/>")
+        bio=BytesIO()
+        pdf=SimpleDocTemplate(bio,pagesize=letter,leftMargin=1.2*cm,rightMargin=1.2*cm,topMargin=1.2*cm,bottomMargin=1.2*cm)
+        ss=getSampleStyleSheet(); tit=ParagraphStyle("mafe_tit",parent=ss["Heading1"],alignment=TA_CENTER,fontSize=12,leading=15)
+        body=ParagraphStyle("mafe_body",parent=ss["BodyText"],fontSize=7.5,leading=9.2)
+        story=[Paragraph("ASOCIACIÓN CIUDAD FUTURO",tit),Paragraph("INFORME MENSUAL – COORDINACIÓN Y SEGUIMIENTO TERAPÉUTICO",tit),Spacer(1,6)]
+        ident=[["Responsable","MARÍA FERNANDA SANTIAGO PABÓN"],["Documento","1090420245"],["Cargo / perfil",contrato_cfg.get("cargo","COORDINACIÓN Y SEGUIMIENTO TERAPÉUTICO")],["Contrato",contrato_cfg.get("contrato","")],["Período",f"{fecha_inicio:%d/%m/%Y} al {fecha_fin:%d/%m/%Y}"]]
+        ti=Table(ident,colWidths=[4*cm,13*cm]); ti.setStyle(TableStyle([("GRID",(0,0),(-1,-1),.35,colors.grey),("BACKGROUND",(0,0),(0,-1),colors.whitesmoke),("FONTNAME",(0,0),(0,-1),"Helvetica-Bold"),("FONTSIZE",(0,0),(-1,-1),8)])); story += [ti,Spacer(1,8)]
+        data=[["Indicador","Resultado"]]+[[str(r[0]),str(r[1])] for r in resumen.values.tolist()]
+        tm=Table(data,colWidths=[12*cm,5*cm]); tm.setStyle(TableStyle([("GRID",(0,0),(-1,-1),.35,colors.grey),("BACKGROUND",(0,0),(-1,0),colors.whitesmoke),("FONTNAME",(0,0),(-1,0),"Helvetica-Bold"),("FONTSIZE",(0,0),(-1,-1),8)])); story += [tm,Spacer(1,8)]
+        story += [Paragraph("<b>ALERTAS QUE REQUIEREN SEGUIMIENTO</b>",body),Paragraph(esc(f"Sin seguimiento >30 días: {len(sin_seg)} | Vencidos: {len(vencidos)} | Próximos a vencer: {len(proximos)}"),body),Spacer(1,8)]
+        for i,(ob,act,sop,log) in enumerate(filas,1):
+            story += [Paragraph(f"<b>Obligación {i}</b>",body),Paragraph(esc(ob),body),Paragraph("<b>Actividades:</b> "+esc(act),body),Paragraph("<b>Soportes:</b> "+esc(sop),body),Paragraph("<b>Logros:</b> "+esc(log),body),Spacer(1,6)]
+        story += [PageBreak(),Paragraph("<b>SÍNTESIS DE COORDINACIÓN TERAPÉUTICA</b>",body),Spacer(1,4),Paragraph("<b>Recomendaciones:</b> "+esc(recomendaciones),body),Paragraph("<b>Situaciones / novedades:</b> "+esc(situaciones),body),Paragraph("<b>Reuniones, comités e inducciones:</b> "+esc(comites),body),Paragraph("<b>Logros del área:</b> "+esc(logros),body),Paragraph("<b>Compromisos:</b> "+esc(compromisos),body)]
+        pdf.build(story); bio.seek(0)
+        st.download_button("⬇️ Descargar informe mensual en PDF",data=bio.getvalue(),file_name=f"Informe_Mensual_Maria_Fernanda_{fecha_inicio:%Y%m%d}_{fecha_fin:%Y%m%d}.pdf",mime="application/pdf",use_container_width=True,key="descarga_mafe_v16221")
+    except Exception as e:
+        st.warning(f"No fue posible generar el PDF en esta ejecución: {e}")
+
+
 rol_router = str(
     st.session_state.get("rol_actual", "")
 ).upper().strip()
@@ -26764,6 +27000,24 @@ CONTRATOS_INFORME_MENSUAL_V16124 = {
             "Aportar una (1) certificación actualizada, vigencia 2026, relacionada con la atención a población inmersa en el fenómeno social de consumo de sustancias psicoactivas.",
             "Reportar los logros desarrollados desde el área de ciencias sociales, humanas o de la salud en la plataforma Observatorio Social de la Asociación Ciudad Futuro.",
             "Aportar en la construcción de planes y programas de prevención que reduzcan riesgos en salud y aumenten las probabilidades de éxito al interior de los albergues.",
+            "Realizar las demás actividades que contribuyan al correcto funcionamiento del modelo de atención integral a la población habitante de calle."
+        ]
+    },
+    "1090420245": {
+        "nombre": "MARIA FERNANDA SANTIAGO PABON",
+        "cargo": "COORDINACIÓN Y SEGUIMIENTO TERAPÉUTICO",
+        "contrato": "CPS 11/09/2026 - 10/11/2026",
+        "obligaciones": [
+            "Realizar seguimiento a los planes de trabajo y al proceso terapéutico de los usuarios, verificando avances, necesidades y situaciones que requieran intervención.",
+            "Brindar seguimiento, orientación y recomendaciones al equipo interdisciplinario para fortalecer el cumplimiento de los objetivos del proceso de atención.",
+            "Presentar informe mensual de acuerdo con las funciones del área de Dirección y coordinación terapéutica, junto con los reportes del Observatorio Social ASCF, dentro de los tiempos determinados por la Asociación.",
+            "Liderar el seguimiento periódico al cumplimiento de los objetivos y planes de atención, identificando alertas, rezagos y necesidades de ajuste.",
+            "Realizar seguimiento a los profesionales y a la ejecución de las actividades terapéuticas, promoviendo la articulación del equipo interdisciplinario.",
+            "Coordinar y hacer seguimiento a situaciones de convivencia, necesidades operativas e insumos requeridos para la adecuada ejecución del proceso terapéutico.",
+            "Participar y realizar seguimiento a reuniones, comités, estudios de caso y demás espacios de coordinación requeridos para la adecuada atención de los usuarios.",
+            "Apoyar procesos de inducción, orientación y socialización de lineamientos técnicos y operativos al talento humano cuando sea requerido.",
+            "Reportar en el informe mensual y en el Observatorio Social ASCF los logros desarrollados desde su área de coordinación y seguimiento terapéutico.",
+            "Velar por la aplicación de lineamientos técnicos del modelo de atención y formular recomendaciones de mejora derivadas del seguimiento realizado.",
             "Realizar las demás actividades que contribuyan al correcto funcionamiento del modelo de atención integral a la población habitante de calle."
         ]
     },
@@ -30364,6 +30618,10 @@ def seguimiento_general_pai_maria_v16218():
 rol_router = str(
     st.session_state.get("rol_actual", "")
 ).upper().strip()
+
+if st.session_state.page == "informe_mensual_maria_v16221":
+    modulo_informe_mensual_maria_v16221()
+    st.stop()
 
 if st.session_state.page == "informe_mensual_ivan_v16210":
     modulo_informe_mensual_profesional_piloto_v1627(modo_final_ivan=True)
