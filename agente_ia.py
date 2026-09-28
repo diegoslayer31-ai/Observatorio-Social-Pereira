@@ -14536,6 +14536,87 @@ def panel_profesional_v15(doc_forzado=None, incrustado=False):
             profesional_nombre=prof_nombre
         )
 
+# ============================================================
+# V16.215 - MÓDULO INDEPENDIENTE DE AJUSTES ADMINISTRATIVOS PAI
+# Acceso directo desde Administración para COORDINACION / MANAGER.
+# ============================================================
+def modulo_ajustes_administrativos_pai_v16215():
+    rol = str(st.session_state.get("rol_actual", "")).strip().upper()
+    if rol not in ["COORDINACION", "MANAGER"]:
+        st.error("Acceso exclusivo para Coordinación o Manager.")
+        return
+
+    st.title("🛠️ Ajustes administrativos PAI")
+    st.caption(
+        "Corrección controlada de fechas y estado del PAI. "
+        "Cada modificación exige justificación y conserva auditoría."
+    )
+
+    try:
+        personas = pd.read_sql(
+            text("""
+                SELECT numero_identificacion, nombres, apellidos, estado_caso, modalidad
+                FROM habitante_de_calle
+                WHERE COALESCE(TRIM(CAST(numero_identificacion AS TEXT)), '') <> ''
+                ORDER BY nombres, apellidos
+            """),
+            engine
+        )
+    except Exception as e:
+        st.error(f"No fue posible cargar las personas: {e}")
+        return
+
+    if personas.empty:
+        st.info("No hay personas registradas para consultar.")
+        return
+
+    personas["documento"] = personas["numero_identificacion"].apply(limpiar_documento)
+    personas["nombre_completo"] = (
+        personas["nombres"].fillna("").astype(str).str.strip()
+        + " " +
+        personas["apellidos"].fillna("").astype(str).str.strip()
+    ).str.strip()
+    personas = personas.drop_duplicates(subset=["documento"], keep="first")
+
+    buscar = st.text_input(
+        "🔎 Buscar persona por nombre o documento",
+        key="v16215_buscar_persona_pai"
+    ).strip()
+
+    vista = personas.copy()
+    if buscar:
+        q = buscar.upper()
+        mascara = (
+            vista["nombre_completo"].str.upper().str.contains(q, na=False, regex=False)
+            | vista["documento"].astype(str).str.upper().str.contains(q, na=False, regex=False)
+        )
+        vista = vista.loc[mascara].copy()
+
+    if vista.empty:
+        st.warning("No se encontraron personas con ese criterio.")
+        return
+
+    opciones = vista["documento"].tolist()
+    mapa = vista.set_index("documento").to_dict("index")
+    doc = st.selectbox(
+        "Persona cuyo PAI desea ajustar",
+        opciones,
+        format_func=lambda d: (
+            f"{mapa[d]['nombre_completo']} · CC {d} · "
+            f"{str(mapa[d].get('estado_caso') or 'SIN ESTADO')} · "
+            f"{str(mapa[d].get('modalidad') or 'SIN MODALIDAD')}"
+        ),
+        key="v16215_persona_pai"
+    )
+
+    if not doc:
+        return
+
+    nombre = str(mapa[doc].get("nombre_completo") or "").strip()
+    st.info(f"Expediente seleccionado: **{nombre} · CC {doc}**")
+    ajuste_administrativo_pai_v16214(doc, nombre)
+
+
 def supervision_pai_v15():
     rol = str(st.session_state.get("rol_actual", "")).upper()
     if rol not in ["COORDINACION", "MANAGER"]:
@@ -16897,6 +16978,14 @@ with st.sidebar:
             st.rerun()
 
         st.markdown("##### ⚙️ Administración")
+
+        if st.button(
+            "🛠️ Ajustes administrativos PAI",
+            use_container_width=True,
+            key="btn_ajustes_admin_pai_v16215"
+        ):
+            st.session_state.page = "ajustes_administrativos_pai_v16215"
+            st.rerun()
 
         if st.button(
             "👥 Personal autorizado",
@@ -29809,6 +29898,15 @@ elif st.session_state.page == "mis_tareas_profesional_v16171":
         st.error("No tiene permisos para este módulo.")
     else:
         mis_tareas_profesional_v16171()
+
+    st.stop()
+
+elif st.session_state.page == "ajustes_administrativos_pai_v16215":
+
+    if rol_router not in ["COORDINACION", "MANAGER"]:
+        st.error("Acceso exclusivo para Coordinación o Manager.")
+    else:
+        modulo_ajustes_administrativos_pai_v16215()
 
     st.stop()
 
