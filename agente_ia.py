@@ -1856,7 +1856,7 @@ def _cerrar_tarea_portabilidad_por_objetivo_cumplido_v16214(documento, objetivo_
             cumplido = float(r.get('porcentaje_avance') or 0) >= 100 or str(r.get('estado') or '').strip().upper()=='CUMPLIDO'
             texto_obj = ' '.join([str(r.get('objetivo_tipo') or ''), str(r.get('actividades_txt') or ''), str(r.get('avance_txt') or '')]).upper()
             # Portabilidad puede estar como hito dentro de ASEGURAMIENTO EN SALUD.
-            confirma_portabilidad = 'PORTABILIDAD' in texto_obj
+            confirma_portabilidad = ('PORTABILIDAD' in texto_obj or 'ASEGURAMIENTO EN SALUD' in texto_obj)
             if not (cumplido and confirma_portabilidad):
                 return 0
             filas = conn.execute(text("""
@@ -1890,7 +1890,10 @@ def _reconciliar_portabilidad_por_objetivos_cumplidos_v16214():
             WHERE t.tipo_tarea='PORTABILIDAD_SALUD'
               AND UPPER(COALESCE(t.estado,'')) IN ('PENDIENTE','EN PROCESO')
               AND (COALESCE(o.porcentaje_avance,0) >= 100 OR UPPER(COALESCE(o.estado,''))='CUMPLIDO')
-              AND UPPER(COALESCE(CAST(o.actividades AS TEXT),'') || ' ' || COALESCE(CAST(o.avance_hitos AS TEXT),'')) LIKE '%PORTABILIDAD%'
+              AND (
+                    UPPER(TRIM(COALESCE(o.objetivo_tipo,''))) IN ('PORTABILIDAD EN SALUD','ASEGURAMIENTO EN SALUD')
+                    OR UPPER(COALESCE(CAST(o.actividades AS TEXT),'') || ' ' || COALESCE(CAST(o.avance_hitos AS TEXT),'')) LIKE '%PORTABILIDAD%'
+                  )
         """), engine)
         total=0
         for _, r in df.iterrows():
@@ -15467,9 +15470,37 @@ def dashboard_ejecutivo():
         "Vista gerencial de ocupación, PAI, seguimiento profesional, egresos y alertas."
     )
 
-    # V16.214 - Control administrativo independiente del cuidador.
-    with st.expander("⚠️ Posibles duplicados", expanded=False):
+    # V16.215 - Posibles duplicados SIEMPRE visibles para COORDINACION y MANAGER.
+    # No depende del cuidador ni se oculta cuando no hay alertas.
+    _asegurar_control_posibles_duplicados_v16214()
+    try:
+        _dup_pendientes = int(pd.read_sql(
+            text("SELECT COUNT(*) AS total FROM posibles_duplicados WHERE estado='PENDIENTE'"),
+            engine
+        ).iloc[0]["total"] or 0)
+    except Exception:
+        _dup_pendientes = 0
+
+    st.markdown("### 🕵️ Control de posibles duplicados")
+    _d1, _d2 = st.columns([1, 4])
+    _d1.metric("⚠️ Pendientes", _dup_pendientes)
+    if _dup_pendientes > 0:
+        _d2.warning(
+            f"Hay {_dup_pendientes} posible(s) duplicado(s) pendiente(s) de revisión administrativa. "
+            "El cuidador no puede eliminar estas alertas."
+        )
+    else:
+        _d2.success(
+            "Detector activo · No hay posibles duplicados pendientes de revisión."
+        )
+
+    with st.expander(
+        f"🔎 Revisar posibles duplicados ({_dup_pendientes})",
+        expanded=(_dup_pendientes > 0)
+    ):
         panel_posibles_duplicados_v16214()
+
+    st.divider()
 
     # ========================================================
     # POBLACIÓN GENERAL
