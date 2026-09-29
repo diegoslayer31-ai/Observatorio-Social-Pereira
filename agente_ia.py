@@ -751,6 +751,217 @@ def validar_documento_no_duplicado(numero_documento):
     return True, "OK"
 
 
+
+# ============================================================
+# V16.214 - ALERTAS ADMINISTRATIVAS DE POSIBLES DUPLICADOS
+# ============================================================
+def _asegurar_control_posibles_duplicados_v16214():
+    """Crea el control persistente de posibles duplicados sin afectar el ingreso."""
+    try:
+        with engine.begin() as conn:
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS posibles_duplicados (
+                    id BIGSERIAL PRIMARY KEY,
+                    documento_nuevo TEXT NOT NULL,
+                    documento_existente TEXT NOT NULL,
+                    nombre_nuevo TEXT,
+                    nombre_existente TEXT,
+                    fecha_nacimiento_nuevo DATE,
+                    fecha_nacimiento_existente DATE,
+                    similitud_nombre NUMERIC(6,3),
+                    similitud_documento NUMERIC(6,3),
+                    motivo TEXT,
+                    nivel TEXT NOT NULL DEFAULT 'REVISAR',
+                    estado TEXT NOT NULL DEFAULT 'PENDIENTE',
+                    detectado_por TEXT,
+                    detectado_en TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    revisado_por TEXT,
+                    revisado_en TIMESTAMPTZ,
+                    observacion_revision TEXT
+                )
+            """))
+            conn.execute(text("""
+                CREATE INDEX IF NOT EXISTS idx_posibles_duplicados_estado_v16214
+                ON posibles_duplicados (estado, detectado_en DESC)
+            """))
+            conn.execute(text("""
+                CREATE UNIQUE INDEX IF NOT EXISTS uq_posibles_duplicados_pendiente_v16214
+                ON posibles_duplicados (documento_nuevo, documento_existente)
+                WHERE estado='PENDIENTE'
+            """))
+            # Barrera final: un mismo documento normalizado no puede existir dos veces.
+            # Si hubiera una inconsistencia histórica no prevista, no rompe la app.
+            try:
+                with conn.begin_nested():
+                    conn.execute(text("""
+                        CREATE UNIQUE INDEX IF NOT EXISTS uq_habitante_documento_normalizado_v16214
+                        ON habitante_de_calle (
+                            REGEXP_REPLACE(UPPER(TRIM(CAST(numero_identificacion AS TEXT))), '[^A-Z0-9]', '', 'g')
+                        )
+                    """))
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+
+def _norm_identidad_v16214(valor):
+    txt = str(valor or '').strip().upper()
+    txt = unicodedata.normalize('NFKD', txt)
+    txt = ''.join(c for c in txt if not unicodedata.combining(c))
+    txt = ''.join(c if c.isalnum() or c.isspace() else ' ' for c in txt)
+    return ' '.join(txt.split())
+
+
+def _similitud_documento_v16214(a, b):
+    a = re.sub(r'[^A-Z0-9]', '', str(a or '').upper())
+    b = re.sub(r'[^A-Z0-9]', '', str(b or '').upper())
+    if not a or not b:
+        return 0.0
+    return SequenceMatcher(None, a, b).ratio()
+
+
+def detectar_y_registrar_posibles_duplicados_v16214(
+    nombres, apellidos, fecha_nacimiento, documento_nuevo, excluir_documento_nuevo=True
+):
+    """Detecta candidatos aunque la fecha de nacimiento no coincida.
+    No fusiona ni elimina: solo deja una alerta administrativa persistente.
+    """
+    _asegurar_control_posibles_duplicados_v16214()
+    doc_n = limpiar_documento(documento_nuevo)
+    nom_n = _norm_identidad_v16214(f"{nombres or ''} {apellidos or ''}")
+    if not doc_n or not nom_n:
+        return []
+    try:
+        candidatos = pd.read_sql(text("""
+            SELECT numero_identificacion, nombres, apellidos, fecha_nacimiento
+            FROM habitante_de_calle
+        """), engine)
+    except Exception:
+        return []
+
+    hallados = []
+    fecha_n = pd.to_datetime(fecha_nacimiento, errors='coerce')
+    for _, r in candidatos.iterrows():
+        doc_e = limpiar_documento(r.get('numero_identificacion'))
+        if excluir_documento_nuevo and doc_e == doc_n:
+            continue
+        nom_e = _norm_identidad_v16214(f"{r.get('nombres') or ''} {r.get('apellidos') or ''}")
+        if not nom_e:
+            continue
+        sim_nom = SequenceMatcher(None, nom_n, nom_e).ratio()
+        sim_doc = _similitud_documento_v16214(doc_n, doc_e)
+        fecha_e = pd.to_datetime(r.get('fecha_nacimiento'), errors='coerce')
+        misma_fecha = pd.notna(fecha_n) and pd.notna(fecha_e) and fecha_n.date() == fecha_e.date()
+        nombre_tokens_n = set(nom_n.split())
+        nombre_tokens_e = set(nom_e.split())
+        inter = len(nombre_tokens_n & nombre_tokens_e)
+        cobertura = inter / max(1, min(len(nombre_tokens_n), len(nombre_tokens_e)))
+
+        motivos = []
+        nivel = 'REVISAR'
+        if sim_doc >= 0.90 and sim_nom >= 0.45:
+            motivos.append('documentos muy parecidos')
+            nivel = 'ALTA'
+        if sim_nom >= 0.88:
+            motivos.append('nombre muy similar')
+            nivel = 'ALTA' if misma_fecha else nivel
+        elif sim_nom >= 0.76 and cobertura >= 0.60:
+            motivos.append('nombre/apellidos similares')
+        if misma_fecha and (sim_nom >= 0.62 or cobertura >= 0.60):
+            motivos.append('misma fecha de nacimiento')
+            nivel = 'ALTA'
+
+        # Evita alertas débiles: debe existir evidencia real por nombre o documento.
+        if not motivos:
+            continue
+
+        hallados.append({
+            'documento_existente': doc_e,
+            'nombre_existente': nom_e,
+            'fecha_existente': fecha_e.date() if pd.notna(fecha_e) else None,
+            'sim_nombre': sim_nom,
+            'sim_documento': sim_doc,
+            'motivo': '; '.join(dict.fromkeys(motivos)),
+            'nivel': nivel,
+        })
+
+    hallados.sort(key=lambda x: (x['nivel']=='ALTA', x['sim_nombre'], x['sim_documento']), reverse=True)
+    usuario = st.session_state.get('usuario_actual', 'sistema')
+    nombre_nuevo = nom_n
+    for h in hallados[:5]:
+        try:
+            with engine.begin() as conn:
+                conn.execute(text("""
+                    INSERT INTO posibles_duplicados (
+                        documento_nuevo, documento_existente, nombre_nuevo, nombre_existente,
+                        fecha_nacimiento_nuevo, fecha_nacimiento_existente,
+                        similitud_nombre, similitud_documento, motivo, nivel, detectado_por
+                    ) VALUES (
+                        :dn, :de, :nn, :ne, :fn, :fe, :sn, :sd, :motivo, :nivel, :usuario
+                    )
+                    ON CONFLICT (documento_nuevo, documento_existente)
+                    WHERE estado='PENDIENTE'
+                    DO UPDATE SET
+                        similitud_nombre=EXCLUDED.similitud_nombre,
+                        similitud_documento=EXCLUDED.similitud_documento,
+                        motivo=EXCLUDED.motivo,
+                        nivel=EXCLUDED.nivel,
+                        detectado_por=EXCLUDED.detectado_por,
+                        detectado_en=NOW()
+                """), {
+                    'dn': doc_n, 'de': h['documento_existente'], 'nn': nombre_nuevo,
+                    'ne': h['nombre_existente'],
+                    'fn': fecha_n.date() if pd.notna(fecha_n) else None,
+                    'fe': h['fecha_existente'], 'sn': round(h['sim_nombre'], 3),
+                    'sd': round(h['sim_documento'], 3), 'motivo': h['motivo'],
+                    'nivel': h['nivel'], 'usuario': usuario,
+                })
+        except Exception:
+            pass
+    return hallados[:5]
+
+
+def panel_posibles_duplicados_v16214():
+    """Panel exclusivo de Coordinación/Manager para revisar alertas pendientes."""
+    _asegurar_control_posibles_duplicados_v16214()
+    try:
+        df = pd.read_sql(text("""
+            SELECT id, nivel, documento_nuevo, nombre_nuevo,
+                   documento_existente, nombre_existente,
+                   fecha_nacimiento_nuevo, fecha_nacimiento_existente,
+                   similitud_nombre, similitud_documento, motivo,
+                   detectado_por, detectado_en
+            FROM posibles_duplicados
+            WHERE estado='PENDIENTE'
+            ORDER BY CASE WHEN nivel='ALTA' THEN 0 ELSE 1 END, detectado_en DESC
+        """), engine)
+    except Exception:
+        df = pd.DataFrame()
+    st.markdown('### ⚠️ Posibles duplicados')
+    if df.empty:
+        st.success('No hay posibles duplicados pendientes de revisión.')
+        return
+    st.warning(f'Hay {len(df)} posible(s) duplicado(s) pendiente(s). Estas alertas no dependen del cuidador.')
+    vista = df.copy()
+    if 'similitud_nombre' in vista:
+        vista['Similitud nombre'] = (pd.to_numeric(vista['similitud_nombre'], errors='coerce').fillna(0)*100).round(1).astype(str)+'%'
+    st.dataframe(vista[[c for c in ['nivel','documento_nuevo','nombre_nuevo','documento_existente','nombre_existente','fecha_nacimiento_nuevo','fecha_nacimiento_existente','Similitud nombre','motivo','detectado_por','detectado_en'] if c in vista.columns]], use_container_width=True, hide_index=True)
+    ids = df['id'].astype(int).tolist()
+    elegido = st.selectbox('Alerta a revisar', ids, format_func=lambda i: f"#{i} · {df.loc[df['id']==i, 'nombre_nuevo'].iloc[0]} ↔ {df.loc[df['id']==i, 'nombre_existente'].iloc[0]}", key='dup_alerta_v16214')
+    c1, c2 = st.columns(2)
+    usuario = st.session_state.get('usuario_actual','sistema')
+    if c1.button('✅ Son personas diferentes', use_container_width=True, key='dup_diferentes_v16214'):
+        with engine.begin() as conn:
+            conn.execute(text("""UPDATE posibles_duplicados SET estado='DESCARTADO', revisado_por=:u, revisado_en=NOW(), observacion_revision='Verificado: personas diferentes' WHERE id=:id"""), {'u':usuario,'id':int(elegido)})
+        st.rerun()
+    if c2.button('🔴 Confirmar posible duplicado', use_container_width=True, key='dup_confirmar_v16214'):
+        with engine.begin() as conn:
+            conn.execute(text("""UPDATE posibles_duplicados SET estado='CONFIRMADO', revisado_por=:u, revisado_en=NOW(), observacion_revision='Confirmado para depuración administrativa' WHERE id=:id"""), {'u':usuario,'id':int(elegido)})
+        st.success('Caso confirmado. No se fusionó ni eliminó automáticamente ningún registro.')
+        st.rerun()
+
+
 def validar_posible_persona_duplicada_v1672(
     nombres,
     apellidos,
@@ -880,22 +1091,13 @@ def validar_posible_persona_duplicada_v1672(
                 })
 
         if coincidencias:
-            coincidencias.sort(
-                key=lambda x: (x["ratio"], x["tokens"]),
-                reverse=True
+            # V16.214: el cuidador no decide ni elimina la alerta.
+            # Se registra para revisión administrativa y el flujo puede continuar.
+            detectar_y_registrar_posibles_duplicados_v16214(
+                nombres, apellidos, fecha_nacimiento, documento_nuevo,
+                excluir_documento_nuevo=True
             )
-            mejor = coincidencias[0]
-
-            return (
-                False,
-                "⛔ POSIBLE DUPLICADO DETECTADO. "
-                "Ya existe una persona con la misma fecha de nacimiento "
-                "y un nombre muy similar: "
-                f"{mejor['nombre']} · documento {mejor['doc']}. "
-                "No se creó un nuevo registro. "
-                "Busque primero esa persona en «Buscar usuario existente» "
-                "y verifique la cédula antes de continuar."
-            )
+            return True, "OK"
 
     except Exception:
         # No debe romper el flujo si una columna histórica tiene datos
@@ -1625,6 +1827,75 @@ def _cerrar_tarea_portabilidad_por_seguimiento_v16207(
                 observacion=f"Cierre automático por seguimiento PAI. Tarea(s): {[r[0] for r in filas]}",
             )
         return len(filas)
+    except Exception:
+        return 0
+
+
+
+def _cerrar_tarea_portabilidad_por_objetivo_cumplido_v16214(documento, objetivo_id):
+    """Cierra tareas PORTABILIDAD_SALUD cuando el objetivo cumplido demuestra
+    que la portabilidad ya quedó realizada, incluso si el objetivo se llama
+    'Aseguramiento en salud'. No depende de que exista una novedad textual.
+    """
+    doc = limpiar_documento(documento)
+    usuario = st.session_state.get('usuario_actual', 'sistema')
+    if not doc or not objetivo_id:
+        return 0
+    try:
+        with engine.begin() as conn:
+            r = conn.execute(text("""
+                SELECT objetivo_tipo, porcentaje_avance, estado,
+                       CAST(actividades AS TEXT) AS actividades_txt,
+                       CAST(avance_hitos AS TEXT) AS avance_txt
+                FROM pai_objetivos
+                WHERE id=:id AND TRIM(CAST(documento_usuario AS TEXT))=:doc
+                LIMIT 1
+            """), {'id':int(objetivo_id),'doc':doc}).mappings().first()
+            if not r:
+                return 0
+            cumplido = float(r.get('porcentaje_avance') or 0) >= 100 or str(r.get('estado') or '').strip().upper()=='CUMPLIDO'
+            texto_obj = ' '.join([str(r.get('objetivo_tipo') or ''), str(r.get('actividades_txt') or ''), str(r.get('avance_txt') or '')]).upper()
+            # Portabilidad puede estar como hito dentro de ASEGURAMIENTO EN SALUD.
+            confirma_portabilidad = 'PORTABILIDAD' in texto_obj
+            if not (cumplido and confirma_portabilidad):
+                return 0
+            filas = conn.execute(text("""
+                UPDATE tareas_profesionales
+                   SET estado='COMPLETADA',
+                       fecha_inicio=COALESCE(fecha_inicio, NOW()),
+                       fecha_completada=NOW(),
+                       completado_por=:usuario,
+                       evidencia=COALESCE(NULLIF(evidencia,''),'') || :evidencia,
+                       actualizado_en=NOW()
+                 WHERE tipo_tarea='PORTABILIDAD_SALUD'
+                   AND REGEXP_REPLACE(UPPER(TRIM(CAST(numero_identificacion AS TEXT))), '[^A-Z0-9]', '', 'g')
+                       = REGEXP_REPLACE(UPPER(TRIM(CAST(:doc AS TEXT))), '[^A-Z0-9]', '', 'g')
+                   AND UPPER(COALESCE(estado,'')) IN ('PENDIENTE','EN PROCESO')
+                RETURNING id
+            """), {'doc':doc,'usuario':usuario,'evidencia':f" | Cierre automático: objetivo PAI #{int(objetivo_id)} cumplido al 100% con hito de portabilidad."}).fetchall()
+        if filas:
+            registrar_auditoria('COMPLETAR_TAREA_PORTABILIDAD', documento=doc, modulo='Tareas Profesionales / PAI', valor_nuevo='PORTABILIDAD_SALUD - COMPLETADA', observacion=f"Cierre automático por objetivo PAI cumplido. Tarea(s): {[x[0] for x in filas]}")
+        return len(filas)
+    except Exception:
+        return 0
+
+
+def _reconciliar_portabilidad_por_objetivos_cumplidos_v16214():
+    """Repara tareas antiguas que quedaron abiertas aunque el PAI ya esté cumplido."""
+    try:
+        df = pd.read_sql(text("""
+            SELECT DISTINCT t.numero_identificacion, o.id AS objetivo_id
+            FROM tareas_profesionales t
+            JOIN pai_objetivos o ON TRIM(CAST(o.documento_usuario AS TEXT))=TRIM(CAST(t.numero_identificacion AS TEXT))
+            WHERE t.tipo_tarea='PORTABILIDAD_SALUD'
+              AND UPPER(COALESCE(t.estado,'')) IN ('PENDIENTE','EN PROCESO')
+              AND (COALESCE(o.porcentaje_avance,0) >= 100 OR UPPER(COALESCE(o.estado,''))='CUMPLIDO')
+              AND UPPER(COALESCE(CAST(o.actividades AS TEXT),'') || ' ' || COALESCE(CAST(o.avance_hitos AS TEXT),'')) LIKE '%PORTABILIDAD%'
+        """), engine)
+        total=0
+        for _, r in df.iterrows():
+            total += _cerrar_tarea_portabilidad_por_objetivo_cumplido_v16214(r['numero_identificacion'], int(r['objetivo_id']))
+        return total
     except Exception:
         return 0
 
@@ -3361,6 +3632,11 @@ def gestion_usuarios():
 
                     _columnas_habitante.clear()
                     invalidar_cache_datos()
+                    # V16.214 - segunda barrera: revisar nuevamente DESPUÉS del INSERT.
+                    detectar_y_registrar_posibles_duplicados_v16214(
+                        nombres_guardar_n, apellidos_guardar_n, fecha_nac_n, doc_n,
+                        excluir_documento_nuevo=True
+                    )
 
                     if sin_documento_n:
                         st.success(
@@ -6659,8 +6935,8 @@ def gestion_usuarios_movil():
             "La caracterización completa se puede terminar después."
         )
         st.info(
-            "🛡️ Antes de crear la ficha, el sistema verifica la cédula y también "
-            "compara nombre + fecha de nacimiento para evitar personas duplicadas."
+            "🛡️ El documento exacto se bloquea. Además, el sistema analiza automáticamente "
+            "posibles duplicados y los deja pendientes para revisión de Coordinación."
         )
 
         # Leer columnas reales de habitante_de_calle
@@ -6963,6 +7239,11 @@ def gestion_usuarios_movil():
                     )
 
                     invalidar_cache_datos()
+                    # V16.214 - alerta administrativa aunque el cuidador continúe el flujo.
+                    detectar_y_registrar_posibles_duplicados_v16214(
+                        nombres_guardar, apellidos_guardar, fecha_nacimiento, doc,
+                        excluir_documento_nuevo=True
+                    )
 
                     st.success(
                         "✅ Usuario registrado correctamente. "
@@ -14072,6 +14353,10 @@ def panel_profesional_v15(doc_forzado=None, incrustado=False):
                                 "doc": str(doc_sel)
                             }
                         )
+                    if pct >= 100:
+                        _cerrar_tarea_portabilidad_por_objetivo_cumplido_v16214(
+                            str(doc_sel), int(obj_id)
+                        )
                     st.success(
                         f"✅ Avance actualizado para {nombre_usuario}."
                     )
@@ -15181,6 +15466,10 @@ def dashboard_ejecutivo():
     st.caption(
         "Vista gerencial de ocupación, PAI, seguimiento profesional, egresos y alertas."
     )
+
+    # V16.214 - Control administrativo independiente del cuidador.
+    with st.expander("⚠️ Posibles duplicados", expanded=False):
+        panel_posibles_duplicados_v16214()
 
     # ========================================================
     # POBLACIÓN GENERAL
@@ -29775,6 +30064,7 @@ def mis_tareas_profesional_v16171():
     # V16.207: antes de mostrar la bandeja, reconciliar tareas antiguas que
     # ya tienen un seguimiento PAI explícito de portabilidad realizada.
     _reconciliar_portabilidades_ya_realizadas_v16207()
+    _reconciliar_portabilidad_por_objetivos_cumplidos_v16214()
     cc=limpiar_documento(st.session_state.get("documento_funcionario",""))
     df=pd.read_sql(text("""
         SELECT t.*, TRIM(COALESCE(h.nombres,'') || ' ' || COALESCE(h.apellidos,'')) AS nombre_usuario, COALESCE(h.modalidad,'') AS modalidad
@@ -35157,6 +35447,9 @@ with tab6:
                 )
                 invalidar_cache_datos()
                 if avance >= 100:
+                    _cerrar_tarea_portabilidad_por_objetivo_cumplido_v16214(
+                        usuario_sel, int(obj_id)
+                    )
                     st.success(
                         "✅ Objetivo completado al 100% y marcado como CUMPLIDO."
                     )
