@@ -13895,28 +13895,120 @@ def panel_profesional_v15(doc_forzado=None, incrustado=False):
     )
 
     # ============================================================
-    # V17.1 - COMPARADOR VISIBLE: PAI ASISTIDO vs PAI ACTUAL
+    # V17.2 - PAI ASISTIDO OPERATIVO vs PAI ACTUAL
     # ============================================================
-    # No modifica la estructura de datos ni reemplaza el PAI vigente.
-    # La vista asistida es exclusivamente de lectura; el PAI actual
-    # conserva todas sus acciones de creación, avance, seguimiento y cierre.
-    st.markdown("### 🧭 ¿Qué vista desea usar?")
-    vista_pai_v171 = st.radio(
+    # Usa las MISMAS tablas del PAI vigente. No duplica expedientes.
+    # Permite crear objetivos, actualizar requisitos, registrar seguimientos
+    # y consultar historial desde una experiencia guiada.
+    st.markdown("### 🧭 Vista de trabajo del PAI")
+    vista_pai_v172 = st.radio(
         "Vista del PAI",
         ["✨ PAI ASISTIDO V17", "📋 PAI ACTUAL"],
         horizontal=True,
         label_visibility="collapsed",
-        key=f"vista_pai_v171_{doc_sel}"
+        key=f"vista_pai_v172_{doc_sel}"
     )
 
-    if vista_pai_v171 == "✨ PAI ASISTIDO V17":
+    if vista_pai_v172 == "✨ PAI ASISTIDO V17":
         st.caption(
-            "Vista piloto en solo lectura. El sistema organiza prioridades y explica "
-            "qué falta en cada objetivo. Puede volver a **PAI ACTUAL** en cualquier momento."
+            "Experiencia guiada: el sistema prioriza lo pendiente y permite trabajar "
+            "el PAI sin cambiar de persona ni perder el contexto."
         )
 
-        hoy_v17 = pd.Timestamp(date.today())
-        obj_v17 = objetivos.copy()
+        # --------------------------------------------------------
+        # Catálogo guiado V17
+        # --------------------------------------------------------
+        tipos_v17 = [
+            "Documentación y ciudadanía", "Cedulación",
+            "Aseguramiento en salud", "Portabilidad en salud",
+            "Salud mental", "Tratamiento consumo SPA",
+            "Reducción de riesgos y daños", "Vinculación familiar",
+            "Retorno a Ciudad de Origen", "Inclusión social",
+            "Empleabilidad", "Generación de ingresos", "Educación",
+            "Vivienda", "Proyecto de vida", "Participación comunitaria",
+            "Justicia y acceso a derechos", "Otro"
+        ]
+        linea_v17 = {
+            "Documentación y ciudadanía": "Derechos e inclusión social",
+            "Cedulación": "Derechos e inclusión social",
+            "Aseguramiento en salud": "Salud",
+            "Portabilidad en salud": "Salud",
+            "Salud mental": "Salud",
+            "Tratamiento consumo SPA": "Salud",
+            "Reducción de riesgos y daños": "Salud",
+            "Vinculación familiar": "Inclusión social y familiar",
+            "Retorno a Ciudad de Origen": "Inclusión social y familiar",
+            "Inclusión social": "Inclusión social y familiar",
+            "Empleabilidad": "Inclusión económica",
+            "Generación de ingresos": "Inclusión económica",
+            "Educación": "Educación",
+            "Vivienda": "Hábitat y vivienda",
+            "Proyecto de vida": "Desarrollo humano",
+            "Participación comunitaria": "Participación",
+            "Justicia y acceso a derechos": "Derechos e inclusión social",
+            "Otro": "Intervención integral"
+        }
+        ods_v17 = {
+            "Documentación y ciudadanía": "ODS 16", "Cedulación": "ODS 16",
+            "Aseguramiento en salud": "ODS 3", "Portabilidad en salud": "ODS 3",
+            "Salud mental": "ODS 3", "Tratamiento consumo SPA": "ODS 3",
+            "Reducción de riesgos y daños": "ODS 3", "Vinculación familiar": "ODS 10",
+            "Retorno a Ciudad de Origen": "ODS 10", "Inclusión social": "ODS 10",
+            "Empleabilidad": "ODS 8", "Generación de ingresos": "ODS 8",
+            "Educación": "ODS 4", "Vivienda": "ODS 11", "Proyecto de vida": "ODS 3",
+            "Participación comunitaria": "ODS 16",
+            "Justicia y acceso a derechos": "ODS 16", "Otro": "ODS 10"
+        }
+        rutas_v17 = {
+            "Documentación y ciudadanía": [
+                "Verificar estado documental",
+                "Gestionar documento requerido",
+                "Confirmar entrega o trámite"
+            ],
+            "Cedulación": [
+                "Verificar necesidad de cédula",
+                "Gestionar cita o trámite",
+                "Confirmar obtención del documento"
+            ],
+            "Aseguramiento en salud": [
+                "Verificar afiliación",
+                "Gestionar afiliación o traslado",
+                "Confirmar aseguramiento activo"
+            ],
+            "Portabilidad en salud": [
+                "Verificar EPS y municipio de afiliación",
+                "Gestionar solicitud de portabilidad",
+                "Hacer seguimiento a la solicitud",
+                "Confirmar activación de la portabilidad y acceso efectivo a salud"
+            ],
+            "Salud mental": ["Valoración inicial", "Remisión o vinculación", "Seguimiento a adherencia"],
+            "Tratamiento consumo SPA": ["Valoración", "Vinculación a tratamiento", "Seguimiento a adherencia"],
+            "Reducción de riesgos y daños": ["Identificar riesgos", "Definir acciones de reducción", "Verificar cambios"],
+            "Vinculación familiar": ["Identificar red", "Realizar contacto", "Verificar resultado del acercamiento"],
+            "Retorno a Ciudad de Origen": [
+                "Identificar ciudad o municipio de origen",
+                "Verificar red de apoyo o condiciones de recepción",
+                "Gestionar articulación y traslado / plan retorno",
+                "Confirmar llegada y vinculación territorial"
+            ],
+            "Inclusión social": ["Identificar barreras", "Gestionar oferta institucional", "Verificar vinculación"],
+            "Empleabilidad": ["Perfil ocupacional", "Remisión o postulación", "Seguimiento a vinculación"],
+            "Generación de ingresos": ["Identificar alternativa", "Gestionar apoyo", "Seguimiento a resultado"],
+            "Educación": ["Identificar necesidad educativa", "Gestionar vinculación", "Seguimiento a permanencia"],
+            "Vivienda": ["Caracterizar necesidad", "Gestionar alternativa", "Verificar solución"],
+            "Proyecto de vida": ["Definir meta personal", "Establecer acciones", "Evaluar avances"],
+            "Participación comunitaria": ["Identificar espacio", "Vincular", "Verificar participación"],
+            "Justicia y acceso a derechos": ["Identificar necesidad jurídica", "Gestionar remisión", "Verificar respuesta"],
+            "Otro": ["Definir actividad 1", "Definir actividad 2", "Definir actividad 3"]
+        }
+        resultado_v17 = {
+            "Cedulación": "La persona cuenta con su documento de identidad.",
+            "Aseguramiento en salud": "La persona cuenta con aseguramiento activo y acceso efectivo a salud.",
+            "Portabilidad en salud": "La portabilidad se encuentra activa y permite acceso efectivo a salud.",
+            "Vinculación familiar": "Se logra contacto y un resultado verificable con la red familiar o de apoyo.",
+            "Empleabilidad": "La persona avanza hacia una vinculación laboral verificable.",
+            "Educación": "La persona se vincula y mantiene acceso a la oferta educativa.",
+        }
 
         def _lista_v17(valor):
             if isinstance(valor, list):
@@ -13927,59 +14019,53 @@ def panel_profesional_v15(doc_forzado=None, incrustado=False):
             except Exception:
                 return []
 
-        if obj_v17.empty:
-            st.info(
-                "Esta persona todavía no tiene objetivos PAI operativos. "
-                "Cambie a **PAI ACTUAL** para crear el primer objetivo."
+        hoy_v17 = pd.Timestamp(date.today())
+        obj_v17 = objetivos.copy()
+        if not obj_v17.empty:
+            obj_v17["porcentaje_v17"] = pd.to_numeric(
+                obj_v17["porcentaje_avance"], errors="coerce"
+            ).fillna(0)
+            obj_v17["meta_v17"] = pd.to_datetime(obj_v17["fecha_meta"], errors="coerce")
+            obj_v17["ultimo_v17"] = obj_v17["fecha_ultimo_seguimiento"].apply(
+                normalizar_timestamp_pandas_sin_tz
             )
-            if not objetivos_hist_2026.empty:
-                st.markdown("### 📚 Información histórica disponible")
-                st.info(
-                    f"Existen **{len(objetivos_hist_2026)} objetivo(s) histórico(s)** "
-                    "del PAI 2026 para consulta."
-                )
-            return
 
-        obj_v17["porcentaje_v17"] = pd.to_numeric(
-            obj_v17["porcentaje_avance"], errors="coerce"
-        ).fillna(0)
-        obj_v17["meta_v17"] = pd.to_datetime(obj_v17["fecha_meta"], errors="coerce")
-        obj_v17["ultimo_v17"] = obj_v17["fecha_ultimo_seguimiento"].apply(
-            normalizar_timestamp_pandas_sin_tz
-        )
+            def _clasificar_v17(row):
+                estado_bd = str(row.get("estado") or "").strip().upper()
+                pct = float(row.get("porcentaje_v17") or 0)
+                meta = row.get("meta_v17")
+                ultimo = row.get("ultimo_v17")
+                if pct >= 100 or estado_bd in {"CUMPLIDO", "CERRADO"}:
+                    return "CUMPLIDO", 9
+                if pd.notna(meta):
+                    dias = (meta.normalize() - hoy_v17).days
+                    if dias < 0:
+                        return "VENCIDO", 0
+                    if dias <= 7:
+                        return "REQUIERE ATENCIÓN", 1
+                if pd.isna(ultimo):
+                    return "REQUIERE ATENCIÓN", 2
+                if (hoy_v17 - ultimo.normalize()).days > 15:
+                    return "REQUIERE ATENCIÓN", 3
+                return "EN PROCESO", 4
 
-        def _clasificar_v17(row):
-            estado_bd = str(row.get("estado") or "").strip().upper()
-            pct = float(row.get("porcentaje_v17") or 0)
-            meta = row.get("meta_v17")
-            ultimo = row.get("ultimo_v17")
-            if pct >= 100 or estado_bd in {"CUMPLIDO", "CERRADO"}:
-                return "CUMPLIDO", 9
-            if pd.notna(meta):
-                dias = (meta.normalize() - hoy_v17).days
-                if dias < 0:
-                    return "VENCIDO", 0
-                if dias <= 7:
-                    return "REQUIERE ATENCIÓN", 1
-            if pd.isna(ultimo):
-                return "REQUIERE ATENCIÓN", 2
-            if (hoy_v17 - ultimo.normalize()).days > 15:
-                return "REQUIERE ATENCIÓN", 3
-            return "EN PROCESO", 4
-
-        clasif = obj_v17.apply(_clasificar_v17, axis=1)
-        obj_v17["estado_asistido"] = [x[0] for x in clasif]
-        obj_v17["prioridad_asistida"] = [x[1] for x in clasif]
+            clasif = obj_v17.apply(_clasificar_v17, axis=1)
+            obj_v17["estado_asistido"] = [x[0] for x in clasif]
+            obj_v17["prioridad_asistida"] = [x[1] for x in clasif]
+        else:
+            obj_v17 = pd.DataFrame(columns=list(objetivos.columns) + [
+                "porcentaje_v17", "meta_v17", "ultimo_v17",
+                "estado_asistido", "prioridad_asistida"
+            ])
 
         total_a = len(obj_v17)
-        cumplidos_a = int((obj_v17["estado_asistido"] == "CUMPLIDO").sum())
-        proceso_a = int((obj_v17["estado_asistido"] == "EN PROCESO").sum())
-        atencion_a = int(obj_v17["estado_asistido"].isin(["REQUIERE ATENCIÓN", "VENCIDO"]).sum())
+        cumplidos_a = int((obj_v17["estado_asistido"] == "CUMPLIDO").sum()) if total_a else 0
+        proceso_a = int((obj_v17["estado_asistido"] == "EN PROCESO").sum()) if total_a else 0
+        atencion_a = int(obj_v17["estado_asistido"].isin(["REQUIERE ATENCIÓN", "VENCIDO"]).sum()) if total_a else 0
 
         st.markdown(f"## PAI de {nombre_usuario}")
         st.caption(
-            f"CC {doc_sel}" +
-            (f" · Modalidad {modalidad_usuario}" if modalidad_usuario else "")
+            f"CC {doc_sel}" + (f" · Modalidad {modalidad_usuario}" if modalidad_usuario else "")
         )
 
         k1, k2, k3, k4 = st.columns(4)
@@ -13988,121 +14074,511 @@ def panel_profesional_v15(doc_forzado=None, incrustado=False):
         k3.metric("🔵 En proceso", proceso_a)
         k4.metric("✅ Alcanzados", cumplidos_a)
 
-        activos_a = obj_v17[obj_v17["estado_asistido"] != "CUMPLIDO"].copy()
-        activos_a = activos_a.sort_values(
-            ["prioridad_asistida", "meta_v17"], na_position="last"
-        )
+        tab_hoy_v17, tab_nuevo_v17, tab_trabajo_v17, tab_hist_v17 = st.tabs([
+            "🧭 Mi PAI hoy", "➕ Nuevo objetivo", "✍️ Trabajar objetivo", "📚 Historial"
+        ])
 
-        def _detalle_v17(row):
-            acts = _lista_v17(row.get("actividades"))
-            hechos = _lista_v17(row.get("avance_hitos"))
-            pendientes = [a for a in acts if a not in hechos]
-            meta = row.get("meta_v17")
-            ultimo = row.get("ultimo_v17")
-            estado = row.get("estado_asistido")
-            pct = round((len(hechos) / len(acts)) * 100) if acts else int(row.get("porcentaje_v17") or 0)
-
-            if estado == "VENCIDO":
-                dias = abs((meta.normalize() - hoy_v17).days) if pd.notna(meta) else 0
-                alerta = f"La fecha meta venció hace {dias} día(s)."
-            elif estado == "REQUIERE ATENCIÓN" and pd.notna(meta) and 0 <= (meta.normalize()-hoy_v17).days <= 7:
-                dias = (meta.normalize()-hoy_v17).days
-                alerta = f"La fecha meta está a {dias} día(s)."
-            elif estado == "REQUIERE ATENCIÓN" and pd.isna(ultimo):
-                alerta = "Este objetivo todavía no registra seguimiento."
-            elif estado == "REQUIERE ATENCIÓN" and pd.notna(ultimo):
-                alerta = f"Lleva {(hoy_v17-ultimo.normalize()).days} días sin seguimiento."
-            else:
-                alerta = "El objetivo avanza dentro del término previsto."
-
-            if pendientes:
-                accion = str(pendientes[0])
-            elif pct >= 100:
-                accion = "Verificar el resultado y confirmar el cierre del objetivo."
-            else:
-                accion = "Registrar seguimiento y verificar el resultado esperado."
-            return acts, hechos, pendientes, pct, alerta, accion
-
-        st.markdown("### 🧭 Qué necesita atención ahora")
-        if activos_a.empty:
-            st.success(
-                "✅ No hay objetivos pendientes. Todos los objetivos operativos registrados "
-                "se encuentran alcanzados."
-            )
-        else:
-            principal = activos_a.iloc[0]
-            _, _, _, _, alerta_p, accion_p = _detalle_v17(principal)
-            estado_p = principal["estado_asistido"]
-            if estado_p == "VENCIDO":
-                st.error(
-                    f"**{principal['objetivo_tipo']}** · {alerta_p}\n\n"
-                    f"➡️ **Próxima acción sugerida:** {accion_p}"
-                )
-            elif estado_p == "REQUIERE ATENCIÓN":
-                st.warning(
-                    f"**{principal['objetivo_tipo']}** · {alerta_p}\n\n"
-                    f"➡️ **Próxima acción sugerida:** {accion_p}"
-                )
-            else:
-                st.info(
-                    f"**{principal['objetivo_tipo']}** · {alerta_p}\n\n"
-                    f"➡️ **Próxima acción sugerida:** {accion_p}"
+        # ========================================================
+        # 1. MI PAI HOY
+        # ========================================================
+        with tab_hoy_v17:
+            activos_a = obj_v17[obj_v17["estado_asistido"] != "CUMPLIDO"].copy()
+            if not activos_a.empty:
+                activos_a = activos_a.sort_values(
+                    ["prioridad_asistida", "meta_v17"], na_position="last"
                 )
 
-            st.markdown("### 🎯 Objetivos activos")
-            for _, ov in activos_a.iterrows():
-                acts, hechos, pendientes, pct, alerta, accion = _detalle_v17(ov)
-                estado = ov["estado_asistido"]
-                icono = "🔴" if estado == "VENCIDO" else ("🟡" if estado == "REQUIERE ATENCIÓN" else "🔵")
-                meta_txt = ov["meta_v17"].strftime("%d/%m/%Y") if pd.notna(ov["meta_v17"]) else "Sin fecha meta"
-                with st.container(border=True):
-                    st.markdown(f"#### {icono} {ov['objetivo_tipo']} · {estado}")
-                    st.caption(f"Meta: {meta_txt} · Avance calculado: {pct}%")
-                    desc = str(ov.get("objetivo_descripcion") or "").strip()
-                    if desc:
-                        st.write(f"**Resultado esperado:** {desc}")
-                    st.progress(min(max(pct / 100, 0), 1))
-                    if acts:
-                        st.caption(f"{len(hechos)} de {len(acts)} pasos completados")
-                    st.write(f"**Qué pasa:** {alerta}")
-                    st.write(f"**Qué sigue:** {accion}")
-                    if pendientes:
-                        st.markdown(f"**Falta ahora:** ⬜ {pendientes[0]}")
-                    with st.expander("Ver ruta completa y trazabilidad del objetivo"):
-                        if acts:
-                            for a in acts:
-                                st.write(("✅ " if a in hechos else "⬜ ") + str(a))
+            def _detalle_v17(row):
+                acts = _lista_v17(row.get("actividades"))
+                hechos = _lista_v17(row.get("avance_hitos"))
+                pendientes = [a for a in acts if a not in hechos]
+                meta = row.get("meta_v17")
+                ultimo = row.get("ultimo_v17")
+                estado = row.get("estado_asistido")
+                pct = round((len(hechos) / len(acts)) * 100) if acts else int(row.get("porcentaje_v17") or 0)
+                if estado == "VENCIDO":
+                    dias = abs((meta.normalize() - hoy_v17).days) if pd.notna(meta) else 0
+                    alerta = f"La fecha meta venció hace {dias} día(s)."
+                elif estado == "REQUIERE ATENCIÓN" and pd.notna(meta) and 0 <= (meta.normalize()-hoy_v17).days <= 7:
+                    dias = (meta.normalize()-hoy_v17).days
+                    alerta = f"La fecha meta está a {dias} día(s)."
+                elif estado == "REQUIERE ATENCIÓN" and pd.isna(ultimo):
+                    alerta = "Este objetivo todavía no registra seguimiento."
+                elif estado == "REQUIERE ATENCIÓN" and pd.notna(ultimo):
+                    alerta = f"Lleva {(hoy_v17-ultimo.normalize()).days} días sin seguimiento."
+                else:
+                    alerta = "El objetivo avanza dentro del término previsto."
+                accion = str(pendientes[0]) if pendientes else "Registrar seguimiento y verificar el resultado esperado."
+                return acts, hechos, pendientes, pct, alerta, accion
+
+            st.markdown("### Qué necesita atención ahora")
+            if activos_a.empty:
+                st.success("✅ No hay objetivos operativos pendientes.")
+                st.info("Puede crear un nuevo objetivo desde **➕ Nuevo objetivo**.")
+            else:
+                principal = activos_a.iloc[0]
+                _, _, _, _, alerta_p, accion_p = _detalle_v17(principal)
+                if principal["estado_asistido"] == "VENCIDO":
+                    st.error(f"**{principal['objetivo_tipo']}** · {alerta_p}\n\n➡️ **Qué sigue:** {accion_p}")
+                elif principal["estado_asistido"] == "REQUIERE ATENCIÓN":
+                    st.warning(f"**{principal['objetivo_tipo']}** · {alerta_p}\n\n➡️ **Qué sigue:** {accion_p}")
+                else:
+                    st.info(f"**{principal['objetivo_tipo']}** · {alerta_p}\n\n➡️ **Qué sigue:** {accion_p}")
+
+                st.markdown("### Objetivos activos")
+                for _, ov in activos_a.iterrows():
+                    acts, hechos, pendientes, pct, alerta, accion = _detalle_v17(ov)
+                    estado = ov["estado_asistido"]
+                    icono = "🔴" if estado == "VENCIDO" else ("🟡" if estado == "REQUIERE ATENCIÓN" else "🔵")
+                    meta_txt = ov["meta_v17"].strftime("%d/%m/%Y") if pd.notna(ov["meta_v17"]) else "Sin fecha meta"
+                    with st.container(border=True):
+                        st.markdown(f"#### {icono} {ov['objetivo_tipo']} · {estado}")
+                        st.caption(f"Meta: {meta_txt} · {pct}% de la ruta completada")
+                        desc = str(ov.get("objetivo_descripcion") or "").strip()
+                        if desc:
+                            st.write(f"**Resultado esperado:** {desc}")
+                        st.progress(min(max(pct / 100, 0), 1))
+                        st.write(f"**Situación:** {alerta}")
+                        if pendientes:
+                            st.write(f"**Próximo paso:** ⬜ {pendientes[0]}")
                         else:
-                            st.caption("Este objetivo no tiene una ruta de actividades configurada.")
-                        ult_txt = ov["ultimo_v17"].strftime("%d/%m/%Y") if pd.notna(ov["ultimo_v17"]) else "Sin seguimiento"
-                        st.caption(f"Último seguimiento: {ult_txt}")
+                            st.write("**Próximo paso:** registrar seguimiento y verificar resultado.")
+                        if acts:
+                            with st.expander("Ver ruta"):
+                                for a in acts:
+                                    st.write(("✅ " if a in hechos else "⬜ ") + str(a))
 
-        cumplidos_df = obj_v17[obj_v17["estado_asistido"] == "CUMPLIDO"].copy()
-        if not cumplidos_df.empty:
-            st.markdown("### ✅ Objetivos alcanzados")
-            with st.expander(f"Ver {len(cumplidos_df)} objetivo(s) alcanzado(s)", expanded=False):
-                for _, oc in cumplidos_df.iterrows():
+            cumplidos_df = obj_v17[obj_v17["estado_asistido"] == "CUMPLIDO"].copy()
+            if not cumplidos_df.empty:
+                st.markdown("### ✅ Objetivos alcanzados")
+                with st.expander(f"Ver {len(cumplidos_df)} objetivo(s) alcanzado(s)", expanded=False):
+                    for _, oc in cumplidos_df.iterrows():
+                        fr = pd.to_datetime(oc.get("fecha_cumplimiento_real"), errors="coerce")
+                        fr_txt = fr.strftime("%d/%m/%Y") if pd.notna(fr) else "Fecha no registrada"
+                        st.markdown(f"**✅ {oc['objetivo_tipo']}** · {fr_txt}")
+
+        # ========================================================
+        # 2. NUEVO OBJETIVO
+        # ========================================================
+        with tab_nuevo_v17:
+            st.markdown("### ➕ Crear un nuevo objetivo")
+            st.caption(
+                "Seleccione el resultado que se quiere alcanzar. El sistema propone una ruta; "
+                "puede ajustarla antes de guardar."
+            )
+            tipo_nuevo_v17 = st.selectbox(
+                "¿Qué se quiere lograr?",
+                tipos_v17,
+                key=f"v172_tipo_nuevo_{doc_sel}"
+            )
+            linea_nuevo_v17 = linea_v17.get(tipo_nuevo_v17, "Intervención integral")
+            ods_nuevo_v17 = ods_v17.get(tipo_nuevo_v17, "ODS 10")
+            sugeridos_nuevo_v17 = list(rutas_v17.get(tipo_nuevo_v17, []))
+            resultado_sugerido = resultado_v17.get(
+                tipo_nuevo_v17,
+                f"Lograr un resultado verificable relacionado con {tipo_nuevo_v17.lower()}."
+            )
+
+            c1v, c2v = st.columns(2)
+            c1v.info(f"**Línea:** {linea_nuevo_v17}")
+            c2v.info(f"**ODS:** {ods_nuevo_v17}")
+
+            desc_nuevo_v17 = st.text_area(
+                "Resultado esperado *",
+                value=resultado_sugerido,
+                key=f"v172_desc_nuevo_{doc_sel}_{tipo_nuevo_v17}"
+            )
+            ruta_nueva_v17 = st.multiselect(
+                "Ruta sugerida",
+                sugeridos_nuevo_v17,
+                default=sugeridos_nuevo_v17,
+                key=f"v172_ruta_nueva_{doc_sel}_{tipo_nuevo_v17}"
+            )
+            extra_nuevo_v17 = st.text_input(
+                "Agregar un paso particular (opcional)",
+                key=f"v172_extra_nuevo_{doc_sel}_{tipo_nuevo_v17}"
+            )
+            ruta_guardar_v17 = list(ruta_nueva_v17)
+            if extra_nuevo_v17.strip():
+                ruta_guardar_v17.append(extra_nuevo_v17.strip())
+
+            fecha_nueva_v17 = st.date_input(
+                "Fecha meta",
+                value=date.today() + timedelta(days=30),
+                key=f"v172_fecha_nueva_{doc_sel}"
+            )
+
+            if st.button(
+                "➕ Crear objetivo",
+                type="primary",
+                use_container_width=True,
+                key=f"v172_crear_obj_{doc_sel}"
+            ):
+                if not desc_nuevo_v17.strip():
+                    st.error("Debe existir un resultado esperado.")
+                elif not ruta_guardar_v17:
+                    st.error("El objetivo debe tener al menos un paso en su ruta.")
+                else:
+                    duplicado_v17 = pd.read_sql(
+                        text("""
+                            SELECT id
+                            FROM pai_objetivos
+                            WHERE TRIM(CAST(documento_usuario AS TEXT))=TRIM(CAST(:doc AS TEXT))
+                              AND LOWER(TRIM(COALESCE(objetivo_tipo,'')))=LOWER(TRIM(:tipo))
+                              AND UPPER(TRIM(COALESCE(estado,'ACTIVO'))) NOT IN ('CUMPLIDO','CERRADO','CANCELADO')
+                            LIMIT 1
+                        """),
+                        engine,
+                        params={"doc": str(doc_sel), "tipo": tipo_nuevo_v17}
+                    )
+                    if not duplicado_v17.empty:
+                        st.warning(
+                            f"Ya existe un objetivo activo de **{tipo_nuevo_v17}** "
+                            f"(#{int(duplicado_v17.iloc[0]['id'])}). Trabájelo antes de crear otro igual."
+                        )
+                    else:
+                        with engine.begin() as conn:
+                            conn.execute(text("""
+                                INSERT INTO pai_objetivos(
+                                    documento_usuario, objetivo_tipo, objetivo_descripcion,
+                                    actividades, avance_hitos, porcentaje_avance, estado,
+                                    linea_politica, ods_principal, profesional_referente,
+                                    fecha_apertura, fecha_meta
+                                )
+                                VALUES(
+                                    :doc, :tipo, :descripcion,
+                                    CAST(:actividades AS JSON), CAST(:avance AS JSON),
+                                    0, 'Activo', :linea, :ods, :prof, NOW(), :fecha_meta
+                                )
+                            """), {
+                                "doc": str(doc_sel),
+                                "tipo": tipo_nuevo_v17,
+                                "descripcion": desc_nuevo_v17.strip(),
+                                "actividades": json.dumps(ruta_guardar_v17, ensure_ascii=False),
+                                "avance": json.dumps([], ensure_ascii=False),
+                                "linea": linea_nuevo_v17,
+                                "ods": ods_nuevo_v17,
+                                "prof": prof_id,
+                                "fecha_meta": fecha_nueva_v17
+                            })
+                        try:
+                            registrar_auditoria(
+                                "CREAR_OBJETIVO_PAI",
+                                documento=str(doc_sel),
+                                modulo="PAI Asistido V17",
+                                valor_nuevo=tipo_nuevo_v17,
+                                observacion=desc_nuevo_v17.strip()[:500]
+                            )
+                        except Exception:
+                            pass
+                        invalidar_cache_datos()
+                        st.success(f"✅ Objetivo **{tipo_nuevo_v17}** creado correctamente.")
+                        st.rerun()
+
+        # ========================================================
+        # 3. TRABAJAR OBJETIVO
+        # ========================================================
+        with tab_trabajo_v17:
+            st.markdown("### ✍️ Trabajar un objetivo")
+            activos_trabajo = obj_v17[obj_v17["estado_asistido"] != "CUMPLIDO"].copy()
+
+            if activos_trabajo.empty:
+                st.info("No hay objetivos activos. Puede crear uno desde **➕ Nuevo objetivo**.")
+            else:
+                obj_id_v17 = st.selectbox(
+                    "Objetivo",
+                    activos_trabajo["id"].astype(int).tolist(),
+                    format_func=lambda oid: (
+                        f"#{oid} · " +
+                        str(activos_trabajo.loc[activos_trabajo["id"].astype(int)==int(oid), "objetivo_tipo"].iloc[0])
+                    ),
+                    key=f"v172_obj_trabajo_{doc_sel}"
+                )
+                fila_v17 = activos_trabajo.loc[
+                    activos_trabajo["id"].astype(int) == int(obj_id_v17)
+                ].iloc[0]
+                acts_v17 = _lista_v17(fila_v17.get("actividades"))
+                hechos_v17 = _lista_v17(fila_v17.get("avance_hitos"))
+                tipo_sel_v17 = str(fila_v17.get("objetivo_tipo") or "").strip()
+                desc_sel_v17 = str(fila_v17.get("objetivo_descripcion") or "").strip()
+
+                st.markdown(f"#### 🎯 {tipo_sel_v17}")
+                if desc_sel_v17:
+                    st.write(f"**Resultado esperado:** {desc_sel_v17}")
+
+                sub_avance_v17, sub_seg_v17, sub_hist_obj_v17 = st.tabs([
+                    "✅ Actualizar requisitos", "📝 Registrar seguimiento", "🕘 Historial del objetivo"
+                ])
+
+                with sub_avance_v17:
+                    if acts_v17:
+                        st.caption(
+                            "Marque únicamente los resultados o pasos que realmente se hayan verificado. "
+                            "El porcentaje se calcula automáticamente."
+                        )
+                        completos_v17 = []
+                        for idx_a, act_v17 in enumerate(acts_v17):
+                            marcado_v17 = st.checkbox(
+                                str(act_v17),
+                                value=act_v17 in hechos_v17,
+                                key=f"v172_hito_{doc_sel}_{obj_id_v17}_{idx_a}"
+                            )
+                            if marcado_v17:
+                                completos_v17.append(act_v17)
+
+                        pct_v17 = round((len(completos_v17) / len(acts_v17)) * 100)
+                        st.progress(pct_v17 / 100 if pct_v17 else 0)
+                        if pct_v17 >= 100:
+                            st.success("✅ Todos los requisitos están completos. Al guardar, el objetivo quedará CUMPLIDO.")
+                        elif completos_v17:
+                            faltan_v17 = [a for a in acts_v17 if a not in completos_v17]
+                            st.info(f"**Siguiente paso:** {faltan_v17[0] if faltan_v17 else 'Verificar resultado'}")
+                        else:
+                            st.info(f"**Primer paso:** {acts_v17[0]}")
+
+                        if st.button(
+                            "💾 Guardar avance",
+                            type="primary",
+                            use_container_width=True,
+                            key=f"v172_guardar_avance_{doc_sel}_{obj_id_v17}"
+                        ):
+                            with engine.begin() as conn:
+                                conn.execute(text("""
+                                    UPDATE pai_objetivos
+                                    SET avance_hitos=CAST(:avance AS JSON),
+                                        porcentaje_avance=:pct,
+                                        estado=CASE WHEN :pct >= 100 THEN 'CUMPLIDO' ELSE 'Activo' END,
+                                        fecha_ultimo_seguimiento=NOW(),
+                                        fecha_cumplimiento_real=CASE
+                                            WHEN :pct >= 100 THEN COALESCE(fecha_cumplimiento_real, NOW())
+                                            ELSE NULL
+                                        END
+                                    WHERE id=:id
+                                      AND TRIM(CAST(documento_usuario AS TEXT))=:doc
+                                """), {
+                                    "avance": json.dumps(completos_v17, ensure_ascii=False),
+                                    "pct": int(pct_v17),
+                                    "id": int(obj_id_v17),
+                                    "doc": str(doc_sel)
+                                })
+                            if pct_v17 >= 100:
+                                try:
+                                    _cerrar_tarea_portabilidad_por_objetivo_cumplido_v16214(
+                                        str(doc_sel), int(obj_id_v17)
+                                    )
+                                except Exception:
+                                    pass
+                            try:
+                                registrar_auditoria(
+                                    "ACTUALIZAR_AVANCE_PAI",
+                                    documento=str(doc_sel),
+                                    modulo="PAI Asistido V17",
+                                    valor_nuevo=f"{pct_v17}%",
+                                    observacion=f"Objetivo #{obj_id_v17} · {tipo_sel_v17}"
+                                )
+                            except Exception:
+                                pass
+                            invalidar_cache_datos()
+                            st.success(
+                                "✅ Objetivo alcanzado y cerrado." if pct_v17 >= 100
+                                else f"✅ Avance actualizado a {pct_v17}%."
+                            )
+                            st.rerun()
+                    else:
+                        st.warning(
+                            "Este objetivo no tiene una ruta estructurada. "
+                            "Puede registrar seguimiento sin alterar su información histórica."
+                        )
+
+                    # Verificación documental rápida
+                    tipo_norm_v17 = tipo_sel_v17.upper()
+                    verif_v17 = None
+                    etiqueta_v17 = None
+                    if tipo_norm_v17 in {"PORTABILIDAD EN SALUD", "ASEGURAMIENTO EN SALUD"}:
+                        verif_v17 = "PORTABILIDAD"
+                        etiqueta_v17 = "Ya tengo el documento/soporte de portabilidad"
+                    elif tipo_norm_v17 in {"CEDULACIÓN", "CEDULACION"}:
+                        verif_v17 = "CEDULACION"
+                        etiqueta_v17 = "Ya tengo la cédula/documento de identidad"
+
+                    if verif_v17:
+                        st.divider()
+                        st.markdown("##### 📄 Cierre por soporte verificado")
+                        conf_v17 = st.checkbox(
+                            etiqueta_v17,
+                            key=f"v172_doc_ok_{doc_sel}_{obj_id_v17}_{verif_v17}"
+                        )
+                        obs_v17 = st.text_input(
+                            "Referencia del soporte (opcional)",
+                            key=f"v172_doc_obs_{doc_sel}_{obj_id_v17}_{verif_v17}"
+                        )
+                        if st.button(
+                            "Confirmar soporte y completar objetivo",
+                            disabled=not conf_v17,
+                            use_container_width=True,
+                            key=f"v172_doc_fin_{doc_sel}_{obj_id_v17}_{verif_v17}"
+                        ):
+                            res_v17 = _completar_objetivo_pai_por_documento_v1635(
+                                str(doc_sel), int(obj_id_v17), verif_v17, obs_v17
+                            )
+                            if res_v17.get("ok"):
+                                invalidar_cache_datos()
+                                st.success("✅ Soporte verificado. El objetivo quedó CUMPLIDO.")
+                                st.rerun()
+                            else:
+                                st.error(res_v17.get("mensaje", "No fue posible completar el objetivo."))
+
+                with sub_seg_v17:
+                    st.caption(
+                        f"El seguimiento quedará asociado automáticamente a **{tipo_sel_v17}** "
+                        f"de **{nombre_usuario}**. No necesita volver a seleccionar persona ni objetivo."
+                    )
+                    with st.form(f"v172_seg_{doc_sel}_{obj_id_v17}"):
+                        actividad_v17 = st.text_input(
+                            "¿Qué hizo? *",
+                            placeholder="Ej.: acompañamiento, llamada, remisión, gestión..."
+                        )
+                        resultado_seg_v17 = st.text_area(
+                            "¿Cuál fue el resultado? *",
+                            placeholder="Describa brevemente qué ocurrió y qué queda pendiente."
+                        )
+                        evidencia_seg_v17 = st.text_input(
+                            "Evidencia / soporte (opcional)",
+                            placeholder="Documento, radicado, entidad, referencia..."
+                        )
+                        guardar_seg_v17 = st.form_submit_button(
+                            "📝 Guardar seguimiento",
+                            type="primary",
+                            use_container_width=True
+                        )
+
+                    if guardar_seg_v17:
+                        if not actividad_v17.strip() or not resultado_seg_v17.strip():
+                            st.error("Debe indicar qué hizo y cuál fue el resultado.")
+                        else:
+                            with engine.begin() as conn:
+                                conn.execute(text("""
+                                    INSERT INTO pai_novedades(
+                                        id_objetivo, fecha, profesional, tipo_novedad,
+                                        descripcion, avance_generado, evidencia
+                                    )
+                                    VALUES(
+                                        :id_obj, NOW(), :profesional, :tipo,
+                                        :descripcion, 0, :evidencia
+                                    )
+                                """), {
+                                    "id_obj": int(obj_id_v17),
+                                    "profesional": prof_nombre,
+                                    "tipo": actividad_v17.strip(),
+                                    "descripcion": resultado_seg_v17.strip(),
+                                    "evidencia": evidencia_seg_v17.strip()
+                                })
+                                conn.execute(text("""
+                                    UPDATE pai_objetivos
+                                    SET fecha_ultimo_seguimiento=NOW()
+                                    WHERE id=:id AND TRIM(CAST(documento_usuario AS TEXT))=:doc
+                                """), {"id": int(obj_id_v17), "doc": str(doc_sel)})
+
+                            try:
+                                registrar_auditoria(
+                                    "REGISTRAR_NOVEDAD_PROFESIONAL",
+                                    documento=str(doc_sel),
+                                    modulo="PAI Asistido V17",
+                                    valor_anterior=f"Objetivo #{obj_id_v17}",
+                                    valor_nuevo=f"Seguimiento por {prof_nombre}",
+                                    observacion=resultado_seg_v17.strip()[:500]
+                                )
+                            except Exception:
+                                pass
+
+                            try:
+                                _cerrar_tarea_portabilidad_por_seguimiento_v16207(
+                                    str(doc_sel), int(obj_id_v17),
+                                    actividad_v17.strip(),
+                                    resultado_seg_v17.strip(),
+                                    evidencia_seg_v17.strip()
+                                )
+                            except Exception:
+                                pass
+
+                            invalidar_cache_datos()
+                            st.success("✅ Seguimiento registrado correctamente.")
+                            st.rerun()
+
+                with sub_hist_obj_v17:
+                    hist_obj_v17 = pd.read_sql(
+                        text("""
+                            SELECT fecha, profesional, tipo_novedad, descripcion, evidencia
+                            FROM pai_novedades
+                            WHERE id_objetivo=:id
+                            ORDER BY fecha DESC
+                            LIMIT 50
+                        """),
+                        engine,
+                        params={"id": int(obj_id_v17)}
+                    )
+                    if hist_obj_v17.empty:
+                        st.info("Este objetivo aún no tiene seguimientos.")
+                    else:
+                        st.dataframe(hist_obj_v17, use_container_width=True, hide_index=True)
+
+        # ========================================================
+        # 4. HISTORIAL GENERAL
+        # ========================================================
+        with tab_hist_v17:
+            st.markdown("### 📚 Historial y trazabilidad")
+            cumplidos_hist_v17 = obj_v17[obj_v17["estado_asistido"] == "CUMPLIDO"].copy()
+            if cumplidos_hist_v17.empty:
+                st.info("Todavía no hay objetivos operativos cumplidos.")
+            else:
+                st.markdown("#### ✅ Objetivos alcanzados")
+                for _, oc in cumplidos_hist_v17.iterrows():
                     fr = pd.to_datetime(oc.get("fecha_cumplimiento_real"), errors="coerce")
                     fr_txt = fr.strftime("%d/%m/%Y") if pd.notna(fr) else "Fecha no registrada"
-                    st.markdown(f"**✅ {oc['objetivo_tipo']}** · {fr_txt}")
-                    desc = str(oc.get("objetivo_descripcion") or "").strip()
-                    if desc:
-                        st.caption(desc)
+                    with st.expander(f"✅ {oc['objetivo_tipo']} · {fr_txt}", expanded=False):
+                        st.write(str(oc.get("objetivo_descripcion") or "Sin descripción"))
+                        st.caption(f"Avance registrado: {int(float(oc.get('porcentaje_v17') or 0))}%")
 
-        if not objetivos_hist_2026.empty:
-            st.markdown("### 📚 Histórico PAI 2026")
-            with st.expander(
-                f"Ver información histórica ({len(objetivos_hist_2026)} objetivo(s))",
-                expanded=False
-            ):
-                for _, oh in objetivos_hist_2026.iterrows():
-                    txt = str(oh.get("objetivo_descripcion") or oh.get("objetivo_tipo") or "Objetivo histórico").strip()
-                    pct_h = pd.to_numeric(pd.Series([oh.get("porcentaje_avance")]), errors="coerce").fillna(0).iloc[0]
-                    st.write(f"📚 {txt} · {int(round(float(pct_h)))}%")
+            hist_general_v17 = pd.read_sql(
+                text("""
+                    SELECT n.fecha, o.objetivo_tipo, n.profesional,
+                           n.tipo_novedad, n.descripcion, n.evidencia
+                    FROM pai_novedades n
+                    JOIN pai_objetivos o ON o.id=n.id_objetivo
+                    WHERE TRIM(CAST(o.documento_usuario AS TEXT))=:doc
+                    ORDER BY n.fecha DESC
+                    LIMIT 50
+                """),
+                engine,
+                params={"doc": str(doc_sel)}
+            )
+            st.markdown("#### 🕘 Últimos seguimientos")
+            if hist_general_v17.empty:
+                st.info("Aún no hay seguimientos registrados.")
+            else:
+                st.dataframe(hist_general_v17, use_container_width=True, hide_index=True)
 
-        st.info(
-            "🧪 **Vista piloto:** aquí no se modifica información. Para crear objetivos, "
-            "actualizar avances, registrar seguimientos o cerrar el PAI, cambie arriba a **PAI ACTUAL**."
+            if not objetivos_hist_2026.empty:
+                st.markdown("#### 📦 Histórico PAI 2026")
+                with st.expander(
+                    f"Ver histórico migrado ({len(objetivos_hist_2026)} objetivo(s))",
+                    expanded=False
+                ):
+                    for _, oh in objetivos_hist_2026.iterrows():
+                        txt = str(
+                            oh.get("objetivo_descripcion")
+                            or oh.get("objetivo_tipo")
+                            or "Objetivo histórico"
+                        ).strip()
+                        pct_h = pd.to_numeric(
+                            pd.Series([oh.get("porcentaje_avance")]),
+                            errors="coerce"
+                        ).fillna(0).iloc[0]
+                        st.write(f"📚 {txt} · {int(round(float(pct_h)))}%")
+
+        st.caption(
+            "V17 operativo usa las mismas tablas y auditoría del PAI actual. "
+            "Puede volver a **PAI ACTUAL** en cualquier momento."
         )
         return
 
