@@ -1903,6 +1903,119 @@ def _reconciliar_portabilidad_por_objetivos_cumplidos_v16214():
         return 0
 
 
+# ============================================================
+# V16.35 - VERIFICACIÓN DOCUMENTAL PAI
+# Portabilidad/Aseguramiento y Cedulación pueden cerrarse con evidencia
+# documental confirmada por el profesional, sin depender de marcar hitos.
+# ============================================================
+def _completar_objetivo_pai_por_documento_v1635(documento, objetivo_id, tipo_verificacion, observacion=""):
+    """Completa un objetivo PAI cuando el profesional confirma el soporte documental.
+
+    PORTABILIDAD: aplica a 'Portabilidad en salud' y 'Aseguramiento en salud'.
+    CEDULACION: aplica únicamente a 'Cedulación'.
+    Deja trazabilidad en pai_novedades y auditoria_sistema.
+    """
+    doc = limpiar_documento(documento)
+    usuario = st.session_state.get("usuario_actual", "sistema")
+    tipo_v = str(tipo_verificacion or "").strip().upper()
+    obs = str(observacion or "").strip()
+    if not doc or not objetivo_id or tipo_v not in {"PORTABILIDAD", "CEDULACION"}:
+        return {"ok": False, "mensaje": "Verificación documental no válida."}
+
+    try:
+        with engine.begin() as conn:
+            obj = conn.execute(text("""
+                SELECT id, objetivo_tipo, actividades, avance_hitos,
+                       porcentaje_avance, estado
+                FROM pai_objetivos
+                WHERE id=:id
+                  AND TRIM(CAST(documento_usuario AS TEXT))=:doc
+                LIMIT 1
+            """), {"id": int(objetivo_id), "doc": doc}).mappings().first()
+            if not obj:
+                return {"ok": False, "mensaje": "No se encontró el objetivo PAI."}
+
+            objetivo_tipo = str(obj.get("objetivo_tipo") or "").strip()
+            objetivo_norm = objetivo_tipo.upper()
+            if tipo_v == "PORTABILIDAD":
+                permitidos = {"PORTABILIDAD EN SALUD", "ASEGURAMIENTO EN SALUD"}
+                etiqueta = "Documento/soporte de portabilidad verificado"
+            else:
+                permitidos = {"CEDULACIÓN", "CEDULACION"}
+                etiqueta = "Cédula/documento de identidad verificado"
+
+            if objetivo_norm not in permitidos:
+                return {"ok": False, "mensaje": f"Esta verificación no corresponde al objetivo '{objetivo_tipo}'."}
+
+            # Al existir el documento final, el resultado del objetivo ya fue alcanzado.
+            # Conservamos los hitos configurados como completados para que la interfaz
+            # no muestre 100% con hitos pendientes.
+            actividades = obj.get("actividades") or []
+            if isinstance(actividades, str):
+                try:
+                    actividades = json.loads(actividades)
+                except Exception:
+                    actividades = []
+            if not isinstance(actividades, list):
+                actividades = []
+
+            conn.execute(text("""
+                UPDATE pai_objetivos
+                   SET avance_hitos=CAST(:avance AS JSON),
+                       porcentaje_avance=100,
+                       estado='CUMPLIDO',
+                       fecha_ultimo_seguimiento=NOW(),
+                       fecha_cumplimiento_real=COALESCE(fecha_cumplimiento_real, NOW())
+                 WHERE id=:id
+                   AND TRIM(CAST(documento_usuario AS TEXT))=:doc
+            """), {
+                "avance": json.dumps(actividades, ensure_ascii=False),
+                "id": int(objetivo_id),
+                "doc": doc,
+            })
+
+            evidencia_txt = etiqueta + (f". Observación: {obs}" if obs else "")
+            conn.execute(text("""
+                INSERT INTO pai_novedades(
+                    id_objetivo, fecha, profesional, tipo_novedad,
+                    descripcion, avance_generado, evidencia
+                ) VALUES (
+                    :id, NOW(), :prof, 'VERIFICACIÓN DOCUMENTAL',
+                    :descripcion, 100, :evidencia
+                )
+            """), {
+                "id": int(objetivo_id),
+                "prof": usuario,
+                "descripcion": etiqueta,
+                "evidencia": evidencia_txt[:1500],
+            })
+
+        registrar_auditoria(
+            "COMPLETAR_OBJETIVO_PAI_DOCUMENTO",
+            documento=doc,
+            modulo="PAI / Verificación documental",
+            valor_anterior=f"Objetivo #{int(objetivo_id)}",
+            valor_nuevo=f"{objetivo_tipo} - CUMPLIDO 100%",
+            observacion=f"{etiqueta}. Confirmado por {usuario}. {obs}"[:1000],
+        )
+
+        # Para Portabilidad/Aseguramiento también cerrar la tarea operativa pendiente.
+        tareas_cerradas = 0
+        if tipo_v == "PORTABILIDAD":
+            tareas_cerradas = _cerrar_tarea_portabilidad_por_objetivo_cumplido_v16214(
+                doc, int(objetivo_id)
+            )
+
+        invalidar_cache_datos()
+        return {
+            "ok": True,
+            "mensaje": "Objetivo completado al 100% con verificación documental.",
+            "tareas_cerradas": tareas_cerradas,
+        }
+    except Exception as e:
+        return {"ok": False, "mensaje": f"No fue posible guardar la verificación documental: {e}"}
+
+
 def _reconciliar_portabilidades_ya_realizadas_v16207():
     """Corrige tareas antiguas abiertas del profesional cuando ya existe en PAI
     un seguimiento explícito que confirma que la portabilidad fue realizada.
@@ -14301,6 +14414,54 @@ def panel_profesional_v15(doc_forzado=None, incrustado=False):
                     avance = []
             except Exception:
                 avance = []
+
+            # V16.35 - Cierre por verificación documental.
+            # Se muestra únicamente en los objetivos donde el documento final
+            # constituye evidencia suficiente de cumplimiento.
+            tipo_obj_sel = str(obj_row.get("objetivo_tipo") or "").strip()
+            tipo_obj_sel_norm = tipo_obj_sel.upper()
+            verificacion_v1635 = None
+            etiqueta_verificacion_v1635 = None
+            if tipo_obj_sel_norm in {"PORTABILIDAD EN SALUD", "ASEGURAMIENTO EN SALUD"}:
+                verificacion_v1635 = "PORTABILIDAD"
+                etiqueta_verificacion_v1635 = "Ya tengo el documento/soporte de portabilidad"
+            elif tipo_obj_sel_norm in {"CEDULACIÓN", "CEDULACION"}:
+                verificacion_v1635 = "CEDULACION"
+                etiqueta_verificacion_v1635 = "Ya tengo la cédula/documento de identidad"
+
+            if verificacion_v1635:
+                st.markdown("##### ✅ Verificación documental")
+                st.caption(
+                    "Use esta opción cuando el resultado ya está soportado por el documento. "
+                    "Al confirmar, el objetivo quedará en 100% y CUMPLIDO."
+                )
+                confirma_doc_v1635 = st.checkbox(
+                    etiqueta_verificacion_v1635,
+                    key=f"v1635_confirma_doc_{doc_sel}_{obj_id}_{verificacion_v1635}"
+                )
+                obs_doc_v1635 = st.text_input(
+                    "Observación / referencia del soporte (opcional)",
+                    placeholder="Ej.: soporte recibido, fecha, EPS, número de trámite, etc.",
+                    key=f"v1635_obs_doc_{doc_sel}_{obj_id}_{verificacion_v1635}"
+                )
+                if st.button(
+                    "📄 Confirmar documento y completar objetivo",
+                    use_container_width=True,
+                    type="primary",
+                    disabled=not confirma_doc_v1635,
+                    key=f"v1635_completar_doc_{doc_sel}_{obj_id}_{verificacion_v1635}"
+                ):
+                    resultado_doc_v1635 = _completar_objetivo_pai_por_documento_v1635(
+                        str(doc_sel), int(obj_id), verificacion_v1635, obs_doc_v1635
+                    )
+                    if resultado_doc_v1635.get("ok"):
+                        msg = "✅ " + resultado_doc_v1635.get("mensaje", "Objetivo completado.")
+                        if resultado_doc_v1635.get("tareas_cerradas", 0):
+                            msg += " La tarea de Portabilidad en Salud también quedó COMPLETADA."
+                        st.session_state[f"pai_obj_flash_{doc_sel}"] = msg
+                        st.rerun()
+                    else:
+                        st.error(resultado_doc_v1635.get("mensaje", "No fue posible completar el objetivo."))
 
             # V16.111 - Los objetivos operativos conservan el avance por hitos.
             # Los objetivos históricos migrados que no tienen hitos permiten
