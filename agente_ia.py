@@ -35390,6 +35390,190 @@ with tab6:
             FROM pai_novedades
             ORDER BY fecha DESC
         """, engine)
+
+        # ========================================================
+        # V17 PILOTO - PAI ASISTIDO (SOLO LECTURA)
+        # ========================================================
+        # Esta vista NO escribe, NO reemplaza y NO modifica el PAI actual.
+        # Se alimenta exclusivamente de pai_objetivos/pai_novedades para
+        # probar una experiencia más clara antes de conectar acciones.
+        st.markdown("## ✨ PAI asistido · Vista piloto")
+        st.caption(
+            "Vista de prueba en solo lectura. Resume qué está logrado, qué requiere "
+            "atención y cuál sería la próxima acción. El PAI actual continúa debajo sin cambios."
+        )
+
+        if objetivos.empty:
+            st.info("Esta persona todavía no tiene objetivos PAI para mostrar en la vista piloto.")
+        else:
+            hoy_v17 = pd.Timestamp(date.today())
+            obj_v17 = objetivos.copy()
+            obj_v17["porcentaje_avance"] = pd.to_numeric(
+                obj_v17.get("porcentaje_avance"), errors="coerce"
+            ).fillna(0)
+            obj_v17["fecha_meta_v17"] = pd.to_datetime(
+                obj_v17.get("fecha_meta"), errors="coerce"
+            )
+            obj_v17["ultimo_seg_v17"] = obj_v17.get(
+                "fecha_ultimo_seguimiento", pd.Series(index=obj_v17.index, dtype="object")
+            ).apply(normalizar_timestamp_pandas_sin_tz)
+
+            def _lista_json_v17(valor):
+                if isinstance(valor, list):
+                    return valor
+                try:
+                    x = json.loads(valor or "[]")
+                    return x if isinstance(x, list) else []
+                except Exception:
+                    return []
+
+            def _estado_v17(row):
+                avance = float(row.get("porcentaje_avance", 0) or 0)
+                estado_bd = str(row.get("estado", "") or "").strip().upper()
+                meta = row.get("fecha_meta_v17")
+                ultimo = row.get("ultimo_seg_v17")
+                if avance >= 100 or estado_bd in {"CUMPLIDO", "CERRADO"}:
+                    return "CUMPLIDO"
+                if pd.notna(meta) and (meta.normalize() - hoy_v17).days < 0:
+                    return "VENCIDO"
+                if pd.notna(meta) and (meta.normalize() - hoy_v17).days <= 7:
+                    return "REQUIERE ATENCIÓN"
+                if pd.isna(ultimo):
+                    return "REQUIERE ATENCIÓN"
+                if (hoy_v17 - ultimo.normalize()).days > 15:
+                    return "REQUIERE ATENCIÓN"
+                return "EN PROCESO"
+
+            def _prioridad_v17(row):
+                estado = row["estado_v17"]
+                meta = row.get("fecha_meta_v17")
+                ultimo = row.get("ultimo_seg_v17")
+                if estado == "VENCIDO":
+                    return 0
+                if estado == "REQUIERE ATENCIÓN":
+                    if pd.notna(meta) and (meta.normalize() - hoy_v17).days <= 7:
+                        return 1
+                    if pd.isna(ultimo):
+                        return 2
+                    return 3
+                if estado == "EN PROCESO":
+                    return 4
+                return 9
+
+            def _motivo_y_accion_v17(row):
+                estado = row["estado_v17"]
+                meta = row.get("fecha_meta_v17")
+                ultimo = row.get("ultimo_seg_v17")
+                actividades_v = _lista_json_v17(row.get("actividades"))
+                hitos_v = _lista_json_v17(row.get("avance_hitos"))
+                pendientes_v = [a for a in actividades_v if a not in hitos_v]
+                falta = pendientes_v[0] if pendientes_v else None
+
+                if estado == "CUMPLIDO":
+                    return "Resultado alcanzado", "Consultar trazabilidad si se requiere"
+                if estado == "VENCIDO":
+                    dias = abs((meta.normalize() - hoy_v17).days) if pd.notna(meta) else 0
+                    return f"Fecha meta superada hace {dias} día(s)", (
+                        f"Retomar: {falta}" if falta else "Registrar seguimiento y redefinir la acción pendiente"
+                    )
+                if pd.notna(meta):
+                    dias = (meta.normalize() - hoy_v17).days
+                    if 0 <= dias <= 7:
+                        return f"Fecha meta próxima: faltan {dias} día(s)", (
+                            f"Priorizar: {falta}" if falta else "Revisar condiciones para cierre"
+                        )
+                if pd.isna(ultimo):
+                    return "Aún no registra seguimiento", (
+                        f"Iniciar: {falta}" if falta else "Registrar primer seguimiento"
+                    )
+                dias_sin = (hoy_v17 - ultimo.normalize()).days
+                if dias_sin > 15:
+                    return f"Lleva {dias_sin} días sin seguimiento", (
+                        f"Retomar: {falta}" if falta else "Registrar un nuevo seguimiento"
+                    )
+                return "Avance dentro del término", (
+                    f"Continuar: {falta}" if falta else "Revisar si el resultado ya puede confirmarse"
+                )
+
+            obj_v17["estado_v17"] = obj_v17.apply(_estado_v17, axis=1)
+            obj_v17["prioridad_v17"] = obj_v17.apply(_prioridad_v17, axis=1)
+
+            total_v17 = len(obj_v17)
+            cumplidos_v17 = int((obj_v17["estado_v17"] == "CUMPLIDO").sum())
+            proceso_v17 = int((obj_v17["estado_v17"] == "EN PROCESO").sum())
+            atencion_v17 = int(obj_v17["estado_v17"].isin(["REQUIERE ATENCIÓN", "VENCIDO"]).sum())
+
+            r1, r2, r3, r4 = st.columns(4)
+            r1.metric("🎯 Objetivos", total_v17)
+            r2.metric("✅ Alcanzados", cumplidos_v17)
+            r3.metric("🔵 En proceso", proceso_v17)
+            r4.metric("⚠️ Requieren atención", atencion_v17)
+
+            pendientes_v17 = obj_v17[obj_v17["estado_v17"] != "CUMPLIDO"].copy()
+            pendientes_v17 = pendientes_v17.sort_values(
+                ["prioridad_v17", "fecha_meta_v17"], na_position="last"
+            )
+
+            if pendientes_v17.empty:
+                st.success("✅ Todos los objetivos registrados se encuentran alcanzados.")
+            else:
+                prioridad = pendientes_v17.iloc[0]
+                motivo_p, accion_p = _motivo_y_accion_v17(prioridad)
+                st.markdown("### 🧭 Próxima acción sugerida")
+                if prioridad["estado_v17"] == "VENCIDO":
+                    st.error(f"**{prioridad['objetivo_tipo']}** · {motivo_p}\n\n➡️ **{accion_p}**")
+                elif prioridad["estado_v17"] == "REQUIERE ATENCIÓN":
+                    st.warning(f"**{prioridad['objetivo_tipo']}** · {motivo_p}\n\n➡️ **{accion_p}**")
+                else:
+                    st.info(f"**{prioridad['objetivo_tipo']}** · {motivo_p}\n\n➡️ **{accion_p}**")
+
+                st.markdown("### 📌 Lo que requiere trabajo")
+                for _, ov in pendientes_v17.iterrows():
+                    acts = _lista_json_v17(ov.get("actividades"))
+                    hechos = _lista_json_v17(ov.get("avance_hitos"))
+                    pendientes = [a for a in acts if a not in hechos]
+                    avance_calc = round((len(hechos) / len(acts)) * 100, 1) if acts else float(ov.get("porcentaje_avance", 0) or 0)
+                    motivo, accion = _motivo_y_accion_v17(ov)
+                    icono = "🔴" if ov["estado_v17"] == "VENCIDO" else ("🟡" if ov["estado_v17"] == "REQUIERE ATENCIÓN" else "🔵")
+                    meta_txt = ov["fecha_meta_v17"].strftime("%d/%m/%Y") if pd.notna(ov["fecha_meta_v17"]) else "Sin fecha meta"
+
+                    with st.container(border=True):
+                        st.markdown(f"### {icono} {ov['objetivo_tipo']}")
+                        st.caption(f"{ov['estado_v17']} · Meta: {meta_txt} · Profesional: {ov.get('nombre_profesional') or 'Sin asignar'}")
+                        if str(ov.get("objetivo_descripcion") or "").strip():
+                            st.write(f"**Resultado buscado:** {ov['objetivo_descripcion']}")
+                        st.progress(min(max(avance_calc / 100, 0), 1))
+                        st.caption(f"{len(hechos)} de {len(acts)} pasos completados · {avance_calc}%")
+                        if pendientes:
+                            st.markdown(f"**Qué falta ahora:** {pendientes[0]}")
+                            if len(pendientes) > 1:
+                                st.caption(f"Después quedan {len(pendientes)-1} paso(s) adicional(es).")
+                        else:
+                            st.markdown("**Qué falta ahora:** revisar si ya existen condiciones para confirmar el resultado.")
+                        st.markdown(f"**Orientación del sistema:** {accion}")
+                        with st.expander("Ver ruta completa"):
+                            if not acts:
+                                st.caption("Este objetivo no tiene una ruta de actividades configurada.")
+                            for a in acts:
+                                st.write(("✅ " if a in hechos else "⬜ ") + str(a))
+                            st.caption(f"Motivo de prioridad: {motivo}")
+
+            cumplidos_df_v17 = obj_v17[obj_v17["estado_v17"] == "CUMPLIDO"].copy()
+            if not cumplidos_df_v17.empty:
+                with st.expander(f"✅ Objetivos alcanzados ({len(cumplidos_df_v17)})", expanded=False):
+                    for _, oc in cumplidos_df_v17.iterrows():
+                        fecha_real = pd.to_datetime(oc.get("fecha_cumplimiento_real"), errors="coerce")
+                        fecha_txt = fecha_real.strftime("%d/%m/%Y") if pd.notna(fecha_real) else "Fecha no registrada"
+                        st.markdown(f"**✅ {oc['objetivo_tipo']}** · {fecha_txt}")
+                        if str(oc.get("objetivo_descripcion") or "").strip():
+                            st.caption(str(oc.get("objetivo_descripcion")))
+
+        st.info(
+            "🧪 **Modo piloto:** esta sección es solo de consulta. Para crear objetivos, "
+            "guardar avances o registrar novedades, use por ahora el módulo actual que aparece debajo."
+        )
+        st.divider()
+
         # =========================
         # CREAR OBJETIVO
         # =========================
