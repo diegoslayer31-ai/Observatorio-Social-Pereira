@@ -14140,13 +14140,184 @@ def panel_profesional_v15(doc_forzado=None, incrustado=False):
                         st.progress(min(max(pct / 100, 0), 1))
                         st.write(f"**Situación:** {alerta}")
                         if pendientes:
-                            st.write(f"**Próximo paso:** ⬜ {pendientes[0]}")
+                            st.info(f"➡️ **SIGUIENTE ACCIÓN:** {pendientes[0]}")
                         else:
-                            st.write("**Próximo paso:** registrar seguimiento y verificar resultado.")
+                            st.info("➡️ **SIGUIENTE ACCIÓN:** registrar seguimiento y verificar el resultado esperado.")
+
+                        # V17.3: la portada ORIENTA; los controles reales viven dentro de
+                        # "Trabajar este objetivo" para evitar falsos checkboxes.
+                        with st.expander("✍️ TRABAJAR ESTE OBJETIVO", expanded=False):
+                            st.caption(
+                                "Aquí sí puede actualizar el avance o registrar un seguimiento. "
+                                "Todo queda asociado automáticamente a esta persona y a este objetivo."
+                            )
+                            accion_av_v173, accion_seg_v173 = st.tabs([
+                                "✅ Actualizar avance", "📝 Registrar seguimiento"
+                            ])
+
+                            with accion_av_v173:
+                                if acts:
+                                    completos_rap_v173 = []
+                                    for idx_r, act_r in enumerate(acts):
+                                        marcado_r = st.checkbox(
+                                            str(act_r),
+                                            value=act_r in hechos,
+                                            key=f"v173_rap_hito_{doc_sel}_{int(ov['id'])}_{idx_r}"
+                                        )
+                                        if marcado_r:
+                                            completos_rap_v173.append(act_r)
+
+                                    pct_rap_v173 = round((len(completos_rap_v173) / len(acts)) * 100)
+                                    st.progress(pct_rap_v173 / 100 if pct_rap_v173 else 0)
+                                    st.caption(
+                                        f"{len(completos_rap_v173)} de {len(acts)} pasos completados · "
+                                        f"{pct_rap_v173}%"
+                                    )
+                                    faltan_rap_v173 = [a for a in acts if a not in completos_rap_v173]
+                                    if pct_rap_v173 >= 100:
+                                        st.success(
+                                            "✅ Todos los requisitos están verificados. "
+                                            "Al guardar, el objetivo quedará CUMPLIDO."
+                                        )
+                                    elif faltan_rap_v173:
+                                        st.info(f"➡️ Después de guardar, el siguiente paso será: **{faltan_rap_v173[0]}**")
+
+                                    if st.button(
+                                        "💾 Guardar avance de este objetivo",
+                                        type="primary",
+                                        use_container_width=True,
+                                        key=f"v173_rap_guardar_{doc_sel}_{int(ov['id'])}"
+                                    ):
+                                        with engine.begin() as conn:
+                                            conn.execute(text("""
+                                                UPDATE pai_objetivos
+                                                SET avance_hitos=CAST(:avance AS JSON),
+                                                    porcentaje_avance=:pct,
+                                                    estado=CASE WHEN :pct >= 100 THEN 'CUMPLIDO' ELSE 'Activo' END,
+                                                    fecha_ultimo_seguimiento=NOW(),
+                                                    fecha_cumplimiento_real=CASE
+                                                        WHEN :pct >= 100 THEN COALESCE(fecha_cumplimiento_real, NOW())
+                                                        ELSE NULL
+                                                    END
+                                                WHERE id=:id
+                                                  AND TRIM(CAST(documento_usuario AS TEXT))=:doc
+                                            """), {
+                                                "avance": json.dumps(completos_rap_v173, ensure_ascii=False),
+                                                "pct": int(pct_rap_v173),
+                                                "id": int(ov["id"]),
+                                                "doc": str(doc_sel)
+                                            })
+                                        if pct_rap_v173 >= 100:
+                                            try:
+                                                _cerrar_tarea_portabilidad_por_objetivo_cumplido_v16214(
+                                                    str(doc_sel), int(ov["id"])
+                                                )
+                                            except Exception:
+                                                pass
+                                        try:
+                                            registrar_auditoria(
+                                                "ACTUALIZAR_AVANCE_PAI",
+                                                documento=str(doc_sel),
+                                                modulo="PAI Asistido V17",
+                                                valor_nuevo=f"{pct_rap_v173}%",
+                                                observacion=f"Objetivo #{int(ov['id'])} · {ov['objetivo_tipo']}"
+                                            )
+                                        except Exception:
+                                            pass
+                                        invalidar_cache_datos()
+                                        st.success(
+                                            "✅ Objetivo alcanzado." if pct_rap_v173 >= 100
+                                            else f"✅ Avance guardado: {pct_rap_v173}%."
+                                        )
+                                        st.rerun()
+                                else:
+                                    st.warning(
+                                        "Este objetivo no tiene una ruta estructurada. "
+                                        "Puede registrar un seguimiento en la pestaña de al lado."
+                                    )
+
+                            with accion_seg_v173:
+                                st.write(f"**Objetivo:** {ov['objetivo_tipo']}")
+                                with st.form(f"v173_rap_seg_{doc_sel}_{int(ov['id'])}"):
+                                    que_hizo_v173 = st.text_input(
+                                        "¿Qué hizo? *",
+                                        placeholder="Ej.: acompañamiento, llamada, remisión, gestión..."
+                                    )
+                                    resultado_v173 = st.text_area(
+                                        "¿Cuál fue el resultado? *",
+                                        placeholder="Explique brevemente qué ocurrió y qué queda pendiente."
+                                    )
+                                    evidencia_v173 = st.text_input(
+                                        "Evidencia / soporte (opcional)",
+                                        placeholder="Documento, radicado, entidad, referencia..."
+                                    )
+                                    enviar_seg_v173 = st.form_submit_button(
+                                        "📝 Guardar seguimiento",
+                                        type="primary",
+                                        use_container_width=True
+                                    )
+
+                                if enviar_seg_v173:
+                                    if not que_hizo_v173.strip() or not resultado_v173.strip():
+                                        st.error("Debe indicar qué hizo y cuál fue el resultado.")
+                                    else:
+                                        with engine.begin() as conn:
+                                            conn.execute(text("""
+                                                INSERT INTO pai_novedades(
+                                                    id_objetivo, fecha, profesional, tipo_novedad,
+                                                    descripcion, avance_generado, evidencia
+                                                )
+                                                VALUES(
+                                                    :id_obj, NOW(), :profesional, :tipo,
+                                                    :descripcion, 0, :evidencia
+                                                )
+                                            """), {
+                                                "id_obj": int(ov["id"]),
+                                                "profesional": prof_nombre,
+                                                "tipo": que_hizo_v173.strip(),
+                                                "descripcion": resultado_v173.strip(),
+                                                "evidencia": evidencia_v173.strip()
+                                            })
+                                            conn.execute(text("""
+                                                UPDATE pai_objetivos
+                                                SET fecha_ultimo_seguimiento=NOW()
+                                                WHERE id=:id
+                                                  AND TRIM(CAST(documento_usuario AS TEXT))=:doc
+                                            """), {
+                                                "id": int(ov["id"]),
+                                                "doc": str(doc_sel)
+                                            })
+                                        try:
+                                            registrar_auditoria(
+                                                "REGISTRAR_NOVEDAD_PROFESIONAL",
+                                                documento=str(doc_sel),
+                                                modulo="PAI Asistido V17",
+                                                valor_anterior=f"Objetivo #{int(ov['id'])}",
+                                                valor_nuevo=f"Seguimiento por {prof_nombre}",
+                                                observacion=resultado_v173.strip()[:500]
+                                            )
+                                        except Exception:
+                                            pass
+                                        try:
+                                            _cerrar_tarea_portabilidad_por_seguimiento_v16207(
+                                                str(doc_sel), int(ov["id"]),
+                                                que_hizo_v173.strip(),
+                                                resultado_v173.strip(),
+                                                evidencia_v173.strip()
+                                            )
+                                        except Exception:
+                                            pass
+                                        invalidar_cache_datos()
+                                        st.success("✅ Seguimiento guardado correctamente.")
+                                        st.rerun()
+
                         if acts:
-                            with st.expander("Ver ruta"):
+                            with st.expander("🗺️ Ver ruta completa", expanded=False):
                                 for a in acts:
-                                    st.write(("✅ " if a in hechos else "⬜ ") + str(a))
+                                    if a in hechos:
+                                        st.write(f"✅ **Completado:** {a}")
+                                    else:
+                                        st.write(f"• **Pendiente:** {a}")
 
             cumplidos_df = obj_v17[obj_v17["estado_asistido"] == "CUMPLIDO"].copy()
             if not cumplidos_df.empty:
