@@ -1524,6 +1524,195 @@ def generar_historia_integral(documento, engine):
 
 
 
+
+# ============================================================
+# V16.222 - HISTORIA DE VIDA DENTRO DE HISTORIA INTEGRAL
+# ============================================================
+def _esc_pdf_v16222(valor):
+    """Texto seguro para Paragraph de ReportLab."""
+    from xml.sax.saxutils import escape
+    if valor is None or (isinstance(valor, float) and pd.isna(valor)):
+        return "Sin información registrada"
+    txt = " ".join(str(valor).strip().split())
+    return escape(txt) if txt else "Sin información registrada"
+
+
+def _fecha_txt_v16222(valor):
+    f = pd.to_datetime(valor, errors="coerce")
+    return f.strftime("%d/%m/%Y") if pd.notna(f) else "Sin fecha"
+
+
+def _asegurar_historia_vida_v16222():
+    """Complemento cualitativo editable; no reemplaza datos estructurados."""
+    try:
+        with engine.begin() as conn:
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS historia_vida_complementos (
+                    documento_usuario TEXT PRIMARY KEY,
+                    relato_cualitativo TEXT,
+                    logros_destacados TEXT,
+                    situacion_actual TEXT,
+                    observaciones_cierre TEXT,
+                    actualizado_por TEXT,
+                    actualizado_en TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )
+            """))
+    except Exception:
+        pass
+
+
+def _cargar_complemento_historia_v16222(documento):
+    _asegurar_historia_vida_v16222()
+    try:
+        df = pd.read_sql(text("""
+            SELECT relato_cualitativo, logros_destacados, situacion_actual,
+                   observaciones_cierre, actualizado_por, actualizado_en
+            FROM historia_vida_complementos
+            WHERE TRIM(documento_usuario)=:doc
+            LIMIT 1
+        """), engine, params={"doc": limpiar_documento(documento)})
+        return {} if df.empty else df.iloc[0].to_dict()
+    except Exception:
+        return {}
+
+
+def _guardar_complemento_historia_v16222(documento, relato, logros, situacion, cierre):
+    _asegurar_historia_vida_v16222()
+    usuario = st.session_state.get("usuario_actual", "sistema")
+    with engine.begin() as conn:
+        conn.execute(text("""
+            INSERT INTO historia_vida_complementos (
+                documento_usuario, relato_cualitativo, logros_destacados,
+                situacion_actual, observaciones_cierre, actualizado_por, actualizado_en
+            ) VALUES (:doc,:relato,:logros,:situacion,:cierre,:usuario,NOW())
+            ON CONFLICT (documento_usuario) DO UPDATE SET
+                relato_cualitativo=EXCLUDED.relato_cualitativo,
+                logros_destacados=EXCLUDED.logros_destacados,
+                situacion_actual=EXCLUDED.situacion_actual,
+                observaciones_cierre=EXCLUDED.observaciones_cierre,
+                actualizado_por=EXCLUDED.actualizado_por,
+                actualizado_en=NOW()
+        """), {"doc": limpiar_documento(documento), "relato": relato.strip(),
+                 "logros": logros.strip(), "situacion": situacion.strip(),
+                 "cierre": cierre.strip(), "usuario": usuario})
+    registrar_auditoria("ACTUALIZAR_HISTORIA_VIDA", documento=documento,
+                        modulo="Historia Integral",
+                        observacion="Actualización del complemento cualitativo de historia de vida")
+
+
+def _datos_historia_vida_v16222(documento):
+    """Consolida únicamente información existente; no inventa hechos."""
+    doc = limpiar_documento(documento)
+    ficha = cargar_ficha_usuario_v16213(doc)
+    persona = {} if ficha.empty else ficha.iloc[0].to_dict()
+    try:
+        mov = pd.read_sql(text("""
+            SELECT fecha_movimiento, tipo_movimiento, modalidad, observacion
+            FROM movimientos_habitante
+            WHERE TRIM(CAST(numero_identificacion AS TEXT))=:doc
+            ORDER BY fecha_movimiento ASC
+        """), engine, params={"doc": doc})
+    except Exception:
+        mov = pd.DataFrame()
+    try:
+        obj = pd.read_sql(text("""
+            SELECT id, fecha_apertura, objetivo_tipo, objetivo_descripcion, estado,
+                   porcentaje_avance, fecha_meta, fecha_cumplimiento_real,
+                   fecha_ultimo_seguimiento, profesional_referente
+            FROM pai_objetivos
+            WHERE TRIM(CAST(documento_usuario AS TEXT))=:doc
+            ORDER BY fecha_apertura ASC
+        """), engine, params={"doc": doc})
+    except Exception:
+        obj = pd.DataFrame()
+    try:
+        seg = pd.read_sql(text("""
+            SELECT n.fecha, n.profesional, n.tipo_novedad, n.descripcion,
+                   n.avance_generado, o.objetivo_tipo
+            FROM pai_novedades n JOIN pai_objetivos o ON o.id=n.id_objetivo
+            WHERE TRIM(CAST(o.documento_usuario AS TEXT))=:doc
+            ORDER BY n.fecha ASC
+        """), engine, params={"doc": doc})
+    except Exception:
+        seg = pd.DataFrame()
+    return persona, mov, obj, seg, _cargar_complemento_historia_v16222(doc)
+
+
+def _resumen_narrativo_historia_v16222(persona, mov, obj, seg):
+    """Narrativa determinística basada solo en registros del sistema."""
+    nombre = f"{persona.get('nombres','')} {persona.get('apellidos','')}".strip() or "La persona"
+    partes = []
+    if not mov.empty:
+        primera = mov.iloc[0]
+        partes.append(
+            f"{nombre} cuenta con {len(mov)} movimiento(s) registrados en el proceso de atención. "
+            f"El primer movimiento disponible corresponde al {_fecha_txt_v16222(primera.get('fecha_movimiento'))} "
+            f"y está registrado como {str(primera.get('tipo_movimiento') or 'movimiento').lower()}."
+        )
+    else:
+        partes.append(f"{nombre} no presenta movimientos registrados en la fuente consultada.")
+    if not obj.empty:
+        avances = pd.to_numeric(obj.get('porcentaje_avance'), errors='coerce').dropna()
+        cerrados = int(obj['estado'].astype(str).str.upper().isin(['CERRADO','CUMPLIDO','FINALIZADO']).sum()) if 'estado' in obj else 0
+        prom = float(avances.mean()) if not avances.empty else 0.0
+        partes.append(f"En el PAI se registran {len(obj)} objetivo(s), con avance promedio de {prom:.1f}%. {cerrados} objetivo(s) figuran cerrados o cumplidos.")
+    else:
+        partes.append("No se encontraron objetivos PAI registrados.")
+    if not seg.empty:
+        partes.append(f"La trazabilidad disponible contiene {len(seg)} seguimiento(s) o intervención(es) vinculados al PAI.")
+    else:
+        partes.append("No se encontraron seguimientos PAI registrados.")
+    return " ".join(partes)
+
+
+def generar_historia_vida_pdf_v16222(documento, engine):
+    """PDF de historia de vida dentro del expediente integral."""
+    from reportlab.lib.enums import TA_CENTER
+    from reportlab.lib.styles import ParagraphStyle
+    from reportlab.lib.units import cm
+    persona, mov, obj, seg, comp = _datos_historia_vida_v16222(documento)
+    buffer = BytesIO()
+    pdf = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=1.7*cm, leftMargin=1.7*cm,
+                            topMargin=1.6*cm, bottomMargin=1.6*cm)
+    styles = getSampleStyleSheet()
+    styles.add(ParagraphStyle(name='HVTitle', parent=styles['Title'], alignment=TA_CENTER, fontSize=16, leading=20))
+    styles.add(ParagraphStyle(name='HVBody', parent=styles['BodyText'], fontSize=9.5, leading=14, spaceAfter=6))
+    els=[]
+    nombre=f"{persona.get('nombres','')} {persona.get('apellidos','')}".strip()
+    els += [Paragraph("HISTORIA DE VIDA Y PROCESO DE ATENCIÓN", styles['HVTitle']),
+            Paragraph("Asociación Ciudad Futuro · Historia Integral", styles['BodyText']), Spacer(1,10),
+            Paragraph("1. Identificación", styles['Heading2']),
+            Paragraph(f"<b>Nombre:</b> {_esc_pdf_v16222(nombre)}", styles['HVBody']),
+            Paragraph(f"<b>Documento:</b> {_esc_pdf_v16222(documento)}", styles['HVBody']),
+            Paragraph(f"<b>Edad:</b> {_esc_pdf_v16222(persona.get('edad'))} &nbsp;&nbsp; <b>Modalidad:</b> {_esc_pdf_v16222(persona.get('modalidad'))} &nbsp;&nbsp; <b>Estado:</b> {_esc_pdf_v16222(persona.get('estado_caso'))}", styles['HVBody']),
+            Spacer(1,6), Paragraph("2. Síntesis del proceso de atención", styles['Heading2']),
+            Paragraph(_esc_pdf_v16222(_resumen_narrativo_historia_v16222(persona,mov,obj,seg)), styles['HVBody'])]
+    if str(comp.get('relato_cualitativo') or '').strip():
+        els += [Paragraph("3. Relato cualitativo / trayectoria de vida", styles['Heading2']), Paragraph(_esc_pdf_v16222(comp.get('relato_cualitativo')), styles['HVBody'])]
+    els += [Paragraph("4. Trayectoria institucional", styles['Heading2'])]
+    if mov.empty:
+        els.append(Paragraph("Sin movimientos registrados.", styles['HVBody']))
+    else:
+        for _,r in mov.iterrows():
+            els.append(Paragraph(f"<b>{_fecha_txt_v16222(r.get('fecha_movimiento'))}</b> · {_esc_pdf_v16222(r.get('tipo_movimiento'))} · {_esc_pdf_v16222(r.get('modalidad'))}<br/>{_esc_pdf_v16222(r.get('observacion'))}", styles['HVBody']))
+    els += [Paragraph("5. PAI, objetivos y evolución", styles['Heading2'])]
+    if obj.empty:
+        els.append(Paragraph("Sin objetivos PAI registrados.", styles['HVBody']))
+    else:
+        for _,r in obj.iterrows():
+            els.append(Paragraph(f"<b>{_esc_pdf_v16222(r.get('objetivo_tipo'))}</b> · Estado: {_esc_pdf_v16222(r.get('estado'))} · Avance: {_esc_pdf_v16222(r.get('porcentaje_avance'))}%<br/>{_esc_pdf_v16222(r.get('objetivo_descripcion'))}", styles['HVBody']))
+    els += [Paragraph("6. Seguimientos e intervenciones registradas", styles['Heading2'])]
+    if seg.empty:
+        els.append(Paragraph("Sin seguimientos PAI registrados.", styles['HVBody']))
+    else:
+        for _,r in seg.iterrows():
+            els.append(Paragraph(f"<b>{_fecha_txt_v16222(r.get('fecha'))}</b> · {_esc_pdf_v16222(r.get('profesional'))} · {_esc_pdf_v16222(r.get('tipo_novedad'))}<br/>{_esc_pdf_v16222(r.get('descripcion'))}", styles['HVBody']))
+    els += [Paragraph("7. Logros destacados", styles['Heading2']), Paragraph(_esc_pdf_v16222(comp.get('logros_destacados')), styles['HVBody']),
+            Paragraph("8. Situación actual", styles['Heading2']), Paragraph(_esc_pdf_v16222(comp.get('situacion_actual')), styles['HVBody']),
+            Paragraph("9. Observaciones de cierre", styles['Heading2']), Paragraph(_esc_pdf_v16222(comp.get('observaciones_cierre')), styles['HVBody']), Spacer(1,10),
+            Paragraph("Nota: este documento consolida registros existentes en el sistema y complementos cualitativos registrados por el equipo. Los campos sin soporte se presentan como 'Sin información registrada'.", styles['BodyText'])]
+    pdf.build(els); buffer.seek(0); return buffer
+
 def _panel_medidas_activas_v1647(clave="medidas_activas"):
     """
     Panel común para Coordinación/Manager e Inspiradores.
@@ -37853,11 +38042,12 @@ with tab9:
 
         st.markdown("### 🧭 Historia en pantalla")
 
-        hist_tab1, hist_tab2, hist_tab3, hist_tab4 = st.tabs([
+        hist_tab1, hist_tab2, hist_tab3, hist_tab4, hist_tab5 = st.tabs([
             "🔄 Movimientos",
             "🎯 PAI",
             "📝 Seguimiento profesional",
-            "🛡️ Auditoría"
+            "🛡️ Auditoría",
+            "📖 Historia de Vida"
         ])
 
         with hist_tab1:
@@ -37901,6 +38091,36 @@ with tab9:
                     use_container_width=True,
                     hide_index=True
                 )
+
+        with hist_tab5:
+            st.markdown("### 📖 Historia de Vida y proceso de atención")
+            st.caption("Consolida la trayectoria registrada en el sistema. El equipo puede complementar aspectos cualitativos antes de generar el PDF.")
+            _p_hv, _m_hv, _o_hv, _s_hv, _c_hv = _datos_historia_vida_v16222(documento_historia)
+            st.info(_resumen_narrativo_historia_v16222(_p_hv, _m_hv, _o_hv, _s_hv))
+            with st.form(f"historia_vida_form_v16222_{documento_historia}"):
+                relato_hv = st.text_area("Trayectoria de vida / contexto cualitativo", value=str(_c_hv.get('relato_cualitativo') or ''), height=160, help="Registre únicamente información conocida y pertinente para el proceso de atención.")
+                logros_hv = st.text_area("Logros destacados", value=str(_c_hv.get('logros_destacados') or ''), height=100)
+                situacion_hv = st.text_area("Situación actual", value=str(_c_hv.get('situacion_actual') or ''), height=100)
+                cierre_hv = st.text_area("Observaciones de cierre", value=str(_c_hv.get('observaciones_cierre') or ''), height=100)
+                guardar_hv = st.form_submit_button("💾 Guardar complemento de Historia de Vida", use_container_width=True, type="primary")
+            if guardar_hv:
+                try:
+                    _guardar_complemento_historia_v16222(documento_historia, relato_hv, logros_hv, situacion_hv, cierre_hv)
+                    st.success("✅ Complemento de Historia de Vida guardado.")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"No fue posible guardar el complemento: {e}")
+            if st.button("📄 Generar Historia de Vida PDF", key=f"gen_hv_v16222_{documento_historia}", use_container_width=True):
+                try:
+                    _pdf_hv = generar_historia_vida_pdf_v16222(documento_historia, engine)
+                    st.session_state['historia_vida_pdf_v16222'] = _pdf_hv.getvalue()
+                    st.session_state['historia_vida_doc_v16222'] = documento_historia
+                    registrar_auditoria("GENERAR_HISTORIA_VIDA", documento=documento_historia, modulo="Historia Integral")
+                    st.success("✅ Historia de Vida generada.")
+                except Exception as e:
+                    st.error(f"❌ No fue posible generar la Historia de Vida: {e}")
+            if st.session_state.get('historia_vida_pdf_v16222') and st.session_state.get('historia_vida_doc_v16222') == documento_historia:
+                st.download_button("⬇️ Descargar Historia de Vida", data=st.session_state['historia_vida_pdf_v16222'], file_name=f"historia_vida_{documento_historia}.pdf", mime="application/pdf", use_container_width=True, key=f"desc_hv_v16222_{documento_historia}")
 
         st.divider()
 
