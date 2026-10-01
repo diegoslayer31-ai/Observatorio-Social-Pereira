@@ -13895,25 +13895,14 @@ def panel_profesional_v15(doc_forzado=None, incrustado=False):
     )
 
     # ============================================================
-    # V17.2 - PAI ASISTIDO OPERATIVO vs PAI ACTUAL
+    # PAI OPERATIVO DEFINITIVO - interfaz asistida V17
     # ============================================================
-    # Usa las MISMAS tablas del PAI vigente. No duplica expedientes.
-    # Permite crear objetivos, actualizar requisitos, registrar seguimientos
-    # y consultar historial desde una experiencia guiada.
-    st.markdown("### 🧭 Vista de trabajo del PAI")
-    vista_pai_v172 = st.radio(
-        "Vista del PAI",
-        ["✨ PAI ASISTIDO V17", "📋 PAI ACTUAL"],
-        horizontal=True,
-        label_visibility="collapsed",
-        key=f"vista_pai_v172_{doc_sel}"
-    )
+    # La interfaz asistida queda como única vista operativa del PAI.
+    # Conserva las MISMAS tablas, objetivos, seguimientos, histórico y auditoría;
+    # no elimina ni migra datos y mantiene el PAI anterior solo como código de respaldo.
+    vista_pai_v172 = "✨ PAI ASISTIDO V17"
 
     if vista_pai_v172 == "✨ PAI ASISTIDO V17":
-        st.caption(
-            "Experiencia guiada: el sistema prioriza lo pendiente y permite trabajar "
-            "el PAI sin cambiar de persona ni perder el contexto."
-        )
 
         # --------------------------------------------------------
         # Catálogo guiado V17
@@ -14748,8 +14737,7 @@ def panel_profesional_v15(doc_forzado=None, incrustado=False):
                         st.write(f"📚 {txt} · {int(round(float(pct_h)))}%")
 
         st.caption(
-            "V17 operativo usa las mismas tablas y auditoría del PAI actual. "
-            "Puede volver a **PAI ACTUAL** en cualquier momento."
+            "PAI operativo · Los cambios quedan registrados en las tablas y auditoría institucional."
         )
         return
 
