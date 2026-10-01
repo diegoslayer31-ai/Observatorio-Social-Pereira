@@ -9940,52 +9940,139 @@ def historia_integral_v12():
     except Exception:
         pass
 
-    if not eventos:
-        st.info(
-            "No hay eventos históricos registrados."
+    # V16.223 - La Historia de Vida vive dentro de ESTA Historia Integral,
+    # que es la interfaz utilizada desde el menú principal.
+    tab_linea, tab_vida = st.tabs(["🕒 Línea de tiempo", "📖 Historia de Vida"])
+
+    with tab_linea:
+        if not eventos:
+            st.info("No hay eventos históricos registrados.")
+        else:
+            timeline = pd.DataFrame(eventos)
+
+            # V16.110 - Protección adicional: convertir cualquier fecha residual a
+            # Timestamp naive antes de ordenar la línea de tiempo.
+            def _normalizar_fecha_historia_v16110(valor):
+                ts = pd.to_datetime(valor, errors="coerce")
+                if pd.isna(ts):
+                    return pd.NaT
+                try:
+                    if isinstance(ts, pd.Timestamp) and ts.tzinfo is not None:
+                        ts = ts.tz_convert("America/Bogota").tz_localize(None)
+                except Exception:
+                    pass
+                return ts
+
+            timeline["Fecha"] = timeline["Fecha"].apply(
+                _normalizar_fecha_historia_v16110
+            )
+            timeline = timeline.dropna(
+                subset=["Fecha"]
+            ).sort_values(
+                "Fecha",
+                ascending=False
+            )
+
+            st.dataframe(
+                timeline,
+                use_container_width=True,
+                hide_index=True
+            )
+
+            st.download_button(
+                "⬇️ Descargar historia en CSV",
+                timeline.to_csv(index=False).encode("utf-8-sig"),
+                file_name=f"historia_integral_{doc}.csv",
+                mime="text/csv",
+                use_container_width=True
+            )
+
+    with tab_vida:
+        st.markdown("### 📖 Historia de Vida y proceso de atención")
+        st.caption(
+            "Consolida la información registrada en el sistema y permite al equipo "
+            "complementar aspectos cualitativos. No genera hechos que no estén registrados."
         )
-        return
 
-    timeline = pd.DataFrame(eventos)
+        persona_hv, mov_hv, obj_hv, seg_hv, comp_hv = _datos_historia_vida_v16222(doc)
+        resumen_hv = _resumen_narrativo_historia_v16222(
+            persona_hv, mov_hv, obj_hv, seg_hv
+        )
 
-    # V16.110 - Protección adicional: convertir cualquier fecha residual a
-    # Timestamp naive antes de ordenar la línea de tiempo.
-    def _normalizar_fecha_historia_v16110(valor):
-        ts = pd.to_datetime(valor, errors="coerce")
-        if pd.isna(ts):
-            return pd.NaT
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Movimientos", len(mov_hv))
+        c2.metric("Objetivos PAI", len(obj_hv))
+        c3.metric("Seguimientos", len(seg_hv))
+        if not obj_hv.empty and "estado" in obj_hv.columns:
+            cumplidos_hv = int(
+                obj_hv["estado"].astype(str).str.upper().isin(
+                    ["CERRADO", "CUMPLIDO", "FINALIZADO"]
+                ).sum()
+            )
+        else:
+            cumplidos_hv = 0
+        c4.metric("Objetivos cumplidos/cerrados", cumplidos_hv)
+
+        st.markdown("#### Síntesis automática del proceso")
+        st.info(resumen_hv)
+
+        st.markdown("#### Complemento cualitativo del equipo")
+        st.caption(
+            "Estos campos sí pueden ser completados por el profesional para incorporar "
+            "elementos de trayectoria que no estén en los registros estructurados."
+        )
+
+        with st.form(f"form_historia_vida_v16223_{doc}"):
+            relato_hv = st.text_area(
+                "Trayectoria / contexto de vida",
+                value=str(comp_hv.get("relato_cualitativo") or ""),
+                height=180,
+                placeholder="Registre únicamente información conocida y pertinente para la historia de vida."
+            )
+            logros_hv = st.text_area(
+                "Logros destacados durante el proceso",
+                value=str(comp_hv.get("logros_destacados") or ""),
+                height=120
+            )
+            situacion_hv = st.text_area(
+                "Situación actual",
+                value=str(comp_hv.get("situacion_actual") or ""),
+                height=120
+            )
+            cierre_hv = st.text_area(
+                "Observaciones de cierre / proyección",
+                value=str(comp_hv.get("observaciones_cierre") or ""),
+                height=120
+            )
+            guardar_hv = st.form_submit_button(
+                "💾 Guardar complemento de Historia de Vida",
+                use_container_width=True,
+                type="primary"
+            )
+
+        if guardar_hv:
+            try:
+                _guardar_complemento_historia_v16222(
+                    doc, relato_hv, logros_hv, situacion_hv, cierre_hv
+                )
+                st.success("✅ Historia de Vida actualizada correctamente.")
+                st.rerun()
+            except Exception as e:
+                st.error(f"❌ No fue posible guardar la Historia de Vida: {e}")
+
         try:
-            if isinstance(ts, pd.Timestamp) and ts.tzinfo is not None:
-                ts = ts.tz_convert("America/Bogota").tz_localize(None)
-        except Exception:
-            pass
-        return ts
-
-    timeline["Fecha"] = timeline["Fecha"].apply(
-        _normalizar_fecha_historia_v16110
-    )
-    timeline = timeline.dropna(
-        subset=["Fecha"]
-    ).sort_values(
-        "Fecha",
-        ascending=False
-    )
-
-    st.dataframe(
-        timeline,
-        use_container_width=True,
-        hide_index=True
-    )
-
-    st.download_button(
-        "⬇️ Descargar historia en CSV",
-        timeline.to_csv(
-            index=False
-        ).encode("utf-8-sig"),
-        file_name=f"historia_integral_{doc}.csv",
-        mime="text/csv",
-        use_container_width=True
-    )
+            pdf_hv = generar_historia_vida_pdf_v16222(doc, engine)
+            st.download_button(
+                "📄 Generar / descargar Historia de Vida en PDF",
+                data=pdf_hv.getvalue(),
+                file_name=f"historia_de_vida_{doc}.pdf",
+                mime="application/pdf",
+                use_container_width=True,
+                type="primary",
+                key=f"descargar_hv_v16223_{doc}"
+            )
+        except Exception as e:
+            st.warning(f"No fue posible preparar el PDF de Historia de Vida: {e}")
 
 
 
