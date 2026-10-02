@@ -18601,6 +18601,22 @@ with st.sidebar:
                 st.session_state.page = "informe_mensual_maria_v16221"
                 st.rerun()
 
+        # V16.225 - Acceso especial de Juan David Bolívar Morales a Ajustes administrativos PAI.
+        # Se autoriza exclusivamente por cédula, sin ampliar permisos a otros profesionales.
+        _doc_menu_ajustes_jd_v16225 = "".join(
+            ch for ch in str(st.session_state.get("documento_funcionario", "") or "")
+            if ch.isdigit()
+        )
+        if _doc_menu_ajustes_jd_v16225 == "1088278205":
+            st.markdown("##### ⚙️ Administración")
+            if st.button(
+                "🛠️ Ajustes administrativos PAI",
+                use_container_width=True,
+                key="btn_ajustes_admin_pai_juan_david_v16225"
+            ):
+                st.session_state.page = "ajustes_administrativos_pai_v16215"
+                st.rerun()
+
         # V16.78 - El informe mensual también es parte del acceso profesional.
         # No depende de una variable antigua de acceso_pai_menu.
         if st.button(
@@ -32736,8 +32752,14 @@ elif st.session_state.page == "seguimiento_general_pai_maria_v16218":
 
 elif st.session_state.page == "ajustes_administrativos_pai_v16215":
 
-    if rol_router not in ["COORDINACION", "MANAGER"]:
-        st.error("Acceso exclusivo para Coordinación o Manager.")
+    # V16.225 - Juan David Bolívar Morales (CC 1088278205) también puede
+    # acceder a este módulo, sin modificar su rol ni habilitar otros módulos administrativos.
+    _doc_router_ajustes_v16225 = "".join(
+        ch for ch in str(st.session_state.get("documento_funcionario", "") or "")
+        if ch.isdigit()
+    )
+    if rol_router not in ["COORDINACION", "MANAGER"] and _doc_router_ajustes_v16225 != "1088278205":
+        st.error("No tiene permisos para este módulo.")
     else:
         modulo_ajustes_administrativos_pai_v16215()
 
