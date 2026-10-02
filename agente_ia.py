@@ -5260,435 +5260,436 @@ def gestion_usuarios():
         def _guardar_multiple_v16167(valores):
             return " | ".join(str(v).strip() for v in (valores or []) if str(v).strip())
 
-        with st.form(f"completar_caracterizacion_v9_{doc_car}"):
+        # V16.223 - Caracterización reactiva: sin st.form para que los campos condicionales
+        # se desplieguen inmediatamente al cambiar una selección (p. ej. salud mental).
 
-            st.markdown("#### 🧍 Datos sociales y diferenciales")
+        st.markdown("#### 🧍 Datos sociales y diferenciales")
 
-            c1, c2, c3 = st.columns(3)
+        c1, c2, c3 = st.columns(3)
 
-            # La base madre no establece lista cerrada para GRUPO SISBÉN.
-            sisben_car = c1.text_input(
-                "Grupo SISBÉN",
-                value=str(_valor_persona(
-                    persona_car,
-                    C["sisben"] if C["sisben"] else "__none__"
-                ))
-            )
-
-            discapacidad_actual = str(_valor_persona(
+        # La base madre no establece lista cerrada para GRUPO SISBÉN.
+        sisben_car = c1.text_input(
+            "Grupo SISBÉN",
+            value=str(_valor_persona(
                 persona_car,
-                C["discapacidad"] if C["discapacidad"] else "__none__"
-            )).strip()
-            opciones_disc = _opciones_catalogo_v16197(
-                CATALOGO_RESPUESTA_V16197,
-                discapacidad_actual
-            )
-            discapacidad_car = c2.selectbox(
-                "Persona con discapacidad",
-                opciones_disc,
-                index=_indice_catalogo_v16197(opciones_disc, discapacidad_actual)
-            )
+                C["sisben"] if C["sisben"] else "__none__"
+            ))
+        )
 
-            categoria_disc_actual = str(_valor_persona(
-                persona_car,
-                C["categoria_discapacidad"]
-                if C["categoria_discapacidad"] else "__none__"
-            )).strip()
-            categoria_disc_default = _lista_multiple_v16167(
-                categoria_disc_actual, CATALOGO_DISCAPACIDAD_V16197
-            )
-            opciones_cat_disc = _opciones_multiple_v16167(
-                CATALOGO_DISCAPACIDAD_V16197, categoria_disc_default
-            )
-            categoria_disc_car = c3.multiselect(
-                "Categoría de discapacidad (puede seleccionar varias)",
-                opciones_cat_disc,
-                default=[] if discapacidad_car == "NO" else categoria_disc_default,
-                disabled=(discapacidad_car == "NO")
-            )
-            if discapacidad_car == "NO":
-                categoria_disc_car = ["NINGUNA"]
+        discapacidad_actual = str(_valor_persona(
+            persona_car,
+            C["discapacidad"] if C["discapacidad"] else "__none__"
+        )).strip()
+        opciones_disc = _opciones_catalogo_v16197(
+            CATALOGO_RESPUESTA_V16197,
+            discapacidad_actual
+        )
+        discapacidad_car = c2.selectbox(
+            "Persona con discapacidad",
+            opciones_disc,
+            index=_indice_catalogo_v16197(opciones_disc, discapacidad_actual)
+        )
 
-            c4, c5, c6 = st.columns(3)
+        categoria_disc_actual = str(_valor_persona(
+            persona_car,
+            C["categoria_discapacidad"]
+            if C["categoria_discapacidad"] else "__none__"
+        )).strip()
+        categoria_disc_default = _lista_multiple_v16167(
+            categoria_disc_actual, CATALOGO_DISCAPACIDAD_V16197
+        )
+        opciones_cat_disc = _opciones_multiple_v16167(
+            CATALOGO_DISCAPACIDAD_V16197, categoria_disc_default
+        )
+        categoria_disc_car = c3.multiselect(
+            "Categoría de discapacidad (puede seleccionar varias)",
+            opciones_cat_disc,
+            default=[] if discapacidad_car == "NO" else categoria_disc_default,
+            disabled=(discapacidad_car == "NO")
+        )
+        if discapacidad_car == "NO":
+            categoria_disc_car = ["NINGUNA"]
 
-            cabeza_actual = str(_valor_persona(
-                persona_car,
-                C["cabeza_familia"] if C["cabeza_familia"] else "__none__"
-            )).strip()
-            opciones_cabeza = _opciones_catalogo_v16197(
-                CATALOGO_RESPUESTA_V16197,
-                cabeza_actual
-            )
-            cabeza_car = c4.selectbox(
-                "Cabeza de familia",
-                opciones_cabeza,
-                index=_indice_catalogo_v16197(opciones_cabeza, cabeza_actual)
-            )
+        c4, c5, c6 = st.columns(3)
 
-            gestante_actual = str(_valor_persona(
-                persona_car,
-                C["gestante"] if C["gestante"] else "__none__"
-            )).strip()
-            opciones_gestante = _opciones_catalogo_v16197(
-                CATALOGO_GESTANTE_V16197,
-                gestante_actual
-            )
-            gestante_car = c5.selectbox(
-                "Gestante / lactante",
-                opciones_gestante,
-                index=_indice_catalogo_v16197(opciones_gestante, gestante_actual)
-            )
+        cabeza_actual = str(_valor_persona(
+            persona_car,
+            C["cabeza_familia"] if C["cabeza_familia"] else "__none__"
+        )).strip()
+        opciones_cabeza = _opciones_catalogo_v16197(
+            CATALOGO_RESPUESTA_V16197,
+            cabeza_actual
+        )
+        cabeza_car = c4.selectbox(
+            "Cabeza de familia",
+            opciones_cabeza,
+            index=_indice_catalogo_v16197(opciones_cabeza, cabeza_actual)
+        )
 
-            migracion_actual = str(_valor_persona(
-                persona_car,
-                C["migracion"] if C["migracion"] else "__none__"
-            )).strip()
-            opciones_migracion = _opciones_catalogo_v16197(
-                CATALOGO_RESPUESTA_V16197,
-                migracion_actual
-            )
-            migracion_car = c6.selectbox(
-                "Experiencia migratoria",
-                opciones_migracion,
-                index=_indice_catalogo_v16197(opciones_migracion, migracion_actual)
-            )
+        gestante_actual = str(_valor_persona(
+            persona_car,
+            C["gestante"] if C["gestante"] else "__none__"
+        )).strip()
+        opciones_gestante = _opciones_catalogo_v16197(
+            CATALOGO_GESTANTE_V16197,
+            gestante_actual
+        )
+        gestante_car = c5.selectbox(
+            "Gestante / lactante",
+            opciones_gestante,
+            index=_indice_catalogo_v16197(opciones_gestante, gestante_actual)
+        )
 
-            st.markdown("#### 🎓 Educación, ocupación y procedencia")
+        migracion_actual = str(_valor_persona(
+            persona_car,
+            C["migracion"] if C["migracion"] else "__none__"
+        )).strip()
+        opciones_migracion = _opciones_catalogo_v16197(
+            CATALOGO_RESPUESTA_V16197,
+            migracion_actual
+        )
+        migracion_car = c6.selectbox(
+            "Experiencia migratoria",
+            opciones_migracion,
+            index=_indice_catalogo_v16197(opciones_migracion, migracion_actual)
+        )
 
-            c7, c8, c9 = st.columns(3)
+        st.markdown("#### 🎓 Educación, ocupación y procedencia")
 
-            educacion_actual = str(_valor_persona(
-                persona_car,
-                C["educacion"] if C["educacion"] else "__none__"
-            )).strip()
-            opciones_educacion = _opciones_catalogo_v16197(
-                CATALOGO_EDUCACION_V16197,
-                educacion_actual
-            )
-            educacion_car = c7.selectbox(
-                "Nivel educativo",
-                opciones_educacion,
-                index=_indice_catalogo_v16197(opciones_educacion, educacion_actual)
-            )
+        c7, c8, c9 = st.columns(3)
 
-            ocupacion_actual = str(_valor_persona(
-                persona_car,
-                C["ocupacion"] if C["ocupacion"] else "__none__"
-            )).strip()
-            opciones_ocupacion = _opciones_catalogo_v16197(
-                CATALOGO_OCUPACION_V16197,
-                ocupacion_actual
-            )
-            ocupacion_car = c8.selectbox(
-                "Condición ocupacional",
-                opciones_ocupacion,
-                index=_indice_catalogo_v16197(opciones_ocupacion, ocupacion_actual)
-            )
+        educacion_actual = str(_valor_persona(
+            persona_car,
+            C["educacion"] if C["educacion"] else "__none__"
+        )).strip()
+        opciones_educacion = _opciones_catalogo_v16197(
+            CATALOGO_EDUCACION_V16197,
+            educacion_actual
+        )
+        educacion_car = c7.selectbox(
+            "Nivel educativo",
+            opciones_educacion,
+            index=_indice_catalogo_v16197(opciones_educacion, educacion_actual)
+        )
 
-            procedencia_actual = str(_valor_persona(
-                persona_car,
-                C["procedencia"] if C["procedencia"] else "__none__"
-            )).strip()
-            opciones_procedencia = _opciones_catalogo_v16197(
-                CATALOGO_DEPARTAMENTO_V16197,
-                procedencia_actual
-            )
-            procedencia_car = c9.selectbox(
-                "Departamento de procedencia",
-                opciones_procedencia,
-                index=_indice_catalogo_v16197(opciones_procedencia, procedencia_actual)
-            )
+        ocupacion_actual = str(_valor_persona(
+            persona_car,
+            C["ocupacion"] if C["ocupacion"] else "__none__"
+        )).strip()
+        opciones_ocupacion = _opciones_catalogo_v16197(
+            CATALOGO_OCUPACION_V16197,
+            ocupacion_actual
+        )
+        ocupacion_car = c8.selectbox(
+            "Condición ocupacional",
+            opciones_ocupacion,
+            index=_indice_catalogo_v16197(opciones_ocupacion, ocupacion_actual)
+        )
 
-            st.markdown("#### 🏠 Residencia y contacto")
-            st.caption(
-                f"Barrio / vereda: {barrio_car or 'Sin seleccionar'}"
-            )
+        procedencia_actual = str(_valor_persona(
+            persona_car,
+            C["procedencia"] if C["procedencia"] else "__none__"
+        )).strip()
+        opciones_procedencia = _opciones_catalogo_v16197(
+            CATALOGO_DEPARTAMENTO_V16197,
+            procedencia_actual
+        )
+        procedencia_car = c9.selectbox(
+            "Departamento de procedencia",
+            opciones_procedencia,
+            index=_indice_catalogo_v16197(opciones_procedencia, procedencia_actual)
+        )
 
-            c10, c11, c12 = st.columns(3)
+        st.markdown("#### 🏠 Residencia y contacto")
+        st.caption(
+            f"Barrio / vereda: {barrio_car or 'Sin seleccionar'}"
+        )
 
-            # V16.19.9: división político-administrativa oficial de Pereira.
-            COMUNAS_PEREIRA_V16199 = [
-                "BOSTON",
-                "CENTRO",
-                "CONSOTA",
-                "CUBA",
-                "DEL CAFÉ",
-                "EL JARDÍN",
-                "EL OSO",
-                "EL POBLADO",
-                "EL ROCÍO",
-                "FERROCARRIL",
-                "OLÍMPICA",
-                "ORIENTE",
-                "PERLA DEL OTÚN",
-                "RÍO OTÚN",
-                "SAN JOAQUÍN",
-                "SAN NICOLÁS",
-                "UNIVERSIDAD",
-                "VILLA SANTANA",
-                "VILLAVICENCIO",
-            ]
+        c10, c11, c12 = st.columns(3)
 
-            CORREGIMIENTOS_PEREIRA_V16199 = [
-                "ALTAGRACIA",
-                "ARABIA",
-                "CAIMALITO",
-                "CERRITOS",
-                "COMBIA ALTA",
-                "COMBIA BAJA",
-                "LA BELLA",
-                "LA ESTRELLA - LA PALMILLA",
-                "LA FLORIDA",
-                "MORELIA",
-                "PUERTO CALDAS",
-                "TRIBUNAS CÓRCEGA",
-            ]
+        # V16.19.9: división político-administrativa oficial de Pereira.
+        COMUNAS_PEREIRA_V16199 = [
+            "BOSTON",
+            "CENTRO",
+            "CONSOTA",
+            "CUBA",
+            "DEL CAFÉ",
+            "EL JARDÍN",
+            "EL OSO",
+            "EL POBLADO",
+            "EL ROCÍO",
+            "FERROCARRIL",
+            "OLÍMPICA",
+            "ORIENTE",
+            "PERLA DEL OTÚN",
+            "RÍO OTÚN",
+            "SAN JOAQUÍN",
+            "SAN NICOLÁS",
+            "UNIVERSIDAD",
+            "VILLA SANTANA",
+            "VILLAVICENCIO",
+        ]
 
-            opciones_comuna_corr_v16199 = (
-                [""]
-                + [f"COMUNA - {x}" for x in COMUNAS_PEREIRA_V16199]
-                + [f"CORREGIMIENTO - {x}" for x in CORREGIMIENTOS_PEREIRA_V16199]
-            )
+        CORREGIMIENTOS_PEREIRA_V16199 = [
+            "ALTAGRACIA",
+            "ARABIA",
+            "CAIMALITO",
+            "CERRITOS",
+            "COMBIA ALTA",
+            "COMBIA BAJA",
+            "LA BELLA",
+            "LA ESTRELLA - LA PALMILLA",
+            "LA FLORIDA",
+            "MORELIA",
+            "PUERTO CALDAS",
+            "TRIBUNAS CÓRCEGA",
+        ]
 
-            comuna_base_v16199 = str(comuna_sugerida).strip()
-            comuna_busqueda_v16199 = comuna_base_v16199.upper()
+        opciones_comuna_corr_v16199 = (
+            [""]
+            + [f"COMUNA - {x}" for x in COMUNAS_PEREIRA_V16199]
+            + [f"CORREGIMIENTO - {x}" for x in CORREGIMIENTOS_PEREIRA_V16199]
+        )
 
-            # Intentar convertir valores históricos/sugeridos al nuevo formato.
-            valor_comuna_v16199 = ""
-            for _op in opciones_comuna_corr_v16199:
-                if not _op:
-                    continue
-                _nombre = _op.split(" - ", 1)[1].strip().upper()
-                if comuna_busqueda_v16199 == _nombre or comuna_busqueda_v16199 == _op.upper():
-                    valor_comuna_v16199 = _op
-                    break
+        comuna_base_v16199 = str(comuna_sugerida).strip()
+        comuna_busqueda_v16199 = comuna_base_v16199.upper()
 
-            if comuna_base_v16199 and not valor_comuna_v16199:
-                opciones_comuna_corr_v16199.append(comuna_base_v16199)
-                valor_comuna_v16199 = comuna_base_v16199
+        # Intentar convertir valores históricos/sugeridos al nuevo formato.
+        valor_comuna_v16199 = ""
+        for _op in opciones_comuna_corr_v16199:
+            if not _op:
+                continue
+            _nombre = _op.split(" - ", 1)[1].strip().upper()
+            if comuna_busqueda_v16199 == _nombre or comuna_busqueda_v16199 == _op.upper():
+                valor_comuna_v16199 = _op
+                break
 
-            comuna_sel_v16199 = c10.selectbox(
-                "Comuna / corregimiento",
+        if comuna_base_v16199 and not valor_comuna_v16199:
+            opciones_comuna_corr_v16199.append(comuna_base_v16199)
+            valor_comuna_v16199 = comuna_base_v16199
+
+        comuna_sel_v16199 = c10.selectbox(
+            "Comuna / corregimiento",
+            opciones_comuna_corr_v16199,
+            index=_indice_catalogo_v16197(
                 opciones_comuna_corr_v16199,
-                index=_indice_catalogo_v16197(
-                    opciones_comuna_corr_v16199,
-                    valor_comuna_v16199
-                ),
-                help="Seleccione una de las 19 comunas o uno de los 12 corregimientos de Pereira."
-            )
+                valor_comuna_v16199
+            ),
+            help="Seleccione una de las 19 comunas o uno de los 12 corregimientos de Pereira."
+        )
 
-            # Guardamos solamente el nombre, sin el prefijo COMUNA/CORREGIMIENTO,
-            # para mantener compatibilidad con la base madre.
-            if comuna_sel_v16199.startswith("COMUNA - "):
-                comuna_car = comuna_sel_v16199.replace("COMUNA - ", "", 1)
-            elif comuna_sel_v16199.startswith("CORREGIMIENTO - "):
-                comuna_car = comuna_sel_v16199.replace("CORREGIMIENTO - ", "", 1)
-            else:
-                comuna_car = comuna_sel_v16199
+        # Guardamos solamente el nombre, sin el prefijo COMUNA/CORREGIMIENTO,
+        # para mantener compatibilidad con la base madre.
+        if comuna_sel_v16199.startswith("COMUNA - "):
+            comuna_car = comuna_sel_v16199.replace("COMUNA - ", "", 1)
+        elif comuna_sel_v16199.startswith("CORREGIMIENTO - "):
+            comuna_car = comuna_sel_v16199.replace("CORREGIMIENTO - ", "", 1)
+        else:
+            comuna_car = comuna_sel_v16199
 
-            opciones_zona_v16198 = ["", "URBANA", "RURAL"]
-            zona_base = str(zona_sugerida).strip().upper()
-            if zona_base and zona_base not in opciones_zona_v16198:
-                opciones_zona_v16198.append(zona_base)
+        opciones_zona_v16198 = ["", "URBANA", "RURAL"]
+        zona_base = str(zona_sugerida).strip().upper()
+        if zona_base and zona_base not in opciones_zona_v16198:
+            opciones_zona_v16198.append(zona_base)
 
-            zona_car = c11.selectbox(
-                "Zona de residencia",
-                opciones_zona_v16198,
-                index=_indice_catalogo_v16197(opciones_zona_v16198, zona_base),
-                help="Seleccione URBANA o RURAL."
-            )
+        zona_car = c11.selectbox(
+            "Zona de residencia",
+            opciones_zona_v16198,
+            index=_indice_catalogo_v16197(opciones_zona_v16198, zona_base),
+            help="Seleccione URBANA o RURAL."
+        )
 
-            direccion_car = c12.text_input(
-                "Dirección",
-                value=str(_valor_persona(
-                    persona_car,
-                    C["direccion"] if C["direccion"] else "__none__"
-                ))
-            )
-
-            c13, c14 = st.columns(2)
-
-            telefono_car = c13.text_input(
-                "Teléfono",
-                value=str(_valor_persona(
-                    persona_car,
-                    C["telefono"] if C["telefono"] else "__none__"
-                ))
-            )
-
-            correo_car = c14.text_input(
-                "Correo",
-                value=str(_valor_persona(
-                    persona_car,
-                    C["correo"] if C["correo"] else "__none__"
-                ))
-            )
-
-            st.markdown("#### 🩺 Salud, consumo y diversidad")
-
-            c16, c17, c18 = st.columns(3)
-
-            salud_actual = str(_valor_persona(
+        direccion_car = c12.text_input(
+            "Dirección",
+            value=str(_valor_persona(
                 persona_car,
-                C["salud"] if C["salud"] else "__none__"
-            )).strip()
-            opciones_salud = _opciones_catalogo_v16197(
-                CATALOGO_SALUD_V16197,
-                salud_actual
-            )
-            salud_car = c16.selectbox(
-                "Seguridad social en salud",
-                opciones_salud,
-                index=_indice_catalogo_v16197(opciones_salud, salud_actual)
-            )
+                C["direccion"] if C["direccion"] else "__none__"
+            ))
+        )
 
-            consumo_actual = str(_valor_persona(
+        c13, c14 = st.columns(2)
+
+        telefono_car = c13.text_input(
+            "Teléfono",
+            value=str(_valor_persona(
                 persona_car,
-                C["consumo"] if C["consumo"] else "__none__"
-            )).strip()
-            consumo_default = _lista_multiple_v16167(
-                consumo_actual, CATALOGO_CONSUMO_V16197
-            )
-            opciones_consumo = _opciones_multiple_v16167(
-                CATALOGO_CONSUMO_V16197, consumo_default
-            )
-            consumo_car = c17.multiselect(
-                "Tipo de consumo (puede seleccionar varios)",
-                opciones_consumo,
-                default=consumo_default
-            )
+                C["telefono"] if C["telefono"] else "__none__"
+            ))
+        )
 
-            salud_mental_actual = str(_valor_persona(
+        correo_car = c14.text_input(
+            "Correo",
+            value=str(_valor_persona(
                 persona_car,
-                C["enfermedad_mental"]
-                if C["enfermedad_mental"] else "__none__"
-            )).strip()
+                C["correo"] if C["correo"] else "__none__"
+            ))
+        )
 
-            estado_sm_actual = str(_valor_persona(
-                persona_car,
-                C["estado_diagnostico_salud_mental"]
-                if C["estado_diagnostico_salud_mental"] else "__none__"
-            )).strip().upper()
+        st.markdown("#### 🩺 Salud, consumo y diversidad")
 
-            # Registros históricos con un diagnóstico pero sin estado explícito
-            # quedan POR VERIFICAR; nunca se convierten automáticamente en TUS.
-            if not estado_sm_actual and salud_mental_actual:
-                estado_sm_actual = 'POR VERIFICAR / REQUIERE VALIDACIÓN'
+        c16, c17, c18 = st.columns(3)
 
-            estado_sm_car = c18.selectbox(
-                "Estado del diagnóstico de salud mental",
-                ESTADOS_DIAGNOSTICO_SM_V16223,
-                index=_indice_catalogo_v16197(
-                    ESTADOS_DIAGNOSTICO_SM_V16223, estado_sm_actual
-                ),
-                help=(
-                    "No registre un diagnóstico por el solo hecho de existir consumo de SPA. "
-                    "Use DIAGNÓSTICO CONFIRMADO únicamente cuando exista soporte clínico."
+        salud_actual = str(_valor_persona(
+            persona_car,
+            C["salud"] if C["salud"] else "__none__"
+        )).strip()
+        opciones_salud = _opciones_catalogo_v16197(
+            CATALOGO_SALUD_V16197,
+            salud_actual
+        )
+        salud_car = c16.selectbox(
+            "Seguridad social en salud",
+            opciones_salud,
+            index=_indice_catalogo_v16197(opciones_salud, salud_actual)
+        )
+
+        consumo_actual = str(_valor_persona(
+            persona_car,
+            C["consumo"] if C["consumo"] else "__none__"
+        )).strip()
+        consumo_default = _lista_multiple_v16167(
+            consumo_actual, CATALOGO_CONSUMO_V16197
+        )
+        opciones_consumo = _opciones_multiple_v16167(
+            CATALOGO_CONSUMO_V16197, consumo_default
+        )
+        consumo_car = c17.multiselect(
+            "Tipo de consumo (puede seleccionar varios)",
+            opciones_consumo,
+            default=consumo_default
+        )
+
+        salud_mental_actual = str(_valor_persona(
+            persona_car,
+            C["enfermedad_mental"]
+            if C["enfermedad_mental"] else "__none__"
+        )).strip()
+
+        estado_sm_actual = str(_valor_persona(
+            persona_car,
+            C["estado_diagnostico_salud_mental"]
+            if C["estado_diagnostico_salud_mental"] else "__none__"
+        )).strip().upper()
+
+        # Registros históricos con un diagnóstico pero sin estado explícito
+        # quedan POR VERIFICAR; nunca se convierten automáticamente en TUS.
+        if not estado_sm_actual and salud_mental_actual:
+            estado_sm_actual = 'POR VERIFICAR / REQUIERE VALIDACIÓN'
+
+        estado_sm_car = c18.selectbox(
+            "Estado del diagnóstico de salud mental",
+            ESTADOS_DIAGNOSTICO_SM_V16223,
+            index=_indice_catalogo_v16197(
+                ESTADOS_DIAGNOSTICO_SM_V16223, estado_sm_actual
+            ),
+            help=(
+                "No registre un diagnóstico por el solo hecho de existir consumo de SPA. "
+                "Use DIAGNÓSTICO CONFIRMADO únicamente cuando exista soporte clínico."
+            )
+        )
+
+        salud_mental_default = _lista_multiple_v16167(
+            salud_mental_actual, CATALOGO_ENFERMEDAD_MENTAL_V16197
+        )
+        opciones_mental = _opciones_multiple_v16167(
+            CATALOGO_ENFERMEDAD_MENTAL_V16197, salud_mental_default
+        )
+
+        fuente_sm_actual = str(_valor_persona(
+            persona_car,
+            C["fuente_diagnostico_salud_mental"]
+            if C["fuente_diagnostico_salud_mental"] else "__none__"
+        )).strip()
+
+        if estado_sm_car == 'DIAGNÓSTICO CONFIRMADO':
+            st.info(
+                "Seleccione únicamente diagnósticos respaldados por información clínica. "
+                "Consumo de SPA y TUS no son equivalentes."
+            )
+            smc1, smc2 = st.columns([2, 1])
+            salud_mental_car = smc1.multiselect(
+                "Diagnóstico(s) de salud mental confirmado(s)",
+                opciones_mental,
+                default=salud_mental_default
+            )
+            opciones_fuente_sm = _opciones_catalogo_v16197(
+                FUENTES_DIAGNOSTICO_SM_V16223, fuente_sm_actual
+            )
+            fuente_sm_car = smc2.selectbox(
+                "Fuente del diagnóstico",
+                opciones_fuente_sm,
+                index=_indice_catalogo_v16197(opciones_fuente_sm, fuente_sm_actual)
+            )
+        else:
+            salud_mental_car = []
+            fuente_sm_car = ''
+            if estado_sm_car in (
+                'PENDIENTE DE DIAGNÓSTICO / POR DIAGNOSTICAR',
+                'SIN DIAGNÓSTICO CONOCIDO / REPORTADO',
+                'NO APLICA (N/A)'
+            ):
+                st.caption(
+                    "No se asignará ningún diagnóstico. Esto evita etiquetar o inferir "
+                    "condiciones de salud mental sin soporte clínico."
                 )
-            )
-
-            salud_mental_default = _lista_multiple_v16167(
-                salud_mental_actual, CATALOGO_ENFERMEDAD_MENTAL_V16197
-            )
-            opciones_mental = _opciones_multiple_v16167(
-                CATALOGO_ENFERMEDAD_MENTAL_V16197, salud_mental_default
-            )
-
-            fuente_sm_actual = str(_valor_persona(
-                persona_car,
-                C["fuente_diagnostico_salud_mental"]
-                if C["fuente_diagnostico_salud_mental"] else "__none__"
-            )).strip()
-
-            if estado_sm_car == 'DIAGNÓSTICO CONFIRMADO':
-                st.info(
-                    "Seleccione únicamente diagnósticos respaldados por información clínica. "
-                    "Consumo de SPA y TUS no son equivalentes."
+            elif estado_sm_car == 'POR VERIFICAR / REQUIERE VALIDACIÓN' and salud_mental_actual:
+                st.warning(
+                    "Existe información histórica de salud mental que requiere validación. "
+                    "Al guardar en este estado se conservará el dato histórico hasta que sea revisado."
                 )
-                smc1, smc2 = st.columns([2, 1])
-                salud_mental_car = smc1.multiselect(
-                    "Diagnóstico(s) de salud mental confirmado(s)",
-                    opciones_mental,
-                    default=salud_mental_default
-                )
-                opciones_fuente_sm = _opciones_catalogo_v16197(
-                    FUENTES_DIAGNOSTICO_SM_V16223, fuente_sm_actual
-                )
-                fuente_sm_car = smc2.selectbox(
-                    "Fuente del diagnóstico",
-                    opciones_fuente_sm,
-                    index=_indice_catalogo_v16197(opciones_fuente_sm, fuente_sm_actual)
-                )
-            else:
-                salud_mental_car = []
-                fuente_sm_car = ''
-                if estado_sm_car in (
-                    'PENDIENTE DE DIAGNÓSTICO / POR DIAGNOSTICAR',
-                    'SIN DIAGNÓSTICO CONOCIDO / REPORTADO',
-                    'NO APLICA (N/A)'
-                ):
-                    st.caption(
-                        "No se asignará ningún diagnóstico. Esto evita etiquetar o inferir "
-                        "condiciones de salud mental sin soporte clínico."
-                    )
-                elif estado_sm_car == 'POR VERIFICAR / REQUIERE VALIDACIÓN' and salud_mental_actual:
-                    st.warning(
-                        "Existe información histórica de salud mental que requiere validación. "
-                        "Al guardar en este estado se conservará el dato histórico hasta que sea revisado."
-                    )
-                    salud_mental_car = salud_mental_default
+                salud_mental_car = salud_mental_default
 
-            c19, c20, c21 = st.columns(3)
+        c19, c20, c21 = st.columns(3)
 
-            etnia_actual = str(_valor_persona(
-                persona_car,
-                C["etnia"] if C["etnia"] else "__none__"
-            )).strip()
-            opciones_etnia = _opciones_catalogo_v16197(
-                CATALOGO_ETNIA_V16197,
-                etnia_actual
-            )
-            etnia_car = c19.selectbox(
-                "Grupo étnico",
-                opciones_etnia,
-                index=_indice_catalogo_v16197(opciones_etnia, etnia_actual)
-            )
+        etnia_actual = str(_valor_persona(
+            persona_car,
+            C["etnia"] if C["etnia"] else "__none__"
+        )).strip()
+        opciones_etnia = _opciones_catalogo_v16197(
+            CATALOGO_ETNIA_V16197,
+            etnia_actual
+        )
+        etnia_car = c19.selectbox(
+            "Grupo étnico",
+            opciones_etnia,
+            index=_indice_catalogo_v16197(opciones_etnia, etnia_actual)
+        )
 
-            orientacion_actual = str(_valor_persona(
-                persona_car,
-                C["orientacion"] if C["orientacion"] else "__none__"
-            )).strip()
-            opciones_orientacion = _opciones_catalogo_v16197(
-                CATALOGO_ORIENTACION_V16197,
-                orientacion_actual
-            )
-            orientacion_car = c20.selectbox(
-                "Orientación sexual",
-                opciones_orientacion,
-                index=_indice_catalogo_v16197(opciones_orientacion, orientacion_actual)
-            )
+        orientacion_actual = str(_valor_persona(
+            persona_car,
+            C["orientacion"] if C["orientacion"] else "__none__"
+        )).strip()
+        opciones_orientacion = _opciones_catalogo_v16197(
+            CATALOGO_ORIENTACION_V16197,
+            orientacion_actual
+        )
+        orientacion_car = c20.selectbox(
+            "Orientación sexual",
+            opciones_orientacion,
+            index=_indice_catalogo_v16197(opciones_orientacion, orientacion_actual)
+        )
 
-            poblacion_actual_car = str(_valor_persona(
-                persona_car,
-                C["poblacion"] if C["poblacion"] else "__none__"
-            )).strip()
-            poblacion_default = _lista_multiple_v16167(
-                poblacion_actual_car, CATALOGO_POBLACION_V16197
-            )
-            opciones_poblacion = _opciones_multiple_v16167(
-                CATALOGO_POBLACION_V16197, poblacion_default
-            )
-            poblacion_car = c21.multiselect(
-                "Población (puede seleccionar varias)",
-                opciones_poblacion,
-                default=poblacion_default
-            )
+        poblacion_actual_car = str(_valor_persona(
+            persona_car,
+            C["poblacion"] if C["poblacion"] else "__none__"
+        )).strip()
+        poblacion_default = _lista_multiple_v16167(
+            poblacion_actual_car, CATALOGO_POBLACION_V16197
+        )
+        opciones_poblacion = _opciones_multiple_v16167(
+            CATALOGO_POBLACION_V16197, poblacion_default
+        )
+        poblacion_car = c21.multiselect(
+            "Población (puede seleccionar varias)",
+            opciones_poblacion,
+            default=poblacion_default
+        )
 
-            guardar_car = st.form_submit_button(
-                "💾 Guardar caracterización",
-                use_container_width=True,
-                type="primary"
-            )
+        guardar_car = st.button(
+            "💾 Guardar caracterización",
+            use_container_width=True,
+            type="primary"
+        )
 
         if guardar_car:
 
