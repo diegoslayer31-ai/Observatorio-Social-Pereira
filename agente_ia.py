@@ -2282,6 +2282,27 @@ def gestion_usuarios():
 
     columnas_bd = _columnas_habitante()
 
+    # V16.223 - Salud mental en caracterización con trazabilidad diagnóstica.
+    # Se separa el diagnóstico clínico de la condición de habitabilidad en calle
+    # y del simple reporte de consumo de SPA. Los campos nuevos son aditivos y
+    # no modifican ni eliminan información histórica.
+    try:
+        with engine.begin() as conn:
+            conn.execute(text("""
+                ALTER TABLE public.habitante_de_calle
+                ADD COLUMN IF NOT EXISTS estado_diagnostico_salud_mental TEXT
+            """))
+            conn.execute(text("""
+                ALTER TABLE public.habitante_de_calle
+                ADD COLUMN IF NOT EXISTS fuente_diagnostico_salud_mental TEXT
+            """))
+        _columnas_habitante.clear()
+        columnas_bd = _columnas_habitante()
+    except Exception:
+        # Si el rol de BD no permite ALTER, el módulo sigue funcionando con
+        # la columna histórica enfermedad_mental.
+        pass
+
     def _col_real(*candidatas):
         for c in candidatas:
             if c in columnas_bd:
@@ -2388,6 +2409,8 @@ def gestion_usuarios():
         ),
         "poblacion": _col_real("poblacion"),
         "enfermedad_mental": _col_real("enfermedad_mental"),
+        "estado_diagnostico_salud_mental": _col_real("estado_diagnostico_salud_mental"),
+        "fuente_diagnostico_salud_mental": _col_real("fuente_diagnostico_salud_mental"),
         "fecha_ingreso": _col_real("fecha_ingreso_albergue"),
         "numero_atenciones": _col_real("numero_atenciones")
     }
@@ -2410,6 +2433,7 @@ def gestion_usuarios():
         C["educacion"], C["ocupacion"], C["barrio"], C["comuna"],
         C["zona"], C["direccion"], C["telefono"], C["correo"],
         C["orientacion"], C["poblacion"], C["enfermedad_mental"],
+        C["estado_diagnostico_salud_mental"], C["fuente_diagnostico_salud_mental"],
         C["fecha_ingreso"], C["numero_atenciones"]
     ]:
         if _c_v16213 and _c_v16213 in columnas_bd and _c_v16213 not in _cols_resumen_v16213:
@@ -3982,7 +4006,33 @@ def gestion_usuarios():
         CATALOGO_DEPARTAMENTO_V16197 = ['AMAZONAS', 'ANTIOQUIA', 'ARAUCA', 'ATLANTICO', 'BOGOTA', 'BOLIVAR', 'BOYACA', 'CALDAS', 'CAQUETA', 'CASANARE', 'CAUCA', 'CESAR', 'CHOCO', 'CORDOBA', 'CUNDINAMARCA', 'GUAINIA', 'GUAVIARE', 'HUILA', 'LA GUAJIRA', 'MAGDALENA', 'META', 'N. DE SANTANDER', 'NARIÑO', 'PUTUMAYO', 'QUINDIO', 'RISARALDA', 'SAN ANDRES', 'SANTANDER', 'SUCRE', 'TOLIMA', 'VALLE DEL CAUCA', 'VAUPES', 'VICHADA']
         CATALOGO_POBLACION_V16197 = ['AGENTES COMUNITARIOS', 'DOCENTES', 'ESTUDIANTES', 'HABITANTE DE CALLE', 'PADRES O ACUDIENTES', 'USUARIO EN RIESGO DE CALLE']
         CATALOGO_CONSUMO_V16197 = ['ALCOHOL', 'BAZUCO', 'COCAINA', 'HEROÍNA', 'MARIHUANA', 'NINGUNA', 'OTRA DROGA', 'PEGANTE/SACOL', 'POLICONSUMO', 'POLICONSUMO CON HEROÍNA', 'TABACO/CIGARRILLO']
-        CATALOGO_ENFERMEDAD_MENTAL_V16197 = ['Trastorno bipolar', 'trastorno de ansiedad', 'trastorno depresivo', 'trastorno mixto (ansiedad-depresion)', 'trastorno demencia senil', 'dependencia sustacias psicoactivas', 'Psicosis (esquizofrenia)', 'Trastorno obsesivo-compulsivo', 'Trastorno cognitivo']
+        CATALOGO_ENFERMEDAD_MENTAL_V16197 = [
+            'Trastorno bipolar',
+            'Trastorno de ansiedad',
+            'Trastorno depresivo',
+            'Trastorno mixto (ansiedad-depresión)',
+            'Demencia / trastorno neurocognitivo',
+            'Trastorno por uso de sustancias (TUS)',
+            'Psicosis / esquizofrenia',
+            'Trastorno obsesivo-compulsivo',
+            'Trastorno cognitivo',
+            'Otro diagnóstico de salud mental'
+        ]
+        ESTADOS_DIAGNOSTICO_SM_V16223 = [
+            '',
+            'DIAGNÓSTICO CONFIRMADO',
+            'PENDIENTE DE DIAGNÓSTICO / POR DIAGNOSTICAR',
+            'SIN DIAGNÓSTICO CONOCIDO / REPORTADO',
+            'NO APLICA (N/A)',
+            'POR VERIFICAR / REQUIERE VALIDACIÓN'
+        ]
+        FUENTES_DIAGNOSTICO_SM_V16223 = [
+            '',
+            'DIAGNÓSTICO MÉDICO',
+            'DIAGNÓSTICO DE PSIQUIATRÍA',
+            'HISTORIA CLÍNICA / EPICRISIS',
+            'OTRO SOPORTE CLÍNICO'
+        ]
         CATALOGO_GESTANTE_V16197 = ['GESTANTE', 'LACTANTE', 'NA']
         BARRIOS_PEREIRA_V16197 = {'1º  DE FEBRERO': {'comuna': 'CENTRO', 'zona': 'URBANO'},
  '1º  DE MAYO CAIMALITO': {'comuna': 'CAIMALITO', 'zona': 'RURAL'},
@@ -5513,17 +5563,80 @@ def gestion_usuarios():
                 C["enfermedad_mental"]
                 if C["enfermedad_mental"] else "__none__"
             )).strip()
+
+            estado_sm_actual = str(_valor_persona(
+                persona_car,
+                C["estado_diagnostico_salud_mental"]
+                if C["estado_diagnostico_salud_mental"] else "__none__"
+            )).strip().upper()
+
+            # Registros históricos con un diagnóstico pero sin estado explícito
+            # quedan POR VERIFICAR; nunca se convierten automáticamente en TUS.
+            if not estado_sm_actual and salud_mental_actual:
+                estado_sm_actual = 'POR VERIFICAR / REQUIERE VALIDACIÓN'
+
+            estado_sm_car = c18.selectbox(
+                "Estado del diagnóstico de salud mental",
+                ESTADOS_DIAGNOSTICO_SM_V16223,
+                index=_indice_catalogo_v16197(
+                    ESTADOS_DIAGNOSTICO_SM_V16223, estado_sm_actual
+                ),
+                help=(
+                    "No registre un diagnóstico por el solo hecho de existir consumo de SPA. "
+                    "Use DIAGNÓSTICO CONFIRMADO únicamente cuando exista soporte clínico."
+                )
+            )
+
             salud_mental_default = _lista_multiple_v16167(
                 salud_mental_actual, CATALOGO_ENFERMEDAD_MENTAL_V16197
             )
             opciones_mental = _opciones_multiple_v16167(
                 CATALOGO_ENFERMEDAD_MENTAL_V16197, salud_mental_default
             )
-            salud_mental_car = c18.multiselect(
-                "Salud / enfermedad mental (puede seleccionar varias)",
-                opciones_mental,
-                default=salud_mental_default
-            )
+
+            fuente_sm_actual = str(_valor_persona(
+                persona_car,
+                C["fuente_diagnostico_salud_mental"]
+                if C["fuente_diagnostico_salud_mental"] else "__none__"
+            )).strip()
+
+            if estado_sm_car == 'DIAGNÓSTICO CONFIRMADO':
+                st.info(
+                    "Seleccione únicamente diagnósticos respaldados por información clínica. "
+                    "Consumo de SPA y TUS no son equivalentes."
+                )
+                smc1, smc2 = st.columns([2, 1])
+                salud_mental_car = smc1.multiselect(
+                    "Diagnóstico(s) de salud mental confirmado(s)",
+                    opciones_mental,
+                    default=salud_mental_default
+                )
+                opciones_fuente_sm = _opciones_catalogo_v16197(
+                    FUENTES_DIAGNOSTICO_SM_V16223, fuente_sm_actual
+                )
+                fuente_sm_car = smc2.selectbox(
+                    "Fuente del diagnóstico",
+                    opciones_fuente_sm,
+                    index=_indice_catalogo_v16197(opciones_fuente_sm, fuente_sm_actual)
+                )
+            else:
+                salud_mental_car = []
+                fuente_sm_car = ''
+                if estado_sm_car in (
+                    'PENDIENTE DE DIAGNÓSTICO / POR DIAGNOSTICAR',
+                    'SIN DIAGNÓSTICO CONOCIDO / REPORTADO',
+                    'NO APLICA (N/A)'
+                ):
+                    st.caption(
+                        "No se asignará ningún diagnóstico. Esto evita etiquetar o inferir "
+                        "condiciones de salud mental sin soporte clínico."
+                    )
+                elif estado_sm_car == 'POR VERIFICAR / REQUIERE VALIDACIÓN' and salud_mental_actual:
+                    st.warning(
+                        "Existe información histórica de salud mental que requiere validación. "
+                        "Al guardar en este estado se conservará el dato histórico hasta que sea revisado."
+                    )
+                    salud_mental_car = salud_mental_default
 
             c19, c20, c21 = st.columns(3)
 
@@ -5598,6 +5711,8 @@ def gestion_usuarios():
                 C["salud"]: salud_car,
                 C["consumo"]: _guardar_multiple_v16167(consumo_car),
                 C["enfermedad_mental"]: _guardar_multiple_v16167(salud_mental_car),
+                C["estado_diagnostico_salud_mental"]: estado_sm_car,
+                C["fuente_diagnostico_salud_mental"]: fuente_sm_car,
                 C["etnia"]: etnia_car,
                 C["orientacion"]: orientacion_car,
                 C["poblacion"]: poblacion_car
@@ -31370,53 +31485,73 @@ def panel_tareas_coordinacion_v16171():
                 fecha_limite=c3.date_input("Fecha límite", value=date.today()+timedelta(days=7))
                 prioridad=c4.selectbox("Prioridad", ["NORMAL","ALTA","URGENTE"])
                 obs=st.text_area("Observación / instrucción", placeholder="Indicaciones para el profesional (opcional)")
+                # IMPORTANTE: no deshabilitar este botón en función del multiselect.
+                # Los widgets dentro de st.form no provocan un rerun hasta enviar el
+                # formulario; por eso el botón podía quedar deshabilitado aunque ya
+                # hubiera usuarios seleccionados. La validación se hace al enviar.
                 asignar=st.form_submit_button(
                     "📌 Asignar tarea(s)",
                     type="primary",
-                    use_container_width=True,
-                    disabled=(len(usuarios_lbl)==0)
+                    use_container_width=True
                 )
 
             if asignar:
-                cc_prof,nombre_prof=prof_map[prof_lbl]
-                creadas=omitidas=0
-                with engine.begin() as conn:
-                    for ul in usuarios_lbl:
-                        doc=per_map[ul]
-                        existe=conn.execute(text("""
-                            SELECT id FROM tareas_profesionales
-                            WHERE TRIM(CAST(numero_identificacion AS TEXT))=:doc
-                              AND tipo_tarea=:tipo
-                              AND UPPER(COALESCE(estado,'')) IN ('PENDIENTE','EN PROCESO')
-                            LIMIT 1
-                        """),{"doc":doc,"tipo":tipo_sel}).first()
-                        if existe:
-                            omitidas+=1
-                            continue
-                        conn.execute(text("""
-                            INSERT INTO tareas_profesionales
-                            (tipo_tarea,numero_identificacion,profesional_cedula,profesional_nombre,estado,prioridad,fecha_limite,asignado_por,observacion)
-                            VALUES (:tipo,:doc,:cc,:nombre,'PENDIENTE',:prioridad,:limite,:asignado,:obs)
-                        """),{
-                            "tipo":tipo_sel,"doc":doc,"cc":cc_prof,"nombre":nombre_prof,
-                            "prioridad":prioridad,"limite":fecha_limite,
-                            "asignado":st.session_state.get('usuario_actual','sistema'),
-                            "obs":obs.strip() or None
-                        })
-                        creadas+=1
-                        registrar_auditoria(
-                            "ASIGNAR_TAREA_PROFESIONAL",
-                            documento=doc,
-                            modulo="Tareas Profesionales",
-                            valor_nuevo=f"{tipo_sel} → {nombre_prof} CC {cc_prof}",
-                            observacion=obs[:500]
-                        )
-                st.success(
-                    f"✅ {creadas} tarea(s) de {TIPOS_TAREA_CAR_V16171.get(tipo_sel,tipo_sel)} "
-                    f"asignada(s) a {nombre_prof} · CC {cc_prof}."
-                    + (f" {omitidas} se omitieron porque ya tenían una tarea abierta del mismo tipo." if omitidas else "")
-                )
-                st.rerun()
+                if not usuarios_lbl:
+                    st.warning("Seleccione al menos un usuario antes de asignar la tarea.")
+                else:
+                    cc_prof,nombre_prof=prof_map[prof_lbl]
+                    creadas=omitidas=0
+                    errores=[]
+                    try:
+                        with engine.begin() as conn:
+                            for ul in usuarios_lbl:
+                                doc=per_map.get(ul)
+                                if not doc:
+                                    errores.append(f"No se pudo identificar el usuario seleccionado: {ul}")
+                                    continue
+                                existe=conn.execute(text("""
+                                    SELECT id FROM tareas_profesionales
+                                    WHERE TRIM(CAST(numero_identificacion AS TEXT))=:doc
+                                      AND tipo_tarea=:tipo
+                                      AND UPPER(TRIM(COALESCE(estado,''))) IN ('PENDIENTE','EN PROCESO')
+                                    LIMIT 1
+                                """),{"doc":doc,"tipo":tipo_sel}).first()
+                                if existe:
+                                    omitidas+=1
+                                    continue
+                                conn.execute(text("""
+                                    INSERT INTO tareas_profesionales
+                                    (tipo_tarea,numero_identificacion,profesional_cedula,profesional_nombre,estado,prioridad,fecha_limite,asignado_por,observacion)
+                                    VALUES (:tipo,:doc,:cc,:nombre,'PENDIENTE',:prioridad,:limite,:asignado,:obs)
+                                """),{
+                                    "tipo":tipo_sel,"doc":doc,"cc":cc_prof,"nombre":nombre_prof,
+                                    "prioridad":prioridad,"limite":fecha_limite,
+                                    "asignado":st.session_state.get('usuario_actual','sistema'),
+                                    "obs":obs.strip() or None
+                                })
+                                creadas+=1
+                                registrar_auditoria(
+                                    "ASIGNAR_TAREA_PROFESIONAL",
+                                    documento=doc,
+                                    modulo="Tareas Profesionales",
+                                    valor_nuevo=f"{tipo_sel} → {nombre_prof} CC {cc_prof}",
+                                    observacion=obs[:500]
+                                )
+                    except Exception as e:
+                        st.error(f"❌ No fue posible guardar la asignación: {e}")
+                    else:
+                        if creadas:
+                            st.success(
+                                f"✅ {creadas} tarea(s) de {TIPOS_TAREA_CAR_V16171.get(tipo_sel,tipo_sel)} "
+                                f"asignada(s) a {nombre_prof} · CC {cc_prof}."
+                                + (f" {omitidas} se omitieron porque ya tenían una tarea abierta del mismo tipo." if omitidas else "")
+                            )
+                            st.rerun()
+                        elif omitidas:
+                            st.warning(f"No se creó ninguna tarea nueva. {omitidas} usuario(s) ya tenían una tarea abierta del mismo tipo.")
+                        elif errores:
+                            st.error("No se creó ninguna tarea. " + " | ".join(errores[:3]))
+
 
     with tr:
         try: df=_datos_tareas_v16171()
