@@ -18642,8 +18642,19 @@ with st.sidebar:
             st.rerun()
 
     elif rol_menu in ["AUXILIAR_ADMINISTRATIVO", "TECNOLOGO_INGENIERIA"]:
-        # Perfiles administrativos restringidos:
-        # el acceso operativo disponible es Control Diario de Asistencia.
+        # V16.227 - Elizabeth Manso Ospina (Tecnología): informe contractual sin PAI.
+        # Su evidencia se centra en consolidación de indicadores, Observatorio Social
+        # y Acciones de Política Pública, conforme a su contrato.
+        _doc_tec_v16227 = "".join(ch for ch in str(_doc_menu_v16157) if ch.isdigit())
+        if _doc_tec_v16227 == "1088243215":
+            if st.button(
+                "📄 Mi Informe Mensual",
+                use_container_width=True,
+                key="btn_informe_mensual_elizabeth_v16227"
+            ):
+                st.session_state.page = "informe_mensual_profesional_v1627"
+                st.rerun()
+        # Los demás perfiles administrativos conservan el acceso restringido existente.
         pass
 
     elif rol_menu in ["COORDINACION", "MANAGER"]:
@@ -30100,6 +30111,18 @@ def modulo_informe_mensual_profesional_piloto_v1627(modo_final_ivan=False):
             st.error("La fecha inicial no puede ser posterior a la fecha final.")
             return
 
+    # V16.227 - Elizabeth es Tecnología, no profesional PAI. Su informe contractual
+    # usa evidencia de indicadores/Observatorio y Política Pública, sin exigir PAI.
+    _doc_sesion_v16227 = _solo_digitos_v16124(
+        st.session_state.get("documento_funcionario", "")
+    )
+    modo_elizabeth_v16227 = (not modo_final_ivan and _doc_sesion_v16227 == "1088243215")
+    if modo_elizabeth_v16227:
+        st.caption(
+            "Informe de ELIZABETH MANSO OSPINA · Tecnología. "
+            "Consolida indicadores, evidencias del Observatorio Social y Acciones de Política Pública; no incluye PAI."
+        )
+
     if modo_final_ivan:
         # V16.211 - Dirección es un perfil administrativo/directivo, NO un profesional PAI.
         documento_sesion = _solo_digitos_v16124(
@@ -30111,6 +30134,10 @@ def modulo_informe_mensual_profesional_piloto_v1627(modo_final_ivan=False):
         profesional_id_inf = None
         nombre_profesional_inf = "JORGE IVÁN RENDÓN GIRALDO"
         rol_profesional_inf = "DIRECCIÓN"
+    elif modo_elizabeth_v16227:
+        profesional_id_inf = None
+        nombre_profesional_inf = "ELIZABETH MANSO OSPINA"
+        rol_profesional_inf = "TECNOLOGÍA / INGENIERÍA"
     else:
         profesional_pai = _profesional_actual_v15()
 
@@ -30150,7 +30177,7 @@ def modulo_informe_mensual_profesional_piloto_v1627(modo_final_ivan=False):
 
     # Documento del profesional, si está disponible en la tabla profesionales.
     documento_profesional_inf = ""
-    if not modo_final_ivan:
+    if not modo_final_ivan and not modo_elizabeth_v16227:
         try:
             _dp = pd.read_sql(
                 text("SELECT * FROM profesionales WHERE id = :id LIMIT 1"),
@@ -30265,7 +30292,7 @@ def modulo_informe_mensual_profesional_piloto_v1627(modo_final_ivan=False):
     fuente_seg = ""
     docs = set()
 
-    if not modo_final_ivan:
+    if not modo_final_ivan and not modo_elizabeth_v16227:
         tablas_pai = [t for t in tablas if "pai" in t.lower()]
         tablas_seg = [
             t for t in tablas
@@ -30342,6 +30369,34 @@ def modulo_informe_mensual_profesional_piloto_v1627(modo_final_ivan=False):
                 st.dataframe(df_pai, use_container_width=True, hide_index=True)
             if not df_seg.empty:
                 st.dataframe(df_seg, use_container_width=True, hide_index=True)
+
+    # V16.227 - Consolidado específico de Tecnología: no muestra PAI.
+    pp_elizabeth_v16227 = pd.DataFrame()
+    if modo_elizabeth_v16227:
+        pp_elizabeth_v16227 = _evidencia_pp_profesional_v16125(
+            documento_profesional_inf, fecha_inicio, fecha_fin, codigos=None
+        )
+        st.markdown("### 📊 Consolidado automático · Tecnología")
+        total_pp = len(pp_elizabeth_v16227)
+        try:
+            codigos_pp = int(pp_elizabeth_v16227["Código"].dropna().astype(str).nunique()) if total_pp else 0
+        except Exception:
+            codigos_pp = 0
+        try:
+            participantes_pp = int(pd.to_numeric(pp_elizabeth_v16227["Participantes"], errors="coerce").fillna(0).sum()) if total_pp else 0
+        except Exception:
+            participantes_pp = 0
+        a,b,c = st.columns(3)
+        a.metric("Evidencias de Política Pública", total_pp)
+        b.metric("Acciones / códigos consolidados", codigos_pp)
+        c.metric("Participaciones registradas", participantes_pp)
+        st.caption(
+            "Estos indicadores se construyen con los registros atribuibles a Elizabeth en Acciones de Política Pública. "
+            "No se muestran PAI ni seguimientos PAI porque no hacen parte de su función contractual."
+        )
+        if not pp_elizabeth_v16227.empty:
+            with st.expander("📋 Revisar evidencias que alimentan el consolidado"):
+                st.dataframe(pp_elizabeth_v16227, use_container_width=True, hide_index=True)
 
     # V16.212 - Reportes del Observatorio propios del alcance de Dirección.
     reporte_obs_v16212 = {
@@ -30452,6 +30507,23 @@ def modulo_informe_mensual_profesional_piloto_v1627(modo_final_ivan=False):
         gestion_auto_v16180 = _resumen_gestion_automatica_v16180(
             documento, fecha_inicio, fecha_fin
         )
+        if modo_elizabeth_v16227:
+            # Tecnología: conservar únicamente evidencia pertinente a Política Pública;
+            # no presentar tareas de caracterización como si fueran parte de su alcance.
+            gestion_auto_v16180["tareas"] = pd.DataFrame()
+            gestion_auto_v16180["actividades"] = ""
+            _pp = gestion_auto_v16180.get("pp", pd.DataFrame())
+            if isinstance(_pp, pd.DataFrame) and not _pp.empty:
+                try:
+                    _cnt = _pp.groupby("Código", dropna=False).size().sort_index()
+                    _det = ", ".join(f"{c}: {int(n)} registro(s)" for c,n in _cnt.items())
+                    _part = int(pd.to_numeric(_pp["Participantes"], errors="coerce").fillna(0).sum())
+                    gestion_auto_v16180["actividades"] = (
+                        f"Se consolidaron {len(_pp)} evidencia(s) de Política Pública ({_det}), "
+                        f"con {_part} participaciones registradas en el período."
+                    )
+                except Exception:
+                    gestion_auto_v16180["actividades"] = f"Se consolidaron {len(_pp)} evidencia(s) de Política Pública en el período."
         st.markdown("### 🧩 Gestión automática registrada en el Observatorio")
         st.caption(
             "Este bloque consolida trabajo verificable del período. Incluye todas las acciones "
@@ -30812,6 +30884,21 @@ def modulo_informe_mensual_profesional_piloto_v1627(modo_final_ivan=False):
                 ["Tareas completadas", str(int(estados_dir.eq("COMPLETADA").sum()))],
                 ["Tareas en proceso", str(int(estados_dir.eq("EN PROCESO").sum()))],
                 ["Tareas pendientes", str(int(estados_dir.eq("PENDIENTE").sum()))],
+            ]
+        elif modo_elizabeth_v16227:
+            try:
+                _cod_pdf = int(pp_elizabeth_v16227["Código"].dropna().astype(str).nunique()) if not pp_elizabeth_v16227.empty else 0
+            except Exception:
+                _cod_pdf = 0
+            try:
+                _part_pdf = int(pd.to_numeric(pp_elizabeth_v16227["Participantes"], errors="coerce").fillna(0).sum()) if not pp_elizabeth_v16227.empty else 0
+            except Exception:
+                _part_pdf = 0
+            inds = [
+                ["Indicador de gestión de Tecnología","Resultado"],
+                ["Evidencias de Política Pública consolidadas", str(len(pp_elizabeth_v16227))],
+                ["Acciones / códigos consolidados", str(_cod_pdf)],
+                ["Participaciones registradas", str(_part_pdf)],
             ]
         else:
             inds = [
