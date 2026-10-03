@@ -18425,6 +18425,19 @@ with st.sidebar:
             st.session_state.page = "informe_mensual_ivan_v16210"
             st.rerun()
 
+    # V16.226 - Carlos Hernán López García: acceso al mismo Informe Mensual Profesional.
+    # Se habilita por cédula incluso si su rol en funcionarios_sistema no está como PROFESIONAL.
+    # Si ya tiene rol PROFESIONAL, el botón estándar se muestra más abajo y evitamos duplicarlo.
+    _doc_carlos_informe_v16226 = "".join(ch for ch in _doc_menu_v16157 if ch.isdigit())
+    if _doc_carlos_informe_v16226 == "94381656" and str(rol_menu).upper().strip() != "PROFESIONAL":
+        if st.button(
+            "📄 Mi Informe Mensual",
+            use_container_width=True,
+            key="btn_informe_mensual_carlos_v16226"
+        ):
+            st.session_state.page = "informe_mensual_profesional_v1627"
+            st.rerun()
+
     if (
         _doc_menu_v16157 in COMITE_CASOS_DOCUMENTOS_AUTORIZADOS_V16157
         and str(rol_menu).upper().strip() != "PROFESIONAL"
@@ -30100,6 +30113,31 @@ def modulo_informe_mensual_profesional_piloto_v1627(modo_final_ivan=False):
         rol_profesional_inf = "DIRECCIÓN"
     else:
         profesional_pai = _profesional_actual_v15()
+
+        # V16.226 - Respaldo específico para Carlos Hernán López García.
+        # Conserva las mismas condiciones del informe profesional y no crea un informe paralelo.
+        # Si aún no existe el mapeo en pai_profesional_funcionario, intenta resolver su registro
+        # en profesionales por el nombre contractual ya cargado en la matriz individual.
+        _doc_inf_v16226 = _solo_digitos_v16124(
+            st.session_state.get("documento_funcionario", "")
+        )
+        if not profesional_pai and _doc_inf_v16226 == "94381656":
+            try:
+                _carlos_prof = pd.read_sql(
+                    text("""
+                        SELECT id AS profesional_id, nombre, rol
+                        FROM profesionales
+                        WHERE UPPER(TRIM(nombre)) = UPPER(TRIM(:nombre))
+                        LIMIT 1
+                    """),
+                    engine,
+                    params={"nombre": "CARLOS HERNAN LOPEZ GARCIA"}
+                )
+                if not _carlos_prof.empty:
+                    profesional_pai = _carlos_prof.iloc[0].to_dict()
+            except Exception:
+                pass
+
         if not profesional_pai:
             st.error(
                 "No se encontró un profesional PAI asociado a este acceso. "
