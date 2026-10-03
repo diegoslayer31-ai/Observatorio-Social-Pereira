@@ -18659,6 +18659,18 @@ with st.sidebar:
 
     elif rol_menu in ["COORDINACION", "MANAGER"]:
 
+        # V16.228 - Elizabeth Manso Ospina inicia sesión como COORDINACION.
+        # Se habilita su Informe Mensual por cédula, sin alterar su rol ni los demás permisos.
+        _doc_elizabeth_coord_v16228 = "".join(ch for ch in str(_doc_menu_v16157) if ch.isdigit())
+        if _doc_elizabeth_coord_v16228 == "1088243215":
+            if st.button(
+                "📄 Mi Informe Mensual",
+                use_container_width=True,
+                key="btn_informe_mensual_elizabeth_coord_v16228"
+            ):
+                st.session_state.page = "informe_mensual_profesional_v1627"
+                st.rerun()
+
         if st.button(
             "🏠 Inicio",
             use_container_width=True
