@@ -19460,30 +19460,33 @@ def modulo_reportes_institucionales_v169():
     )
 
     # ============================================================
-    # V16.229 - INFORME DE GESTIÓN 2026 · CORTE ALCALDÍA
+    # V16.230 - INFORME INSTITUCIONAL DE GESTIÓN 2026 · ANALÍTICO
     # ============================================================
-    with st.expander("🏛️ Informe de Gestión 2026 · Corte Alcaldía", expanded=False):
-        st.caption("Corte ejecutivo desde los registros del Observatorio Social, con trazabilidad para validar las cifras antes de reportarlas.")
+    with st.expander("🏛️ Informe Institucional de Gestión 2026 · Alcaldía", expanded=False):
+        st.caption(
+            "Informe analítico construido desde los registros del Observatorio Social. "
+            "Distingue personas únicas, registros, cobertura, cumplimiento, contribución ODS y calidad del dato."
+        )
         hoy_gestion = ahora_colombia().date()
         g1, g2 = st.columns(2)
-        fecha_desde_gestion = g1.date_input("Desde", value=date(2026, 1, 1), key="gestion_2026_desde_v16229")
-        fecha_hasta_gestion = g2.date_input("Hasta", value=hoy_gestion, max_value=hoy_gestion, key="gestion_2026_hasta_v16229")
+        fecha_desde_gestion = g1.date_input("Desde", value=date(2026, 1, 1), key="gestion_2026_desde_v16230")
+        fecha_hasta_gestion = g2.date_input("Hasta", value=hoy_gestion, max_value=hoy_gestion, key="gestion_2026_hasta_v16230")
 
         if fecha_desde_gestion > fecha_hasta_gestion:
             st.error("La fecha inicial no puede ser posterior a la fecha final.")
         else:
-            def _gestion_columnas(nombre):
+            def _g_cols(tabla):
                 try:
-                    q = pd.read_sql(text("SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name=:t"), engine, params={"t": nombre})
+                    q = pd.read_sql(text("SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name=:t"), engine, params={"t": tabla})
                     return set(q["column_name"].astype(str))
                 except Exception:
                     return set()
 
-            def _gestion_cargar_periodo(tabla, candidatos_fecha):
-                cols = _gestion_columnas(tabla)
+            def _g_load(tabla, fechas=()):
+                cols = _g_cols(tabla)
                 if not cols:
                     return pd.DataFrame(), None
-                fc = next((c for c in candidatos_fecha if c in cols), None)
+                fc = next((c for c in fechas if c in cols), None)
                 try:
                     if fc:
                         sql = 'SELECT * FROM "' + tabla + '" WHERE CAST("' + fc + '" AS DATE) BETWEEN :d AND :h'
@@ -19492,66 +19495,279 @@ def modulo_reportes_institucionales_v169():
                 except Exception:
                     return pd.DataFrame(), fc
 
-            mov_g, mov_fecha = _gestion_cargar_periodo("movimientos_habitante", ["fecha_movimiento", "fecha", "created_at", "fecha_registro"])
-            doc_mov = next((c for c in ["numero_identificacion", "documento_usuario", "numero_identidad"] if c in mov_g.columns), None)
-            personas_periodo = int(mov_g[doc_mov].astype(str).str.strip().replace("", pd.NA).dropna().nunique()) if doc_mov else 0
+            def _g_col(df0, candidatos):
+                return next((c for c in candidatos if c in df0.columns), None)
 
+            def _g_unique(df0, candidatos):
+                c = _g_col(df0, candidatos)
+                if not c or df0.empty:
+                    return 0
+                s = df0[c].astype(str).str.strip().replace({"":"", "nan":"", "None":"", "NULL":""})
+                return int(s[s.ne("")].nunique())
+
+            def _g_pct(n, d):
+                return round((float(n) / float(d) * 100), 1) if d else 0.0
+
+            # ---------------- Base poblacional / movimientos ----------------
             base_g = cargar_habitante_completo_v16205().copy()
             estado_g = base_g.get("estado_caso", pd.Series(index=base_g.index, dtype="object")).fillna("").astype(str).str.upper().str.strip()
             modalidad_g = base_g.get("modalidad", pd.Series(index=base_g.index, dtype="object")).fillna("").astype(str).str.upper().str.strip()
+            doc_base = _g_col(base_g, ["numero_identificacion", "documento", "cedula"])
+            poblacion_registrada = _g_unique(base_g, ["numero_identificacion", "documento", "cedula"])
             activos_g = int(estado_g.eq("ACTIVO").sum())
             urbano_g = int((estado_g.eq("ACTIVO") & modalidad_g.eq("URBANO")).sum())
             granja_g = int((estado_g.eq("ACTIVO") & modalidad_g.eq("GRANJA")).sum())
 
-            acciones_g, acciones_fecha = _gestion_cargar_periodo("acciones_profesionales", ["fecha", "fecha_actividad", "fecha_registro", "created_at"])
+            mov_g, mov_fecha = _g_load("movimientos_habitante", ["fecha_movimiento", "fecha", "created_at", "fecha_registro"])
+            personas_periodo = _g_unique(mov_g, ["numero_identificacion", "documento_usuario", "numero_identidad", "documento"])
+            movimientos_total = int(len(mov_g))
+            tipo_mov = _g_col(mov_g, ["tipo_movimiento", "tipo", "evento", "movimiento"])
+            ingresos = reingresos = egresos = 0
+            if tipo_mov:
+                sm = mov_g[tipo_mov].fillna("").astype(str).str.upper()
+                ingresos = int(sm.str.contains("INGRES", regex=False).sum())
+                reingresos = int(sm.str.contains("REINGRES", regex=False).sum())
+                egresos = int(sm.str.contains("EGRES", regex=False).sum())
+
+            # ---------------- Caracterización especializada ----------------
+            car_hab, car_fecha = _g_load("caracterizacion_habitabilidad_calle", ["fecha_caracterizacion", "fecha", "created_at", "fecha_registro", "updated_at"])
+            personas_car_hab = _g_unique(car_hab, ["numero_identificacion", "documento_usuario", "documento"])
+            cobertura_hab_activos = 0
+            if doc_base and not car_hab.empty:
+                cdoc = _g_col(car_hab, ["numero_identificacion", "documento_usuario", "documento"])
+                if cdoc:
+                    docs_car = set(car_hab[cdoc].astype(str).str.strip())
+                    docs_act = base_g.loc[estado_g.eq("ACTIVO"), doc_base].astype(str).str.strip()
+                    cobertura_hab_activos = int(docs_act.isin(docs_car).sum())
+            pct_hab = _g_pct(cobertura_hab_activos, activos_g)
+
+            # ---------------- Enfermería ----------------
+            enf_g, enf_fecha = _g_load("enfermeria_registros", ["fecha_hora", "fecha", "created_at", "fecha_registro"])
+            personas_enf = _g_unique(enf_g, ["documento_usuario", "numero_identificacion", "documento"])
+            atenciones_enf = int(pd.to_numeric(enf_g.get("cantidad", pd.Series([1]*len(enf_g))), errors="coerce").fillna(1).sum()) if not enf_g.empty else 0
+
+            # ---------------- PAI, seguimiento y ODS ----------------
+            pai_g, pai_fecha = _g_load("pai_objetivos", ["fecha_apertura", "fecha", "created_at", "fecha_registro"])
+            doc_pai = _g_col(pai_g, ["documento_usuario", "numero_identificacion", "documento"])
+            personas_pai = _g_unique(pai_g, ["documento_usuario", "numero_identificacion", "documento"])
+            objetivos_total = int(len(pai_g))
+            avance_col = _g_col(pai_g, ["porcentaje_avance", "avance"])
+            estado_pai_col = _g_col(pai_g, ["estado", "estado_objetivo"])
+            if avance_col:
+                avance_num = pd.to_numeric(pai_g[avance_col], errors="coerce").fillna(0)
+            else:
+                avance_num = pd.Series([0]*len(pai_g), index=pai_g.index, dtype=float)
+            estado_obj = pai_g[estado_pai_col].fillna("").astype(str).str.upper().str.strip() if estado_pai_col else pd.Series([""]*len(pai_g), index=pai_g.index)
+            mask_cumplido = avance_num.ge(100) | estado_obj.isin(["CUMPLIDO", "CERRADO", "COMPLETADO", "FINALIZADO"])
+            objetivos_cumplidos = int(mask_cumplido.sum())
+            objetivos_activos = int((~mask_cumplido).sum())
+            pct_cumpl_obj = _g_pct(objetivos_cumplidos, objetivos_total)
+            avance_promedio = round(float(avance_num.mean()), 1) if len(avance_num) else 0.0
+
+            seg_g, seg_fecha = _g_load("pai_seguimientos_historicos", ["fecha_seguimiento", "fecha", "created_at", "fecha_registro"])
+            if seg_g.empty:
+                seg_g, seg_fecha = _g_load("pai_seguimientos", ["fecha_seguimiento", "fecha", "created_at", "fecha_registro"])
+            seguimientos_total = int(len(seg_g))
+            personas_seg = _g_unique(seg_g, ["documento_usuario", "numero_identificacion", "documento"])
+            intensidad_seg = round(seguimientos_total / personas_seg, 2) if personas_seg else 0.0
+
+            ods_catalogo_g = {
+                "ODS 3":"Salud y bienestar", "ODS 4":"Educación de calidad",
+                "ODS 8":"Trabajo decente y crecimiento económico", "ODS 10":"Reducción de las desigualdades",
+                "ODS 11":"Ciudades y comunidades sostenibles", "ODS 16":"Paz, justicia e instituciones sólidas"
+            }
+            ods_col = _g_col(pai_g, ["ods_principal", "ods"])
+            ods_resumen = pd.DataFrame()
+            if ods_col and not pai_g.empty:
+                ods_tmp = pai_g.copy()
+                ods_tmp["_ods"] = ods_tmp[ods_col].fillna("").astype(str).str.upper().str.strip()
+                ods_tmp["_cumplido"] = mask_cumplido.astype(int)
+                ods_tmp["_avance"] = avance_num
+                ods_tmp = ods_tmp[ods_tmp["_ods"].ne("")]
+                if not ods_tmp.empty:
+                    agg = {"objetivos": ("_ods", "size"), "cumplidos": ("_cumplido", "sum"), "avance_promedio": ("_avance", "mean")}
+                    if doc_pai:
+                        agg["personas"] = (doc_pai, "nunique")
+                    ods_resumen = ods_tmp.groupby("_ods", as_index=False).agg(**agg)
+                    if "personas" not in ods_resumen.columns:
+                        ods_resumen["personas"] = 0
+                    ods_resumen["cumplimiento_%"] = (ods_resumen["cumplidos"] / ods_resumen["objetivos"] * 100).round(1)
+                    ods_resumen["avance_promedio"] = ods_resumen["avance_promedio"].round(1)
+                    ods_resumen["ODS"] = ods_resumen["_ods"].map(lambda x: f"{x} · {ods_catalogo_g.get(x,'Contribución programática')}")
+
+            # ---------------- Política pública ----------------
+            acciones_g, acciones_fecha = _g_load("acciones_profesionales", ["fecha", "fecha_actividad", "fecha_registro", "created_at"])
             if acciones_g.empty:
-                acciones_g, acciones_fecha = _gestion_cargar_periodo("acciones_politica_publica", ["fecha", "fecha_actividad", "fecha_registro", "created_at"])
-            doc_acc = next((c for c in ["numero_identificacion", "documento_usuario", "documento", "usuario_documento"] if c in acciones_g.columns), None)
-            codigo_acc = next((c for c in ["codigo", "codigo_accion", "accion", "actividad", "linea"] if c in acciones_g.columns), None)
+                acciones_g, acciones_fecha = _g_load("acciones_politica_publica", ["fecha", "fecha_actividad", "fecha_registro", "created_at"])
             total_acciones = int(len(acciones_g))
-            participantes_acc = int(acciones_g[doc_acc].astype(str).str.strip().replace("", pd.NA).dropna().nunique()) if doc_acc else 0
-            lineas_acc = int(acciones_g[codigo_acc].astype(str).str.strip().replace("", pd.NA).dropna().nunique()) if codigo_acc else 0
+            participantes_acc = _g_unique(acciones_g, ["numero_identificacion", "documento_usuario", "documento", "usuario_documento"])
+            codigo_acc = _g_col(acciones_g, ["codigo", "codigo_accion", "accion", "actividad", "linea", "tipo_accion"])
+            lineas_acc = int(acciones_g[codigo_acc].fillna("").astype(str).str.strip().replace("", pd.NA).dropna().nunique()) if codigo_acc else 0
+            profesionales_acc = _g_unique(acciones_g, ["profesional_documento", "documento_profesional", "profesional_cedula", "cedula_profesional"])
 
-            pai_g, pai_fecha = _gestion_cargar_periodo("pai_objetivos", ["fecha_apertura", "fecha", "created_at", "fecha_registro"])
-            doc_pai = next((c for c in ["documento_usuario", "numero_identificacion"] if c in pai_g.columns), None)
-            personas_pai = int(pai_g[doc_pai].astype(str).str.strip().replace("", pd.NA).dropna().nunique()) if doc_pai else 0
-            estado_pai_col = "estado" if "estado" in pai_g.columns else None
-            objetivos_cumplidos = int(pai_g[estado_pai_col].fillna("").astype(str).str.upper().isin(["CUMPLIDO", "CERRADO", "COMPLETADO", "FINALIZADO"]).sum()) if estado_pai_col else 0
+            # ---------------- Indicadores derivados ----------------
+            cobertura_pai = _g_pct(personas_pai, personas_periodo) if personas_periodo else 0.0
+            cobertura_enf = _g_pct(personas_enf, personas_periodo) if personas_periodo else 0.0
+            cobertura_seg = _g_pct(personas_seg, personas_pai) if personas_pai else 0.0
+            tasa_activos = _g_pct(activos_g, poblacion_registrada)
+            densidad_obj = round(objetivos_total / personas_pai, 2) if personas_pai else 0.0
 
-            st.markdown("#### 📌 Gestión en cifras")
-            a,b,c,d = st.columns(4)
-            a.metric("Personas atendidas en el periodo", personas_periodo if mov_fecha else "Por validar")
-            b.metric("Personas activas hoy", activos_g)
-            c.metric("Activos Urbano", urbano_g)
-            d.metric("Activos Granja", granja_g)
-            e,f,g,h = st.columns(4)
-            e.metric("Acciones de política pública", total_acciones if acciones_fecha else "Por validar")
-            f.metric("Participantes únicos", participantes_acc if doc_acc else "Por validar")
-            g.metric("Personas con PAI en el periodo", personas_pai if pai_fecha else "Por validar")
-            h.metric("Objetivos PAI cumplidos", objetivos_cumplidos if estado_pai_col else "Por validar")
+            # ========================================================
+            # PRESENTACIÓN DEL INFORME
+            # ========================================================
+            st.markdown("## 📘 Informe de Gestión Institucional")
+            st.markdown(f"**Periodo analizado:** {fecha_desde_gestion.strftime('%d/%m/%Y')} al {fecha_hasta_gestion.strftime('%d/%m/%Y')}  ")
+            st.caption("Las cifras de periodo se filtran por fecha cuando la tabla dispone de un campo temporal identificable. Los indicadores de estado actual se señalan expresamente.")
 
-            st.info("'Personas atendidas' = personas únicas con movimientos en el periodo. Los activos son estado actual. Si una tabla no permite identificar fecha, el indicador se marca 'Por validar'.")
-            st.markdown("#### 🧭 Guion ejecutivo · 4 diapositivas")
-            st.markdown(
-                "**1. Gestión en cifras.** " + (str(personas_periodo) if mov_fecha else "[validar]") + " personas únicas con movimiento; " + str(activos_g) + " activas actualmente (" + str(urbano_g) + " Urbano y " + str(granja_g) + " Granja).  \n"
-                "**2. Atención integral y resultados.** " + (str(personas_pai) if pai_fecha else "[validar]") + " personas con PAI y " + (str(objetivos_cumplidos) if estado_pai_col else "[validar]") + " objetivos cumplidos/cerrados.  \n"
-                "**3. Política pública y gestión basada en evidencia.** " + (str(total_acciones) if acciones_fecha else "[validar]") + " registros de acciones, " + (str(participantes_acc) if doc_acc else "[validar]") + " participantes únicos y " + (str(lineas_acc) if codigo_acc else "[validar]") + " líneas/códigos.  \n"
-                "**4. Respuesta al sismo.** Completar solo con cifras verificables de la contingencia: personas protegidas/trasladadas, continuidad del servicio, capacidad utilizada y acciones de respuesta."
+            st.markdown("### 1. Resumen ejecutivo")
+            resumen_txt = (
+                f"Durante el periodo analizado, el Observatorio Social identifica **{personas_periodo:,} personas únicas con movimientos registrados** y "
+                f"**{movimientos_total:,} movimientos institucionales**. A la fecha del corte permanecen **{activos_g:,} personas activas**, "
+                f"de las cuales **{urbano_g:,}** se encuentran en modalidad Urbano y **{granja_g:,}** en Granja. "
+                f"La gestión PAI del periodo comprende **{personas_pai:,} personas únicas**, **{objetivos_total:,} objetivos** y "
+                f"**{objetivos_cumplidos:,} objetivos cumplidos/cerrados**, equivalente a un cumplimiento de **{pct_cumpl_obj:.1f}%** de los objetivos registrados en el corte."
+            )
+            st.info(resumen_txt)
+
+            st.markdown("### 2. Tablero estratégico de resultados")
+            r1,r2,r3,r4 = st.columns(4)
+            r1.metric("Personas únicas atendidas", f"{personas_periodo:,}", help="Personas únicas con movimientos dentro del periodo seleccionado.")
+            r2.metric("Activas a la fecha", f"{activos_g:,}", help="Estado actual, no acumulado del periodo.")
+            r3.metric("Cobertura Habitabilidad", f"{pct_hab:.1f}%", f"{cobertura_hab_activos}/{activos_g} activos")
+            r4.metric("Cobertura PAI*", f"{cobertura_pai:.1f}%", f"{personas_pai}/{personas_periodo} personas")
+            r5,r6,r7,r8 = st.columns(4)
+            r5.metric("Objetivos PAI", f"{objetivos_total:,}", f"{densidad_obj:.2f} por persona PAI")
+            r6.metric("Cumplimiento objetivos", f"{pct_cumpl_obj:.1f}%", f"{objetivos_cumplidos}/{objetivos_total}")
+            r7.metric("Seguimientos PAI", f"{seguimientos_total:,}", f"{intensidad_seg:.2f} por persona seguida")
+            r8.metric("Atenciones Enfermería", f"{atenciones_enf:,}", f"{personas_enf} personas únicas")
+            st.caption("*Cobertura PAI usa como denominador las personas únicas con movimiento en el periodo; es un indicador de alcance operativo, no una obligación universal de formular PAI a toda persona atendida.")
+
+            st.markdown("### 3. Indicadores de gestión, resultado y calidad")
+            indicadores = pd.DataFrame([
+                ["Alcance", "Personas únicas con movimiento", personas_periodo, "Personas", "Periodo", "Cobertura real sin duplicar reingresos"],
+                ["Operación", "Personas activas", activos_g, "Personas", "Estado actual", f"{tasa_activos:.1f}% de la población registrada permanece activa"],
+                ["Caracterización", "Cobertura Habitabilidad en Calle", pct_hab, "%", "Estado actual", f"{cobertura_hab_activos} de {activos_g} activos"],
+                ["PAI", "Cobertura operativa PAI", cobertura_pai, "%", "Periodo", f"{personas_pai} personas únicas con objetivos PAI"],
+                ["PAI", "Cumplimiento de objetivos", pct_cumpl_obj, "%", "Periodo", f"{objetivos_cumplidos} de {objetivos_total} objetivos"],
+                ["PAI", "Avance promedio de objetivos", avance_promedio, "%", "Periodo", "Promedio del porcentaje de avance registrado"],
+                ["Seguimiento", "Personas PAI con seguimiento", cobertura_seg, "%", "Periodo", f"{personas_seg} personas con seguimiento"],
+                ["Salud", "Cobertura de Enfermería", cobertura_enf, "%", "Periodo", f"{personas_enf} personas con registros de Enfermería"],
+                ["Política pública", "Registros de acciones", total_acciones, "Registros", "Periodo" if acciones_fecha else "Sin fecha verificable", f"{participantes_acc} participantes únicos; {lineas_acc} líneas/códigos"],
+            ], columns=["Dimensión","Indicador","Resultado","Unidad","Temporalidad","Lectura"])
+            st.dataframe(indicadores, use_container_width=True, hide_index=True)
+
+            st.markdown("### 4. Atención integral y capacidad operativa")
+            c1,c2,c3,c4 = st.columns(4)
+            c1.metric("Movimientos registrados", f"{movimientos_total:,}")
+            c2.metric("Ingresos detectados", f"{ingresos:,}")
+            c3.metric("Reingresos detectados", f"{reingresos:,}")
+            c4.metric("Egresos detectados", f"{egresos:,}")
+            st.write(
+                f"La operación muestra una atención distribuida entre **Urbano ({urbano_g})** y **Granja ({granja_g})**. "
+                f"En la dimensión de salud se registran **{atenciones_enf:,} atenciones de Enfermería** sobre **{personas_enf:,} personas únicas**. "
+                f"En PAI se observan **{seguimientos_total:,} seguimientos**, con una intensidad media de **{intensidad_seg:.2f} seguimientos por persona seguida**."
             )
 
-            with st.expander("🔎 Validación y trazabilidad de las cifras", expanded=False):
-                st.write("**Movimientos del periodo:**", len(mov_g), "registros")
-                if not mov_g.empty:
-                    st.dataframe(mov_g, use_container_width=True, hide_index=True)
-                    st.download_button("⬇️ Descargar movimientos CSV", mov_g.to_csv(index=False).encode("utf-8-sig"), "gestion_2026_movimientos.csv", "text/csv", key="dl_gestion_mov_v16229")
-                st.write("**Acciones de política pública:**", len(acciones_g), "registros")
-                if not acciones_g.empty:
-                    st.dataframe(acciones_g, use_container_width=True, hide_index=True)
-                    st.download_button("⬇️ Descargar acciones CSV", acciones_g.to_csv(index=False).encode("utf-8-sig"), "gestion_2026_acciones_politica.csv", "text/csv", key="dl_gestion_acc_v16229")
-                st.write("**Objetivos PAI del periodo:**", len(pai_g), "registros")
-                if not pai_g.empty:
-                    st.dataframe(pai_g, use_container_width=True, hide_index=True)
-                    st.download_button("⬇️ Descargar PAI CSV", pai_g.to_csv(index=False).encode("utf-8-sig"), "gestion_2026_pai.csv", "text/csv", key="dl_gestion_pai_v16229")
+            st.markdown("### 5. PAI: avance, cumplimiento y lectura de resultados")
+            p1,p2,p3,p4 = st.columns(4)
+            p1.metric("Personas únicas con PAI", f"{personas_pai:,}")
+            p2.metric("Objetivos registrados", f"{objetivos_total:,}")
+            p3.metric("Objetivos cumplidos", f"{objetivos_cumplidos:,}")
+            p4.metric("Avance promedio", f"{avance_promedio:.1f}%")
+            if objetivos_total:
+                st.progress(min(max(pct_cumpl_obj/100,0.0),1.0), text=f"Cumplimiento de objetivos: {pct_cumpl_obj:.1f}%")
+            if pct_cumpl_obj >= 60:
+                lectura_pai = "El corte evidencia una proporción mayoritaria de objetivos cerrados/cumplidos respecto del total registrado."
+            elif pct_cumpl_obj >= 30:
+                lectura_pai = "El corte evidencia avance intermedio: existe una base relevante de objetivos cumplidos, pero permanece una proporción importante en proceso."
+            else:
+                lectura_pai = "El corte muestra predominio de objetivos aún en proceso; conviene interpretar el dato junto con fechas meta, antigüedad y seguimientos antes de concluir bajo desempeño."
+            st.info("**Inferencia de gestión:** " + lectura_pai + " Esta lectura es descriptiva y no establece causalidad.")
+
+            st.markdown("### 6. Contribución a los Objetivos de Desarrollo Sostenible (ODS)")
+            st.caption("Se reporta contribución programática derivada de los objetivos PAI; no equivale al cumplimiento municipal o global de un ODS.")
+            if ods_resumen.empty:
+                st.warning("No hay clasificación ODS suficiente en los objetivos PAI del corte para construir este análisis.")
+            else:
+                tabla_ods = ods_resumen[["ODS","personas","objetivos","cumplidos","cumplimiento_%","avance_promedio"]].rename(columns={"personas":"Personas","objetivos":"Objetivos","cumplidos":"Cumplidos","cumplimiento_%":"Cumplimiento %","avance_promedio":"Avance promedio %"})
+                st.dataframe(tabla_ods, use_container_width=True, hide_index=True)
+                fig_g_ods = px.bar(ods_resumen.sort_values("personas"), x="personas", y="ODS", orientation="h", text="personas", title="Personas vinculadas a objetivos PAI por ODS")
+                st.plotly_chart(fig_g_ods, use_container_width=True)
+                ods_top = ods_resumen.sort_values(["personas","objetivos"], ascending=False).iloc[0]
+                st.info(f"**Inferencia ODS:** la mayor concentración de alcance del corte se observa en **{ods_top['ODS']}**, con **{int(ods_top['personas'])} personas** y **{int(ods_top['objetivos'])} objetivos**. Esto indica dónde se concentra la contribución programática registrada, no el cumplimiento total del ODS.")
+
+            st.markdown("### 7. Política pública y gestión basada en evidencia")
+            pp1,pp2,pp3,pp4 = st.columns(4)
+            pp1.metric("Registros de acciones", f"{total_acciones:,}" if acciones_fecha else "Revisar fecha")
+            pp2.metric("Participantes únicos", f"{participantes_acc:,}")
+            pp3.metric("Líneas / códigos", f"{lineas_acc:,}")
+            pp4.metric("Profesionales identificados", f"{profesionales_acc:,}")
+            if not acciones_fecha and total_acciones:
+                st.warning("La tabla de acciones contiene registros, pero no fue posible identificar automáticamente una columna de fecha válida. No se presenta el total como cifra oficial del periodo hasta validar ese campo.")
+            elif acciones_fecha:
+                st.success(f"Las acciones fueron filtradas por `{acciones_fecha}` para el periodo seleccionado.")
+
+            st.markdown("### 8. Inferencias ejecutivas y alertas para decisión")
+            inferencias = []
+            if pct_hab >= 90:
+                inferencias.append(f"**Alta cobertura de caracterización especializada:** {pct_hab:.1f}% de los activos cuenta con Habitabilidad en Calle; el reto se concentra en el remanente no caracterizado.")
+            elif activos_g:
+                inferencias.append(f"**Brecha de caracterización:** {100-pct_hab:.1f}% de los activos aún no aparece cubierto por Habitabilidad en Calle, lo que limita la completitud analítica del Observatorio.")
+            if personas_pai and densidad_obj > 1:
+                inferencias.append(f"**Intervención multidimensional:** cada persona con PAI registra en promedio {densidad_obj:.2f} objetivos, lo que sugiere abordajes con más de una dimensión de intervención.")
+            if cobertura_seg < 70 and personas_pai:
+                inferencias.append(f"**Alerta de seguimiento:** {cobertura_seg:.1f}% de las personas con PAI presenta seguimiento en el corte; conviene revisar objetivos abiertos sin seguimiento reciente.")
+            if urbano_g + granja_g == activos_g and activos_g:
+                inferencias.append(f"**Consistencia operativa:** la distribución Urbano + Granja ({urbano_g}+{granja_g}) concilia con el total de activos ({activos_g}).")
+            for item in inferencias:
+                st.markdown("- " + item)
+            st.caption("Las inferencias son lecturas analíticas de los registros. No sustituyen valoración profesional ni demuestran causalidad por sí solas.")
+
+            st.markdown("### 9. Emergencia por sismo · bloque para reporte oficial")
+            st.info(
+                "Este bloque debe reportar únicamente evidencia verificable de la contingencia: población protegida, traslados o reubicaciones, "
+                "continuidad del servicio, capacidad utilizada y acciones ejecutadas. El sistema no atribuye automáticamente movimientos al sismo si el registro no lo identifica expresamente."
+            )
+            s1,s2,s3 = st.columns(3)
+            s1.number_input("Personas protegidas / atendidas durante la contingencia", min_value=0, step=1, key="sismo_personas_v16230")
+            s2.number_input("Personas trasladadas o reubicadas", min_value=0, step=1, key="sismo_traslados_v16230")
+            s3.number_input("Horas de continuidad / respuesta documentadas", min_value=0.0, step=1.0, key="sismo_horas_v16230")
+            st.text_area("Acciones verificables desarrolladas durante la emergencia", placeholder="Describa únicamente acciones con soporte institucional...", key="sismo_acciones_v16230")
+            st.text_area("Soportes / fuente de verificación", placeholder="Actas, listados, reportes, registros del albergue, comunicaciones...", key="sismo_soportes_v16230")
+
+            st.markdown("### 10. Matriz ejecutiva para las 4 diapositivas")
+            diapositivas = pd.DataFrame([
+                ["1 · Gestión en cifras", f"{personas_periodo} personas únicas atendidas; {activos_g} activas ({urbano_g} Urbano / {granja_g} Granja).", "Alcance, operación y cobertura"],
+                ["2 · Atención integral y resultados", f"{personas_pai} personas con PAI; {objetivos_total} objetivos; {objetivos_cumplidos} cumplidos; {seguimientos_total} seguimientos; {atenciones_enf} atenciones de Enfermería.", "Resultados, seguimiento y salud"],
+                ["3 · Política pública + ODS", f"{total_acciones if acciones_fecha else 'Por validar'} acciones; {participantes_acc} participantes únicos; {lineas_acc} líneas/códigos. Contribución ODS calculada desde PAI.", "Incidencia programática y evidencia"],
+                ["4 · Respuesta al sismo", "Completar con los campos verificables del bloque de emergencia.", "Continuidad, protección y respuesta"],
+            ], columns=["Diapositiva","Mensaje central","Enfoque"])
+            st.dataframe(diapositivas, use_container_width=True, hide_index=True)
+
+            with st.expander("🔎 Auditoría, trazabilidad y calidad del dato", expanded=False):
+                st.markdown("**Reglas de cálculo usadas**")
+                st.markdown(
+                    "- Personas = documentos únicos, no número de registros.\n"
+                    "- Activos = estado actual en la base maestra.\n"
+                    "- Cumplimiento PAI = objetivo con avance ≥100% o estado cumplido/cerrado/completado/finalizado.\n"
+                    "- ODS = contribución derivada de `ods_principal` en objetivos PAI.\n"
+                    "- Los datos sin columna de fecha identificable no se presentan como resultado oficial del periodo."
+                )
+                for titulo, dfx, nombre_csv in [
+                    ("Movimientos del periodo", mov_g, "gestion_movimientos.csv"),
+                    ("Caracterización Habitabilidad", car_hab, "gestion_habitabilidad.csv"),
+                    ("Enfermería", enf_g, "gestion_enfermeria.csv"),
+                    ("Objetivos PAI", pai_g, "gestion_pai.csv"),
+                    ("Seguimientos PAI", seg_g, "gestion_seguimientos.csv"),
+                    ("Acciones de política pública", acciones_g, "gestion_politica_publica.csv"),
+                ]:
+                    with st.expander(f"📂 {titulo} · {len(dfx)} registros", expanded=False):
+                        if dfx.empty:
+                            st.info("Sin registros disponibles para este corte o tabla no disponible.")
+                        else:
+                            st.dataframe(dfx, use_container_width=True, hide_index=True)
+                            st.download_button("⬇️ Descargar evidencia CSV", dfx.to_csv(index=False).encode("utf-8-sig"), nombre_csv, "text/csv", key="dl_"+nombre_csv)
+
 
     # ------------------------------------------------------------
     # FUNCIONES LOCALES DEL MÓDULO
