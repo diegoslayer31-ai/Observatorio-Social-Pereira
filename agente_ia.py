@@ -19459,6 +19459,100 @@ def modulo_reportes_institucionales_v169():
         "Los indicadores, gráficas y exportaciones responden a los filtros seleccionados."
     )
 
+    # ============================================================
+    # V16.229 - INFORME DE GESTIÓN 2026 · CORTE ALCALDÍA
+    # ============================================================
+    with st.expander("🏛️ Informe de Gestión 2026 · Corte Alcaldía", expanded=False):
+        st.caption("Corte ejecutivo desde los registros del Observatorio Social, con trazabilidad para validar las cifras antes de reportarlas.")
+        hoy_gestion = ahora_colombia().date()
+        g1, g2 = st.columns(2)
+        fecha_desde_gestion = g1.date_input("Desde", value=date(2026, 1, 1), key="gestion_2026_desde_v16229")
+        fecha_hasta_gestion = g2.date_input("Hasta", value=hoy_gestion, max_value=hoy_gestion, key="gestion_2026_hasta_v16229")
+
+        if fecha_desde_gestion > fecha_hasta_gestion:
+            st.error("La fecha inicial no puede ser posterior a la fecha final.")
+        else:
+            def _gestion_columnas(nombre):
+                try:
+                    q = pd.read_sql(text("SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name=:t"), engine, params={"t": nombre})
+                    return set(q["column_name"].astype(str))
+                except Exception:
+                    return set()
+
+            def _gestion_cargar_periodo(tabla, candidatos_fecha):
+                cols = _gestion_columnas(tabla)
+                if not cols:
+                    return pd.DataFrame(), None
+                fc = next((c for c in candidatos_fecha if c in cols), None)
+                try:
+                    if fc:
+                        sql = 'SELECT * FROM "' + tabla + '" WHERE CAST("' + fc + '" AS DATE) BETWEEN :d AND :h'
+                        return pd.read_sql(text(sql), engine, params={"d": fecha_desde_gestion, "h": fecha_hasta_gestion}), fc
+                    return pd.read_sql(text('SELECT * FROM "' + tabla + '"'), engine), None
+                except Exception:
+                    return pd.DataFrame(), fc
+
+            mov_g, mov_fecha = _gestion_cargar_periodo("movimientos_habitante", ["fecha_movimiento", "fecha", "created_at", "fecha_registro"])
+            doc_mov = next((c for c in ["numero_identificacion", "documento_usuario", "numero_identidad"] if c in mov_g.columns), None)
+            personas_periodo = int(mov_g[doc_mov].astype(str).str.strip().replace("", pd.NA).dropna().nunique()) if doc_mov else 0
+
+            base_g = cargar_habitante_completo_v16205().copy()
+            estado_g = base_g.get("estado_caso", pd.Series(index=base_g.index, dtype="object")).fillna("").astype(str).str.upper().str.strip()
+            modalidad_g = base_g.get("modalidad", pd.Series(index=base_g.index, dtype="object")).fillna("").astype(str).str.upper().str.strip()
+            activos_g = int(estado_g.eq("ACTIVO").sum())
+            urbano_g = int((estado_g.eq("ACTIVO") & modalidad_g.eq("URBANO")).sum())
+            granja_g = int((estado_g.eq("ACTIVO") & modalidad_g.eq("GRANJA")).sum())
+
+            acciones_g, acciones_fecha = _gestion_cargar_periodo("acciones_profesionales", ["fecha", "fecha_actividad", "fecha_registro", "created_at"])
+            if acciones_g.empty:
+                acciones_g, acciones_fecha = _gestion_cargar_periodo("acciones_politica_publica", ["fecha", "fecha_actividad", "fecha_registro", "created_at"])
+            doc_acc = next((c for c in ["numero_identificacion", "documento_usuario", "documento", "usuario_documento"] if c in acciones_g.columns), None)
+            codigo_acc = next((c for c in ["codigo", "codigo_accion", "accion", "actividad", "linea"] if c in acciones_g.columns), None)
+            total_acciones = int(len(acciones_g))
+            participantes_acc = int(acciones_g[doc_acc].astype(str).str.strip().replace("", pd.NA).dropna().nunique()) if doc_acc else 0
+            lineas_acc = int(acciones_g[codigo_acc].astype(str).str.strip().replace("", pd.NA).dropna().nunique()) if codigo_acc else 0
+
+            pai_g, pai_fecha = _gestion_cargar_periodo("pai_objetivos", ["fecha_apertura", "fecha", "created_at", "fecha_registro"])
+            doc_pai = next((c for c in ["documento_usuario", "numero_identificacion"] if c in pai_g.columns), None)
+            personas_pai = int(pai_g[doc_pai].astype(str).str.strip().replace("", pd.NA).dropna().nunique()) if doc_pai else 0
+            estado_pai_col = "estado" if "estado" in pai_g.columns else None
+            objetivos_cumplidos = int(pai_g[estado_pai_col].fillna("").astype(str).str.upper().isin(["CUMPLIDO", "CERRADO", "COMPLETADO", "FINALIZADO"]).sum()) if estado_pai_col else 0
+
+            st.markdown("#### 📌 Gestión en cifras")
+            a,b,c,d = st.columns(4)
+            a.metric("Personas atendidas en el periodo", personas_periodo if mov_fecha else "Por validar")
+            b.metric("Personas activas hoy", activos_g)
+            c.metric("Activos Urbano", urbano_g)
+            d.metric("Activos Granja", granja_g)
+            e,f,g,h = st.columns(4)
+            e.metric("Acciones de política pública", total_acciones if acciones_fecha else "Por validar")
+            f.metric("Participantes únicos", participantes_acc if doc_acc else "Por validar")
+            g.metric("Personas con PAI en el periodo", personas_pai if pai_fecha else "Por validar")
+            h.metric("Objetivos PAI cumplidos", objetivos_cumplidos if estado_pai_col else "Por validar")
+
+            st.info("'Personas atendidas' = personas únicas con movimientos en el periodo. Los activos son estado actual. Si una tabla no permite identificar fecha, el indicador se marca 'Por validar'.")
+            st.markdown("#### 🧭 Guion ejecutivo · 4 diapositivas")
+            st.markdown(
+                "**1. Gestión en cifras.** " + (str(personas_periodo) if mov_fecha else "[validar]") + " personas únicas con movimiento; " + str(activos_g) + " activas actualmente (" + str(urbano_g) + " Urbano y " + str(granja_g) + " Granja).  \n"
+                "**2. Atención integral y resultados.** " + (str(personas_pai) if pai_fecha else "[validar]") + " personas con PAI y " + (str(objetivos_cumplidos) if estado_pai_col else "[validar]") + " objetivos cumplidos/cerrados.  \n"
+                "**3. Política pública y gestión basada en evidencia.** " + (str(total_acciones) if acciones_fecha else "[validar]") + " registros de acciones, " + (str(participantes_acc) if doc_acc else "[validar]") + " participantes únicos y " + (str(lineas_acc) if codigo_acc else "[validar]") + " líneas/códigos.  \n"
+                "**4. Respuesta al sismo.** Completar solo con cifras verificables de la contingencia: personas protegidas/trasladadas, continuidad del servicio, capacidad utilizada y acciones de respuesta."
+            )
+
+            with st.expander("🔎 Validación y trazabilidad de las cifras", expanded=False):
+                st.write("**Movimientos del periodo:**", len(mov_g), "registros")
+                if not mov_g.empty:
+                    st.dataframe(mov_g, use_container_width=True, hide_index=True)
+                    st.download_button("⬇️ Descargar movimientos CSV", mov_g.to_csv(index=False).encode("utf-8-sig"), "gestion_2026_movimientos.csv", "text/csv", key="dl_gestion_mov_v16229")
+                st.write("**Acciones de política pública:**", len(acciones_g), "registros")
+                if not acciones_g.empty:
+                    st.dataframe(acciones_g, use_container_width=True, hide_index=True)
+                    st.download_button("⬇️ Descargar acciones CSV", acciones_g.to_csv(index=False).encode("utf-8-sig"), "gestion_2026_acciones_politica.csv", "text/csv", key="dl_gestion_acc_v16229")
+                st.write("**Objetivos PAI del periodo:**", len(pai_g), "registros")
+                if not pai_g.empty:
+                    st.dataframe(pai_g, use_container_width=True, hide_index=True)
+                    st.download_button("⬇️ Descargar PAI CSV", pai_g.to_csv(index=False).encode("utf-8-sig"), "gestion_2026_pai.csv", "text/csv", key="dl_gestion_pai_v16229")
+
     # ------------------------------------------------------------
     # FUNCIONES LOCALES DEL MÓDULO
     # ------------------------------------------------------------
