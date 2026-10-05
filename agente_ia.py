@@ -19529,6 +19529,58 @@ def modulo_reportes_institucionales_v169():
                 reingresos = int(sm.str.contains("REINGRES", regex=False).sum())
                 egresos = int(sm.str.contains("EGRES", regex=False).sum())
 
+            # ---------------- Egresos formales registrados ----------------
+            # V16.232: el informe institucional usa la fuente formal de egresos
+            # (personas_caracterizacion), NO movimientos, permisos o salidas temporales.
+            try:
+                egresos_formales_g = pd.read_sql(text("""
+                    SELECT * FROM personas_caracterizacion
+                    WHERE UPPER(TRIM(COALESCE(estado_caso,'')))='EGRESADO'
+                """), engine)
+            except Exception:
+                egresos_formales_g = pd.DataFrame()
+
+            egresos_registrados_total = int(len(egresos_formales_g))
+            egresos_no_fallecimiento_g = _filtrar_egresos_impacto_v16154(egresos_formales_g) if not egresos_formales_g.empty else pd.DataFrame()
+            egresos_gestion_total = int(len(egresos_no_fallecimiento_g))
+
+            # Corte temporal por fecha formal de egreso cuando la columna existe.
+            egresos_periodo_g = egresos_no_fallecimiento_g.copy()
+            fecha_egreso_col_g = _g_col(egresos_periodo_g, ["fecha_egreso", "fecha_salida", "fecha_cierre", "updated_at", "created_at"])
+            if fecha_egreso_col_g and not egresos_periodo_g.empty:
+                _fe = pd.to_datetime(egresos_periodo_g[fecha_egreso_col_g], errors="coerce")
+                egresos_periodo_g = egresos_periodo_g.loc[(_fe.dt.date >= fecha_desde_gestion) & (_fe.dt.date <= fecha_hasta_gestion)].copy()
+            egresos_periodo_total = int(len(egresos_periodo_g))
+
+            # Clasificación descriptiva del motivo. No convierte automáticamente todo egreso en caso exitoso.
+            def _clasificar_egreso_gestion_v16232(v):
+                import unicodedata
+                t = str(v or '').strip().upper()
+                t = unicodedata.normalize('NFKD', t)
+                t = ''.join(c for c in t if not unicodedata.combining(c))
+                if 'FALLEC' in t:
+                    return 'Fallecimiento (excluido de egreso de gestión)'
+                favorables = ['VINCULACION FAMILIAR','VINCULACION LABORAL','EMPLEABIL','PLAN RETORNO','PLAN DE RETORNO','EMPRENDIMIENTO','INDEPEND','APARTAESTUDIO','CASO EXITOS','CENTRO DE PROTECCION','CPSAM','ALBERGUE DE VICTIMAS']
+                if any(x in t for x in favorables):
+                    return 'Resultado favorable / protección'
+                if 'VOLUNTAR' in t:
+                    return 'Salida voluntaria'
+                if 'EXPULS' in t or 'DISCIPLIN' in t or 'SANCION' in t:
+                    return 'Cierre administrativo / convivencia'
+                if not t or t in ('NAN','NONE','NULL','SIN OBSERVACION'):
+                    return 'Sin motivo clasificado'
+                return 'Otro motivo registrado'
+
+            if not egresos_formales_g.empty:
+                _obs_col = _g_col(egresos_formales_g, ["observaciones_egreso", "motivo_egreso", "observacion_egreso", "observaciones"])
+                if _obs_col:
+                    egresos_formales_g["clasificacion_gestion"] = egresos_formales_g[_obs_col].apply(_clasificar_egreso_gestion_v16232)
+                    resumen_egresos_g = egresos_formales_g["clasificacion_gestion"].value_counts().rename_axis("Clasificación").reset_index(name="Cantidad")
+                else:
+                    resumen_egresos_g = pd.DataFrame(columns=["Clasificación","Cantidad"])
+            else:
+                resumen_egresos_g = pd.DataFrame(columns=["Clasificación","Cantidad"])
+
             # ---------------- Caracterización especializada ----------------
             car_hab, car_fecha = _g_load("caracterizacion_habitabilidad_calle", ["fecha_caracterizacion", "fecha", "created_at", "fecha_registro", "updated_at"])
             personas_car_hab = _g_unique(car_hab, ["numero_identificacion", "documento_usuario", "documento"])
@@ -19596,7 +19648,32 @@ def modulo_reportes_institucionales_v169():
                     ods_resumen["ODS"] = ods_resumen["_ods"].map(lambda x: f"{x} · {ods_catalogo_g.get(x,'Contribución programática')}")
 
             # ---------------- Política pública ----------------
-            acciones_g, acciones_fecha = _g_load("acciones_profesionales", ["fecha", "fecha_actividad", "fecha_registro", "created_at"])
+            # V16.231: usar la fuente REAL del módulo Acciones Política Pública.
+            # El módulo operativo guarda en politica_publica_registros y participantes,
+            # no en acciones_profesionales.
+            try:
+                acciones_g = pd.read_sql(
+                    text("""
+                        SELECT r.*, COUNT(p.id)::int AS participantes_registro
+                        FROM politica_publica_registros r
+                        LEFT JOIN politica_publica_participantes p ON p.registro_id=r.id
+                        WHERE r.fecha_accion BETWEEN :d AND :h
+                        GROUP BY r.id
+                        ORDER BY r.fecha_accion
+                    """), engine, params={"d": fecha_desde_gestion, "h": fecha_hasta_gestion}
+                )
+                acciones_fecha = "fecha_accion"
+                participantes_pp_g = pd.read_sql(
+                    text("""
+                        SELECT p.registro_id, p.documento_usuario, p.nombre_usuario, p.modalidad_usuario
+                        FROM politica_publica_participantes p
+                        JOIN politica_publica_registros r ON r.id=p.registro_id
+                        WHERE r.fecha_accion BETWEEN :d AND :h
+                    """), engine, params={"d": fecha_desde_gestion, "h": fecha_hasta_gestion}
+                )
+            except Exception:
+                acciones_g, acciones_fecha = pd.DataFrame(), None
+                participantes_pp_g = pd.DataFrame()
             if acciones_g.empty:
                 acciones_g, acciones_fecha = _g_load("acciones_politica_publica", ["fecha", "fecha_actividad", "fecha_registro", "created_at"])
             total_acciones = int(len(acciones_g))
@@ -19661,7 +19738,12 @@ def modulo_reportes_institucionales_v169():
             c1.metric("Movimientos registrados", f"{movimientos_total:,}")
             c2.metric("Ingresos detectados", f"{ingresos:,}")
             c3.metric("Reingresos detectados", f"{reingresos:,}")
-            c4.metric("Egresos detectados", f"{egresos:,}")
+            c4.metric("Egresos formales registrados", f"{egresos_registrados_total:,}", help="Fuente: personas_caracterizacion con estado EGRESADO. No usa movimientos, permisos ni regresos de permiso.")
+            st.caption(f"En el corte seleccionado se identifican **{egresos_periodo_total:,} egresos formales** con fecha verificable. Del acumulado formal, **{egresos_gestion_total:,}** permanecen al excluir fallecimientos del indicador de egreso de gestión.")
+            if not resumen_egresos_g.empty:
+                with st.expander("🔎 Ver composición de los egresos registrados"):
+                    st.dataframe(resumen_egresos_g, use_container_width=True, hide_index=True)
+                    st.caption("La clasificación es descriptiva y se construye a partir del motivo/observación registrado. Una salida voluntaria no se presenta como resultado favorable. Los fallecimientos permanecen en la historia administrativa, pero se excluyen del indicador de egreso de gestión.")
             st.write(
                 f"La operación muestra una atención distribuida entre **Urbano ({urbano_g})** y **Granja ({granja_g})**. "
                 f"En la dimensión de salud se registran **{atenciones_enf:,} atenciones de Enfermería** sobre **{personas_enf:,} personas únicas**. "
@@ -19723,7 +19805,80 @@ def modulo_reportes_institucionales_v169():
                 st.markdown("- " + item)
             st.caption("Las inferencias son lecturas analíticas de los registros. No sustituyen valoración profesional ni demuestran causalidad por sí solas.")
 
-            st.markdown("### 9. Emergencia por sismo · bloque para reporte oficial")
+            st.markdown("### 9. Lectura de cambio y defensa técnica del programa")
+            st.caption("El análisis diferencia productos, resultados observados e inferencias. No atribuye causalidad cuando la base no permite demostrarla.")
+            fortalezas = []
+            brechas = []
+            if personas_periodo:
+                fortalezas.append(f"El programa alcanzó **{personas_periodo:,} personas únicas** con movimientos institucionales durante el corte, evitando inflar el alcance por reingresos o múltiples registros.")
+            if pct_hab:
+                fortalezas.append(f"La caracterización especializada cubre **{pct_hab:.1f}%** de la población activa ({cobertura_hab_activos}/{activos_g}), fortaleciendo la toma de decisiones basada en información individual y territorial.")
+            if personas_pai:
+                fortalezas.append(f"**{personas_pai:,} personas únicas** cuentan con objetivos PAI en el periodo; se formularon **{objetivos_total:,} objetivos**, con **{objetivos_cumplidos:,} cumplidos/cerrados** y avance promedio de **{avance_promedio:.1f}%**.")
+            if seguimientos_total:
+                fortalezas.append(f"Se documentaron **{seguimientos_total:,} seguimientos PAI** sobre **{personas_seg:,} personas**, evidenciando continuidad de intervención y no únicamente atención de ingreso.")
+            if personas_enf:
+                fortalezas.append(f"La dimensión de salud registra **{atenciones_enf:,} atenciones de Enfermería** para **{personas_enf:,} personas únicas**, aportando seguimiento sanitario dentro del modelo integral.")
+            if total_acciones:
+                fortalezas.append(f"Se registraron **{total_acciones:,} acciones de Política Pública**, con **{participantes_acc:,} participantes únicos** y **{lineas_acc:,} líneas/códigos de acción**, demostrando gestión más allá de la atención intramural.")
+            if cobertura_seg < 70 and personas_pai:
+                brechas.append(f"La cobertura de seguimiento PAI es **{cobertura_seg:.1f}%**; debe priorizarse el cierre de la brecha de objetivos sin seguimiento reciente.")
+            if pct_hab < 90 and activos_g:
+                brechas.append(f"Queda una brecha de **{100-pct_hab:.1f}%** en caracterización especializada de población activa.")
+            st.markdown("**Resultados que respaldan la utilidad del programa**")
+            for x in fortalezas: st.markdown("- " + x)
+            if brechas:
+                st.markdown("**Retos de mejora identificados por el propio sistema**")
+                for x in brechas: st.markdown("- " + x)
+            st.info("**Lectura institucional:** la utilidad del programa no debe evaluarse únicamente por el número de egresos. La evidencia disponible permite valorar alcance, continuidad, caracterización, acceso a salud, formulación y cumplimiento de objetivos individuales, seguimiento, articulación de política pública y contribución programática a ODS. Los egresos son un resultado relevante, pero no el único resultado esperable en una población con alta complejidad y trayectorias de exclusión.")
+
+            # -------- PDF completo del informe --------
+            def _pdf_gestion_v16231():
+                from io import BytesIO
+                from reportlab.lib import colors
+                from reportlab.lib.pagesizes import A4
+                from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+                from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak
+                from reportlab.lib.enums import TA_CENTER
+                buf = BytesIO()
+                doc = SimpleDocTemplate(buf, pagesize=A4, rightMargin=36, leftMargin=36, topMargin=42, bottomMargin=42)
+                styles = getSampleStyleSheet()
+                title = ParagraphStyle('GT', parent=styles['Title'], alignment=TA_CENTER, fontSize=18, leading=22, spaceAfter=12)
+                h1 = ParagraphStyle('GH', parent=styles['Heading2'], fontSize=13, leading=16, spaceBefore=10, spaceAfter=6)
+                body = ParagraphStyle('GB', parent=styles['BodyText'], fontSize=9.5, leading=14, spaceAfter=7)
+                small = ParagraphStyle('GS', parent=styles['BodyText'], fontSize=8, leading=11)
+                story=[Paragraph('INFORME INSTITUCIONAL DE GESTIÓN 2026', title), Paragraph('Programa de atención integral a población habitante de calle', styles['Heading3']), Paragraph(f'Corte: {fecha_desde_gestion.strftime("%d/%m/%Y")} al {fecha_hasta_gestion.strftime("%d/%m/%Y")}', body)]
+                story += [Paragraph('1. Resumen ejecutivo', h1), Paragraph(resumen_txt.replace('**',''), body)]
+                datos=[['Indicador','Resultado'],['Personas únicas atendidas',f'{personas_periodo:,}'],['Activas a la fecha',f'{activos_g:,}'],['Urbano / Granja',f'{urbano_g:,} / {granja_g:,}'],['Cobertura Habitabilidad',f'{pct_hab:.1f}%'],['Personas únicas con PAI',f'{personas_pai:,}'],['Objetivos PAI',f'{objetivos_total:,}'],['Objetivos cumplidos/cerrados',f'{objetivos_cumplidos:,} ({pct_cumpl_obj:.1f}%)'],['Seguimientos PAI',f'{seguimientos_total:,}'],['Atenciones de Enfermería',f'{atenciones_enf:,}'],['Acciones de Política Pública',f'{total_acciones:,}'],['Participantes únicos en Política Pública',f'{participantes_acc:,}'],['Egresos formales registrados',f'{egresos_registrados_total:,}'],['Egresos formales en el corte',f'{egresos_periodo_total:,}']]
+                t=Table(datos, colWidths=[300,160], repeatRows=1); t.setStyle(TableStyle([('GRID',(0,0),(-1,-1),.3,colors.grey),('BACKGROUND',(0,0),(-1,0),colors.lightgrey),('FONTNAME',(0,0),(-1,0),'Helvetica-Bold'),('FONTSIZE',(0,0),(-1,-1),8.5),('VALIGN',(0,0),(-1,-1),'TOP'),('PADDING',(0,0),(-1,-1),5)])); story += [t]
+                story += [Paragraph('2. Alcance, continuidad y atención integral', h1), Paragraph(f'La gestión registrada muestra atención a {personas_periodo:,} personas únicas durante el corte y una operación actual de {activos_g:,} personas activas, distribuidas entre {urbano_g:,} en modalidad Urbano y {granja_g:,} en Granja. La lectura de gestión se realiza sobre personas únicas para evitar duplicar el alcance por reingresos o múltiples actuaciones.', body), Paragraph(f'En salud se registran {atenciones_enf:,} atenciones de Enfermería para {personas_enf:,} personas únicas. En intervención individual, {personas_pai:,} personas cuentan con objetivos PAI y se documentan {seguimientos_total:,} seguimientos, con una intensidad media de {intensidad_seg:.2f} por persona seguida.', body)]
+                story += [Paragraph('3. Egresos formales y lectura de resultados', h1), Paragraph(f'La fuente formal registra {egresos_registrados_total:,} egresos. Para el periodo seleccionado se identifican {egresos_periodo_total:,} egresos con fecha verificable. Este indicador se construye exclusivamente desde los registros con estado EGRESADO en personas_caracterizacion; no incorpora permisos, salidas temporales ni regresos de permiso. Los fallecimientos se conservan en la historia administrativa, pero se excluyen del indicador de egreso de gestión. La salida voluntaria se reporta como categoría independiente y no se interpreta automáticamente como resultado favorable.', body)]
+                story += [Paragraph('4. Resultados del PAI y mejoramiento observado', h1), Paragraph(f'El sistema registra {objetivos_total:,} objetivos PAI, de los cuales {objetivos_cumplidos:,} se encuentran cumplidos/cerrados. Esto representa {pct_cumpl_obj:.1f}% del universo de objetivos del corte y un avance promedio de {avance_promedio:.1f}%. Estos indicadores constituyen evidencia de progreso documentado en las rutas individuales; no deben interpretarse como causalidad exclusiva del programa sin un diseño de evaluación de impacto.', body)]
+                story += [Paragraph('5. Política pública, articulación e incidencia', h1), Paragraph(f'En el periodo se identifican {total_acciones:,} registros en el módulo de Política Pública, con {participantes_acc:,} participantes únicos, {lineas_acc:,} líneas/códigos y {profesionales_acc:,} profesionales identificados. Esta dimensión evidencia que la gestión no se limita a alojamiento: incorpora acciones de articulación, participación y seguimiento de compromisos institucionales.', body)]
+                story += [Paragraph('6. Contribución a los ODS', h1)]
+                if not ods_resumen.empty:
+                    od=[['ODS','Personas','Objetivos','Cumplidos','Cumpl. %','Avance %']]
+                    for _,r in ods_resumen.iterrows(): od.append([str(r['ODS']),str(int(r['personas'])),str(int(r['objetivos'])),str(int(r['cumplidos'])),f"{float(r['cumplimiento_%']):.1f}",f"{float(r['avance_promedio']):.1f}"])
+                    tt=Table(od,colWidths=[210,50,55,55,55,55],repeatRows=1); tt.setStyle(TableStyle([('GRID',(0,0),(-1,-1),.25,colors.grey),('BACKGROUND',(0,0),(-1,0),colors.lightgrey),('FONTSIZE',(0,0),(-1,-1),7),('VALIGN',(0,0),(-1,-1),'TOP')])); story.append(tt)
+                else: story.append(Paragraph('No existe clasificación ODS suficiente para el corte.', body))
+                story += [Paragraph('7. Lectura de efectividad y valor público', h1)]
+                for x in fortalezas: story.append(Paragraph('• '+x.replace('**',''), body))
+                story.append(Paragraph('La evidencia disponible permite defender el programa desde una lógica multidimensional: alcance efectivo, permanencia y continuidad de la atención, caracterización especializada, atención en salud, formulación y seguimiento de planes individuales, cumplimiento de objetivos, articulación de política pública y contribución a ODS. La cantidad de egresos no es, por sí sola, una medida suficiente de utilidad o efectividad.', body))
+                if brechas:
+                    story += [Paragraph('8. Brechas y oportunidades de mejora', h1)]
+                    for x in brechas: story.append(Paragraph('• '+x.replace('**',''), body))
+                story += [Paragraph('9. Nota metodológica', h1), Paragraph('Personas se calcula por documento único. Los indicadores de periodo usan fecha verificable cuando existe. Los indicadores de estado actual se identifican como tales. Cumplimiento PAI corresponde a objetivos con avance igual o superior a 100% o estado cumplido/cerrado/completado/finalizado. La contribución ODS deriva de la clasificación de objetivos PAI y no equivale al cumplimiento municipal o global de un ODS. Los fallecimientos no se presentan como egresos de impacto.', small)]
+                doc.build(story); buf.seek(0); return buf.getvalue()
+
+            st.markdown("### 10. Informe completo en PDF")
+            st.write("Genera un documento narrativo y técnico para sustentar la gestión, con indicadores, resultados, ODS, inferencias, brechas y nota metodológica.")
+            try:
+                pdf_gestion = _pdf_gestion_v16231()
+                st.download_button("📥 Descargar Informe Institucional de Gestión 2026 (PDF)", data=pdf_gestion, file_name=f"Informe_Gestion_Institucional_{fecha_hasta_gestion.strftime('%Y%m%d')}.pdf", mime="application/pdf", key="pdf_gestion_v16231")
+            except Exception as e_pdf:
+                st.error("No fue posible generar el PDF: " + str(e_pdf))
+
+            st.markdown("### 11. Emergencia por sismo · bloque para reporte oficial")
             st.info(
                 "Este bloque debe reportar únicamente evidencia verificable de la contingencia: población protegida, traslados o reubicaciones, "
                 "continuidad del servicio, capacidad utilizada y acciones ejecutadas. El sistema no atribuye automáticamente movimientos al sismo si el registro no lo identifica expresamente."
@@ -19735,7 +19890,7 @@ def modulo_reportes_institucionales_v169():
             st.text_area("Acciones verificables desarrolladas durante la emergencia", placeholder="Describa únicamente acciones con soporte institucional...", key="sismo_acciones_v16230")
             st.text_area("Soportes / fuente de verificación", placeholder="Actas, listados, reportes, registros del albergue, comunicaciones...", key="sismo_soportes_v16230")
 
-            st.markdown("### 10. Matriz ejecutiva para las 4 diapositivas")
+            st.markdown("### 12. Matriz ejecutiva para las 4 diapositivas")
             diapositivas = pd.DataFrame([
                 ["1 · Gestión en cifras", f"{personas_periodo} personas únicas atendidas; {activos_g} activas ({urbano_g} Urbano / {granja_g} Granja).", "Alcance, operación y cobertura"],
                 ["2 · Atención integral y resultados", f"{personas_pai} personas con PAI; {objetivos_total} objetivos; {objetivos_cumplidos} cumplidos; {seguimientos_total} seguimientos; {atenciones_enf} atenciones de Enfermería.", "Resultados, seguimiento y salud"],
