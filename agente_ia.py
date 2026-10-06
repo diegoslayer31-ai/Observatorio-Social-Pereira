@@ -19690,6 +19690,73 @@ def modulo_reportes_institucionales_v169():
             densidad_obj = round(objetivos_total / personas_pai, 2) if personas_pai else 0.0
 
             # ========================================================
+            # V16.233 - MEDICIÓN MULTIDIMENSIONAL DE PROGRESO VERIFICABLE
+            # ========================================================
+            # No es una escala clínica ni atribuye causalidad. Resume evidencia
+            # documental existente en la app para responder qué cambió/avanzó.
+            def _docs_set(df_, candidatos_):
+                if df_ is None or df_.empty:
+                    return set()
+                c_ = _g_col(df_, candidatos_)
+                if not c_:
+                    return set()
+                return set(df_[c_].dropna().astype(str).str.strip()) - {'', 'nan', 'None'}
+
+            docs_mov = _docs_set(mov_g, ['numero_identificacion','documento_usuario','numero_identidad','documento'])
+            docs_hab = _docs_set(car_hab, ['numero_identificacion','documento_usuario','documento'])
+            docs_enf = _docs_set(enf_g, ['documento_usuario','numero_identificacion','documento'])
+            docs_pai = _docs_set(pai_g, ['documento_usuario','numero_identificacion','documento'])
+            docs_seg = _docs_set(seg_g, ['documento_usuario','numero_identificacion','documento'])
+            docs_pp = _docs_set(participantes_pp_g, ['documento_usuario','numero_identificacion','documento'])
+
+            docs_obj_cumplidos = set()
+            docs_derechos = set()
+            docs_salud_obj = set()
+            docs_documentacion = set()
+            if not pai_g.empty and doc_pai:
+                docs_obj_cumplidos = set(pai_g.loc[mask_cumplido, doc_pai].dropna().astype(str).str.strip())
+                texto_cols = [c for c in ['objetivo_tipo','objetivo_descripcion','linea_politica'] if c in pai_g.columns]
+                if texto_cols:
+                    txt = pai_g[texto_cols].fillna('').astype(str).agg(' '.join, axis=1).str.upper()
+                    mask_doc = txt.str.contains('CEDUL|DOCUMENT|IDENTIF', regex=True)
+                    mask_sal = txt.str.contains('SALUD|ASEGUR|PORTABIL|EPS|MEDIC|TRATAM', regex=True)
+                    mask_der = txt.str.contains('DERECH|CEDUL|DOCUMENT|ASEGUR|PORTABIL|SALUD|EDUC|EMPLE|TRABAJ|FAMIL|VIVIEN', regex=True)
+                    docs_documentacion = set(pai_g.loc[mask_doc & mask_cumplido, doc_pai].dropna().astype(str).str.strip())
+                    docs_salud_obj = set(pai_g.loc[mask_sal & mask_cumplido, doc_pai].dropna().astype(str).str.strip())
+                    docs_derechos = set(pai_g.loc[mask_der & mask_cumplido, doc_pai].dropna().astype(str).str.strip())
+
+            progreso_rows = []
+            universo_progreso = sorted(docs_mov | docs_pai | docs_enf | docs_hab | docs_seg | docs_pp)
+            for d_ in universo_progreso:
+                evidencias_ = {
+                    'Caracterización especializada': d_ in docs_hab,
+                    'Atención de Enfermería': d_ in docs_enf,
+                    'Ruta individual PAI': d_ in docs_pai,
+                    'Seguimiento documentado': d_ in docs_seg,
+                    'Objetivo PAI cumplido': d_ in docs_obj_cumplidos,
+                    'Participación en política pública': d_ in docs_pp,
+                }
+                puntaje_ = sum(int(v_) for v_ in evidencias_.values())
+                if puntaje_ >= 5: nivel_='PROGRESO ALTO'
+                elif puntaje_ >= 3: nivel_='PROGRESO MEDIO'
+                elif puntaje_ >= 1: nivel_='PROGRESO INICIAL'
+                else: nivel_='SIN EVIDENCIA SUFICIENTE'
+                progreso_rows.append({'Documento':d_, 'Evidencias verificables':puntaje_, 'Nivel':nivel_, **evidencias_})
+            progreso_df = pd.DataFrame(progreso_rows)
+            personas_con_progreso = int((progreso_df['Evidencias verificables'] >= 1).sum()) if not progreso_df.empty else 0
+            personas_progreso_medio_alto = int((progreso_df['Evidencias verificables'] >= 3).sum()) if not progreso_df.empty else 0
+            pct_progreso = _g_pct(personas_con_progreso, len(progreso_df)) if len(progreso_df) else 0.0
+            pct_progreso_medio_alto = _g_pct(personas_progreso_medio_alto, len(progreso_df)) if len(progreso_df) else 0.0
+            dist_progreso = progreso_df['Nivel'].value_counts().rename_axis('Nivel').reset_index(name='Personas') if not progreso_df.empty else pd.DataFrame(columns=['Nivel','Personas'])
+
+            derechos_ind = {
+                'Personas con objetivo cumplido': len(docs_obj_cumplidos),
+                'Avances documentados en derechos': len(docs_derechos),
+                'Avances en documentación/identificación': len(docs_documentacion),
+                'Avances en salud/aseguramiento/portabilidad': len(docs_salud_obj),
+            }
+
+            # ========================================================
             # PRESENTACIÓN DEL INFORME
             # ========================================================
             st.markdown("## 📘 Informe de Gestión Institucional")
@@ -19789,7 +19856,42 @@ def modulo_reportes_institucionales_v169():
             elif acciones_fecha:
                 st.success(f"Las acciones fueron filtradas por `{acciones_fecha}` para el periodo seleccionado.")
 
-            st.markdown("### 8. Inferencias ejecutivas y alertas para decisión")
+            st.markdown("### 8. Cambio verificable en las condiciones de las personas")
+            st.caption("Índice institucional de progreso documental. No es una escala clínica ni afirma causalidad; integra evidencias registradas en la aplicación.")
+            ip1,ip2,ip3,ip4 = st.columns(4)
+            ip1.metric("Personas con progreso verificable", f"{personas_con_progreso:,}", f"{pct_progreso:.1f}% del universo medible")
+            ip2.metric("Progreso medio o alto", f"{personas_progreso_medio_alto:,}", f"{pct_progreso_medio_alto:.1f}%")
+            ip3.metric("Con ≥1 objetivo cumplido", f"{len(docs_obj_cumplidos):,}")
+            ip4.metric("Avances en derechos", f"{len(docs_derechos):,}")
+            if not dist_progreso.empty:
+                st.dataframe(dist_progreso, use_container_width=True, hide_index=True)
+            d1,d2,d3 = st.columns(3)
+            d1.metric("Documentación / identificación", f"{len(docs_documentacion):,}", help="Personas con objetivos PAI cumplidos asociados a cedulación, documento o identificación.")
+            d2.metric("Salud / aseguramiento / portabilidad", f"{len(docs_salud_obj):,}", help="Personas con objetivos PAI cumplidos asociados a salud, EPS, aseguramiento o portabilidad.")
+            d3.metric("Participación Política Pública", f"{len(docs_pp):,}")
+            st.info(
+                "**Lectura de resultados:** el programa no se limita a alojar personas. La evidencia integrada permite observar trayectorias con caracterización, atención sanitaria, ruta individual, seguimiento, cumplimiento de objetivos y participación institucional. "
+                "El indicador de progreso exige evidencia registrada y por eso es más exigente que contar actividades o atenciones aisladas."
+            )
+            with st.expander("🔬 Metodología del Índice de Progreso Verificable", expanded=False):
+                st.markdown(
+                    "Cada persona recibe una evidencia por cada dimensión documentada: **Habitabilidad en Calle, Enfermería, PAI, seguimiento PAI, objetivo cumplido y participación en Política Pública**. "
+                    "0 = sin evidencia suficiente; 1–2 = progreso inicial; 3–4 = progreso medio; 5–6 = progreso alto. "
+                    "El índice mide **intensidad y multidimensionalidad de la intervención documentada**, no rehabilitación clínica ni causalidad."
+                )
+                if not progreso_df.empty:
+                    st.dataframe(progreso_df, use_container_width=True, hide_index=True)
+                    st.download_button("⬇️ Descargar matriz de progreso", progreso_df.to_csv(index=False).encode('utf-8-sig'), "matriz_progreso_verificable_2026.csv", "text/csv", key="dl_progreso_v16233")
+
+            st.markdown("### 9. Resultados de garantía y recuperación progresiva de derechos")
+            st.write(
+                f"El PAI permite identificar **{len(docs_obj_cumplidos):,} personas con al menos un objetivo cumplido**. "
+                f"Dentro de los objetivos cuyo texto permite clasificación temática, **{len(docs_derechos):,} personas** presentan resultados cumplidos asociados a derechos o inclusión; "
+                f"**{len(docs_documentacion):,}** muestran avances cumplidos en documentación/identificación y **{len(docs_salud_obj):,}** en salud, aseguramiento o portabilidad."
+            )
+            st.caption("La clasificación temática se infiere del texto de objetivos PAI cumplidos y se conserva como indicador analítico; la auditoría permite revisar los registros fuente.")
+
+            st.markdown("### 10. Inferencias ejecutivas y alertas para decisión")
             inferencias = []
             if pct_hab >= 90:
                 inferencias.append(f"**Alta cobertura de caracterización especializada:** {pct_hab:.1f}% de los activos cuenta con Habitabilidad en Calle; el reto se concentra en el remanente no caracterizado.")
@@ -19805,12 +19907,16 @@ def modulo_reportes_institucionales_v169():
                 st.markdown("- " + item)
             st.caption("Las inferencias son lecturas analíticas de los registros. No sustituyen valoración profesional ni demuestran causalidad por sí solas.")
 
-            st.markdown("### 9. Lectura de cambio y defensa técnica del programa")
+            st.markdown("### 11. Defensa técnica y valor público del programa")
             st.caption("El análisis diferencia productos, resultados observados e inferencias. No atribuye causalidad cuando la base no permite demostrarla.")
             fortalezas = []
             brechas = []
             if personas_periodo:
                 fortalezas.append(f"El programa alcanzó **{personas_periodo:,} personas únicas** con movimientos institucionales durante el corte, evitando inflar el alcance por reingresos o múltiples registros.")
+            if personas_con_progreso:
+                fortalezas.append(f"**{personas_con_progreso:,} personas** presentan al menos una evidencia verificable de progreso/intervención y **{personas_progreso_medio_alto:,}** concentran tres o más dimensiones documentadas, mostrando profundidad de atención además de cobertura.")
+            if docs_derechos:
+                fortalezas.append(f"**{len(docs_derechos):,} personas** registran objetivos cumplidos asociados a garantía de derechos o inclusión; dentro de ellos se identifican avances en documentación y acceso/gestión de salud cuando el objetivo PAI lo explicita.")
             if pct_hab:
                 fortalezas.append(f"La caracterización especializada cubre **{pct_hab:.1f}%** de la población activa ({cobertura_hab_activos}/{activos_g}), fortaleciendo la toma de decisiones basada en información individual y territorial.")
             if personas_pai:
@@ -19833,7 +19939,7 @@ def modulo_reportes_institucionales_v169():
             st.info("**Lectura institucional:** la utilidad del programa no debe evaluarse únicamente por el número de egresos. La evidencia disponible permite valorar alcance, continuidad, caracterización, acceso a salud, formulación y cumplimiento de objetivos individuales, seguimiento, articulación de política pública y contribución programática a ODS. Los egresos son un resultado relevante, pero no el único resultado esperable en una población con alta complejidad y trayectorias de exclusión.")
 
             # -------- PDF completo del informe --------
-            def _pdf_gestion_v16231():
+            def _pdf_gestion_v16233():
                 from io import BytesIO
                 from reportlab.lib import colors
                 from reportlab.lib.pagesizes import A4
@@ -19847,38 +19953,42 @@ def modulo_reportes_institucionales_v169():
                 h1 = ParagraphStyle('GH', parent=styles['Heading2'], fontSize=13, leading=16, spaceBefore=10, spaceAfter=6)
                 body = ParagraphStyle('GB', parent=styles['BodyText'], fontSize=9.5, leading=14, spaceAfter=7)
                 small = ParagraphStyle('GS', parent=styles['BodyText'], fontSize=8, leading=11)
-                story=[Paragraph('INFORME INSTITUCIONAL DE GESTIÓN 2026', title), Paragraph('Programa de atención integral a población habitante de calle', styles['Heading3']), Paragraph(f'Corte: {fecha_desde_gestion.strftime("%d/%m/%Y")} al {fecha_hasta_gestion.strftime("%d/%m/%Y")}', body)]
+                story=[Paragraph('INFORME DE RESULTADOS, PROGRESO E IMPACTO DOCUMENTADO 2026', title), Paragraph('Programa de atención integral a población habitante de calle', styles['Heading3']), Paragraph(f'Corte: {fecha_desde_gestion.strftime("%d/%m/%Y")} al {fecha_hasta_gestion.strftime("%d/%m/%Y")}', body)]
                 story += [Paragraph('1. Resumen ejecutivo', h1), Paragraph(resumen_txt.replace('**',''), body)]
                 datos=[['Indicador','Resultado'],['Personas únicas atendidas',f'{personas_periodo:,}'],['Activas a la fecha',f'{activos_g:,}'],['Urbano / Granja',f'{urbano_g:,} / {granja_g:,}'],['Cobertura Habitabilidad',f'{pct_hab:.1f}%'],['Personas únicas con PAI',f'{personas_pai:,}'],['Objetivos PAI',f'{objetivos_total:,}'],['Objetivos cumplidos/cerrados',f'{objetivos_cumplidos:,} ({pct_cumpl_obj:.1f}%)'],['Seguimientos PAI',f'{seguimientos_total:,}'],['Atenciones de Enfermería',f'{atenciones_enf:,}'],['Acciones de Política Pública',f'{total_acciones:,}'],['Participantes únicos en Política Pública',f'{participantes_acc:,}'],['Egresos formales registrados',f'{egresos_registrados_total:,}'],['Egresos formales en el corte',f'{egresos_periodo_total:,}']]
                 t=Table(datos, colWidths=[300,160], repeatRows=1); t.setStyle(TableStyle([('GRID',(0,0),(-1,-1),.3,colors.grey),('BACKGROUND',(0,0),(-1,0),colors.lightgrey),('FONTNAME',(0,0),(-1,0),'Helvetica-Bold'),('FONTSIZE',(0,0),(-1,-1),8.5),('VALIGN',(0,0),(-1,-1),'TOP'),('PADDING',(0,0),(-1,-1),5)])); story += [t]
                 story += [Paragraph('2. Alcance, continuidad y atención integral', h1), Paragraph(f'La gestión registrada muestra atención a {personas_periodo:,} personas únicas durante el corte y una operación actual de {activos_g:,} personas activas, distribuidas entre {urbano_g:,} en modalidad Urbano y {granja_g:,} en Granja. La lectura de gestión se realiza sobre personas únicas para evitar duplicar el alcance por reingresos o múltiples actuaciones.', body), Paragraph(f'En salud se registran {atenciones_enf:,} atenciones de Enfermería para {personas_enf:,} personas únicas. En intervención individual, {personas_pai:,} personas cuentan con objetivos PAI y se documentan {seguimientos_total:,} seguimientos, con una intensidad media de {intensidad_seg:.2f} por persona seguida.', body)]
                 story += [Paragraph('3. Egresos formales y lectura de resultados', h1), Paragraph(f'La fuente formal registra {egresos_registrados_total:,} egresos. Para el periodo seleccionado se identifican {egresos_periodo_total:,} egresos con fecha verificable. Este indicador se construye exclusivamente desde los registros con estado EGRESADO en personas_caracterizacion; no incorpora permisos, salidas temporales ni regresos de permiso. Los fallecimientos se conservan en la historia administrativa, pero se excluyen del indicador de egreso de gestión. La salida voluntaria se reporta como categoría independiente y no se interpreta automáticamente como resultado favorable.', body)]
                 story += [Paragraph('4. Resultados del PAI y mejoramiento observado', h1), Paragraph(f'El sistema registra {objetivos_total:,} objetivos PAI, de los cuales {objetivos_cumplidos:,} se encuentran cumplidos/cerrados. Esto representa {pct_cumpl_obj:.1f}% del universo de objetivos del corte y un avance promedio de {avance_promedio:.1f}%. Estos indicadores constituyen evidencia de progreso documentado en las rutas individuales; no deben interpretarse como causalidad exclusiva del programa sin un diseño de evaluación de impacto.', body)]
-                story += [Paragraph('5. Política pública, articulación e incidencia', h1), Paragraph(f'En el periodo se identifican {total_acciones:,} registros en el módulo de Política Pública, con {participantes_acc:,} participantes únicos, {lineas_acc:,} líneas/códigos y {profesionales_acc:,} profesionales identificados. Esta dimensión evidencia que la gestión no se limita a alojamiento: incorpora acciones de articulación, participación y seguimiento de compromisos institucionales.', body)]
-                story += [Paragraph('6. Contribución a los ODS', h1)]
+                story += [Paragraph('5. Cambio verificable en las condiciones de las personas', h1), Paragraph(f'El análisis multidimensional integra seis evidencias registradas por persona: caracterización especializada, atención de Enfermería, ruta PAI, seguimiento, cumplimiento de al menos un objetivo y participación en acciones de política pública. Sobre el universo medible, {personas_con_progreso:,} personas ({pct_progreso:.1f}%) presentan al menos una evidencia verificable y {personas_progreso_medio_alto:,} ({pct_progreso_medio_alto:.1f}%) reúnen tres o más dimensiones documentadas. Esta medida no equivale a rehabilitación clínica: expresa profundidad y multidimensionalidad de la intervención registrada.', body), Paragraph(f'En resultados de derechos, {len(docs_obj_cumplidos):,} personas presentan al menos un objetivo PAI cumplido. La clasificación temática identifica {len(docs_derechos):,} personas con objetivos cumplidos asociados a derechos o inclusión, incluyendo {len(docs_documentacion):,} con avances en documentación/identificación y {len(docs_salud_obj):,} con avances en salud, aseguramiento o portabilidad, cuando esos contenidos están expresamente registrados en el objetivo.', body)]
+                if not dist_progreso.empty:
+                    pdg=[['Nivel de progreso verificable','Personas']] + [[str(r['Nivel']),str(int(r['Personas']))] for _,r in dist_progreso.iterrows()]
+                    tpg=Table(pdg,colWidths=[310,120],repeatRows=1); tpg.setStyle(TableStyle([('GRID',(0,0),(-1,-1),.25,colors.grey),('BACKGROUND',(0,0),(-1,0),colors.lightgrey),('FONTNAME',(0,0),(-1,0),'Helvetica-Bold'),('FONTSIZE',(0,0),(-1,-1),8)])); story.append(tpg)
+                story += [Paragraph('6. Política pública, articulación e incidencia', h1), Paragraph(f'En el periodo se identifican {total_acciones:,} registros en el módulo de Política Pública, con {participantes_acc:,} participantes únicos, {lineas_acc:,} líneas/códigos y {profesionales_acc:,} profesionales identificados. Esta dimensión evidencia que la gestión no se limita a alojamiento: incorpora acciones de articulación, participación y seguimiento de compromisos institucionales.', body)]
+                story += [Paragraph('7. Contribución a los ODS', h1)]
                 if not ods_resumen.empty:
                     od=[['ODS','Personas','Objetivos','Cumplidos','Cumpl. %','Avance %']]
                     for _,r in ods_resumen.iterrows(): od.append([str(r['ODS']),str(int(r['personas'])),str(int(r['objetivos'])),str(int(r['cumplidos'])),f"{float(r['cumplimiento_%']):.1f}",f"{float(r['avance_promedio']):.1f}"])
                     tt=Table(od,colWidths=[210,50,55,55,55,55],repeatRows=1); tt.setStyle(TableStyle([('GRID',(0,0),(-1,-1),.25,colors.grey),('BACKGROUND',(0,0),(-1,0),colors.lightgrey),('FONTSIZE',(0,0),(-1,-1),7),('VALIGN',(0,0),(-1,-1),'TOP')])); story.append(tt)
                 else: story.append(Paragraph('No existe clasificación ODS suficiente para el corte.', body))
-                story += [Paragraph('7. Lectura de efectividad y valor público', h1)]
+                story += [Paragraph('8. Defensa técnica: efectividad, valor público y límites de la evidencia', h1)]
                 for x in fortalezas: story.append(Paragraph('• '+x.replace('**',''), body))
                 story.append(Paragraph('La evidencia disponible permite defender el programa desde una lógica multidimensional: alcance efectivo, permanencia y continuidad de la atención, caracterización especializada, atención en salud, formulación y seguimiento de planes individuales, cumplimiento de objetivos, articulación de política pública y contribución a ODS. La cantidad de egresos no es, por sí sola, una medida suficiente de utilidad o efectividad.', body))
                 if brechas:
-                    story += [Paragraph('8. Brechas y oportunidades de mejora', h1)]
+                    story += [Paragraph('9. Brechas y oportunidades de mejora', h1)]
                     for x in brechas: story.append(Paragraph('• '+x.replace('**',''), body))
-                story += [Paragraph('9. Nota metodológica', h1), Paragraph('Personas se calcula por documento único. Los indicadores de periodo usan fecha verificable cuando existe. Los indicadores de estado actual se identifican como tales. Cumplimiento PAI corresponde a objetivos con avance igual o superior a 100% o estado cumplido/cerrado/completado/finalizado. La contribución ODS deriva de la clasificación de objetivos PAI y no equivale al cumplimiento municipal o global de un ODS. Los fallecimientos no se presentan como egresos de impacto.', small)]
+                story += [Paragraph('10. Nota metodológica y trazabilidad', h1), Paragraph('Personas se calcula por documento único. Los indicadores de periodo usan fecha verificable cuando existe. Los indicadores de estado actual se identifican como tales. Cumplimiento PAI corresponde a objetivos con avance igual o superior a 100% o estado cumplido/cerrado/completado/finalizado. La contribución ODS deriva de la clasificación de objetivos PAI y no equivale al cumplimiento municipal o global de un ODS. Los fallecimientos no se presentan como egresos de impacto.', small)]
                 doc.build(story); buf.seek(0); return buf.getvalue()
 
-            st.markdown("### 10. Informe completo en PDF")
+            st.markdown("### 12. Informe completo de resultados e impacto en PDF")
             st.write("Genera un documento narrativo y técnico para sustentar la gestión, con indicadores, resultados, ODS, inferencias, brechas y nota metodológica.")
             try:
-                pdf_gestion = _pdf_gestion_v16231()
-                st.download_button("📥 Descargar Informe Institucional de Gestión 2026 (PDF)", data=pdf_gestion, file_name=f"Informe_Gestion_Institucional_{fecha_hasta_gestion.strftime('%Y%m%d')}.pdf", mime="application/pdf", key="pdf_gestion_v16231")
+                pdf_gestion = _pdf_gestion_v16233()
+                st.download_button("📥 Descargar Informe Institucional de Gestión 2026 (PDF)", data=pdf_gestion, file_name=f"Informe_Resultados_Impacto_2026_{fecha_hasta_gestion.strftime('%Y%m%d')}.pdf", mime="application/pdf", key="pdf_gestion_v16233")
             except Exception as e_pdf:
                 st.error("No fue posible generar el PDF: " + str(e_pdf))
 
-            st.markdown("### 11. Emergencia por sismo · bloque para reporte oficial")
+            st.markdown("### 13. Emergencia por sismo · bloque para reporte oficial")
             st.info(
                 "Este bloque debe reportar únicamente evidencia verificable de la contingencia: población protegida, traslados o reubicaciones, "
                 "continuidad del servicio, capacidad utilizada y acciones ejecutadas. El sistema no atribuye automáticamente movimientos al sismo si el registro no lo identifica expresamente."
@@ -19890,7 +20000,7 @@ def modulo_reportes_institucionales_v169():
             st.text_area("Acciones verificables desarrolladas durante la emergencia", placeholder="Describa únicamente acciones con soporte institucional...", key="sismo_acciones_v16230")
             st.text_area("Soportes / fuente de verificación", placeholder="Actas, listados, reportes, registros del albergue, comunicaciones...", key="sismo_soportes_v16230")
 
-            st.markdown("### 12. Matriz ejecutiva para las 4 diapositivas")
+            st.markdown("### 14. Síntesis ejecutiva para la presentación de 4 diapositivas")
             diapositivas = pd.DataFrame([
                 ["1 · Gestión en cifras", f"{personas_periodo} personas únicas atendidas; {activos_g} activas ({urbano_g} Urbano / {granja_g} Granja).", "Alcance, operación y cobertura"],
                 ["2 · Atención integral y resultados", f"{personas_pai} personas con PAI; {objetivos_total} objetivos; {objetivos_cumplidos} cumplidos; {seguimientos_total} seguimientos; {atenciones_enf} atenciones de Enfermería.", "Resultados, seguimiento y salud"],
