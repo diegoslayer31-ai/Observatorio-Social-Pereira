@@ -19988,27 +19988,6 @@ def modulo_reportes_institucionales_v169():
             except Exception as e_pdf:
                 st.error("No fue posible generar el PDF: " + str(e_pdf))
 
-            st.markdown("### 13. Emergencia por sismo · bloque para reporte oficial")
-            st.info(
-                "Este bloque debe reportar únicamente evidencia verificable de la contingencia: población protegida, traslados o reubicaciones, "
-                "continuidad del servicio, capacidad utilizada y acciones ejecutadas. El sistema no atribuye automáticamente movimientos al sismo si el registro no lo identifica expresamente."
-            )
-            s1,s2,s3 = st.columns(3)
-            s1.number_input("Personas protegidas / atendidas durante la contingencia", min_value=0, step=1, key="sismo_personas_v16230")
-            s2.number_input("Personas trasladadas o reubicadas", min_value=0, step=1, key="sismo_traslados_v16230")
-            s3.number_input("Horas de continuidad / respuesta documentadas", min_value=0.0, step=1.0, key="sismo_horas_v16230")
-            st.text_area("Acciones verificables desarrolladas durante la emergencia", placeholder="Describa únicamente acciones con soporte institucional...", key="sismo_acciones_v16230")
-            st.text_area("Soportes / fuente de verificación", placeholder="Actas, listados, reportes, registros del albergue, comunicaciones...", key="sismo_soportes_v16230")
-
-            st.markdown("### 14. Síntesis ejecutiva para la presentación de 4 diapositivas")
-            diapositivas = pd.DataFrame([
-                ["1 · Gestión en cifras", f"{personas_periodo} personas únicas atendidas; {activos_g} activas ({urbano_g} Urbano / {granja_g} Granja).", "Alcance, operación y cobertura"],
-                ["2 · Atención integral y resultados", f"{personas_pai} personas con PAI; {objetivos_total} objetivos; {objetivos_cumplidos} cumplidos; {seguimientos_total} seguimientos; {atenciones_enf} atenciones de Enfermería.", "Resultados, seguimiento y salud"],
-                ["3 · Política pública + ODS", f"{total_acciones if acciones_fecha else 'Por validar'} acciones; {participantes_acc} participantes únicos; {lineas_acc} líneas/códigos. Contribución ODS calculada desde PAI.", "Incidencia programática y evidencia"],
-                ["4 · Respuesta al sismo", "Completar con los campos verificables del bloque de emergencia.", "Continuidad, protección y respuesta"],
-            ], columns=["Diapositiva","Mensaje central","Enfoque"])
-            st.dataframe(diapositivas, use_container_width=True, hide_index=True)
-
             with st.expander("🔎 Auditoría, trazabilidad y calidad del dato", expanded=False):
                 st.markdown("**Reglas de cálculo usadas**")
                 st.markdown(
