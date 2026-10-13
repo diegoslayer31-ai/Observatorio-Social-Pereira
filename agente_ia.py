@@ -16905,8 +16905,13 @@ def dashboard_ejecutivo():
     # ========================================================
     # POBLACIÓN GENERAL
     # ========================================================
-    # Optimización: reutilizar la carga completa compartida (TTL 60 s).
-    df_coord = cargar_habitante_completo_v16205().copy()
+    df_coord = pd.read_sql(
+        text("""
+            SELECT *
+            FROM habitante_de_calle
+        """),
+        engine
+    )
 
     if df_coord.empty:
         st.info("No hay información disponible.")
@@ -18348,12 +18353,9 @@ exigir_login_v12()
 # =====================================
 
 # V16.13 - Permisos Control Diario de Asistencia
+# Acceso restringido por identidad autenticada; no por rol general.
 ASISTENCIA_ALBERGUE_DOCUMENTOS_AUTORIZADOS_V1613 = {
-    "16225865",      # Jorge Iván Rendón Giraldo
-    "1090420245",    # Maria Fernanda Santiago Pabón
-    "1087996578",    # Apolinar Roa Rentería
-    "1088346899",    # Alexa Jhilleny Orozco Castillo
-    "1088243215",    # Elizabeth Manzo Ospina
+    "1088243215",  # Elizabeth Manzo Ospina
 }
 
 
@@ -18374,8 +18376,13 @@ def _puede_control_asistencia_v1613():
     if not bool(st.session_state.get("autenticado", False)):
         return False
     rol = str(st.session_state.get("rol_actual", "")).upper().strip()
-    documento = str(st.session_state.get("documento_funcionario", "")).strip()
-    return rol in ["COORDINACION", "MANAGER"] or documento in ASISTENCIA_ALBERGUE_DOCUMENTOS_AUTORIZADOS_V1613
+    documento = limpiar_documento(st.session_state.get("documento_funcionario", ""))
+    nombre = _norm_identidad_v16214(st.session_state.get("nombre_funcionario", ""))
+    # Elizabeth: comprobación por documento y nombre, sin privilegios generales.
+    es_elizabeth = (documento == "1088243215" and "ELIZABETH" in nombre and "MANZO" in nombre)
+    # Diego: nombre y rol; confirmar que no exista otro Manager homónimo.
+    es_diego = (rol == "MANAGER" and "DIEGO" in nombre.split() and "GOMEZ" in nombre.split())
+    return es_elizabeth or es_diego
 
 with st.sidebar:
 
@@ -18799,13 +18806,6 @@ with st.sidebar:
             use_container_width=True
         ):
             st.session_state.page = "historia_integral_v12"
-            st.rerun()
-
-        if st.button(
-            "📥 Actualizar Activos",
-            use_container_width=True
-        ):
-            st.session_state.page = "carga_activos_v168"
             st.rerun()
 
         st.markdown("##### ⚙️ Administración")
@@ -23586,490 +23586,9 @@ def modulo_reportes_institucionales_v169():
             )
 
 def modulo_carga_activos_v169():
-
-    df = cargar_habitante_completo_v16205().copy()
-    df = df.drop_duplicates()
-    df.columns = (
-        df.columns
-        .str.strip()
-        .str.lower()
-        .str.replace("\n", " ")
-        .str.replace("  ", " ")
-        .str.replace(" ", "_")
-    )
-
-    st.title("📥 Conciliación y Carga de Activos")
-    st.caption(
-        "Valida el archivo antes de modificar estados. La carga conserva los "
-        "EGRESADOS, registra trazabilidad y reporta documentos no encontrados."
-    )
-
-    archivo_activos = st.file_uploader(
-        "Sube archivo Excel",
-        type=["xlsx"],
-        key="upload_activos_tab8_v6"
-    )
-
-    if archivo_activos:
-
-        try:
-            df_carga = pd.read_excel(archivo_activos)
-
-            df_carga.columns = (
-                df_carga.columns
-                .astype(str)
-                .str.strip()
-                .str.lower()
-                .str.replace("\n", " ", regex=False)
-                .str.replace("  ", " ", regex=False)
-                .str.replace(" ", "_", regex=False)
-            )
-
-            requeridas = [
-                "numero_identificacion",
-                "modalidad"
-            ]
-
-            faltantes_columnas = [
-                c for c in requeridas
-                if c not in df_carga.columns
-            ]
-
-            if faltantes_columnas:
-                st.error(
-                    "❌ El archivo no puede procesarse porque faltan estas "
-                    f"columnas: {faltantes_columnas}"
-                )
-            else:
-                df_carga = df_carga.dropna(
-                    subset=["numero_identificacion"]
-                ).copy()
-
-                df_carga["numero_identificacion"] = (
-                    df_carga["numero_identificacion"]
-                    .astype(str)
-                    .str.strip()
-                    .str.replace(r"\.0$", "", regex=True)
-                )
-
-                df_carga["modalidad"] = (
-                    df_carga["modalidad"]
-                    .fillna("")
-                    .astype(str)
-                    .str.upper()
-                    .str.strip()
-                )
-
-                df_carga = df_carga[
-                    df_carga["numero_identificacion"].ne("")
-                ].copy()
-
-                duplicados_archivo = int(
-                    df_carga["numero_identificacion"].duplicated(
-                        keep=False
-                    ).sum()
-                )
-
-                df_carga = df_carga.drop_duplicates(
-                    subset=["numero_identificacion"],
-                    keep="last"
-                ).copy()
-
-                # Base actual independiente del df general de la app
-                df_base_activos = pd.read_sql(
-                    text("""
-                        SELECT
-                            numero_identificacion,
-                            nombres,
-                            apellidos,
-                            estado_caso,
-                            modalidad
-                        FROM habitante_de_calle
-                    """),
-                    engine
-                )
-
-                df_base_activos["doc_normalizado"] = (
-                    df_base_activos["numero_identificacion"]
-                    .astype(str)
-                    .str.strip()
-                    .str.replace(r"\.0$", "", regex=True)
-                )
-
-                df_base_activos["estado_normalizado"] = (
-                    df_base_activos["estado_caso"]
-                    .fillna("")
-                    .astype(str)
-                    .str.upper()
-                    .str.strip()
-                )
-
-                df_base_activos["modalidad_normalizada"] = (
-                    df_base_activos["modalidad"]
-                    .fillna("")
-                    .astype(str)
-                    .str.upper()
-                    .str.strip()
-                )
-
-                docs_base = set(
-                    df_base_activos["doc_normalizado"].tolist()
-                )
-                docs_archivo = set(
-                    df_carga["numero_identificacion"].tolist()
-                )
-
-                docs_encontrados = docs_archivo & docs_base
-                docs_no_encontrados = docs_archivo - docs_base
-
-                activos_actuales_df = df_base_activos[
-                    df_base_activos["estado_normalizado"] == "ACTIVO"
-                ].copy()
-                docs_activos_actuales = set(
-                    activos_actuales_df["doc_normalizado"].tolist()
-                )
-
-                # Solo quienes están ACTIVOS y ya no vienen en el archivo
-                # pasarán a INACTIVO. Los EGRESADOS no se modifican.
-                docs_a_inactivar = (
-                    docs_activos_actuales - docs_encontrados
-                )
-
-                # Encontrados que no estaban activos -> activar
-                base_por_doc = (
-                    df_base_activos
-                    .drop_duplicates("doc_normalizado", keep="last")
-                    .set_index("doc_normalizado")
-                )
-
-                docs_a_activar = set()
-                docs_cambio_modalidad = set()
-
-                modalidad_archivo = dict(
-                    zip(
-                        df_carga["numero_identificacion"],
-                        df_carga["modalidad"]
-                    )
-                )
-
-                for doc in docs_encontrados:
-                    estado_prev = str(
-                        base_por_doc.loc[doc, "estado_normalizado"]
-                    )
-                    modalidad_prev = str(
-                        base_por_doc.loc[doc, "modalidad_normalizada"]
-                    )
-                    modalidad_nueva = modalidad_archivo.get(doc, "")
-
-                    if estado_prev != "ACTIVO":
-                        docs_a_activar.add(doc)
-                    elif modalidad_prev != modalidad_nueva:
-                        docs_cambio_modalidad.add(doc)
-
-                # ------------------------------------------------
-                # PREVISUALIZACIÓN
-                # ------------------------------------------------
-                st.subheader("🔎 Validación previa")
-
-                p1, p2, p3, p4, p5 = st.columns(5)
-                p1.metric("Archivo", len(df_carga))
-                p2.metric("Encontrados", len(docs_encontrados))
-                p3.metric(
-                    "No encontrados",
-                    len(docs_no_encontrados)
-                )
-                p4.metric("A activar", len(docs_a_activar))
-                p5.metric("A inactivar", len(docs_a_inactivar))
-
-                if duplicados_archivo:
-                    st.warning(
-                        f"Se detectaron {duplicados_archivo} filas asociadas "
-                        "a identificaciones duplicadas en el archivo. "
-                        "Se conservará la última aparición de cada persona."
-                    )
-
-                resumen_modalidad = (
-                    df_carga["modalidad"]
-                    .replace("", "SIN MODALIDAD")
-                    .value_counts()
-                    .rename_axis("modalidad")
-                    .reset_index(name="cantidad")
-                )
-
-                st.subheader("📊 Distribución del archivo por modalidad")
-                st.dataframe(
-                    resumen_modalidad,
-                    use_container_width=True,
-                    hide_index=True
-                )
-                st.bar_chart(
-                    resumen_modalidad.set_index("modalidad")
-                )
-
-                if docs_no_encontrados:
-                    st.warning(
-                        "Hay personas del Excel que no existen en "
-                        "habitante_de_calle. No serán creadas automáticamente."
-                    )
-
-                    no_encontrados_df = (
-                        df_carga[
-                            df_carga["numero_identificacion"]
-                            .isin(docs_no_encontrados)
-                        ][["numero_identificacion", "modalidad"]]
-                        .sort_values("numero_identificacion")
-                    )
-
-                    with st.expander(
-                        f"⚠️ Ver {len(no_encontrados_df)} documentos no encontrados"
-                    ):
-                        st.dataframe(
-                            no_encontrados_df,
-                            use_container_width=True,
-                            hide_index=True
-                        )
-
-                if docs_a_inactivar:
-                    detalle_inactivar = df_base_activos[
-                        df_base_activos["doc_normalizado"]
-                        .isin(docs_a_inactivar)
-                    ][
-                        [
-                            "numero_identificacion",
-                            "nombres",
-                            "apellidos",
-                            "modalidad"
-                        ]
-                    ]
-
-                    with st.expander(
-                        f"🟠 Ver {len(detalle_inactivar)} personas que pasarán a INACTIVO"
-                    ):
-                        st.dataframe(
-                            detalle_inactivar,
-                            use_container_width=True,
-                            hide_index=True
-                        )
-
-                if docs_a_activar:
-                    detalle_activar = df_base_activos[
-                        df_base_activos["doc_normalizado"]
-                        .isin(docs_a_activar)
-                    ][
-                        [
-                            "numero_identificacion",
-                            "nombres",
-                            "apellidos",
-                            "estado_caso",
-                            "modalidad"
-                        ]
-                    ]
-
-                    with st.expander(
-                        f"🟢 Ver {len(detalle_activar)} personas que pasarán a ACTIVO"
-                    ):
-                        st.dataframe(
-                            detalle_activar,
-                            use_container_width=True,
-                            hide_index=True
-                        )
-
-                if docs_cambio_modalidad:
-                    st.info(
-                        f"{len(docs_cambio_modalidad)} personas ya activas "
-                        "cambiarán de modalidad."
-                    )
-
-                st.divider()
-
-                confirmar_carga = st.checkbox(
-                    "Confirmo que revisé la conciliación y deseo aplicar estos cambios",
-                    key="confirmar_actualizacion_activos_v6"
-                )
-
-                if confirmar_carga and st.button(
-                    "✅ Aplicar conciliación",
-                    key="btn_actualizar_activos_v6",
-                    type="primary",
-                    use_container_width=True
-                ):
-                    usuario_accion = st.session_state.get(
-                        "usuario_actual",
-                        "sistema"
-                    )
-
-                    with engine.begin() as conn:
-
-                        # 1. INACTIVAR solo activos ausentes del archivo
-                        for doc in sorted(docs_a_inactivar):
-                            fila_prev = base_por_doc.loc[doc]
-                            modalidad_prev = str(
-                                fila_prev["modalidad_normalizada"]
-                            )
-
-                            conn.execute(
-                                text("""
-                                    UPDATE habitante_de_calle
-                                    SET estado_caso = 'INACTIVO',
-                                        modalidad = NULL
-                                    WHERE TRIM(
-                                        CAST(numero_identificacion AS TEXT)
-                                    ) = :doc
-                                      AND UPPER(
-                                        TRIM(COALESCE(estado_caso, ''))
-                                      ) = 'ACTIVO'
-                                """),
-                                {"doc": doc}
-                            )
-
-                            conn.execute(
-                                text("""
-                                    INSERT INTO movimientos_habitante (
-                                        numero_identificacion,
-                                        tipo_movimiento,
-                                        modalidad,
-                                        usuario_registra,
-                                        observacion
-                                    )
-                                    VALUES (
-                                        :doc,
-                                        'INACTIVACION_CARGA',
-                                        :modalidad,
-                                        :usuario,
-                                        'Inactivación por conciliación de archivo de activos'
-                                    )
-                                """),
-                                {
-                                    "doc": doc,
-                                    "modalidad": modalidad_prev or None,
-                                    "usuario": usuario_accion
-                                }
-                            )
-
-                        # 2. ACTIVAR / ACTUALIZAR encontrados
-                        for doc in sorted(docs_encontrados):
-                            modalidad_nueva = modalidad_archivo.get(
-                                doc,
-                                ""
-                            ) or None
-
-                            estado_prev = str(
-                                base_por_doc.loc[
-                                    doc,
-                                    "estado_normalizado"
-                                ]
-                            )
-                            modalidad_prev = str(
-                                base_por_doc.loc[
-                                    doc,
-                                    "modalidad_normalizada"
-                                ]
-                            )
-
-                            conn.execute(
-                                text("""
-                                    UPDATE habitante_de_calle
-                                    SET estado_caso = 'ACTIVO',
-                                        modalidad = :modalidad
-                                    WHERE TRIM(
-                                        CAST(numero_identificacion AS TEXT)
-                                    ) = :doc
-                                """),
-                                {
-                                    "doc": doc,
-                                    "modalidad": modalidad_nueva
-                                }
-                            )
-
-                            if estado_prev != "ACTIVO":
-                                tipo_mov = "ACTIVACION_CARGA"
-                                obs = (
-                                    "Activación por conciliación de archivo de activos"
-                                )
-                            elif modalidad_prev != (modalidad_nueva or ""):
-                                tipo_mov = "CAMBIO_MODALIDAD_CARGA"
-                                obs = (
-                                    f"Cambio de modalidad por conciliación: "
-                                    f"{modalidad_prev or 'SIN MODALIDAD'} -> "
-                                    f"{modalidad_nueva or 'SIN MODALIDAD'}"
-                                )
-                            else:
-                                tipo_mov = None
-                                obs = None
-
-                            if tipo_mov:
-                                conn.execute(
-                                    text("""
-                                        INSERT INTO movimientos_habitante (
-                                            numero_identificacion,
-                                            tipo_movimiento,
-                                            modalidad,
-                                            usuario_registra,
-                                            observacion
-                                        )
-                                        VALUES (
-                                            :doc,
-                                            :tipo_movimiento,
-                                            :modalidad,
-                                            :usuario,
-                                            :observacion
-                                        )
-                                    """),
-                                    {
-                                        "doc": doc,
-                                        "tipo_movimiento": tipo_mov,
-                                        "modalidad": modalidad_nueva,
-                                        "usuario": usuario_accion,
-                                        "observacion": obs
-                                    }
-                                )
-
-                        total_activos_final = conn.execute(
-                            text("""
-                                SELECT COUNT(*)
-                                FROM habitante_de_calle
-                                WHERE UPPER(
-                                    TRIM(COALESCE(estado_caso, ''))
-                                ) = 'ACTIVO'
-                            """)
-                        ).scalar()
-
-                    # Auditoría resumida, fuera de la transacción principal
-                    registrar_auditoria(
-                        "CONCILIACION_MASIVA_ACTIVOS",
-                        modulo="Carga Activos",
-                        valor_anterior=(
-                            f"Activos previos: {len(docs_activos_actuales)}"
-                        ),
-                        valor_nuevo=(
-                            f"Activos finales: {total_activos_final}"
-                        ),
-                        observacion=(
-                            f"Encontrados: {len(docs_encontrados)}; "
-                            f"No encontrados: {len(docs_no_encontrados)}; "
-                            f"Activados: {len(docs_a_activar)}; "
-                            f"Inactivados: {len(docs_a_inactivar)}; "
-                            f"Cambios modalidad: {len(docs_cambio_modalidad)}"
-                        )
-                    )
-
-                    invalidar_cache_datos()
-
-                    st.success(
-                        "✅ Conciliación aplicada correctamente."
-                    )
-                    st.info(
-                        f"Activos finales: {total_activos_final} | "
-                        f"Activados: {len(docs_a_activar)} | "
-                        f"Inactivados: {len(docs_a_inactivar)} | "
-                        f"Cambios de modalidad: {len(docs_cambio_modalidad)} | "
-                        f"No encontrados: {len(docs_no_encontrados)}"
-                    )
-
-        except Exception as e:
-            st.error(
-                f"❌ Error al procesar la carga de activos: {e}"
-            )
+    """Módulo deshabilitado. Conservado como entrada compatible."""
+    st.info("Actualizar Activos está deshabilitado. Los datos históricos permanecen intactos.")
+    return
 
 
 
@@ -33365,10 +32884,7 @@ if st.session_state.page == "reportes_institucionales_v168":
     st.stop()
 
 if st.session_state.page == "carga_activos_v168":
-    if rol_router not in ["COORDINACION", "MANAGER"]:
-        st.error("Acceso exclusivo para Coordinación o Manager.")
-    else:
-        modulo_carga_activos_v169()
+    st.warning("Actualizar Activos fue retirado de operación. No se modificaron registros históricos.")
     st.stop()
 
 if st.session_state.page == "home" and rol_router in ["COORDINACION", "MANAGER"]:
@@ -33580,8 +33096,10 @@ def gestion_usuarios_legacy():
     # =========================
     # CARGA DE DATOS
     # =========================
-    # Optimización: evitar repetir la descarga completa en cada interacción.
-    df = cargar_habitante_completo_v16205().copy()
+    df = pd.read_sql("""
+        SELECT *
+        FROM habitante_de_calle
+    """, engine)
 
     df["modalidad"] = df["modalidad"].astype(str).str.upper().str.strip()
     df["estado_caso"] = df["estado_caso"].astype(str).str.upper().str.strip()
@@ -34530,9 +34048,13 @@ with tab2:
         key="enfermeria_busqueda"
     )
 
-    # Optimización: ordenar localmente la carga compartida, sin nueva consulta.
-    df_pai_personas = cargar_habitante_completo_v16205().copy().sort_values(
-        by=["nombres", "apellidos"], kind="stable"
+    df_pai_personas = pd.read_sql(
+        text("""
+            SELECT *
+            FROM habitante_de_calle
+            ORDER BY nombres, apellidos
+        """),
+        engine
     )
 
     df_busqueda = df_pai_personas.copy()
@@ -37355,9 +36877,13 @@ with tab6:
 
     busqueda = st.text_input("Nombre, apellido o documento")
 
-    # Optimización: ordenar localmente la carga compartida, sin nueva consulta.
-    df_pai_personas = cargar_habitante_completo_v16205().copy().sort_values(
-        by=["nombres", "apellidos"], kind="stable"
+    df_pai_personas = pd.read_sql(
+        text("""
+            SELECT *
+            FROM habitante_de_calle
+            ORDER BY nombres, apellidos
+        """),
+        engine
     )
 
     df_busqueda = df_pai_personas.copy()
