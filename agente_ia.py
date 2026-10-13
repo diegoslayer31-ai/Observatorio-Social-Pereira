@@ -16905,13 +16905,8 @@ def dashboard_ejecutivo():
     # ========================================================
     # POBLACIÓN GENERAL
     # ========================================================
-    df_coord = pd.read_sql(
-        text("""
-            SELECT *
-            FROM habitante_de_calle
-        """),
-        engine
-    )
+    # Optimización: reutilizar la carga completa compartida (TTL 60 s).
+    df_coord = cargar_habitante_completo_v16205().copy()
 
     if df_coord.empty:
         st.info("No hay información disponible.")
@@ -33585,10 +33580,8 @@ def gestion_usuarios_legacy():
     # =========================
     # CARGA DE DATOS
     # =========================
-    df = pd.read_sql("""
-        SELECT *
-        FROM habitante_de_calle
-    """, engine)
+    # Optimización: evitar repetir la descarga completa en cada interacción.
+    df = cargar_habitante_completo_v16205().copy()
 
     df["modalidad"] = df["modalidad"].astype(str).str.upper().str.strip()
     df["estado_caso"] = df["estado_caso"].astype(str).str.upper().str.strip()
@@ -34537,13 +34530,9 @@ with tab2:
         key="enfermeria_busqueda"
     )
 
-    df_pai_personas = pd.read_sql(
-        text("""
-            SELECT *
-            FROM habitante_de_calle
-            ORDER BY nombres, apellidos
-        """),
-        engine
+    # Optimización: ordenar localmente la carga compartida, sin nueva consulta.
+    df_pai_personas = cargar_habitante_completo_v16205().copy().sort_values(
+        by=["nombres", "apellidos"], kind="stable"
     )
 
     df_busqueda = df_pai_personas.copy()
@@ -37366,13 +37355,9 @@ with tab6:
 
     busqueda = st.text_input("Nombre, apellido o documento")
 
-    df_pai_personas = pd.read_sql(
-        text("""
-            SELECT *
-            FROM habitante_de_calle
-            ORDER BY nombres, apellidos
-        """),
-        engine
+    # Optimización: ordenar localmente la carga compartida, sin nueva consulta.
+    df_pai_personas = cargar_habitante_completo_v16205().copy().sort_values(
+        by=["nombres", "apellidos"], kind="stable"
     )
 
     df_busqueda = df_pai_personas.copy()
