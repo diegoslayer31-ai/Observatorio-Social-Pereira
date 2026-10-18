@@ -11555,85 +11555,106 @@ def _semaforo_integral_usuario_v16(documento):
 
 
 def cierre_pai_usuario_v16(documento, profesional_id=None, profesional_nombre=None):
-    st.markdown("#### Cierre formal")
-
+    """Cierre único del plan general, sin alterar estados de objetivos."""
+    documento = limpiar_documento(documento)
+    st.markdown("#### Cierre formal del plan general")
     try:
         cierres = pd.read_sql(
             text("""
-                SELECT *
-                FROM pai_cierres
+                SELECT * FROM pai_cierres
                 WHERE TRIM(CAST(documento_usuario AS TEXT))=:doc
-                ORDER BY creado_en DESC
-                LIMIT 1
-            """),
-            engine,
-            params={"doc": str(documento)}
+                ORDER BY creado_en DESC LIMIT 1
+            """), engine, params={"doc": documento}
         )
-    except Exception:
-        cierres = pd.DataFrame()
+    except Exception as exc:
+        st.error("No fue posible consultar el estado de cierre del PAI. No se habilita el cierre para evitar duplicados.")
+        return
 
     if not cierres.empty:
         c = cierres.iloc[0]
-        st.success(
-            f"PAI cerrado el {c.get('fecha_cierre')} · "
-            f"Resultado: {c.get('resultado_final')}"
-        )
+        st.success(f"PAI cerrado el {c.get('fecha_cierre')} · Resultado: {c.get('resultado_final')}")
         if c.get("resumen_cierre"):
             st.write(c.get("resumen_cierre"))
+        st.info("El plan ya tiene cierre formal. Los objetivos y seguimientos históricos se conservan.")
         return
 
-    with st.form(f"v16_3_cierre_{documento}"):
-        resultado = st.selectbox(
-            "Resultado final",
-            [
-                "METAS CUMPLIDAS",
-                "CUMPLIMIENTO PARCIAL",
-                "NO CUMPLIDO",
-                "EGRESO",
-                "RETIRO VOLUNTARIO",
-                "TRASLADO",
-                "OTRO"
-            ]
+    try:
+        datos_obj = pd.read_sql(text("""
+            SELECT objetivo_tipo, estado, porcentaje_avance
+            FROM pai_objetivos
+            WHERE TRIM(CAST(documento_usuario AS TEXT))=:doc
+        """), engine, params={"doc": documento})
+    except Exception:
+        st.error("No se pudieron verificar los objetivos. No se habilita el cierre.")
+        return
+    if datos_obj.empty:
+        st.warning("No existen objetivos registrados para este PAI; revise el expediente antes de cerrarlo.")
+        return
+    pct = pd.to_numeric(datos_obj["porcentaje_avance"], errors="coerce").fillna(0)
+    estados = datos_obj["estado"].fillna("").astype(str).str.upper().str.strip()
+    cumplidos = int(((pct >= 100) | estados.eq("CUMPLIDO")).sum())
+    pendientes = len(datos_obj) - cumplidos
+    st.info(f"Objetivos registrados: **{len(datos_obj)}** · Alcanzados: **{cumplidos}** · Pendientes: **{pendientes}**. El cierre general no modificará estos estados.")
+
+    with st.form(f"v16224_cierre_{documento}"):
+        resultado = st.selectbox("Resultado final *", [
+            "EGRESO EXITOSO CON CUMPLIMIENTO PARCIAL DE OBJETIVOS",
+            "METAS CUMPLIDAS", "CUMPLIMIENTO PARCIAL", "NO CUMPLIDO",
+            "EGRESO", "RETIRO VOLUNTARIO", "TRASLADO", "OTRO"
+        ], index=0 if pendientes and cumplidos else (1 if not pendientes else 2))
+        fecha_cierre = st.date_input(
+            "Fecha efectiva del cierre *", value=ahora_colombia().date(),
+            max_value=ahora_colombia().date(), key=f"v16224_fecha_{documento}"
         )
-        resumen = st.text_area("Resumen de cierre *")
+        resumen = st.text_area("Resumen del cierre *", help="Describa los logros alcanzados, los objetivos pendientes y el motivo del cierre.")
         recomendaciones = st.text_area("Recomendaciones posteriores")
-        confirmar = st.checkbox("Confirmo el cierre formal del PAI.")
-        guardar = st.form_submit_button(
-            "✅ Cerrar PAI", use_container_width=True, type="primary"
-        )
+        confirmar = st.checkbox("Confirmo el cierre formal del plan general, sin modificar los objetivos pendientes.")
+        guardar = st.form_submit_button("✅ Cerrar PAI", use_container_width=True, type="primary")
 
     if guardar:
         if not resumen.strip():
             st.error("Debe registrar un resumen de cierre.")
         elif not confirmar:
             st.error("Debe confirmar el cierre.")
+        elif fecha_cierre > ahora_colombia().date():
+            st.error("La fecha no puede ser futura.")
         else:
-            with engine.begin() as conn:
-                conn.execute(
-                    text("""
+            try:
+                with engine.begin() as conn:
+                    # Serializa cierres concurrentes del mismo expediente.
+                    conn.execute(text("SELECT pg_advisory_xact_lock(hashtext(:doc))"), {"doc": documento})
+                    existe = conn.execute(text("""
+                        SELECT 1 FROM pai_cierres
+                        WHERE TRIM(CAST(documento_usuario AS TEXT))=:doc LIMIT 1
+                    """), {"doc": documento}).first()
+                    if existe:
+                        st.warning("El PAI ya fue cerrado desde otra sesión. Actualice la pantalla.")
+                        return
+                    conn.execute(text("""
                         INSERT INTO pai_cierres(
                             documento_usuario, fecha_cierre, resultado_final,
-                            resumen_cierre, recomendaciones,
-                            profesional_referente, cerrado_por
-                        )
-                        VALUES(
-                            :doc, CURRENT_DATE, :resultado, :resumen,
+                            resumen_cierre, recomendaciones, profesional_referente, cerrado_por
+                        ) VALUES (
+                            :doc, :fecha, :resultado, :resumen,
                             :recomendaciones, :profesional_id, :usuario
                         )
-                    """),
-                    {
-                        "doc": str(documento),
-                        "resultado": resultado,
-                        "resumen": resumen.strip(),
+                    """), {
+                        "doc": documento, "fecha": fecha_cierre,
+                        "resultado": resultado, "resumen": resumen.strip(),
                         "recomendaciones": recomendaciones.strip(),
                         "profesional_id": profesional_id,
-                        "usuario": st.session_state.get(
-                            "usuario_actual", profesional_nombre or "profesional"
-                        )
-                    }
+                        "usuario": st.session_state.get("usuario_actual", profesional_nombre or "profesional")
+                    })
+                registrar_auditoria(
+                    "CIERRE_PAI", documento=documento, modulo="PAI Asistido V17",
+                    valor_nuevo=resultado,
+                    observacion=f"Fecha efectiva: {fecha_cierre}; objetivos alcanzados: {cumplidos}; pendientes: {pendientes}"
                 )
-            st.success("✅ PAI cerrado formalmente.")
-            st.rerun()
+                invalidar_cache_datos()
+                st.success("✅ PAI cerrado formalmente; los objetivos se conservaron sin modificaciones.")
+                st.rerun()
+            except Exception as exc:
+                st.error("No se pudo guardar el cierre. Verifique la conexión y la estructura de pai_cierres antes de reintentar.")
 
 
 # V16.158 - Acceso robusto a Comité de Casos.
@@ -14455,8 +14476,8 @@ def panel_profesional_v15(doc_forzado=None, incrustado=False):
         k3.metric("🔵 En proceso", proceso_a)
         k4.metric("✅ Alcanzados", cumplidos_a)
 
-        tab_hoy_v17, tab_nuevo_v17, tab_trabajo_v17, tab_hist_v17 = st.tabs([
-            "🧭 Mi PAI hoy", "➕ Nuevo objetivo", "✍️ Trabajar objetivo", "📚 Historial"
+        tab_hoy_v17, tab_nuevo_v17, tab_trabajo_v17, tab_hist_v17, tab_cierre_v17 = st.tabs([
+            "🧭 Mi PAI hoy", "➕ Nuevo objetivo", "✍️ Trabajar objetivo", "📚 Historial", "✅ Cierre PAI"
         ])
 
         # ========================================================
@@ -15127,6 +15148,14 @@ def panel_profesional_v15(doc_forzado=None, incrustado=False):
                             errors="coerce"
                         ).fillna(0).iloc[0]
                         st.write(f"📚 {txt} · {int(round(float(pct_h)))}%")
+
+        # V16.224 - Cierre formal visible en la interfaz asistida que usan los profesionales.
+        with tab_cierre_v17:
+            st.markdown(f"### ✅ Cierre del PAI de {nombre_usuario}")
+            st.warning(f"Confirme que está cerrando el expediente de **{nombre_usuario} · CC {doc_sel}**.")
+            cierre_pai_usuario_v16(
+                doc_sel, profesional_id=prof_id, profesional_nombre=prof_nombre
+            )
 
         st.caption(
             "PAI operativo · Los cambios quedan registrados en las tablas y auditoría institucional."
