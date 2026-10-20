@@ -74,6 +74,32 @@ def normalizar_sexo_institucional(valor):
 
     return "Otro / revisar"
 
+def normalizar_etnia_institucional(valor):
+    """Unifica variantes de captura únicamente en reportes y gráficos."""
+    if pd.isna(valor):
+        return "Sin información"
+    v = str(valor).strip().upper()
+    v = unicodedata.normalize("NFKD", v)
+    v = "".join(c for c in v if not unicodedata.combining(c))
+    v = re.sub(r"^\s*\d+\s*[-.)]?\s*", "", v)
+    v = re.sub(r"[^A-Z0-9]+", " ", v).strip()
+    if not v or v in {"NAN", "NONE", "NULL", "SIN INFORMACION", "NO REGISTRA"}:
+        return "Sin información"
+    if v == "MESTIZO" or v == "MESTIZA":
+        return "Mestizo"
+    if v.startswith("NEGRO") or v.startswith("AFROCOLOMBIAN") or v.startswith("AFRODESCENDIENT") or v.startswith("MULATO"):
+        return "Negro(a), mulato(a), afrocolombiano(a) o afrodescendiente"
+    if v.startswith("INDIGEN"):
+        return "Indígena"
+    if v.startswith("RAIZAL"):
+        return "Raizal"
+    if v.startswith("PALENQUER"):
+        return "Palenquero"
+    if v.startswith("ROM ") or v == "ROM" or v.startswith("GITAN"):
+        return "Rrom (gitano)"
+    return str(valor).strip()
+
+
 def _tabla_usuarios_disponible():
     try:
         with engine.connect() as conn:
@@ -19443,17 +19469,21 @@ def modulo_egresos_impacto_v169():
     # ==========================
 
     if "sexo_nacer" in df_impacto.columns:
-        st.plotly_chart(px.pie(df_impacto, names="sexo_nacer", title="Sexo"))
+        sexo_impacto = df_impacto.copy()
+        sexo_impacto["sexo_reporte"] = sexo_impacto["sexo_nacer"].apply(normalizar_sexo_institucional)
+        st.plotly_chart(px.pie(sexo_impacto, names="sexo_reporte", title="Sexo"), use_container_width=True)
 
     if "orientacion_lgbti" in df_impacto.columns:
         st.plotly_chart(px.histogram(df_impacto, x="orientacion_lgbti", title="Orientación sexual"))
 
     if "grupos_etnicos_afro_indigena" in df_impacto.columns:
-        st.plotly_chart(px.histogram(df_impacto, x="grupos_etnicos_afro_indigena", title="Grupos étnicos"))
+        etnia_impacto = df_impacto.copy()
+        etnia_impacto["etnia_reporte"] = etnia_impacto["grupos_etnicos_afro_indigena"].apply(normalizar_etnia_institucional)
+        st.plotly_chart(px.histogram(etnia_impacto, x="etnia_reporte", title="Grupos étnicos"), use_container_width=True)
 
     st.plotly_chart(px.histogram(df_impacto, x="edad", nbins=10, title="Edad"))
 
-    st.info(f"Egresos de impacto: {total_egresados} | Tasa: {tasa_egreso}% · Los fallecimientos no se contabilizan como casos exitosos.")
+    st.info(f"Egresos de impacto: {total_egresados} | Tasa: {tasa_egreso}%")
 
 def modulo_reportes_institucionales_v169():
 
@@ -20830,7 +20860,13 @@ def modulo_reportes_institucionales_v169():
         e1, e2 = st.columns(2)
 
         with e1:
-            etnia_tabla = _tabla_categoria(df_f, col_etnia, 12)
+            # Normalizar antes de agrupar para evitar categorías duplicadas.
+            if col_etnia and col_etnia in df_f.columns:
+                df_etnia = df_f.copy()
+                df_etnia["_etnia_normalizada_reporte"] = df_etnia[col_etnia].apply(normalizar_etnia_institucional)
+                etnia_tabla = _tabla_categoria(df_etnia, "_etnia_normalizada_reporte", 12)
+            else:
+                etnia_tabla = _tabla_categoria(df_f, col_etnia, 12)
             if not etnia_tabla.empty:
                 fig_etnia = px.bar(
                     etnia_tabla,
@@ -34469,17 +34505,21 @@ with tab3:
     # ==========================
 
     if "sexo_nacer" in df_impacto.columns:
-        st.plotly_chart(px.pie(df_impacto, names="sexo_nacer", title="Sexo"))
+        sexo_impacto = df_impacto.copy()
+        sexo_impacto["sexo_reporte"] = sexo_impacto["sexo_nacer"].apply(normalizar_sexo_institucional)
+        st.plotly_chart(px.pie(sexo_impacto, names="sexo_reporte", title="Sexo"), use_container_width=True)
 
     if "orientacion_lgbti" in df_impacto.columns:
         st.plotly_chart(px.histogram(df_impacto, x="orientacion_lgbti", title="Orientación sexual"))
 
     if "grupos_etnicos_afro_indigena" in df_impacto.columns:
-        st.plotly_chart(px.histogram(df_impacto, x="grupos_etnicos_afro_indigena", title="Grupos étnicos"))
+        etnia_impacto = df_impacto.copy()
+        etnia_impacto["etnia_reporte"] = etnia_impacto["grupos_etnicos_afro_indigena"].apply(normalizar_etnia_institucional)
+        st.plotly_chart(px.histogram(etnia_impacto, x="etnia_reporte", title="Grupos étnicos"), use_container_width=True)
 
     st.plotly_chart(px.histogram(df_impacto, x="edad", nbins=10, title="Edad"))
 
-    st.info(f"Egresos de impacto: {total_egresados} | Tasa: {tasa_egreso}% · Los fallecimientos no se contabilizan como casos exitosos.")
+    st.info(f"Egresos de impacto: {total_egresados} | Tasa: {tasa_egreso}%")
 with tab4:
 
     # ============================================================
@@ -34927,7 +34967,13 @@ with tab4:
         e1, e2 = st.columns(2)
 
         with e1:
-            etnia_tabla = _tabla_categoria(df_f, col_etnia, 12)
+            # Normalizar antes de agrupar para evitar categorías duplicadas.
+            if col_etnia and col_etnia in df_f.columns:
+                df_etnia = df_f.copy()
+                df_etnia["_etnia_normalizada_reporte"] = df_etnia[col_etnia].apply(normalizar_etnia_institucional)
+                etnia_tabla = _tabla_categoria(df_etnia, "_etnia_normalizada_reporte", 12)
+            else:
+                etnia_tabla = _tabla_categoria(df_f, col_etnia, 12)
             if not etnia_tabla.empty:
                 fig_etnia = px.bar(
                     etnia_tabla,
