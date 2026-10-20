@@ -806,6 +806,11 @@ def _asegurar_control_posibles_duplicados_v16214():
                     observacion_revision TEXT
                 )
             """))
+            # Seguridad persistente: proteger la tabla también en instalaciones nuevas.
+            # No se crean políticas públicas; la conexión directa de servidor debe
+            # usar un rol PostgreSQL autorizado, no anon/authenticated.
+            conn.execute(text("ALTER TABLE public.posibles_duplicados ENABLE ROW LEVEL SECURITY"))
+            conn.execute(text("REVOKE ALL PRIVILEGES ON TABLE public.posibles_duplicados FROM anon, authenticated, PUBLIC"))
             conn.execute(text("""
                 CREATE INDEX IF NOT EXISTS idx_posibles_duplicados_estado_v16214
                 ON posibles_duplicados (estado, detectado_en DESC)
@@ -1583,6 +1588,9 @@ def _asegurar_historia_vida_v16222():
                     actualizado_en TIMESTAMPTZ NOT NULL DEFAULT NOW()
                 )
             """))
+            # Mantener RLS y retirar acceso API público en futuras creaciones.
+            conn.execute(text("ALTER TABLE public.historia_vida_complementos ENABLE ROW LEVEL SECURITY"))
+            conn.execute(text("REVOKE ALL PRIVILEGES ON TABLE public.historia_vida_complementos FROM anon, authenticated, PUBLIC"))
     except Exception:
         pass
 
