@@ -19052,6 +19052,20 @@ def formulario_genero_diversidad(doc_forzado=None, nombre_persona=None, incrusta
         valor = "" if valor is None else str(valor).strip()
         return opciones.index(valor) if valor in opciones else default
 
+    # Fuera de st.form para que el cambio de identidad actualice los campos visibles.
+    identidad_opts = [
+        "Mujer cisgénero", "Mujer trans", "Hombre cisgénero", "Hombre trans",
+        "Persona no binaria", "Género fluido", "Queer", "Otra",
+        "No informa", "Prefiere no responder"
+    ]
+    identidad_genero = st.selectbox(
+        "Identidad de género / se reconoce como",
+        identidad_opts,
+        index=_gidx(identidad_opts, _gv("identidad_genero", "No informa")),
+        key=f"identidad_genero_condicional_{doc_forzado or 'manual'}"
+    )
+    es_cisgenero = identidad_genero in {"Hombre cisgénero", "Mujer cisgénero"}
+
     with st.form(f"form_genero_diversidad_{doc_forzado or 'manual'}"):
         if doc_forzado:
             numero_identificacion = str(doc_forzado).strip()
@@ -19081,35 +19095,20 @@ def formulario_genero_diversidad(doc_forzado=None, nombre_persona=None, incrusta
             index=_gidx(sexo_opts, _gv("sexo_al_nacer", "Masculino"))
         )
 
-        identidad_opts = [
-            "Mujer cisgénero", "Mujer trans",
-            "Hombre cisgénero", "Hombre trans",
-            "Persona no binaria", "Género fluido",
-            "Queer", "Otra", "No informa",
-            "Prefiere no responder"
-        ]
-        identidad_genero = st.selectbox(
-            "Identidad de género / se reconoce como",
-            identidad_opts,
-            index=_gidx(
-                identidad_opts,
-                _gv("identidad_genero", "Hombre cisgénero")
+        # En identidades cisgénero no se exige información complementaria.
+        # Se conservan las respuestas históricas; nunca se presupone heterosexualidad.
+        orientacion_sexual = str(_gv("orientacion_sexual", "No informa") or "No informa")
+        if not es_cisgenero:
+            orientacion_opts = [
+                "No informa", "Prefiere no responder", "Heterosexual", "Homosexual",
+                "Lesbiana", "Bisexual", "Pansexual", "Asexual", "Otra"
+            ]
+            orientacion_sexual = st.selectbox(
+                "Orientación sexual (opcional)", orientacion_opts,
+                index=_gidx(orientacion_opts, orientacion_sexual)
             )
-        )
-
-        orientacion_opts = [
-            "Heterosexual", "Homosexual", "Lesbiana",
-            "Bisexual", "Pansexual", "Asexual",
-            "Otra", "No informa", "Prefiere no responder"
-        ]
-        orientacion_sexual = st.selectbox(
-            "Orientación sexual",
-            orientacion_opts,
-            index=_gidx(
-                orientacion_opts,
-                _gv("orientacion_sexual", "Heterosexual")
-            )
-        )
+        else:
+            st.caption("Para personas cisgénero, las preguntas complementarias de diversidad son opcionales y no bloquean el guardado.")
 
         # V16.78 - Se retira del formulario el campo "Expresión de género".
         # La columna se conserva en base para no perder datos históricos.
@@ -24014,12 +24013,12 @@ def caracterizacion_habitabilidad_v1611():
         t1, t2 = st.columns(2)
         with t1:
             departamento_origen = elegir_hab("Departamento de origen *", departamentos_hab[1:], _v("departamento_origen", ""), f"hab_dep_origen_{documento}")
-            municipio_origen_sel = elegir_hab("Municipio de origen *", municipios_hab.get(departamento_origen, []), _v("municipio_origen", ""), f"hab_mun_origen_{documento}")
+            municipio_origen_sel = elegir_hab("Municipio de origen *", municipios_hab.get(departamento_origen, ["PEREIRA", "DOSQUEBRADAS", "CALI", "ARMENIA", "MANIZALES", "BOGOTÁ D.C."]), _v("municipio_origen", ""), f"hab_mun_origen_{documento}")
             municipio_origen_otro = st.text_input("Otro municipio de origen", key=f"hab_mun_origen_otro_{documento}") if municipio_origen_sel == "OTRO (ESPECIFICAR)" else ""
             municipio_origen = municipio_origen_otro.strip().upper() if municipio_origen_sel == "OTRO (ESPECIFICAR)" else municipio_origen_sel.replace(" (REGISTRO ANTERIOR - REVISAR)", "")
         with t2:
             departamento_pernocta = elegir_hab("Departamento donde pernoctaba *", departamentos_hab[1:], _v("departamento_pernocta_calle", ""), f"hab_dep_pernocta_{documento}")
-            municipio_pernocta_sel = elegir_hab("Municipio donde pernoctaba *", municipios_hab.get(departamento_pernocta, []), _v("municipio_pernocta_calle", ""), f"hab_mun_pernocta_{documento}")
+            municipio_pernocta_sel = elegir_hab("Municipio donde pernoctaba *", municipios_hab.get(departamento_pernocta, ["PEREIRA", "DOSQUEBRADAS", "CALI", "ARMENIA", "MANIZALES", "BOGOTÁ D.C."]), _v("municipio_pernocta_calle", ""), f"hab_mun_pernocta_{documento}")
             municipio_pernocta_otro = st.text_input("Otro municipio de pernocta", key=f"hab_mun_pernocta_otro_{documento}") if municipio_pernocta_sel == "OTRO (ESPECIFICAR)" else ""
             municipio_pernocta_calle = municipio_pernocta_otro.strip().upper() if municipio_pernocta_sel == "OTRO (ESPECIFICAR)" else municipio_pernocta_sel.replace(" (REGISTRO ANTERIOR - REVISAR)", "")
         sector_previo = normalizar_sector_pernocta_v16223(_v("barrio_pernocta_calle", ""))
@@ -24469,29 +24468,16 @@ def caracterizacion_habitabilidad_v1611():
 
     campos_pendientes_hab = [f"{seccion}: {campo}"
         for seccion, campos in pendientes_por_seccion_hab.items() for campo in campos]
-    total_validaciones_hab = 25 + (1 if causa_inicio == "Otra" else 0) + (1 if causa_permanencia == "Otra" else 0)
-    st.markdown("### 📋 Control de completitud de la caracterización")
-    st.progress(max(0.0, min(1.0, (total_validaciones_hab - len(campos_pendientes_hab)) / total_validaciones_hab)))
-    st.caption(f"{len(campos_pendientes_hab)} campos o verificaciones pendientes. La información clínica de Enfermería, el módulo de Género y el PAI se supervisan por separado.")
-    if campos_pendientes_hab:
-        st.warning("La caracterización NO puede finalizarse ni completar la tarea mientras existan pendientes. Puede guardarse como borrador.")
-        with st.expander("Campos pendientes por sección", expanded=True):
-            for seccion, campos in pendientes_por_seccion_hab.items():
-                st.markdown(f"**{seccion} ({len(campos)})**")
-                for campo in campos: st.write("• " + campo)
-    else:
-        st.success("Todos los campos editables obligatorios fueron validados. Puede finalizar la caracterización.")
-    modo_guardado_hab = st.radio("Tipo de guardado", ["Guardar borrador (no completa tarea)", "Finalizar caracterización"], horizontal=True, key=f"hab_modo_guardado_{documento}")
-    finalizar_hab = modo_guardado_hab == "Finalizar caracterización"
-    if st.button(
-        "💾 " + ("Finalizar caracterización" if finalizar_hab else "Guardar borrador"),
-        use_container_width=True,
-        type="primary",
-        disabled=not confirmar
-    ):
-        if finalizar_hab and campos_pendientes_hab:
-            st.error("No se puede finalizar. Complete los campos señalados o seleccione una respuesta válida como NO SABE / NO INFORMA.")
+    # Validación local, solo al intentar guardar. No mostrar contadores,
+    # barras ni listas de pendientes durante el diligenciamiento.
+    if st.button("💾 Guardar caracterización completa", use_container_width=True,
+                 type="primary", disabled=not confirmar):
+        if campos_pendientes_hab:
+            st.error("No se guardó la caracterización. Complete todos los campos obligatorios de las secciones: "
+                     + ", ".join(pendientes_por_seccion_hab.keys())
+                     + ". Revise también las respuestas condicionadas marcadas como Otro.")
             st.stop()
+        finalizar_hab = True
         # V16.91 - trazabilidad explícita de la sesión que registra
         nombre_sesion_hab = str(
             st.session_state.get("nombre_funcionario", "")
@@ -24822,8 +24808,8 @@ def caracterizacion_habitabilidad_v1611():
                         validado_en=CASE WHEN :estado='COMPLETA' THEN NOW() ELSE NULL END
                     WHERE numero_identificacion=:doc
                 """), {
-                    "estado": "COMPLETA" if finalizar_hab else "BORRADOR",
-                    "pendientes": " | ".join(campos_pendientes_hab) or None,
+                    "estado": "COMPLETA",
+                    "pendientes": None,
                     "doc": documento
                 })
                 # Historial inmutable de cada guardado de la caracterización
