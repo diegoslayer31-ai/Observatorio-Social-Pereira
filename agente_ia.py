@@ -23990,22 +23990,43 @@ def caracterizacion_habitabilidad_v1611():
 
         st.markdown("#### 📍 Trayectoria territorial")
 
+        # V16.245: opciones estructuradas; los valores antiguos se preservan para revisión.
+        departamentos_hab = ["", "AMAZONAS", "ANTIOQUIA", "ARAUCA", "ATLÁNTICO", "BOGOTÁ D.C.", "BOLÍVAR", "BOYACÁ", "CALDAS", "CAQUETÁ", "CASANARE", "CAUCA", "CESAR", "CHOCÓ", "CÓRDOBA", "CUNDINAMARCA", "GUAINÍA", "GUAVIARE", "HUILA", "LA GUAJIRA", "MAGDALENA", "META", "NARIÑO", "NORTE DE SANTANDER", "PUTUMAYO", "QUINDÍO", "RISARALDA", "SAN ANDRÉS Y PROVIDENCIA", "SANTANDER", "SUCRE", "TOLIMA", "VALLE DEL CAUCA", "VAUPÉS", "VICHADA", "OTRO / EXTERIOR", "NO SABE", "NO INFORMA"]
+        municipios_hab = {
+            "RISARALDA": ["PEREIRA", "DOSQUEBRADAS", "LA VIRGINIA", "SANTA ROSA DE CABAL", "MARSELLA", "BELÉN DE UMBRÍA", "APÍA", "BALBOA", "GUÁTICA", "LA CELIA", "MISTRATÓ", "PUEBLO RICO", "QUINCHÍA", "SANTUARIO"],
+            "VALLE DEL CAUCA": ["CALI", "CARTAGO", "BUGA", "PALMIRA", "TULUÁ", "JAMUNDÍ", "BUENAVENTURA"],
+            "QUINDÍO": ["ARMENIA", "CALARCÁ", "MONTENEGRO", "QUIMBAYA", "LA TEBAIDA"],
+            "CALDAS": ["MANIZALES", "CHINCHINÁ", "VILLAMARÍA", "ANSERMA", "RIOSUCIO"],
+        }
+        sectores_hab = {
+            "PEREIRA": ["CENTRO", "PARQUE LA LIBERTAD", "PUENTES DE LA 12", "PARQUE OLAYA HERRERA", "VIADUCTO", "PARQUE EL LAGO", "PLAZA DE BOLÍVAR", "CUBA", "BARRIO AMÉRICA", "ALTAGRACIA", "20 CON NOVENA"],
+            "DOSQUEBRADAS": ["SAN JUDAS", "COMUNA 8", "GUADUALITO", "LA MARIANA", "LA HERMOSA", "DOSQUEBRADAS (SIN SECTOR ESPECÍFICO)"],
+        }
+        sin_dato_hab = ["NO SABE", "NO INFORMA", "NO APLICA"]
+        def elegir_hab(etiqueta, opciones, valor_anterior, key):
+            opciones = list(dict.fromkeys([""] + opciones + ["OTRO (ESPECIFICAR)"] + sin_dato_hab))
+            previo = str(valor_anterior or "").strip().upper()
+            if previo and previo not in opciones:
+                opciones.append(previo + " (REGISTRO ANTERIOR - REVISAR)")
+                previo = opciones[-1]
+            return st.selectbox(etiqueta, opciones, index=opciones.index(previo) if previo in opciones else 0, key=key)
+
         t1, t2 = st.columns(2)
-        municipio_origen = t1.text_input(
-            "Municipio de origen",
-            value=str(_v("municipio_origen", "")),
-            placeholder="Ej.: PEREIRA, DOSQUEBRADAS, ARMENIA..."
-        )
-        municipio_pernocta_calle = t2.text_input(
-            "Municipio donde pernoctaba en situación de calle",
-            value=str(_v("municipio_pernocta_calle", "")),
-            placeholder="Ej.: PEREIRA"
-        )
-        barrio_pernocta_calle = st.text_input(
-            "Barrio / sector donde pernoctaba en situación de calle",
-            value=str(_v("barrio_pernocta_calle", "")),
-            placeholder="Ej.: CENTRO, PARQUE LA LIBERTAD, PUENTES DE LA 12..."
-        )
+        with t1:
+            departamento_origen = elegir_hab("Departamento de origen *", departamentos_hab[1:], _v("departamento_origen", ""), f"hab_dep_origen_{documento}")
+            municipio_origen_sel = elegir_hab("Municipio de origen *", municipios_hab.get(departamento_origen, []), _v("municipio_origen", ""), f"hab_mun_origen_{documento}")
+            municipio_origen_otro = st.text_input("Otro municipio de origen", key=f"hab_mun_origen_otro_{documento}") if municipio_origen_sel == "OTRO (ESPECIFICAR)" else ""
+            municipio_origen = municipio_origen_otro.strip().upper() if municipio_origen_sel == "OTRO (ESPECIFICAR)" else municipio_origen_sel.replace(" (REGISTRO ANTERIOR - REVISAR)", "")
+        with t2:
+            departamento_pernocta = elegir_hab("Departamento donde pernoctaba *", departamentos_hab[1:], _v("departamento_pernocta_calle", ""), f"hab_dep_pernocta_{documento}")
+            municipio_pernocta_sel = elegir_hab("Municipio donde pernoctaba *", municipios_hab.get(departamento_pernocta, []), _v("municipio_pernocta_calle", ""), f"hab_mun_pernocta_{documento}")
+            municipio_pernocta_otro = st.text_input("Otro municipio de pernocta", key=f"hab_mun_pernocta_otro_{documento}") if municipio_pernocta_sel == "OTRO (ESPECIFICAR)" else ""
+            municipio_pernocta_calle = municipio_pernocta_otro.strip().upper() if municipio_pernocta_sel == "OTRO (ESPECIFICAR)" else municipio_pernocta_sel.replace(" (REGISTRO ANTERIOR - REVISAR)", "")
+        sector_previo = normalizar_sector_pernocta_v16223(_v("barrio_pernocta_calle", ""))
+        sector_sel = elegir_hab("Barrio / sector donde pernoctaba *", sectores_hab.get(municipio_pernocta_calle, []), sector_previo, f"hab_sector_pernocta_{documento}")
+        sector_otro = st.text_input("Especifique el otro barrio / sector *", key=f"hab_sector_otro_{documento}") if sector_sel == "OTRO (ESPECIFICAR)" else ""
+        barrio_pernocta_calle = sector_otro.strip().upper() if sector_sel == "OTRO (ESPECIFICAR)" else sector_sel.replace(" (REGISTRO ANTERIOR - REVISAR)", "")
+        st.caption("Las opciones NO SABE y NO INFORMA son respuestas válidas; nunca se debe inventar una ubicación. Los valores históricos se muestran para revisión.")
         st.caption(
             "Estos campos describen la trayectoria territorial previa al ingreso "
             "y no reemplazan la dirección o barrio de residencia actual."
@@ -24381,12 +24402,96 @@ def caracterizacion_habitabilidad_v1611():
         key="habcalle_confirma_v1611"
     )
 
+    # V16.246 - Validación integral de los campos editables del formulario.
+    # SPA, derechos y medicación son de Enfermería; Género y PAI son módulos
+    # independientes. Su ausencia se informa pero NO se atribuye al profesional.
+    pendientes_por_seccion_hab = {}
+    def requerido_hab(seccion, etiqueta, valor):
+        v = str(valor if valor is not None else "").strip()
+        if (not v or v.startswith("OTRO (") or
+                "REGISTRO ANTERIOR - REVISAR" in v or v.upper() in {"NAN", "NONE", "NULL"}):
+            pendientes_por_seccion_hab.setdefault(seccion, []).append(etiqueta)
+
+    sec = "Trayectoria en calle"
+    requerido_hab(sec, "Departamento de origen", departamento_origen)
+    requerido_hab(sec, "Municipio de origen", municipio_origen)
+    requerido_hab(sec, "Departamento de pernocta", departamento_pernocta)
+    requerido_hab(sec, "Municipio de pernocta", municipio_pernocta_calle)
+    requerido_hab(sec, "Barrio / sector de pernocta", barrio_pernocta_calle)
+    requerido_hab(sec, "Causa de inicio de vida en calle", causa_inicio)
+    requerido_hab(sec, "Causa de permanencia en calle", causa_permanencia)
+    requerido_hab(sec, "Relación entre consumo de SPA y vida en calle", relacion_consumo_calle)
+    if causa_inicio == "Otra": requerido_hab(sec, "Especificar otra causa de inicio", otro_inicio)
+    if causa_permanencia == "Otra": requerido_hab(sec, "Especificar otra causa de permanencia", otra_permanencia)
+    if municipio_origen_sel == "OTRO (ESPECIFICAR)": requerido_hab(sec, "Otro municipio de origen", municipio_origen_otro)
+    if municipio_pernocta_sel == "OTRO (ESPECIFICAR)": requerido_hab(sec, "Otro municipio de pernocta", municipio_pernocta_otro)
+    if sector_sel == "OTRO (ESPECIFICAR)": requerido_hab(sec, "Otro barrio o sector", sector_otro)
+
+    # Los valores numéricos inicializados por Streamlit no son prueba de captura.
+    # Confirmación explícita del profesional, sin inventar edades ni trayectorias.
+    numeros_verificados_hab = st.checkbox(
+        "Verifiqué con la persona la edad de inicio, los años de vida en calle y el número de episodios (incluidos los valores cero cuando correspondan)",
+        value=False, key=f"hab_numeros_verificados_v16246_{documento}")
+    if not numeros_verificados_hab:
+        pendientes_por_seccion_hab.setdefault(sec, []).append("Confirmar datos numéricos de trayectoria")
+    if edad_inicio_calle > 0 and tiempo_anos_calle > edad_inicio_calle + 1:
+        st.warning("Revise la coherencia entre edad de inicio y años acumulados en calle.")
+
+    sec = "Redes y apoyos"
+    requerido_hab(sec, "Cuenta con red de apoyo", tiene_red_apoyo)
+    if tiene_red_apoyo == "Sí":
+        requerido_hab(sec, "Tipo principal de red de apoyo", tipo_red_apoyo)
+        if tipo_red_apoyo == "No aplica":
+            pendientes_por_seccion_hab.setdefault(sec, []).append("Tipo de red no puede ser No aplica si cuenta con apoyo")
+    requerido_hab(sec, "Último contacto familiar", tiempo_ultimo_contacto_familiar)
+    requerido_hab(sec, "Posibilidad de retorno familiar", posibilidad_retorno_familiar)
+
+    sec = "Salud mental (abordaje profesional)"
+    requerido_hab(sec, "Apoyo emocional", apoyo_emocional)
+    requerido_hab(sec, "Apoyo psicológico / psicosocial", apoyo_psicosocial)
+    requerido_hab(sec, "Antecedente o necesidad de salud mental", antecedente_salud_mental)
+    requerido_hab(sec, "Estado del diagnóstico", estado_salud_mental)
+    requerido_hab(sec, "Seguimiento de salud mental", seguimiento_salud_mental)
+    if estado_salud_mental == "DIAGNÓSTICO CONFIRMADO":
+        requerido_hab(sec, "Diagnóstico / descripción confirmada", diagnostico_salud_mental)
+
+    sec = "Superación y análisis"
+    requerido_hab(sec, "Fuente principal de ingresos", fuente_ingreso)
+    requerido_hab(sec, "Regularidad del ingreso", ingreso_regular)
+    requerido_hab(sec, "Situación de alojamiento", alojamiento_actual)
+    requerido_hab(sec, "Etapa del proceso", etapa_proceso)
+    requerido_hab(sec, "Barrera principal para la superación", barrera_principal)
+    requerido_hab(sec, "Factor protector", factor_protector)
+    if fuente_ingreso == "Otra":
+        requerido_hab(sec, "Describir otra fuente de ingreso en observaciones", observaciones)
+    if alojamiento_actual == "Otra":
+        requerido_hab(sec, "Describir otro alojamiento en observaciones", observaciones)
+
+    campos_pendientes_hab = [f"{seccion}: {campo}"
+        for seccion, campos in pendientes_por_seccion_hab.items() for campo in campos]
+    total_validaciones_hab = 25 + (1 if causa_inicio == "Otra" else 0) + (1 if causa_permanencia == "Otra" else 0)
+    st.markdown("### 📋 Control de completitud de la caracterización")
+    st.progress(max(0.0, min(1.0, (total_validaciones_hab - len(campos_pendientes_hab)) / total_validaciones_hab)))
+    st.caption(f"{len(campos_pendientes_hab)} campos o verificaciones pendientes. La información clínica de Enfermería, el módulo de Género y el PAI se supervisan por separado.")
+    if campos_pendientes_hab:
+        st.warning("La caracterización NO puede finalizarse ni completar la tarea mientras existan pendientes. Puede guardarse como borrador.")
+        with st.expander("Campos pendientes por sección", expanded=True):
+            for seccion, campos in pendientes_por_seccion_hab.items():
+                st.markdown(f"**{seccion} ({len(campos)})**")
+                for campo in campos: st.write("• " + campo)
+    else:
+        st.success("Todos los campos editables obligatorios fueron validados. Puede finalizar la caracterización.")
+    modo_guardado_hab = st.radio("Tipo de guardado", ["Guardar borrador (no completa tarea)", "Finalizar caracterización"], horizontal=True, key=f"hab_modo_guardado_{documento}")
+    finalizar_hab = modo_guardado_hab == "Finalizar caracterización"
     if st.button(
-        "💾 Guardar caracterización especializada",
+        "💾 " + ("Finalizar caracterización" if finalizar_hab else "Guardar borrador"),
         use_container_width=True,
         type="primary",
         disabled=not confirmar
     ):
+        if finalizar_hab and campos_pendientes_hab:
+            st.error("No se puede finalizar. Complete los campos señalados o seleccione una respuesta válida como NO SABE / NO INFORMA.")
+            st.stop()
         # V16.91 - trazabilidad explícita de la sesión que registra
         nombre_sesion_hab = str(
             st.session_state.get("nombre_funcionario", "")
@@ -24477,6 +24582,12 @@ def caracterizacion_habitabilidad_v1611():
 
         try:
             with engine.begin() as conn:
+                # Columnas nuevas para separar departamento de municipio.
+                conn.execute(text("ALTER TABLE public.caracterizacion_habitabilidad_calle ADD COLUMN IF NOT EXISTS departamento_origen TEXT"))
+                conn.execute(text("ALTER TABLE public.caracterizacion_habitabilidad_calle ADD COLUMN IF NOT EXISTS departamento_pernocta_calle TEXT"))
+                conn.execute(text("ALTER TABLE public.caracterizacion_habitabilidad_calle ADD COLUMN IF NOT EXISTS estado_diligenciamiento TEXT DEFAULT 'PENDIENTE_REVISION'"))
+                conn.execute(text("ALTER TABLE public.caracterizacion_habitabilidad_calle ADD COLUMN IF NOT EXISTS pendientes_diligenciamiento TEXT"))
+                conn.execute(text("ALTER TABLE public.caracterizacion_habitabilidad_calle ADD COLUMN IF NOT EXISTS validado_en TIMESTAMPTZ"))
                 conn.execute(
                     text("""
                         INSERT INTO caracterizacion_habitabilidad_calle (
@@ -24697,6 +24808,24 @@ def caracterizacion_habitabilidad_v1611():
                     payload
                 )
 
+                conn.execute(text("""
+                    UPDATE public.caracterizacion_habitabilidad_calle
+                    SET departamento_origen=:departamento_origen,
+                        departamento_pernocta_calle=:departamento_pernocta
+                    WHERE numero_identificacion=:doc
+                """), {"departamento_origen": departamento_origen,
+                        "departamento_pernocta": departamento_pernocta, "doc": documento})
+                conn.execute(text("""
+                    UPDATE public.caracterizacion_habitabilidad_calle
+                    SET estado_diligenciamiento=:estado,
+                        pendientes_diligenciamiento=:pendientes,
+                        validado_en=CASE WHEN :estado='COMPLETA' THEN NOW() ELSE NULL END
+                    WHERE numero_identificacion=:doc
+                """), {
+                    "estado": "COMPLETA" if finalizar_hab else "BORRADOR",
+                    "pendientes": " | ".join(campos_pendientes_hab) or None,
+                    "doc": documento
+                })
                 # Historial inmutable de cada guardado de la caracterización
                 conn.execute(
                     text("""
@@ -24735,15 +24864,16 @@ def caracterizacion_habitabilidad_v1611():
                         "sesion": usuario,
                     }
                 )
-            _n_tareas_hab = _completar_tarea_automatica_v16171(
+            _n_tareas_hab = (_completar_tarea_automatica_v16171(
                 documento,
                 "CARACTERIZACION_HABITABILIDAD",
-                "Caracterización especializada de Habitabilidad en Calle guardada."
-            )
-            st.session_state.pop("tarea_objetivo_doc_v16171", None)
-            st.session_state.pop("tarea_objetivo_id_v16171", None)
+                "Caracterización especializada finalizada y validada."
+            ) if finalizar_hab else 0)
+            if finalizar_hab:
+                st.session_state.pop("tarea_objetivo_doc_v16171", None)
+                st.session_state.pop("tarea_objetivo_id_v16171", None)
             st.session_state["habcalle_flash_v1630"] = (
-                f"✅ Caracterización especializada de {nombre} guardada correctamente."
+                f"✅ {'Caracterización finalizada' if finalizar_hab else 'Borrador guardado'} de {nombre}."
                 + (" La tarea asignada quedó COMPLETADA." if _n_tareas_hab else "")
             )
             st.rerun()
