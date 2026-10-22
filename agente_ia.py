@@ -69,6 +69,7 @@ def normalizar_sector_pernocta_v16223(valor):
         "PUENTE 12": "PUENTES DE LA 12",
         "PUENTES 12": "PUENTES DE LA 12",
         "EN LOS PUENTES DE LA 12": "PUENTES DE LA 12",
+        "EN LOS PUENTES": "PUENTES DE LA 12",  # Equivalencia confirmada por coordinación
         "EN LA 12 EN LOS PUENTES": "PUENTES DE LA 12",
         "EN LA 12 LOS PUENTES": "PUENTES DE LA 12",
         "LOS PUENTES DE LA 12": "PUENTES DE LA 12",
@@ -83,10 +84,26 @@ def normalizar_sector_pernocta_v16223(valor):
         "CENTRO DE PEREIRA": "CENTRO",
         "EN EL CENTRO": "CENTRO",
         "EN LAS CALLE DEL CENTRO": "CENTRO",
+        "ESTABA PAGANDO PIEZA EN EL CENTRO DE PEREIRA": "CENTRO",
+        "EN EL CENTRO Y ALREDEDORES PAGABA HOTEL": "CENTRO",
         "PARQUE OLAYA HERRERA": "PARQUE OLAYA HERRERA",
         "EN EL OLAYA": "PARQUE OLAYA HERRERA",
     }
     return aliases.get(txt, txt)
+
+
+# Puntos de referencia territoriales: compartidos por mapa interactivo y PDF.
+# Son referencias de sector, no ubicaciones exactas de las personas.
+COORDENADAS_SECTORES_PERNOCTA = {
+    "CENTRO": (4.8143, -75.6946),
+    "PLAZA DE BOLIVAR": (4.8144, -75.6943),
+    "PARQUE LA LIBERTAD": (4.8177, -75.6925),
+    "PARQUE EL LAGO": (4.8122, -75.6994),
+    "PUENTES DE LA 12": (4.8114, -75.6879),
+    "VIADUCTO": (4.8192, -75.6847),
+    "CUBA": (4.7974, -75.7364),
+    "PARQUE OLAYA HERRERA": (4.8092321, -75.6964031),
+}
 
 
 def normalizar_sexo_institucional(valor):
@@ -21183,15 +21200,7 @@ def modulo_reportes_institucionales_v169():
 
                         # Coordenadas de referencia de puntos recurrentes de Pereira.
                         # Se usan solo para visualización; los sectores no reconocidos permanecen en la tabla.
-                        coords_sector = {
-                            "CENTRO": (4.8143, -75.6946),
-                            "PLAZA DE BOLIVAR": (4.8144, -75.6943),
-                            "PARQUE LA LIBERTAD": (4.8177, -75.6925),
-                            "PARQUE EL LAGO": (4.8122, -75.6994),
-                            "PUENTES DE LA 12": (4.8114, -75.6879),
-                            "VIADUCTO": (4.8192, -75.6847),
-                            "CUBA": (4.7974, -75.7364),
-                        }
+                        coords_sector = COORDENADAS_SECTORES_PERNOCTA
                         mapa = conteo_sector[conteo_sector["sector"].isin(coords_sector)].copy()
                         if not mapa.empty:
                             mapa["lat"] = mapa["sector"].map(lambda x: coords_sector[x][0])
@@ -22721,15 +22730,7 @@ def modulo_reportes_institucionales_v169():
                                 )
 
                                 # Mapa esquemático: solo puntos con coordenadas validadas en Pereira.
-                                coords_sector_pdf = {
-                                    "CENTRO": (4.8143, -75.6946),
-                                    "PLAZA DE BOLIVAR": (4.8144, -75.6943),
-                                    "PARQUE LA LIBERTAD": (4.8177, -75.6925),
-                                    "PARQUE EL LAGO": (4.8122, -75.6994),
-                                    "PUENTES DE LA 12": (4.8114, -75.6879),
-                                    "VIADUCTO": (4.8192, -75.6847),
-                                    "CUBA": (4.7974, -75.7364),
-                                }
+                                coords_sector_pdf = COORDENADAS_SECTORES_PERNOCTA
                                 mapa_pdf = conteo_sector_pdf[
                                     conteo_sector_pdf["sector"].isin(coords_sector_pdf)
                                 ].copy()
