@@ -24002,25 +24002,66 @@ def caracterizacion_habitabilidad_v1611():
             "DOSQUEBRADAS": ["SAN JUDAS", "COMUNA 8", "GUADUALITO", "LA MARIANA", "LA HERMOSA", "DOSQUEBRADAS (SIN SECTOR ESPECÍFICO)"],
         }
         sin_dato_hab = ["NO SABE", "NO INFORMA", "NO APLICA"]
-        def elegir_hab(etiqueta, opciones, valor_anterior, key):
+        def normalizar_territorio_hab(valor):
+            txt = unicodedata.normalize("NFKD", str(valor or "").strip().upper())
+            return "".join(c for c in txt if not unicodedata.combining(c))
+
+        # Los departamentos guardados erróneamente en la columna municipio
+        # se recuperan como departamento, nunca como opción de municipio.
+        departamentos_por_nombre_hab = {
+            normalizar_territorio_hab(d): d for d in departamentos_hab[1:]
+            if d not in {"OTRO / EXTERIOR", "NO SABE", "NO INFORMA"}
+        }
+        def territorio_previo_hab(campo_departamento, campo_municipio):
+            dep = str(_v(campo_departamento, "") or "").strip().upper()
+            mun = str(_v(campo_municipio, "") or "").strip().upper()
+            dep_en_municipio = departamentos_por_nombre_hab.get(normalizar_territorio_hab(mun))
+            if dep_en_municipio:
+                dep = dep_en_municipio
+                mun = ""
+            return dep, mun, bool(dep_en_municipio)
+
+        def elegir_hab(etiqueta, opciones, valor_anterior, key, permitir_historico=True):
             opciones = list(dict.fromkeys([""] + opciones + ["OTRO (ESPECIFICAR)"] + sin_dato_hab))
             previo = str(valor_anterior or "").strip().upper()
-            if previo and previo not in opciones:
+            if previo and previo not in opciones and permitir_historico:
                 opciones.append(previo + " (REGISTRO ANTERIOR - REVISAR)")
                 previo = opciones[-1]
-            return st.selectbox(etiqueta, opciones, index=opciones.index(previo) if previo in opciones else 0, key=key)
+            if previo not in opciones:
+                previo = ""
+            return st.selectbox(etiqueta, opciones, index=opciones.index(previo), key=key,
+                                format_func=lambda x: "Seleccione una opción" if x == "" else x)
+
+        dep_origen_previo, mun_origen_previo, error_origen_hab = territorio_previo_hab(
+            "departamento_origen", "municipio_origen")
+        dep_pernocta_previo, mun_pernocta_previo, error_pernocta_hab = territorio_previo_hab(
+            "departamento_pernocta_calle", "municipio_pernocta_calle")
+        if error_origen_hab or error_pernocta_hab:
+            st.warning("Se detectó un departamento guardado anteriormente como municipio. "
+                       "Se recuperó el departamento y debe seleccionar el municipio correcto antes de guardar.")
 
         t1, t2 = st.columns(2)
         with t1:
-            departamento_origen = elegir_hab("Departamento de origen *", departamentos_hab[1:], _v("departamento_origen", ""), f"hab_dep_origen_{documento}")
-            municipio_origen_sel = elegir_hab("Municipio de origen *", municipios_hab.get(departamento_origen, ["PEREIRA", "DOSQUEBRADAS", "CALI", "ARMENIA", "MANIZALES", "BOGOTÁ D.C."]), _v("municipio_origen", ""), f"hab_mun_origen_{documento}")
+            departamento_origen = elegir_hab("Departamento de origen *", departamentos_hab[1:], dep_origen_previo, f"hab_dep_origen_{documento}")
+            # La clave incluye el departamento: cambiarlo reinicia el municipio.
+            mun_origen_valido = mun_origen_previo if departamento_origen == dep_origen_previo else ""
+            opciones_mun_origen = municipios_hab.get(departamento_origen, [])
+            if normalizar_territorio_hab(mun_origen_valido) in departamentos_por_nombre_hab:
+                mun_origen_valido = ""
+            municipio_origen_sel = elegir_hab("Municipio de origen *", opciones_mun_origen,
+                mun_origen_valido, f"hab_mun_origen_{documento}_{departamento_origen}", permitir_historico=False)
             municipio_origen_otro = st.text_input("Otro municipio de origen", key=f"hab_mun_origen_otro_{documento}") if municipio_origen_sel == "OTRO (ESPECIFICAR)" else ""
-            municipio_origen = municipio_origen_otro.strip().upper() if municipio_origen_sel == "OTRO (ESPECIFICAR)" else municipio_origen_sel.replace(" (REGISTRO ANTERIOR - REVISAR)", "")
+            municipio_origen = municipio_origen_otro.strip().upper() if municipio_origen_sel == "OTRO (ESPECIFICAR)" else municipio_origen_sel
         with t2:
-            departamento_pernocta = elegir_hab("Departamento donde pernoctaba *", departamentos_hab[1:], _v("departamento_pernocta_calle", ""), f"hab_dep_pernocta_{documento}")
-            municipio_pernocta_sel = elegir_hab("Municipio donde pernoctaba *", municipios_hab.get(departamento_pernocta, ["PEREIRA", "DOSQUEBRADAS", "CALI", "ARMENIA", "MANIZALES", "BOGOTÁ D.C."]), _v("municipio_pernocta_calle", ""), f"hab_mun_pernocta_{documento}")
+            departamento_pernocta = elegir_hab("Departamento donde pernoctaba *", departamentos_hab[1:], dep_pernocta_previo, f"hab_dep_pernocta_{documento}")
+            mun_pernocta_valido = mun_pernocta_previo if departamento_pernocta == dep_pernocta_previo else ""
+            opciones_mun_pernocta = municipios_hab.get(departamento_pernocta, [])
+            if normalizar_territorio_hab(mun_pernocta_valido) in departamentos_por_nombre_hab:
+                mun_pernocta_valido = ""
+            municipio_pernocta_sel = elegir_hab("Municipio donde pernoctaba *", opciones_mun_pernocta,
+                mun_pernocta_valido, f"hab_mun_pernocta_{documento}_{departamento_pernocta}", permitir_historico=False)
             municipio_pernocta_otro = st.text_input("Otro municipio de pernocta", key=f"hab_mun_pernocta_otro_{documento}") if municipio_pernocta_sel == "OTRO (ESPECIFICAR)" else ""
-            municipio_pernocta_calle = municipio_pernocta_otro.strip().upper() if municipio_pernocta_sel == "OTRO (ESPECIFICAR)" else municipio_pernocta_sel.replace(" (REGISTRO ANTERIOR - REVISAR)", "")
+            municipio_pernocta_calle = municipio_pernocta_otro.strip().upper() if municipio_pernocta_sel == "OTRO (ESPECIFICAR)" else municipio_pernocta_sel
         sector_previo = normalizar_sector_pernocta_v16223(_v("barrio_pernocta_calle", ""))
         sector_sel = elegir_hab("Barrio / sector donde pernoctaba *", sectores_hab.get(municipio_pernocta_calle, []), sector_previo, f"hab_sector_pernocta_{documento}")
         sector_otro = st.text_input("Especifique el otro barrio / sector *", key=f"hab_sector_otro_{documento}") if sector_sel == "OTRO (ESPECIFICAR)" else ""
@@ -24416,6 +24457,10 @@ def caracterizacion_habitabilidad_v1611():
     requerido_hab(sec, "Municipio de origen", municipio_origen)
     requerido_hab(sec, "Departamento de pernocta", departamento_pernocta)
     requerido_hab(sec, "Municipio de pernocta", municipio_pernocta_calle)
+    if normalizar_territorio_hab(municipio_origen) in departamentos_por_nombre_hab:
+        pendientes_por_seccion_hab.setdefault(sec, []).append("Municipio de origen: no puede ser un departamento")
+    if normalizar_territorio_hab(municipio_pernocta_calle) in departamentos_por_nombre_hab:
+        pendientes_por_seccion_hab.setdefault(sec, []).append("Municipio de pernocta: no puede ser un departamento")
     requerido_hab(sec, "Barrio / sector de pernocta", barrio_pernocta_calle)
     requerido_hab(sec, "Causa de inicio de vida en calle", causa_inicio)
     requerido_hab(sec, "Causa de permanencia en calle", causa_permanencia)
