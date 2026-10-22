@@ -46,6 +46,49 @@ if "page" not in st.session_state:
 # V12 - AUTENTICACIÓN POR CÉDULA Y ROLES
 # ============================================================
 
+# V16.223 - Equivalencias de sectores de pernocta para mapa e informe institucional.
+# Se conserva el texto original en la base de datos y en sector_original.
+# No se asignan coordenadas a ubicaciones ambiguas.
+def normalizar_sector_pernocta_v16223(valor):
+    txt = str(valor or "").strip().upper()
+    txt = "".join(c for c in unicodedata.normalize("NFD", txt) if unicodedata.category(c) != "Mn")
+    txt = " ".join(re.sub(r"[.,;]+", " ", txt).split())
+    aliases = {
+        "PARQUE LIBERTAD": "PARQUE LA LIBERTAD",
+        "PARQUE DE LA LIBERTAD": "PARQUE LA LIBERTAD",
+        "CENTRO APRQUE DE LA LIBERTAD": "PARQUE LA LIBERTAD",
+        "PARQUE DE LA LIBERTAD CENTRO": "PARQUE LA LIBERTAD",
+        "PARQUE LA LIBERTA": "PARQUE LA LIBERTAD",
+        "SECTOR PARQUE DE LA LIBERTAD": "PARQUE LA LIBERTAD",
+        "LA LIBERTAD": "PARQUE LA LIBERTAD",
+        "LIBERTAD": "PARQUE LA LIBERTAD",
+        "PARQUE BOLIVAR": "PLAZA DE BOLIVAR",
+        "PLAZA BOLIVAR": "PLAZA DE BOLIVAR",
+        "BOLIVAR": "PLAZA DE BOLIVAR",
+        "PUENTE DE LA 12": "PUENTES DE LA 12",
+        "PUENTE 12": "PUENTES DE LA 12",
+        "PUENTES 12": "PUENTES DE LA 12",
+        "EN LOS PUENTES DE LA 12": "PUENTES DE LA 12",
+        "EN LA 12 EN LOS PUENTES": "PUENTES DE LA 12",
+        "EN LA 12 LOS PUENTES": "PUENTES DE LA 12",
+        "LOS PUENTES DE LA 12": "PUENTES DE LA 12",
+        "RESIDENCIA PUENTES DE LA 12": "PUENTES DE LA 12",
+        "EL LAGO": "PARQUE EL LAGO",
+        "LAGO": "PARQUE EL LAGO",
+        "VIADUCTO CESAR GAVIRIA": "VIADUCTO",
+        "VIADUCTO CESAR GAVIRIA TRUJILLO": "VIADUCTO",
+        "EL VIADUCTO DEBAJO DEL VIADUCTO": "VIADUCTO",
+        "SECTOR VIADUCTO": "VIADUCTO",
+        "PUENTES DEL VIADUCTO": "VIADUCTO",
+        "CENTRO DE PEREIRA": "CENTRO",
+        "EN EL CENTRO": "CENTRO",
+        "EN LAS CALLE DEL CENTRO": "CENTRO",
+        "PARQUE OLAYA HERRERA": "PARQUE OLAYA HERRERA",
+        "EN EL OLAYA": "PARQUE OLAYA HERRERA",
+    }
+    return aliases.get(txt, txt)
+
+
 def normalizar_sexo_institucional(valor):
     """Normaliza sexo al nacer solo para visualización/reportes."""
     if pd.isna(valor):
@@ -21109,27 +21152,7 @@ def modulo_reportes_institucionales_v169():
                         territorial["municipio_pernocta"] = ""
 
                     def _normalizar_sector_hab_v16180(valor):
-                        import unicodedata
-                        txt = str(valor or "").strip().upper()
-                        txt = "".join(c for c in unicodedata.normalize("NFD", txt) if unicodedata.category(c) != "Mn")
-                        txt = " ".join(txt.replace(".", " ").replace(",", " ").split())
-                        aliases = {
-                            "PARQUE LIBERTAD": "PARQUE LA LIBERTAD",
-                            "LA LIBERTAD": "PARQUE LA LIBERTAD",
-                            "LIBERTAD": "PARQUE LA LIBERTAD",
-                            "PARQUE BOLIVAR": "PLAZA DE BOLIVAR",
-                            "PLAZA BOLIVAR": "PLAZA DE BOLIVAR",
-                            "BOLIVAR": "PLAZA DE BOLIVAR",
-                            "PUENTE DE LA 12": "PUENTES DE LA 12",
-                            "PUENTE 12": "PUENTES DE LA 12",
-                            "PUENTES 12": "PUENTES DE LA 12",
-                            "EL LAGO": "PARQUE EL LAGO",
-                            "LAGO": "PARQUE EL LAGO",
-                            "VIADUCTO CESAR GAVIRIA": "VIADUCTO",
-                            "VIADUCTO CESAR GAVIRIA TRUJILLO": "VIADUCTO",
-                            "CENTRO DE PEREIRA": "CENTRO",
-                        }
-                        return aliases.get(txt, txt)
+                        return normalizar_sector_pernocta_v16223(valor)
 
                     territorial["sector"] = territorial["sector_original"].apply(_normalizar_sector_hab_v16180)
                     territorial = territorial[~territorial["sector"].isin(["", "NAN", "NONE", "SIN DATO", "NO SABE", "NO APLICA"])]
@@ -22633,29 +22656,7 @@ def modulo_reportes_institucionales_v169():
                             )
 
                             def _normalizar_sector_pdf_v16183(valor):
-                                txt = str(valor or "").strip().upper()
-                                txt = "".join(
-                                    c for c in unicodedata.normalize("NFD", txt)
-                                    if unicodedata.category(c) != "Mn"
-                                )
-                                txt = " ".join(txt.replace(".", " ").replace(",", " ").split())
-                                aliases = {
-                                    "PARQUE LIBERTAD": "PARQUE LA LIBERTAD",
-                                    "LA LIBERTAD": "PARQUE LA LIBERTAD",
-                                    "LIBERTAD": "PARQUE LA LIBERTAD",
-                                    "PARQUE BOLIVAR": "PLAZA DE BOLIVAR",
-                                    "PLAZA BOLIVAR": "PLAZA DE BOLIVAR",
-                                    "BOLIVAR": "PLAZA DE BOLIVAR",
-                                    "PUENTE DE LA 12": "PUENTES DE LA 12",
-                                    "PUENTE 12": "PUENTES DE LA 12",
-                                    "PUENTES 12": "PUENTES DE LA 12",
-                                    "EL LAGO": "PARQUE EL LAGO",
-                                    "LAGO": "PARQUE EL LAGO",
-                                    "VIADUCTO CESAR GAVIRIA": "VIADUCTO",
-                                    "VIADUCTO CESAR GAVIRIA TRUJILLO": "VIADUCTO",
-                                    "CENTRO DE PEREIRA": "CENTRO",
-                                }
-                                return aliases.get(txt, txt)
+                                return normalizar_sector_pernocta_v16223(valor)
 
                             territorial_pdf["sector"] = territorial_pdf["sector_original"].apply(
                                 _normalizar_sector_pdf_v16183
