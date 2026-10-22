@@ -24036,9 +24036,6 @@ def caracterizacion_habitabilidad_v1611():
             "departamento_origen", "municipio_origen")
         dep_pernocta_previo, mun_pernocta_previo, error_pernocta_hab = territorio_previo_hab(
             "departamento_pernocta_calle", "municipio_pernocta_calle")
-        if error_origen_hab or error_pernocta_hab:
-            st.warning("Se detectó un departamento guardado anteriormente como municipio. "
-                       "Se recuperó el departamento y debe seleccionar el municipio correcto antes de guardar.")
 
         t1, t2 = st.columns(2)
         with t1:
