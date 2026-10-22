@@ -88,8 +88,44 @@ def normalizar_sector_pernocta_v16223(valor):
         "EN EL CENTRO Y ALREDEDORES PAGABA HOTEL": "CENTRO",
         "PARQUE OLAYA HERRERA": "PARQUE OLAYA HERRERA",
         "EN EL OLAYA": "PARQUE OLAYA HERRERA",
+        "LA 12": "PUENTES DE LA 12",
+        "HOTEL DEL CENTRO": "CENTRO",
+        "HOTELES DEL CENTRO": "CENTRO",
+        "SAN JUDAS": "SAN JUDAS",
+        "LA COMUNA 8": "COMUNA 8",
+        "COMUNA 8": "COMUNA 8",
+        "GUADUALITO": "GUADUALITO",
+        "LA MARIANA DOSQUEBRADAS": "LA MARIANA",
+        "LA HERMOSA DOSQUEBRADAS": "LA HERMOSA",
+        "DOSQUEBRADAS": "DOSQUEBRADAS",
     }
     return aliases.get(txt, txt)
+
+
+def municipio_sector_pernocta_v16224(sector, municipio_original=""):
+    """Clasificación orientativa; no crea puntos ni sustituye el dato original."""
+    s = normalizar_sector_pernocta_v16223(sector)
+    m = normalizar_sector_pernocta_v16223(municipio_original)
+    sectores_dosquebradas = {
+        "DOSQUEBRADAS", "SAN JUDAS", "COMUNA 8", "GUADUALITO",
+        "LA MARIANA", "LA HERMOSA",
+    }
+    if s in sectores_dosquebradas or "DOSQUEBRADAS" in s:
+        return "Dosquebradas"
+    if s in {"BOGOTA", "MAPIRIPAN META", "ESTABA EN LA CIUDAD DE CALI"}:
+        return "Fuera de Risaralda / revisar"
+    if s == "LA VIRGINIA":
+        return "La Virginia"
+    if m in {"DOSQUEBRADAS", "PEREIRA", "LA VIRGINIA"}:
+        return m.title()
+    sectores_pereira = {
+        "CENTRO", "PARQUE OLAYA HERRERA", "PARQUE LA LIBERTAD",
+        "PARQUE EL LAGO", "PUENTES DE LA 12", "VIADUCTO",
+        "PLAZA DE BOLIVAR", "CUBA",
+    }
+    if s in sectores_pereira:
+        return "Pereira"
+    return "Por verificar"
 
 
 # Puntos de referencia territoriales: compartidos por mapa interactivo y PDF.
@@ -21172,6 +21208,11 @@ def modulo_reportes_institucionales_v169():
                         return normalizar_sector_pernocta_v16223(valor)
 
                     territorial["sector"] = territorial["sector_original"].apply(_normalizar_sector_hab_v16180)
+                    territorial["municipio_clasificado"] = territorial.apply(
+                        lambda r: municipio_sector_pernocta_v16224(
+                            r["sector"], r["municipio_pernocta"]
+                        ), axis=1
+                    )
                     territorial = territorial[~territorial["sector"].isin(["", "NAN", "NONE", "SIN DATO", "NO SABE", "NO APLICA"])]
 
                     if territorial.empty:
@@ -21185,6 +21226,11 @@ def modulo_reportes_institucionales_v169():
                         total_sector = int(conteo_sector["Personas"].sum())
                         conteo_sector["% con sector informado"] = (conteo_sector["Personas"] / total_sector * 100).round(1)
 
+                        st.markdown("#### Clasificación por municipio (sin coordenadas nuevas)")
+                        conteo_municipio = (territorial.groupby("municipio_clasificado", dropna=False)
+                                            .size().reset_index(name="Personas")
+                                            .sort_values("Personas", ascending=False))
+                        st.dataframe(conteo_municipio, use_container_width=True, hide_index=True)
                         tcol1, tcol2 = st.columns([1.05, 1.45])
                         with tcol1:
                             st.markdown("#### Sectores de pernocta reportados")
@@ -21228,11 +21274,15 @@ def modulo_reportes_institucionales_v169():
 
                         no_mapeados = conteo_sector[~conteo_sector["sector"].isin(coords_sector)]
                         if not no_mapeados.empty:
-                            with st.expander(f"🧭 Sectores pendientes de georreferenciar ({len(no_mapeados)})"):
+                            with st.expander(f"🧭 Sectores identificados sin ubicación precisa ({len(no_mapeados)})"):
                                 st.caption(
-                                    "Estos sectores sí cuentan en las estadísticas, pero no se ubican automáticamente "
-                                    "en el mapa hasta asociarlos a una coordenada de referencia."
+                                    "Estos sectores cuentan en las estadísticas y se clasifican por municipio cuando es posible. "
+                                    "No se asignan coordenadas nuevas ni se modifica el dato original."
                                 )
+                                municipios_pendientes = (territorial.groupby("sector")["municipio_clasificado"]
+                                                        .agg(lambda x: x.mode().iloc[0] if not x.mode().empty else "Por verificar"))
+                                no_mapeados = no_mapeados.copy()
+                                no_mapeados["municipio"] = no_mapeados["sector"].map(municipios_pendientes)
                                 st.dataframe(no_mapeados, use_container_width=True, hide_index=True)
 
             with hab_tabs[2]:
@@ -22670,6 +22720,11 @@ def modulo_reportes_institucionales_v169():
                             territorial_pdf["sector"] = territorial_pdf["sector_original"].apply(
                                 _normalizar_sector_pdf_v16183
                             )
+                            territorial_pdf["municipio_clasificado"] = territorial_pdf.apply(
+                                lambda r: municipio_sector_pernocta_v16224(
+                                    r["sector"], r.get("municipio_pernocta_calle", "")
+                                ), axis=1
+                            )
                             territorial_pdf = territorial_pdf[
                                 ~territorial_pdf["sector"].isin(
                                     ["", "NAN", "NONE", "SIN DATO", "NO SABE", "NO APLICA"]
@@ -22688,6 +22743,13 @@ def modulo_reportes_institucionales_v169():
                                 ).round(1)
 
                                 contenido.append(PageBreak())
+                                resumen_municipio_pdf = (territorial_pdf.groupby("municipio_clasificado")
+                                    .size().sort_values(ascending=False))
+                                contenido.append(Paragraph(
+                                    "Clasificación por municipio (sin coordenadas nuevas): " +
+                                    "; ".join(f"{nombre}: {int(cantidad)}" for nombre, cantidad in resumen_municipio_pdf.items()),
+                                    estilo_nota
+                                ))
                                 contenido.append(
                                     Paragraph(
                                         "Distribución territorial y puntos de concentración",
@@ -22777,7 +22839,7 @@ def modulo_reportes_institucionales_v169():
                                 if not pendientes_pdf.empty:
                                     contenido.append(
                                         Paragraph(
-                                            f"Sectores pendientes de georreferenciar: <b>{len(pendientes_pdf)}</b>. "
+                                            f"Sectores identificados sin ubicación precisa: <b>{len(pendientes_pdf)}</b>. "
                                             "Estos registros sí se incluyen en las frecuencias territoriales.",
                                             estilo_cuerpo
                                         )
