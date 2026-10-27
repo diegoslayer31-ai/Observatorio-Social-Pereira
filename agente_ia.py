@@ -30,6 +30,135 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, Tabl
 from io import BytesIO
 from datetime import date, timedelta, datetime
 
+
+# V16.235 - Auditoría de indicadores institucionales, lectura exclusiva.
+# Los conteos se obtienen de Supabase al generar el PDF, nunca se fijan en código.
+def _agregar_capitulo_auditoria_institucional(contenido, engine, Paragraph, PageBreak,
+                                              estilo_h1, estilo_h2, estilo_cuerpo, _tabla_pdf, cm):
+    from xml.sax.saxutils import escape
+    from sqlalchemy import text as sql_text
+    def consultar(sql):
+        with engine.connect() as conexion:
+            return pd.read_sql(sql_text(sql), conexion)
+    def agregar_tabla(df, columnas):
+        if df.empty:
+            contenido.append(Paragraph("Sin registros para este indicador.", estilo_cuerpo))
+            return
+        datos = [columnas] + [[str(v) if pd.notna(v) else "Sin dato" for v in fila]
+                              for fila in df.itertuples(index=False, name=None)]
+        contenido.append(_tabla_pdf(datos, anchos=[16.5 * cm / len(columnas)] * len(columnas), fontsize=7))
+    contenido.append(PageBreak())
+    contenido.append(Paragraph("Auditoría de gestión, cobertura y resultados", estilo_h1))
+    contenido.append(Paragraph(
+        "Indicadores consultados en tiempo real en Supabase. Los eventos, las participaciones "
+        "y las personas únicas son unidades diferentes. Estas cifras son institucionales "
+        "y no necesariamente obedecen a los filtros demográficos del informe.", estilo_cuerpo))
+    try:
+        acciones = consultar("""
+            SELECT r.codigo_accion, COUNT(DISTINCT r.id)::int AS actividades,
+                   COUNT(p.registro_id)::int AS participaciones,
+                   COUNT(DISTINCT NULLIF(REGEXP_REPLACE(UPPER(TRIM(p.documento_usuario::text)),
+                           '[^A-Z0-9]', '', 'g'), ''))::int AS personas_unicas
+            FROM public.politica_publica_registros r
+            LEFT JOIN public.politica_publica_participantes p ON p.registro_id=r.id
+            GROUP BY r.codigo_accion ORDER BY r.codigo_accion
+        """)
+        contenido.append(Paragraph("Política Pública: actividad y cobertura", estilo_h2))
+        agregar_tabla(acciones, ["Acción", "Actividades", "Participaciones", "Personas únicas"])
+        totales = consultar("""
+            SELECT (SELECT COUNT(*) FROM public.politica_publica_registros)::int AS actividades,
+                   COUNT(*)::int AS participaciones,
+                   COUNT(DISTINCT NULLIF(REGEXP_REPLACE(UPPER(TRIM(documento_usuario::text)),
+                     '[^A-Z0-9]', '', 'g'), ''))::int AS personas_unicas
+            FROM public.politica_publica_participantes
+        """)
+        t=totales.iloc[0]
+        contenido.append(Paragraph(
+            f"Total general: {int(t.actividades)} actividades; {int(t.participaciones)} "
+            f"participaciones; {int(t.personas_unicas)} personas únicas identificadas. "
+            "Las personas únicas por acción no se suman entre sí.", estilo_cuerpo))
+    except Exception as exc:
+        contenido.append(Paragraph("Política Pública: consulta no disponible; no se "
+                                  "presentan cifras no verificadas. " + escape(str(exc)[:180]), estilo_cuerpo))
+    try:
+        pai = consultar("""
+            SELECT COUNT(*)::int AS objetivos,
+                   COUNT(DISTINCT NULLIF(TRIM(documento_usuario::text),''))::int AS personas,
+                   COUNT(*) FILTER (WHERE UPPER(TRIM(estado::text))='CUMPLIDO')::int AS cumplidos,
+                   COUNT(*) FILTER (WHERE UPPER(TRIM(estado::text))='ACTIVO')::int AS activos,
+                   COUNT(*) FILTER (WHERE UPPER(TRIM(estado::text))='HISTORICO')::int AS historicos
+            FROM public.pai_objetivos
+        """).iloc[0]
+        contenido.append(Paragraph("Plan de Atención Integral (PAI)", estilo_h2))
+        contenido.append(Paragraph(
+            f"{int(pai.objetivos)} objetivos para {int(pai.personas)} personas identificadas; "
+            f"{int(pai.cumplidos)} cumplidos, {int(pai.activos)} activos y "
+            f"{int(pai.historicos)} históricos. Los históricos no se consideran incumplidos.", estilo_cuerpo))
+        cierres=consultar("""SELECT COALESCE(NULLIF(TRIM(resultado_final::text),''),'Sin clasificar')
+            AS resultado, COUNT(*)::int AS registros FROM public.pai_cierres
+            GROUP BY 1 ORDER BY 2 DESC""")
+        contenido.append(Paragraph("Cierres de PAI por resultado reportado", estilo_h2))
+        agregar_tabla(cierres, ["Resultado registrado", "Cierres"])
+    except Exception as exc:
+        contenido.append(Paragraph("PAI: consulta no disponible: " + escape(str(exc)[:180]), estilo_cuerpo))
+    try:
+        egresos=consultar("""
+            WITH e AS (
+                SELECT NULLIF(REGEXP_REPLACE(UPPER(TRIM(numero_identidad::text)),
+                     '[^A-Z0-9]', '', 'g'), '') AS documento,
+                     fecha_egreso::date AS fecha, COALESCE(observaciones_egreso,'') AS obs
+                FROM public.personas_caracterizacion WHERE fecha_egreso IS NOT NULL
+            ), coincidencias AS (
+                SELECT documento, fecha, COUNT(*) AS n FROM e
+                WHERE documento IS NOT NULL GROUP BY documento,fecha HAVING COUNT(*)>1
+            )
+            SELECT (SELECT COUNT(*) FROM e)::int AS eventos,
+                   (SELECT COUNT(DISTINCT documento) FROM e)::int AS personas,
+                   (SELECT COUNT(*) FROM coincidencias)::int AS grupos_coincidentes,
+                   (SELECT COALESCE(SUM(n),0) FROM coincidencias)::int AS registros_coincidentes,
+                   (SELECT MIN(fecha) FROM e) AS fecha_inicial,
+                   (SELECT MAX(fecha) FROM e) AS fecha_final
+        """).iloc[0]
+        contenido.append(Paragraph("Egresos: eventos y personas únicas", estilo_h2))
+        contenido.append(Paragraph(
+            f"{int(egresos.eventos)} registros de egreso de {int(egresos.personas)} "
+            f"personas identificadas, entre {egresos.fecha_inicial} y {egresos.fecha_final}. "
+            f"Se detectaron {int(egresos.grupos_coincidentes)} grupos de persona y fecha "
+            f"coincidentes ({int(egresos.registros_coincidentes)} registros sujetos a revisión). "
+            "Una coincidencia no demuestra duplicidad ni reincidencia.", estilo_cuerpo))
+        motivos=consultar("""
+            SELECT CASE
+              WHEN observaciones_egreso ILIKE '%fallec%' OR observaciones_egreso ILIKE '%defunci%' THEN 'Fallecimiento'
+              WHEN observaciones_egreso ILIKE '%traslad%' OR observaciones_egreso ILIKE '%centro de protecci%' THEN 'Traslado'
+              WHEN observaciones_egreso ILIKE '%vinculacion laboral%' OR observaciones_egreso ILIKE '%vinculación laboral%' THEN 'Vinculación laboral'
+              WHEN observaciones_egreso ILIKE '%vinculacion familiar%' OR observaciones_egreso ILIKE '%vinculación familiar%' THEN 'Vinculación familiar'
+              WHEN observaciones_egreso ILIKE '%plan retorno%' THEN 'Plan retorno'
+              WHEN observaciones_egreso ILIKE '%caso exitoso%' THEN 'Caso exitoso reportado'
+              WHEN observaciones_egreso ILIKE '%emprend%' THEN 'Emprendimiento'
+              WHEN observaciones_egreso ILIKE '%independen%' THEN 'Independencia'
+              ELSE 'Otro / revisión requerida' END AS motivo,
+              COUNT(*)::int AS registros
+            FROM public.personas_caracterizacion WHERE fecha_egreso IS NOT NULL
+            GROUP BY 1 ORDER BY 2 DESC
+        """)
+        contenido.append(Paragraph("Motivos de egreso: clasificación preliminar por texto", estilo_h2))
+        agregar_tabla(motivos, ["Motivo preliminar", "Registros"])
+        contenido.append(Paragraph(
+            "La clasificación de motivos se basa en palabras de las observaciones y debe "
+            "ser validada administrativamente. Retorno, traslado, salida voluntaria y "
+            "fallecimiento no se clasifican automáticamente como egreso exitoso. "
+            "Las salidas programadas requieren verificación de fecha efectiva.", estilo_cuerpo))
+    except Exception as exc:
+        contenido.append(Paragraph("Egresos: consulta no disponible: " + escape(str(exc)[:180]), estilo_cuerpo))
+    contenido.append(Paragraph("Resultados sociales y ODS: alcance metodológico", estilo_h2))
+    contenido.append(Paragraph(
+        "La atención, las participaciones y los objetivos formulados son indicadores de "
+        "gestión y cobertura. Los resultados de salud, vinculación familiar, empleabilidad, "
+        "autonomía y superación de la vida en calle requieren soportes y seguimiento. "
+        "Las contribuciones a ODS 1, 2, 3, 4, 5, 8, 10, 11, 16 y 17 deben asociarse "
+        "a actividades y resultados documentados; no se atribuyen impactos causales sin evaluación.",
+        estilo_cuerpo))
+
 st.set_page_config(
     page_title="Observatorio Social Asociación Ciudad Futuro",
     page_icon="📊",
@@ -20191,8 +20320,54 @@ def modulo_reportes_institucionales_v169():
             (~serie.str.upper().isin(["NAN", "NONE", "NULL"]))
         ]
 
+    def _normalizar_categoria_informe(serie, columna):
+        """Homologa categorías SOLO para el reporte; no escribe en Supabase."""
+        import re
+        import unicodedata
+
+        def limpio(valor):
+            t = unicodedata.normalize("NFKD", str(valor or ""))
+            t = "".join(c for c in t if not unicodedata.combining(c))
+            return re.sub(r"\s+", " ", t.strip().upper())
+
+        nombre = limpio(columna)
+        def convertir(valor):
+            v = limpio(valor)
+            v = re.sub(r"^\d+\s*[-.)]\s*", "", v).strip()
+            if v in {"", "NAN", "NONE", "NULL", "N/A", "SIN INFORMACION", "NO REGISTRA"}:
+                return "Sin información"
+            if any(x in nombre for x in ("EDUCAT", "ESCOLAR")):
+                if "BASICA PRIMARIA" in v: return "Básica primaria"
+                if "BASICA SECUNDARIA" in v: return "Básica secundaria"
+                if "MEDIA ACADEMICA" in v: return "Media académica o clásica"
+                if "MEDIA TECNICA" in v: return "Media técnica"
+                if "NORMALISTA" in v: return "Normalista"
+                if "TECNICA PROFESIONAL" in v: return "Técnica profesional"
+                if "PREESCOLAR" in v: return "Preescolar"
+                if v in {"NINGUNO", "NINGUNA"}: return "Ninguno"
+            if any(x in nombre for x in ("SEGURIDAD_SOCIAL", "SEGURIDAD_SALUD", "REGIMEN", "AFILIACION", "ASEGURAMIENTO")):
+                if "SUBSIDIADO" in v: return "Régimen subsidiado"
+                if "CONTRIBUTIVO" in v: return "Régimen contributivo"
+                if "VINCULAD" in v: return "Población vinculada"
+                if "NO AFILIADO" in v or "NO ASEGURADO" in v: return "No afiliado"
+            if any(x in nombre for x in ("PROCEDENCIA", "DEPARTAMENTO")):
+                if v in {"PEREIRA", "PEREIRA RISARALDA", "RISARALDA PEREIRA", "RISARALDA"}:
+                    return "RISARALDA"
+                if v in {"BOGOTA", "BOGOTA D.C.", "BOGOTA DC"}: return "BOGOTÁ D.C."
+                if v == "QUINDIO": return "QUINDÍO"
+                if v == "CHOCO": return "CHOCÓ"
+                if v == "BOLIVAR": return "BOLÍVAR"
+                if v == "VENEZUELA": return "VENEZUELA (PAÍS)"
+            if any(x in nombre for x in ("ETNIA", "ETNICO", "GRUPO_ETN")):
+                return normalizar_etnia_institucional(valor)
+            if "EPS" in nombre or "ASEGURADORA" in nombre:
+                return v
+            return str(valor).strip()
+        return serie.map(convertir)
+
     def _tabla_categoria(dataframe, columna, top_n=15):
         serie = _serie_limpia(dataframe, columna)
+        serie = _normalizar_categoria_informe(serie, columna)
         if serie.empty:
             return pd.DataFrame(columns=["categoria", "cantidad", "porcentaje"])
 
@@ -21778,7 +21953,9 @@ def modulo_reportes_institucionales_v169():
                         columna,
                         nombre_variable
                     ):
-                        serie = _serie_limpia(dataframe, columna)
+                        serie = _normalizar_categoria_informe(
+                            _serie_limpia(dataframe, columna), columna
+                        )
                         if serie.empty:
                             return (
                                 f"No se dispone de información suficiente "
@@ -23536,6 +23713,90 @@ def modulo_reportes_institucionales_v169():
                         )
                     )
 
+                    # CAPÍTULO DE RESULTADOS: clasificación descriptiva verificable.
+                    # Se usan exclusivamente registros ya cargados en el informe.
+                    contenido.append(PageBreak())
+                    contenido.append(Paragraph(
+                        "Resultados institucionales, egresos e impacto verificable", estilo_h1
+                    ))
+                    contenido.append(Paragraph(
+                        "Los egresos registrados no equivalen automáticamente a egresos "
+                        "exitosos. Se discriminan los motivos únicamente cuando la fuente "
+                        "contiene una columna identificable. Las actividades y los resultados "
+                        "se presentan como indicadores diferentes.", estilo_cuerpo
+                    ))
+                    if not df_egresados.empty:
+                        posibles_motivos = [
+                            "motivo_egreso", "motivo_impacto", "tipo_egreso",
+                            "causa_egreso", "motivo_salida", "categoria_egreso"
+                        ]
+                        campo_motivo = next(
+                            (c for c in posibles_motivos if c in df_egresados.columns), None
+                        )
+                        if campo_motivo:
+                            motivo_serie = df_egresados[campo_motivo].fillna(
+                                "SIN INFORMACIÓN"
+                            ).astype(str).str.strip().str.upper().replace(
+                                {"": "SIN INFORMACIÓN", "NAN": "SIN INFORMACIÓN"}
+                            )
+                            resumen_motivos = motivo_serie.value_counts()
+                            contenido.append(Paragraph(
+                                "Egresos discriminados por motivo registrado", estilo_h2
+                            ))
+                            filas = [["Motivo registrado", "Registros"]]
+                            filas.extend([
+                                [_texto_pdf(k), _fmt_num(v)]
+                                for k, v in resumen_motivos.items()
+                            ])
+                            tabla_egresos = Table(filas, colWidths=[13.8 * cm, 3.5 * cm], repeatRows=1)
+                            tabla_egresos.setStyle(TableStyle([
+                                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#17365D")),
+                                ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                                ("GRID", (0, 0), (-1, -1), 0.3, colors.lightgrey),
+                                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                            ]))
+                            contenido.append(tabla_egresos)
+                            contenido.append(Paragraph(
+                                "Los fallecimientos y las salidas voluntarias no se "
+                                "clasifican automáticamente como egresos exitosos. "
+                                "La condición de éxito exige validación del motivo "
+                                "y evidencia de resultados.", estilo_nota
+                            ))
+                        else:
+                            contenido.append(Paragraph(
+                                "La fuente de egresos no dispone de una columna de motivo "
+                                "reconocida por este reporte; el desglose está pendiente "
+                                "de homologación de esquema.", estilo_nota
+                            ))
+                    contenido.append(Paragraph("Plan de Atención Integral (PAI)", estilo_h2))
+                    contenido.append(Paragraph(
+                        "El análisis institucional del PAI debe diferenciar personas "
+                        "únicas con plan, planes abiertos y cerrados, objetivos formulados "
+                        "y cumplidos, seguimientos y cierres por egreso. No se reportan "
+                        "cifras sin verificar la relación entre personas, planes y objetivos.",
+                        estilo_cuerpo
+                    ))
+                    contenido.append(Paragraph(
+                        "Acciones de política pública y contribución a los ODS", estilo_h2
+                    ))
+                    contenido.append(Paragraph(
+                        "Las acciones 2.1.2, 2.1.5, 2.1.7, 2.1.9 y 2.1.11 requieren "
+                        "consolidación de actividades, participantes únicos y resultados "
+                        "por acción. Su contribución a ODS 1, 3, 4, 5, 8, 10, 11, 16 y 17 "
+                        "debe sustentarse con intervenciones verificadas; una actividad "
+                        "no prueba por sí sola un cambio de bienestar.", estilo_cuerpo
+                    ))
+                    contenido.append(Paragraph(
+                        "Criterio de evaluación de impacto", estilo_h2
+                    ))
+                    contenido.append(Paragraph(
+                        "Distinguir cobertura (personas únicas), producción (atenciones "
+                        "y actividades), resultados (derechos restablecidos, objetivos "
+                        "cumplidos y egresos verificados) e impacto sostenido (seguimiento "
+                        "posterior y permanencia de los cambios). Sin mediciones de "
+                        "seguimiento comparables no se atribuye causalidad.", estilo_cuerpo
+                    ))
+
                     conclusiones_pdf = [
                         (
                             f"El sistema consolida una base general de "
@@ -23655,6 +23916,10 @@ def modulo_reportes_institucionales_v169():
                     # ------------------------------------------------
                     # CREAR DOCUMENTO
                     # ------------------------------------------------
+                    _agregar_capitulo_auditoria_institucional(
+                        contenido, engine, Paragraph, PageBreak,
+                        estilo_h1, estilo_h2, estilo_cuerpo, _tabla_pdf, cm
+                    )
                     doc_pdf.build(contenido)
                     buffer_pdf.seek(0)
 
@@ -34788,8 +35053,51 @@ with tab4:
             (~serie.str.upper().isin(["NAN", "NONE", "NULL"]))
         ]
 
+    def _normalizar_categoria_informe(serie, columna):
+        """Normalización solo de lectura; nunca actualiza registros históricos."""
+        import re
+        import unicodedata
+        def limpio(valor):
+            texto = unicodedata.normalize("NFKD", str(valor))
+            texto = "".join(c for c in texto if not unicodedata.combining(c))
+            return re.sub(r"\s+", " ", texto.strip().upper())
+        nombre = limpio(columna)
+        def convertir(valor):
+            v = limpio(valor)
+            sin_codigo = re.sub(r"^\d+\s*[-.]?\s*", "", v).strip()
+            if any(x in nombre for x in ("EDUCAT", "ESCOLAR")):
+                if "BASICA PRIMARIA" in sin_codigo: return "Básica primaria"
+                if "BASICA SECUNDARIA" in sin_codigo: return "Básica secundaria"
+                if "MEDIA ACADEMICA" in sin_codigo: return "Media académica o clásica"
+                if "MEDIA TECNICA" in sin_codigo: return "Media técnica"
+                if "NORMALISTA" in sin_codigo: return "Normalista"
+                if "TECNICA PROFESIONAL" in sin_codigo: return "Técnica profesional"
+                if "PREESCOLAR" in sin_codigo: return "Preescolar"
+                if sin_codigo in ("NINGUNO", "NINGUNA"): return "Ninguno"
+            if any(x in nombre for x in ("SEGURIDAD_SOCIAL", "REGIMEN", "AFILIACION", "ASEGURAMIENTO")):
+                if "SUBSIDIADO" in v: return "Régimen subsidiado"
+                if "CONTRIBUTIVO" in v: return "Régimen contributivo"
+                if "NO AFILIADO" in v or "NO ASEGURADO" in v: return "No afiliado"
+            if any(x in nombre for x in ("PROCEDENCIA", "DEPARTAMENTO")):
+                if v in ("PEREIRA", "PEREIRA RISARALDA", "RISARALDA PEREIRA"): return "RISARALDA"
+                if v in ("BOGOTA", "BOGOTA D.C.", "BOGOTA DC"): return "BOGOTÁ D.C."
+                if v == "VENEZUELA": return "VENEZUELA (PAÍS)"
+                if v == "QUINDIO": return "QUINDÍO"
+                if v == "CHOCO": return "CHOCÓ"
+                if v == "BOLIVAR": return "BOLÍVAR"
+            if any(x in nombre for x in ("ETNIA", "ETNICO", "GRUPO_ETN")):
+                if "MESTIZO" in sin_codigo: return "Mestizo"
+                if any(x in sin_codigo for x in ("AFRO", "MULATO", "NEGRO")):
+                    return "Negro(a), afrocolombiano(a) o afrodescendiente"
+                if "INDIGENA" in sin_codigo: return "Indígena"
+            if "EPS" in nombre or "ASEGURADORA" in nombre:
+                return v
+            return str(valor).strip()
+        return serie.map(convertir)
+
     def _tabla_categoria(dataframe, columna, top_n=15):
         serie = _serie_limpia(dataframe, columna)
+        serie = _normalizar_categoria_informe(serie, columna)
         if serie.empty:
             return pd.DataFrame(columns=["categoria", "cantidad", "porcentaje"])
 
@@ -35567,7 +35875,9 @@ with tab4:
                         columna,
                         nombre_variable
                     ):
-                        serie = _serie_limpia(dataframe, columna)
+                        serie = _normalizar_categoria_informe(
+                            _serie_limpia(dataframe, columna), columna
+                        )
                         if serie.empty:
                             return (
                                 f"No se dispone de información suficiente "
@@ -36340,6 +36650,90 @@ with tab4:
                         )
                     )
 
+                    # CAPÍTULO DE RESULTADOS: clasificación descriptiva verificable.
+                    # Se usan exclusivamente registros ya cargados en el informe.
+                    contenido.append(PageBreak())
+                    contenido.append(Paragraph(
+                        "Resultados institucionales, egresos e impacto verificable", estilo_h1
+                    ))
+                    contenido.append(Paragraph(
+                        "Los egresos registrados no equivalen automáticamente a egresos "
+                        "exitosos. Se discriminan los motivos únicamente cuando la fuente "
+                        "contiene una columna identificable. Las actividades y los resultados "
+                        "se presentan como indicadores diferentes.", estilo_cuerpo
+                    ))
+                    if not df_egresados.empty:
+                        posibles_motivos = [
+                            "motivo_egreso", "motivo_impacto", "tipo_egreso",
+                            "causa_egreso", "motivo_salida", "categoria_egreso"
+                        ]
+                        campo_motivo = next(
+                            (c for c in posibles_motivos if c in df_egresados.columns), None
+                        )
+                        if campo_motivo:
+                            motivo_serie = df_egresados[campo_motivo].fillna(
+                                "SIN INFORMACIÓN"
+                            ).astype(str).str.strip().str.upper().replace(
+                                {"": "SIN INFORMACIÓN", "NAN": "SIN INFORMACIÓN"}
+                            )
+                            resumen_motivos = motivo_serie.value_counts()
+                            contenido.append(Paragraph(
+                                "Egresos discriminados por motivo registrado", estilo_h2
+                            ))
+                            filas = [["Motivo registrado", "Registros"]]
+                            filas.extend([
+                                [_texto_pdf(k), _fmt_num(v)]
+                                for k, v in resumen_motivos.items()
+                            ])
+                            tabla_egresos = Table(filas, colWidths=[13.8 * cm, 3.5 * cm], repeatRows=1)
+                            tabla_egresos.setStyle(TableStyle([
+                                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#17365D")),
+                                ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                                ("GRID", (0, 0), (-1, -1), 0.3, colors.lightgrey),
+                                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                            ]))
+                            contenido.append(tabla_egresos)
+                            contenido.append(Paragraph(
+                                "Los fallecimientos y las salidas voluntarias no se "
+                                "clasifican automáticamente como egresos exitosos. "
+                                "La condición de éxito exige validación del motivo "
+                                "y evidencia de resultados.", estilo_nota
+                            ))
+                        else:
+                            contenido.append(Paragraph(
+                                "La fuente de egresos no dispone de una columna de motivo "
+                                "reconocida por este reporte; el desglose está pendiente "
+                                "de homologación de esquema.", estilo_nota
+                            ))
+                    contenido.append(Paragraph("Plan de Atención Integral (PAI)", estilo_h2))
+                    contenido.append(Paragraph(
+                        "El análisis institucional del PAI debe diferenciar personas "
+                        "únicas con plan, planes abiertos y cerrados, objetivos formulados "
+                        "y cumplidos, seguimientos y cierres por egreso. No se reportan "
+                        "cifras sin verificar la relación entre personas, planes y objetivos.",
+                        estilo_cuerpo
+                    ))
+                    contenido.append(Paragraph(
+                        "Acciones de política pública y contribución a los ODS", estilo_h2
+                    ))
+                    contenido.append(Paragraph(
+                        "Las acciones 2.1.2, 2.1.5, 2.1.7, 2.1.9 y 2.1.11 requieren "
+                        "consolidación de actividades, participantes únicos y resultados "
+                        "por acción. Su contribución a ODS 1, 3, 4, 5, 8, 10, 11, 16 y 17 "
+                        "debe sustentarse con intervenciones verificadas; una actividad "
+                        "no prueba por sí sola un cambio de bienestar.", estilo_cuerpo
+                    ))
+                    contenido.append(Paragraph(
+                        "Criterio de evaluación de impacto", estilo_h2
+                    ))
+                    contenido.append(Paragraph(
+                        "Distinguir cobertura (personas únicas), producción (atenciones "
+                        "y actividades), resultados (derechos restablecidos, objetivos "
+                        "cumplidos y egresos verificados) e impacto sostenido (seguimiento "
+                        "posterior y permanencia de los cambios). Sin mediciones de "
+                        "seguimiento comparables no se atribuye causalidad.", estilo_cuerpo
+                    ))
+
                     conclusiones_pdf = [
                         (
                             f"El sistema consolida una base general de "
@@ -36452,6 +36846,10 @@ with tab4:
                     # ------------------------------------------------
                     # CREAR DOCUMENTO
                     # ------------------------------------------------
+                    _agregar_capitulo_auditoria_institucional(
+                        contenido, engine, Paragraph, PageBreak,
+                        estilo_h1, estilo_h2, estilo_cuerpo, _tabla_pdf, cm
+                    )
                     doc_pdf.build(contenido)
                     buffer_pdf.seek(0)
 
