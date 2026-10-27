@@ -35,129 +35,211 @@ from datetime import date, timedelta, datetime
 # Los conteos se obtienen de Supabase al generar el PDF, nunca se fijan en código.
 def _agregar_capitulo_auditoria_institucional(contenido, engine, Paragraph, PageBreak,
                                               estilo_h1, estilo_h2, estilo_cuerpo, _tabla_pdf, cm):
+    """Balance social: indicadores operativos, PAI, resultados y contribución ODS.
+
+    Todas las consultas son SELECT; no se altera ningún registro.
+    """
     from xml.sax.saxutils import escape
     from sqlalchemy import text as sql_text
+
     def consultar(sql):
         with engine.connect() as conexion:
             return pd.read_sql(sql_text(sql), conexion)
-    def agregar_tabla(df, columnas):
+
+    def par(texto):
+        contenido.append(Paragraph(escape(str(texto)), estilo_cuerpo))
+
+    def tabla(df, titulos):
         if df.empty:
-            contenido.append(Paragraph("Sin registros para este indicador.", estilo_cuerpo))
+            par('No hay registros en esta fuente para el periodo consultado.')
             return
-        datos = [columnas] + [[str(v) if pd.notna(v) else "Sin dato" for v in fila]
-                              for fila in df.itertuples(index=False, name=None)]
-        contenido.append(_tabla_pdf(datos, anchos=[16.5 * cm / len(columnas)] * len(columnas), fontsize=7))
+        datos = [titulos] + [[escape(str(v)) if pd.notna(v) else 'Sin dato'
+                              for v in fila] for fila in df.itertuples(index=False, name=None)]
+        contenido.append(_tabla_pdf(datos, anchos=[16.5 * cm / len(titulos)] * len(titulos), fontsize=7))
+
+    def cifra(valor):
+        return f'{int(valor):,}'.replace(',', '.')
+
     contenido.append(PageBreak())
-    contenido.append(Paragraph("Auditoría de gestión, cobertura y resultados", estilo_h1))
-    contenido.append(Paragraph(
-        "Indicadores consultados en tiempo real en Supabase. Los eventos, las participaciones "
-        "y las personas únicas son unidades diferentes. Estas cifras son institucionales "
-        "y no necesariamente obedecen a los filtros demográficos del informe.", estilo_cuerpo))
+    contenido.append(Paragraph('BALANCE SOCIAL INSTITUCIONAL', estilo_h1))
+    par('Asociación Ciudad Futuro | Observatorio Social | Pereira, 2026. '
+        'Este balance articula la gestión de atención, las trayectorias del Plan de Atención '
+        'Integral, la participación en acciones de política pública y los resultados de salida. '
+        'Se distinguen personas, intervenciones y resultados para evitar duplicidades.')
+
+    acciones = None
     try:
         acciones = consultar("""
             SELECT r.codigo_accion, COUNT(DISTINCT r.id)::int AS actividades,
                    COUNT(p.registro_id)::int AS participaciones,
                    COUNT(DISTINCT NULLIF(REGEXP_REPLACE(UPPER(TRIM(p.documento_usuario::text)),
-                           '[^A-Z0-9]', '', 'g'), ''))::int AS personas_unicas
-            FROM public.politica_publica_registros r
-            LEFT JOIN public.politica_publica_participantes p ON p.registro_id=r.id
-            GROUP BY r.codigo_accion ORDER BY r.codigo_accion
-        """)
-        contenido.append(Paragraph("Política Pública: actividad y cobertura", estilo_h2))
-        agregar_tabla(acciones, ["Acción", "Actividades", "Participaciones", "Personas únicas"])
-        totales = consultar("""
-            SELECT (SELECT COUNT(*) FROM public.politica_publica_registros)::int AS actividades,
-                   COUNT(*)::int AS participaciones,
-                   COUNT(DISTINCT NULLIF(REGEXP_REPLACE(UPPER(TRIM(documento_usuario::text)),
                      '[^A-Z0-9]', '', 'g'), ''))::int AS personas_unicas
-            FROM public.politica_publica_participantes
+            FROM public.politica_publica_registros r
+            LEFT JOIN public.politica_publica_participantes p ON p.registro_id = r.id
+            GROUP BY r.codigo_accion
+            ORDER BY string_to_array(r.codigo_accion::text, '.')::int[]
         """)
-        t=totales.iloc[0]
-        contenido.append(Paragraph(
-            f"Total general: {int(t.actividades)} actividades; {int(t.participaciones)} "
-            f"participaciones; {int(t.personas_unicas)} personas únicas identificadas. "
-            "Las personas únicas por acción no se suman entre sí.", estilo_cuerpo))
+        t = consultar("""
+            SELECT (SELECT COUNT(*) FROM public.politica_publica_registros)::int actividades,
+                   COUNT(*)::int participaciones,
+                   COUNT(DISTINCT NULLIF(REGEXP_REPLACE(UPPER(TRIM(documento_usuario::text)),
+                     '[^A-Z0-9]', '', 'g'), ''))::int personas
+            FROM public.politica_publica_participantes
+        """).iloc[0]
+        contenido.append(Paragraph('1. Alcance de la intervención social', estilo_h2))
+        par(f'Se documentan {cifra(t.actividades)} actividades en {len(acciones)} líneas de política '
+            f'pública, con {cifra(t.participaciones)} participaciones y {cifra(t.personas)} '
+            'personas identificadas sin repetir documentos. La participación acumulada refleja '
+            'continuidad de contacto con el programa; no equivale a personas diferentes.')
+        tabla(acciones, ['Acción', 'Actividades', 'Participaciones', 'Personas únicas'])
+        descripciones = {
+            '2.1.1': 'Acompañamiento psicológico y sociofamiliar',
+            '2.1.2': 'Remisión y seguimiento para tratamiento de adicciones',
+            '2.1.3': 'Prevención de violencias',
+            '2.1.4': 'Inclusión social y diversidad',
+            '2.1.5': 'Reintegración familiar y social',
+            '2.1.6': 'Desarrollo personal, deporte y actividades lúdicas',
+            '2.1.7': 'Acceso y seguimiento a servicios de salud',
+            '2.1.8': 'Emprendimiento y empleabilidad',
+            '2.1.9': 'Convivencia y habilidades sociales',
+            '2.1.11': 'Mitigación de riesgos asociados al consumo de SPA',
+        }
+        contenido.append(Paragraph('Lectura de las líneas de intervención', estilo_h2))
+        for row in acciones.itertuples(index=False):
+            cod = str(row.codigo_accion)
+            par(f'Acción {cod} — {descripciones.get(cod, "Intervención social")}: '
+                f'{cifra(row.actividades)} actividades, {cifra(row.participaciones)} participaciones '
+                f'y {cifra(row.personas_unicas)} personas identificadas en esta acción.')
     except Exception as exc:
-        contenido.append(Paragraph("Política Pública: consulta no disponible; no se "
-                                  "presentan cifras no verificadas. " + escape(str(exc)[:180]), estilo_cuerpo))
+        par('No fue posible obtener los indicadores de Política Pública en esta generación: '
+            + str(exc)[:160])
+
+    contenido.append(Paragraph('2. Plan de Atención Integral: avances y resultados', estilo_h2))
     try:
         pai = consultar("""
-            SELECT COUNT(*)::int AS objetivos,
-                   COUNT(DISTINCT NULLIF(TRIM(documento_usuario::text),''))::int AS personas,
-                   COUNT(*) FILTER (WHERE UPPER(TRIM(estado::text))='CUMPLIDO')::int AS cumplidos,
-                   COUNT(*) FILTER (WHERE UPPER(TRIM(estado::text))='ACTIVO')::int AS activos,
-                   COUNT(*) FILTER (WHERE UPPER(TRIM(estado::text))='HISTORICO')::int AS historicos
+            SELECT COUNT(*)::int objetivos,
+              COUNT(DISTINCT NULLIF(TRIM(documento_usuario::text), ''))::int personas,
+              COUNT(*) FILTER (WHERE UPPER(TRIM(estado::text))='CUMPLIDO')::int cumplidos,
+              COUNT(*) FILTER (WHERE UPPER(TRIM(estado::text))='ACTIVO')::int activos,
+              COUNT(*) FILTER (WHERE UPPER(TRIM(estado::text))='HISTORICO')::int historicos
             FROM public.pai_objetivos
         """).iloc[0]
-        contenido.append(Paragraph("Plan de Atención Integral (PAI)", estilo_h2))
-        contenido.append(Paragraph(
-            f"{int(pai.objetivos)} objetivos para {int(pai.personas)} personas identificadas; "
-            f"{int(pai.cumplidos)} cumplidos, {int(pai.activos)} activos y "
-            f"{int(pai.historicos)} históricos. Los históricos no se consideran incumplidos.", estilo_cuerpo))
-        cierres=consultar("""SELECT COALESCE(NULLIF(TRIM(resultado_final::text),''),'Sin clasificar')
-            AS resultado, COUNT(*)::int AS registros FROM public.pai_cierres
-            GROUP BY 1 ORDER BY 2 DESC""")
-        contenido.append(Paragraph("Cierres de PAI por resultado reportado", estilo_h2))
-        agregar_tabla(cierres, ["Resultado registrado", "Cierres"])
+        cierres = consultar("""
+            SELECT COALESCE(NULLIF(TRIM(resultado_final::text), ''), 'Sin resultado registrado') resultado,
+                   COUNT(*)::int cierres
+            FROM public.pai_cierres GROUP BY 1 ORDER BY 2 DESC
+        """)
+        seguimientos = consultar('SELECT COUNT(*)::int total FROM public.pai_seguimientos_historicos').iloc[0].total
+        total_cierres = int(cierres.cierres.sum())
+        par(f'El PAI constituye la ruta individual de atención y seguimiento. Se han formulado '
+            f'{cifra(pai.objetivos)} objetivos para {cifra(pai.personas)} personas identificadas. '
+            f'Se registran {cifra(pai.cumplidos)} objetivos cumplidos, '
+            f'{cifra(pai.activos)} activos y {cifra(pai.historicos)} históricos, además de '
+            f'{cifra(seguimientos)} registros de seguimiento histórico y {cifra(total_cierres)} '
+            'cierres documentados.')
+        tabla(pd.DataFrame([['Personas con objetivos', cifra(pai.personas)],
+                            ['Objetivos formulados', cifra(pai.objetivos)],
+                            ['Objetivos cumplidos', cifra(pai.cumplidos)],
+                            ['Objetivos activos', cifra(pai.activos)],
+                            ['Objetivos históricos', cifra(pai.historicos)],
+                            ['Seguimientos históricos registrados', cifra(seguimientos)],
+                            ['Cierres de PAI', cifra(total_cierres)]],
+                           columns=['Indicador', 'Resultado']), ['Indicador PAI', 'Resultado'])
+        if int(pai.objetivos):
+            porcentaje = int(pai.cumplidos) / int(pai.objetivos) * 100
+            par(f'El {porcentaje:.1f}% de los objetivos registrados figura como cumplido. '
+                'Esta proporción es descriptiva del inventario de objetivos, no una tasa '
+                'de éxito de los planes: los objetivos históricos no son incumplimientos y '
+                'el estado de un objetivo no equivale al cierre del PAI de una persona.')
+        contenido.append(Paragraph('Resultados de los cierres del PAI', estilo_h2))
+        tabla(cierres, ['Resultado registrado', 'Cierres'])
+        favorables = int(cierres.loc[cierres.resultado.str.upper().str.contains(
+            'METAS CUMPLIDAS|EGRESO EXITOSO', regex=True, na=False), 'cierres'].sum())
+        par(f'Entre los {cifra(total_cierres)} cierres, {cifra(favorables)} consignan '
+            'explícitamente metas cumplidas o egreso exitoso con cumplimiento parcial. '
+            'Los cierres denominados simplemente «egreso», los traslados y los retiros '
+            'voluntarios se presentan por separado, sin sumarlos a los resultados favorables.')
     except Exception as exc:
-        contenido.append(Paragraph("PAI: consulta no disponible: " + escape(str(exc)[:180]), estilo_cuerpo))
+        par('Los indicadores de PAI no pudieron recuperarse en esta generación: ' + str(exc)[:160])
+
+    contenido.append(Paragraph('3. Rutas de egreso e inclusión social', estilo_h2))
     try:
-        egresos=consultar("""
+        eg = consultar("""
             WITH e AS (
-                SELECT NULLIF(REGEXP_REPLACE(UPPER(TRIM(numero_identidad::text)),
-                     '[^A-Z0-9]', '', 'g'), '') AS documento,
-                     fecha_egreso::date AS fecha, COALESCE(observaciones_egreso,'') AS obs
-                FROM public.personas_caracterizacion WHERE fecha_egreso IS NOT NULL
-            ), coincidencias AS (
-                SELECT documento, fecha, COUNT(*) AS n FROM e
-                WHERE documento IS NOT NULL GROUP BY documento,fecha HAVING COUNT(*)>1
+              SELECT NULLIF(REGEXP_REPLACE(UPPER(TRIM(numero_identidad::text)),
+                '[^A-Z0-9]', '', 'g'), '') documento,
+                fecha_egreso::date fecha
+              FROM public.personas_caracterizacion WHERE fecha_egreso IS NOT NULL
+            ), repetidos AS (
+              SELECT documento, fecha, COUNT(*) n FROM e
+              WHERE documento IS NOT NULL GROUP BY documento, fecha HAVING COUNT(*) > 1
             )
-            SELECT (SELECT COUNT(*) FROM e)::int AS eventos,
-                   (SELECT COUNT(DISTINCT documento) FROM e)::int AS personas,
-                   (SELECT COUNT(*) FROM coincidencias)::int AS grupos_coincidentes,
-                   (SELECT COALESCE(SUM(n),0) FROM coincidencias)::int AS registros_coincidentes,
-                   (SELECT MIN(fecha) FROM e) AS fecha_inicial,
-                   (SELECT MAX(fecha) FROM e) AS fecha_final
+            SELECT (SELECT COUNT(*) FROM e)::int registros,
+                   (SELECT COUNT(DISTINCT documento) FROM e)::int personas,
+                   (SELECT COUNT(*) FROM repetidos)::int coincidencias,
+                   (SELECT MIN(fecha) FROM e) inicio,
+                   (SELECT MAX(fecha) FROM e) fin
         """).iloc[0]
-        contenido.append(Paragraph("Egresos: eventos y personas únicas", estilo_h2))
-        contenido.append(Paragraph(
-            f"{int(egresos.eventos)} registros de egreso de {int(egresos.personas)} "
-            f"personas identificadas, entre {egresos.fecha_inicial} y {egresos.fecha_final}. "
-            f"Se detectaron {int(egresos.grupos_coincidentes)} grupos de persona y fecha "
-            f"coincidentes ({int(egresos.registros_coincidentes)} registros sujetos a revisión). "
-            "Una coincidencia no demuestra duplicidad ni reincidencia.", estilo_cuerpo))
-        motivos=consultar("""
+        motivos = consultar("""
             SELECT CASE
               WHEN observaciones_egreso ILIKE '%fallec%' OR observaciones_egreso ILIKE '%defunci%' THEN 'Fallecimiento'
-              WHEN observaciones_egreso ILIKE '%traslad%' OR observaciones_egreso ILIKE '%centro de protecci%' THEN 'Traslado'
+              WHEN observaciones_egreso ILIKE '%traslad%' OR observaciones_egreso ILIKE '%centro de protecci%' THEN 'Traslado institucional'
               WHEN observaciones_egreso ILIKE '%vinculacion laboral%' OR observaciones_egreso ILIKE '%vinculación laboral%' THEN 'Vinculación laboral'
               WHEN observaciones_egreso ILIKE '%vinculacion familiar%' OR observaciones_egreso ILIKE '%vinculación familiar%' THEN 'Vinculación familiar'
-              WHEN observaciones_egreso ILIKE '%plan retorno%' THEN 'Plan retorno'
-              WHEN observaciones_egreso ILIKE '%caso exitoso%' THEN 'Caso exitoso reportado'
+              WHEN observaciones_egreso ILIKE '%plan retorno%' THEN 'Plan de retorno'
+              WHEN observaciones_egreso ILIKE '%caso exitoso%' THEN 'Caso exitoso consignado'
               WHEN observaciones_egreso ILIKE '%emprend%' THEN 'Emprendimiento'
-              WHEN observaciones_egreso ILIKE '%independen%' THEN 'Independencia'
-              ELSE 'Otro / revisión requerida' END AS motivo,
-              COUNT(*)::int AS registros
+              WHEN observaciones_egreso ILIKE '%independen%' THEN 'Independencia habitacional'
+              ELSE 'Otros motivos documentados' END motivo,
+              COUNT(*)::int registros
             FROM public.personas_caracterizacion WHERE fecha_egreso IS NOT NULL
             GROUP BY 1 ORDER BY 2 DESC
         """)
-        contenido.append(Paragraph("Motivos de egreso: clasificación preliminar por texto", estilo_h2))
-        agregar_tabla(motivos, ["Motivo preliminar", "Registros"])
-        contenido.append(Paragraph(
-            "La clasificación de motivos se basa en palabras de las observaciones y debe "
-            "ser validada administrativamente. Retorno, traslado, salida voluntaria y "
-            "fallecimiento no se clasifican automáticamente como egreso exitoso. "
-            "Las salidas programadas requieren verificación de fecha efectiva.", estilo_cuerpo))
+        par(f'Entre {eg.inicio} y {eg.fin}, el sistema documenta {cifra(eg.registros)} '
+            f'registros de egreso correspondientes a {cifra(eg.personas)} personas únicas. '
+            'Las rutas de salida incluyen retorno, vínculos familiares, inclusión laboral, '
+            'autonomía, continuidad de protección mediante traslado y otras circunstancias.')
+        tabla(motivos, ['Ruta de salida documentada', 'Registros'])
+        positivos = motivos.loc[motivos.motivo.isin(['Vinculación laboral', 'Vinculación familiar',
+            'Caso exitoso consignado', 'Emprendimiento', 'Independencia habitacional']), 'registros'].sum()
+        par(f'{cifra(positivos)} registros contienen expresamente rutas de vinculación '
+            'familiar, laboral, emprendimiento, independencia o caso exitoso. '
+            'Este subtotal describe motivos consignados y no debe leerse como número de '
+            'personas distintas ni como permanencia demostrada fuera de calle.')
+        par(f'Como control de trazabilidad se identificaron {cifra(eg.coincidencias)} '
+            'coincidencias de persona y fecha de egreso. Se conservan los eventos originales '
+            'en los conteos; no se presume duplicidad ni se modifica la base de datos.')
     except Exception as exc:
-        contenido.append(Paragraph("Egresos: consulta no disponible: " + escape(str(exc)[:180]), estilo_cuerpo))
-    contenido.append(Paragraph("Resultados sociales y ODS: alcance metodológico", estilo_h2))
-    contenido.append(Paragraph(
-        "La atención, las participaciones y los objetivos formulados son indicadores de "
-        "gestión y cobertura. Los resultados de salud, vinculación familiar, empleabilidad, "
-        "autonomía y superación de la vida en calle requieren soportes y seguimiento. "
-        "Las contribuciones a ODS 1, 2, 3, 4, 5, 8, 10, 11, 16 y 17 deben asociarse "
-        "a actividades y resultados documentados; no se atribuyen impactos causales sin evaluación.",
-        estilo_cuerpo))
+        par('No fue posible consolidar las rutas de egreso: ' + str(exc)[:160])
+
+    contenido.append(Paragraph('4. Contribución a los Objetivos de Desarrollo Sostenible', estilo_h2))
+    ods = [
+        ('ODS 1 · Fin de la pobreza', 'Rutas de autonomía, retorno y acceso a protección social.'),
+        ('ODS 2 · Hambre cero', 'Acceso a alimentación y atención integral en el programa.'),
+        ('ODS 3 · Salud y bienestar', 'Enfermería, remisiones, adherencia y reducción de riesgos.'),
+        ('ODS 4 · Educación de calidad', 'Desarrollo de habilidades y actividades formativas.'),
+        ('ODS 5 · Igualdad de género', 'Prevención de violencias y atención diferencial.'),
+        ('ODS 8 · Trabajo decente', 'Orientación para empleabilidad y vinculación laboral.'),
+        ('ODS 10 · Reducción de desigualdades', 'Inclusión social y acceso a derechos.'),
+        ('ODS 11 · Ciudades sostenibles', 'Atención a habitabilidad en calle y redes de protección.'),
+        ('ODS 16 · Instituciones sólidas', 'Trazabilidad de casos y acceso a rutas institucionales.'),
+        ('ODS 17 · Alianzas', 'Articulación con servicios de salud, entidades y redes de apoyo.'),
+    ]
+    tabla(pd.DataFrame(ods, columns=['Objetivo', 'Contribución institucional']),
+          ['ODS', 'Ámbito de contribución'])
+    par('La contribución a los ODS se describe mediante las acciones y resultados registrados; '
+        'no implica atribuir el cumplimiento de las metas globales a una sola entidad.')
+
+    contenido.append(Paragraph('5. Conclusiones del balance social', estilo_h2))
+    par('El Observatorio permite seguir una trayectoria de atención: caracterización, '
+        'intervenciones profesionales, objetivos individuales, seguimientos y rutas de egreso. '
+        'El valor social del programa no se reduce al número de actividades: también se '
+        'expresa en el acompañamiento sostenido, el acceso a servicios y los procesos de '
+        'reintegración familiar y autonomía registrados.')
+    par('La lectura conjunta del PAI y de las rutas de egreso aporta evidencia de procesos '
+        'de cambio individual. Los registros históricos, las salidas por traslado y los '
+        'fallecimientos se mantienen en categorías independientes para no sobreestimar '
+        'los resultados favorables.')
 
 st.set_page_config(
     page_title="Observatorio Social Asociación Ciudad Futuro",
@@ -23908,7 +23990,7 @@ def modulo_reportes_institucionales_v169():
                     contenido.append(Spacer(1, 0.6 * cm))
                     contenido.append(
                         Paragraph(
-                            "Fin del informe.",
+                            "Balance social institucional: anexos e indicadores integrados a continuación.",
                             estilo_destacado
                         )
                     )
@@ -36838,7 +36920,7 @@ with tab4:
                     contenido.append(Spacer(1, 0.6 * cm))
                     contenido.append(
                         Paragraph(
-                            "Fin del informe.",
+                            "Balance social institucional: anexos e indicadores integrados a continuación.",
                             estilo_destacado
                         )
                     )
