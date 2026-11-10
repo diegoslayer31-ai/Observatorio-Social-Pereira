@@ -2055,141 +2055,89 @@ def generar_historia_vida_pdf_v16222(documento, engine):
     pdf.build(els); buffer.seek(0); return buffer
 
 def _panel_medidas_activas_v1647(clave="medidas_activas"):
-    """
-    Panel común para Coordinación/Manager e Inspiradores.
-    Muestra quién tiene una medida vigente y la fecha posible de reingreso.
-    """
+    """Separa vigentes, casos de comité e histórico sin modificar Supabase."""
     try:
-        df_medidas = pd.read_sql(
-            text("""
-                SELECT
-                    s.numero_identificacion,
-                    COALESCE(h.nombres, '') AS nombres,
-                    COALESCE(h.apellidos, '') AS apellidos,
-                    COALESCE(h.modalidad, '') AS modalidad,
-                    s.tipo_medida,
-                    s.motivo,
-                    s.fecha_inicio,
-                    s.fecha_fin,
-                    COALESCE(s.remitido_comite, FALSE) AS remitido_comite,
-                    s.estado_medida,
-                    s.observacion,
-                    s.usuario_registra
-                FROM sanciones_usuarios s
-                LEFT JOIN habitante_de_calle h
-                  ON TRIM(CAST(h.numero_identificacion AS TEXT))
-                   = TRIM(CAST(s.numero_identificacion AS TEXT))
-                WHERE UPPER(TRIM(COALESCE(s.estado_medida,''))) = 'ACTIVA'
-                ORDER BY s.fecha_fin NULLS LAST, s.fecha_inicio DESC
-            """),
-            engine
-        )
-    except Exception:
-        df_medidas = pd.DataFrame()
-
-    if df_medidas.empty:
-        st.success("✅ No hay medidas activas registradas.")
+        df = pd.read_sql(text("""
+            SELECT s.id, s.numero_identificacion,
+                   COALESCE(h.nombres, '') AS nombres,
+                   COALESCE(h.apellidos, '') AS apellidos,
+                   COALESCE(h.modalidad, '') AS modalidad,
+                   s.tipo_medida, s.motivo, s.fecha_inicio, s.fecha_fin,
+                   COALESCE(s.remitido_comite, FALSE) AS remitido_comite,
+                   s.estado_medida, s.observacion, s.usuario_registra
+            FROM sanciones_usuarios s
+            LEFT JOIN habitante_de_calle h
+              ON TRIM(CAST(h.numero_identificacion AS TEXT))
+               = TRIM(CAST(s.numero_identificacion AS TEXT))
+            ORDER BY s.fecha_inicio DESC NULLS LAST, s.id DESC
+        """), engine)
+    except Exception as exc:
+        st.error(f"No fue posible consultar las medidas: {exc}")
+        return
+    if df.empty:
+        st.info("No hay medidas registradas.")
         return
 
-    # V16.78: no inflar el tablero por duplicados históricos exactos.
-    df_medidas = df_medidas.drop_duplicates(
-        subset=[
-            "numero_identificacion",
-            "tipo_medida",
-            "motivo",
-            "fecha_inicio",
-            "fecha_fin",
-            "estado_medida"
-        ],
-        keep="first"
-    )
-
     hoy = ahora_colombia().date()
+    df = df.drop_duplicates(subset=['id'], keep='first').copy()
+    df['fecha_inicio'] = pd.to_datetime(df['fecha_inicio'], errors='coerce')
+    df['fecha_fin'] = pd.to_datetime(df['fecha_fin'], errors='coerce')
+    df['remitido_comite'] = df['remitido_comite'].fillna(False).astype(bool)
+    activa = df['estado_medida'].fillna('').astype(str).str.strip().str.upper().eq('ACTIVA')
+    vencida = df['fecha_fin'].notna() & (df['fecha_fin'].dt.date <= hoy)
+    # Una remisión a comité no se cierra automáticamente por fecha.
+    comite = activa & df['remitido_comite']
+    vigente = activa & ~df['remitido_comite'] & ~vencida
+    historico = ~(comite | vigente)
 
-    df_medidas["fecha_inicio"] = pd.to_datetime(
-        df_medidas["fecha_inicio"], errors="coerce"
-    )
-    df_medidas["fecha_fin"] = pd.to_datetime(
-        df_medidas["fecha_fin"], errors="coerce"
-    )
+    df['Nombre completo'] = (df['nombres'].fillna('').astype(str).str.strip()
+                             + ' ' + df['apellidos'].fillna('').astype(str).str.strip()).str.strip()
+    df['Fecha salida'] = df['fecha_inicio'].dt.strftime('%d/%m/%Y').fillna('—')
+    df['Puede solicitar reingreso desde'] = df['fecha_fin'].dt.strftime('%d/%m/%Y').fillna('—')
+    df.loc[comite, 'Puede solicitar reingreso desde'] = 'SUJETO A DECISIÓN DE COMITÉ'
+    df['Estado'] = '📁 HISTÓRICO'
+    df.loc[activa & vencida & ~df['remitido_comite'], 'Estado'] = '🟢 PLAZO CUMPLIDO / PUEDE REINGRESAR'
+    df.loc[vigente, 'Estado'] = '🔴 SUSPENSIÓN VIGENTE'
+    df.loc[comite, 'Estado'] = '🟠 REMITIDO A COMITÉ'
+    cols = ['Nombre completo','numero_identificacion','modalidad','tipo_medida','motivo',
+            'Fecha salida','Puede solicitar reingreso desde','Estado']
+    nombres = {'numero_identificacion':'Documento','modalidad':'Modalidad',
+               'tipo_medida':'Tipo de medida','motivo':'Causal / motivo'}
+    def tabla(sub):
+        st.dataframe(sub[cols].rename(columns=nombres), use_container_width=True, hide_index=True)
 
-    df_medidas["Nombre completo"] = (
-        df_medidas["nombres"].fillna("").astype(str).str.strip()
-        + " "
-        + df_medidas["apellidos"].fillna("").astype(str).str.strip()
-    ).str.strip()
-
-    def _estado_medida_visual(row):
-        if bool(row.get("remitido_comite", False)):
-            return "🟠 CASO REMITIDO A COMITÉ"
-        f = row.get("fecha_fin")
-        if pd.isna(f):
-            return "🔴 VIGENTE"
-        fecha = f.date()
-        if fecha <= hoy:
-            return "🟢 PUEDE REINGRESAR"
-        dias = (fecha - hoy).days
-        return f"🔴 VIGENTE · {dias} día(s)"
-
-    df_medidas["Estado"] = df_medidas.apply(
-        _estado_medida_visual, axis=1
-    )
-
-    df_medidas["Fecha salida"] = df_medidas["fecha_inicio"].apply(
-        lambda x: x.strftime("%d/%m/%Y") if pd.notna(x) else "—"
-    )
-    df_medidas["Puede solicitar reingreso desde"] = df_medidas.apply(
-        lambda r: (
-            "CASO REMITIDO A COMITÉ"
-            if bool(r.get("remitido_comite", False))
-            else (
-                r["fecha_fin"].strftime("%d/%m/%Y")
-                if pd.notna(r.get("fecha_fin"))
-                else "—"
-            )
-        ),
-        axis=1
-    )
-
-    mostrar = df_medidas[
-        [
-            "Nombre completo",
-            "numero_identificacion",
-            "modalidad",
-            "tipo_medida",
-            "motivo",
-            "Fecha salida",
-            "Puede solicitar reingreso desde",
-            "Estado"
-        ]
-    ].rename(
-        columns={
-            "numero_identificacion": "Documento",
-            "modalidad": "Modalidad",
-            "tipo_medida": "Tipo de medida",
-            "motivo": "Causal / motivo"
-        }
-    )
-
-    st.dataframe(
-        mostrar,
-        use_container_width=True,
-        hide_index=True
-    )
-
-    pendientes_cierre = int(
-        (
-            df_medidas["Estado"].eq("🟢 PUEDE REINGRESAR")
-            & ~df_medidas["remitido_comite"].fillna(False).astype(bool)
-        ).sum()
-    )
-    if pendientes_cierre:
-        st.warning(
-            f"⚠️ Hay {pendientes_cierre} medida(s) cuya fecha de posible "
-            "reingreso ya llegó. Conviene cerrarlas/levantarlas para que "
-            "dejen de figurar como activas."
-        )
-
+    a, b, c = st.columns(3)
+    a.metric('🔴 Suspensiones vigentes', int(vigente.sum()))
+    b.metric('🟠 Remitidas a comité', int(comite.sum()))
+    c.metric('📁 Registros históricos', int(historico.sum()))
+    st.caption('Las medidas cuyo plazo terminó pasan a la vista histórica sin borrar ni alterar sus registros originales.')
+    if vigente.any():
+        tabla(df.loc[vigente])
+    else:
+        st.success('No hay suspensiones temporales vigentes.')
+    with st.expander(f'🟠 Casos remitidos a comité ({int(comite.sum())})', expanded=False):
+        if comite.any():
+            tabla(df.loc[comite])
+        else:
+            st.info('No hay medidas remitidas a comité con estado activo.')
+    with st.expander(f'📁 Histórico de medidas ({int(historico.sum())})', expanded=False):
+        st.caption('Incluye plazos cumplidos y medidas cerradas. No se modifica su estado en la base de datos.')
+        if historico.any():
+            hist = df.loc[historico].copy()
+            buscar = st.text_input('Buscar por nombre, documento o causal', key=f'{clave}_buscar_hist')
+            if buscar.strip():
+                txt = (hist['Nombre completo'].fillna('') + ' ' +
+                       hist['numero_identificacion'].fillna('').astype(str) + ' ' +
+                       hist['motivo'].fillna('').astype(str)).str.contains(
+                           buscar.strip(), case=False, regex=False, na=False)
+                hist = hist.loc[txt]
+            tabla(hist)
+            st.download_button('⬇️ Exportar histórico (CSV)',
+                               data=hist[cols].rename(columns=nombres).to_csv(index=False).encode('utf-8-sig'),
+                               file_name='historico_medidas_observatorio.csv', mime='text/csv',
+                               key=f'{clave}_descargar_hist')
+        else:
+            st.info('No hay medidas históricas.')
 
 
 # ============================================================
@@ -2870,6 +2818,8 @@ def gestion_usuarios():
                             fecha_fin
                         FROM sanciones_usuarios
                         WHERE UPPER(TRIM(COALESCE(estado_medida,''))) = 'ACTIVA'
+                      AND COALESCE(remitido_comite, FALSE) = FALSE
+                      AND (fecha_fin IS NULL OR fecha_fin::date > (NOW() AT TIME ZONE 'America/Bogota')::date)
                     ) medidas_unicas
                 """),
                 engine
@@ -8163,6 +8113,8 @@ def gestion_usuarios_movil():
                 FROM sanciones_usuarios
                 WHERE TRIM(CAST(numero_identificacion AS TEXT)) = :doc
                   AND UPPER(TRIM(COALESCE(estado_medida,''))) = 'ACTIVA'
+                  AND COALESCE(remitido_comite, FALSE) = FALSE
+                      AND (fecha_fin IS NULL OR fecha_fin::date > (NOW() AT TIME ZONE 'America/Bogota')::date)
                 ORDER BY creado_en DESC
                 LIMIT 1
             """),
@@ -11876,6 +11828,7 @@ def _semaforo_integral_usuario_v16(documento):
                 FROM sanciones_usuarios
                 WHERE TRIM(CAST(numero_identificacion AS TEXT))=:doc
                   AND UPPER(TRIM(COALESCE(estado_medida,'')))='ACTIVA'
+                  AND (COALESCE(remitido_comite, FALSE) = TRUE OR fecha_fin IS NULL OR fecha_fin::date > (NOW() AT TIME ZONE 'America/Bogota')::date)
             """),
             engine,
             params={"doc": str(documento)}
@@ -17538,6 +17491,7 @@ def dashboard_ejecutivo():
                         fecha_fin
                     FROM sanciones_usuarios
                     WHERE UPPER(TRIM(COALESCE(estado_medida,''))) = 'ACTIVA'
+                      AND (COALESCE(remitido_comite, FALSE) = TRUE OR fecha_fin IS NULL OR fecha_fin::date > (NOW() AT TIME ZONE 'America/Bogota')::date)
                 ) medidas_unicas
                 GROUP BY tipo_medida
             """),
