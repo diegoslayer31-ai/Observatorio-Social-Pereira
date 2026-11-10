@@ -3674,11 +3674,7 @@ def gestion_usuarios():
 
                 causal_medida_gestion = st.selectbox(
                     "Causal / criterio *",
-                    [
-                        "AGRESIÓN FÍSICA", "AGRESIÓN VERBAL A FUNCIONARIO",
-                        "FUGA", "USO DE SPA", "PORTE DE SPA",
-                        "HURTO MENOR", "HURTO GRAVE", "ACOSO SEXUAL", "VENTA DE SPA"
-                    ],
+                    CAUSALES_MEDIDAS_V2026,
                     key=f"gestion_causal_medida_{documento}"
                 )
 
@@ -3688,12 +3684,12 @@ def gestion_usuarios():
                         "Si se marca, no se asigna fecha estimada de reingreso. "
                         "El reingreso dependerá de la decisión del Comité de Casos."
                     ),
-                    disabled=(causal_medida_gestion in ["HURTO GRAVE", "ACOSO SEXUAL"]),
-                    value=(causal_medida_gestion in ["HURTO GRAVE", "ACOSO SEXUAL"])
+                    disabled=(causal_medida_gestion in CAUSALES_SIN_SUSPENSION_V2026),
+                    value=(causal_medida_gestion in CAUSALES_SIN_SUSPENSION_V2026)
                 )
-                if causal_medida_gestion in ["HURTO GRAVE", "ACOSO SEXUAL"]:
+                if causal_medida_gestion in CAUSALES_SIN_SUSPENSION_V2026:
                     remitido_comite = True
-                    st.warning(f"🟠 {causal_medida_gestion}: remisión obligatoria a Comité. No se asigna fecha de reingreso.")
+                    st.warning(f"🟠 {causal_medida_gestion}: {CRITERIOS_REINGRESO_V1641[causal_medida_gestion][2]}.")
 
                 if remitido_comite:
                     fecha_fin_medida = None
@@ -3704,7 +3700,9 @@ def gestion_usuarios():
                 else:
                     fecha_fin_medida = st.date_input(
                         "Fecha de finalización",
-                        value=ahora_colombia().date() + timedelta(days=3)
+                        value=_fecha_posible_reingreso_v1641(fecha_inicio_medida, causal_medida_gestion),
+                        disabled=True,
+                        help="Fecha calculada automáticamente según el PDF de sanciones 2026."
                     )
 
                 motivo_medida = st.text_area(
@@ -3726,7 +3724,9 @@ def gestion_usuarios():
                 )
 
             if guardar_medida:
-                if not motivo_medida.strip():
+                if causal_medida_gestion in CAUSALES_SIN_SUSPENSION_V2026:
+                    st.error("El PDF establece acta o estudio de caso para esta causal, no días de suspensión. Registre el caso por el procedimiento institucional correspondiente.")
+                elif not motivo_medida.strip():
                     st.error("Debe registrar el motivo de la medida.")
                 elif not confirmar_medida:
                     st.error("Debe confirmar la aplicación de la medida.")
@@ -6207,41 +6207,50 @@ st.markdown("""
 # ============================================================
 # V16.78 - REGLAS INSTITUCIONALES DE POSIBLE REINGRESO
 # ============================================================
+# Parámetros conforme a "SANCIONES 2026 - NOCHES FUERA DE CASA".
+# La fecha es la primera fecha en que puede SOLICITAR reingreso; no garantiza cupo.
 CRITERIOS_REINGRESO_V1641 = {
-    # V16.78: la sanción empieza a contarse desde el DÍA SIGUIENTE
-    # a la salida. La fecha calculada es el primer día en que puede
-    # VOLVER A SOLICITAR CUPO, no una garantía automática de reingreso.
-    # V16.179: SALIDA VOLUNTARIA no genera sanción ni tiempo de espera para reingreso.
-    "AGRESIÓN FÍSICA": ("dias", 3, "3 días completos de sanción"),
-    "AGRESIÓN VERBAL A FUNCIONARIO": ("dias", 3, "3 días completos de sanción"),
-    "FUGA": ("dias", 1, "1 día completo de sanción"),
-    "USO DE SPA": ("dias", 2, "2 días completos de sanción"),
-    "PORTE DE SPA": ("dias", 1, "1 día completo de sanción"),
-    "HURTO MENOR": ("dias", 3, "3 días completos de sanción"),
-    "HURTO GRAVE": ("meses", 2, "2 meses completos de sanción"),
-    "ACOSO SEXUAL": ("dias", 0, "Remisión obligatoria a Comité de Casos"),
-    "VENTA DE SPA": ("dias", 3, "3 días completos de sanción"),
+    "AGRESIÓN FÍSICA": ("noches", 3, "3 noches fuera"),
+    "AGRESIÓN VERBAL A FUNCIONARIO": ("acta", 0, "Acta; sin suspensión automática"),
+    "FUGA": ("dias", 0, "Puede solicitar reingreso al día siguiente"),
+    "USO DE SPA": ("dias", 0, "Puede solicitar reingreso al día siguiente"),
+    "PORTE DE SPA": ("dias", 0, "Puede solicitar reingreso al día siguiente"),
+    "HURTO MENOR": ("noches", 3, "3 noches fuera"),
+    "HURTO GRAVE": ("meses", 3, "3 meses"),
+    "ACOSO SEXUAL": ("revision", 0, "Revisión institucional y articulación con Alcaldía; sin plazo automático"),
+    "VENTA DE SPA": ("revision", 0, "Estudio de caso con Alcaldía; sin plazo automático"),
+    "RECIBIR O TIRAR ELEMENTOS POR LA VENTANA": ("dias", 15, "15 días"),
+    "RELACIONES SEXUALES": ("revision", 0, "Estudio de caso y posible cambio de albergue"),
+    "VENTAS Y NEGOCIOS": ("acta", 0, "Acta de compromiso y ejercicio restaurativo"),
 }
 
+CAUSALES_MEDIDAS_V2026 = list(CRITERIOS_REINGRESO_V1641)
+CAUSALES_SIN_SUSPENSION_V2026 = {
+    causal for causal, (unidad, _, _) in CRITERIOS_REINGRESO_V1641.items()
+    if unidad in ("acta", "revision")
+}
+
+
 def _fecha_posible_reingreso_v1641(fecha_salida, causal):
-    """Calcula la primera fecha institucional posible de reingreso."""
+    """Primer día de solicitud: noches/días desde salida; 0 significa día siguiente."""
     if fecha_salida is None:
-        fecha_salida = date.today()
+        fecha_salida = ahora_colombia().date()
     if hasattr(fecha_salida, "date") and not isinstance(fecha_salida, date):
         fecha_salida = fecha_salida.date()
     regla = CRITERIOS_REINGRESO_V1641.get(str(causal or "").strip().upper())
     if not regla:
         return None
     unidad, cantidad, _ = regla
-    # La sanción comienza el día siguiente a la salida.
-    # Ej.: sale 08/09 y tiene 1 día de sanción -> sanción 09/09 ->
-    # puede solicitar cupo desde 10/09.
+    if unidad in ("acta", "revision"):
+        return None
     if unidad == "meses":
-        inicio_sancion = pd.Timestamp(fecha_salida) + pd.Timedelta(days=1)
-        fin_sancion = inicio_sancion + pd.DateOffset(months=cantidad)
-        return fin_sancion.date()
-
-    return fecha_salida + timedelta(days=cantidad + 1)
+        return (pd.Timestamp(fecha_salida) + pd.DateOffset(months=cantidad)).date()
+    if unidad == "noches":
+        # Tres noches fuera desde la salida: 9, 10 y 11 -> reingreso el 12.
+        return fecha_salida + timedelta(days=cantidad)
+    if cantidad == 0:
+        return fecha_salida + timedelta(days=1)
+    return fecha_salida + timedelta(days=cantidad)
 
 
 def _es_reingreso_operativo_v1667(documento, estado_anterior=""):
@@ -6399,28 +6408,16 @@ def _restriccion_reingreso_v1670(documento):
                   AND fecha_fin IS NOT NULL
                   AND COALESCE(remitido_comite, FALSE) = FALSE
                   AND UPPER(TRIM(COALESCE(estado_medida,''))) = 'ACTIVA'
-                ORDER BY creado_en DESC
-                LIMIT 1
+                ORDER BY fecha_fin DESC, creado_en DESC
             """),
             engine,
             params={"doc": doc}
         )
 
-        if not df_med.empty:
-            f_med = pd.to_datetime(
-                df_med.iloc[0]["fecha_fin"],
-                errors="coerce"
-            )
+        for _, medida in df_med.iterrows():
+            f_med = pd.to_datetime(medida["fecha_fin"], errors="coerce")
             if pd.notna(f_med):
-                candidatos.append(
-                    (
-                        f_med.date(),
-                        str(
-                            df_med.iloc[0]["motivo"]
-                            or "MEDIDA DISCIPLINARIA"
-                        )
-                    )
-                )
+                candidatos.append((f_med.date(), str(medida["motivo"] or "MEDIDA DISCIPLINARIA")))
     except Exception:
         pass
 
@@ -9151,15 +9148,12 @@ def gestion_usuarios_movil():
         c1, c2 = st.columns(2)
         inicio = c1.date_input(
             "Inicio",
-            value=date.today(),
+            value=ahora_colombia().date(),
             key=f"movil_inicio_medida_{documento}"
         )
         causal_medida = c2.selectbox(
             "Causal / criterio *",
-            [
-                "AGRESIÓN FÍSICA", "AGRESIÓN VERBAL A FUNCIONARIO", "FUGA", "USO DE SPA", "PORTE DE SPA",
-                "HURTO MENOR", "HURTO GRAVE", "ACOSO SEXUAL", "VENTA DE SPA"
-            ],
+            CAUSALES_MEDIDAS_V2026,
             key=f"movil_causal_medida_{documento}"
         )
         remitido_comite = st.checkbox(
@@ -9169,13 +9163,13 @@ def gestion_usuarios_movil():
                 "No se asignará fecha estimada de reingreso. "
                 "El reingreso dependerá de la decisión del Comité de Casos."
             ),
-            disabled=(causal_medida in ["HURTO GRAVE", "ACOSO SEXUAL"]),
-            value=(causal_medida in ["HURTO GRAVE", "ACOSO SEXUAL"])
+            disabled=(causal_medida in CAUSALES_SIN_SUSPENSION_V2026),
+            value=(causal_medida in CAUSALES_SIN_SUSPENSION_V2026)
         )
-        # V16.140: HURTO GRAVE siempre debe pasar a Comité; nunca genera días/fecha automática.
-        if causal_medida in ["HURTO GRAVE", "ACOSO SEXUAL"]:
+        # PDF 2026: las causales de acta/estudio no generan suspensión automática.
+        if causal_medida in CAUSALES_SIN_SUSPENSION_V2026:
             remitido_comite = True
-            st.warning(f"🟠 {causal_medida}: remisión obligatoria a Comité. No se asigna fecha de reingreso.")
+            st.warning(f"🟠 {causal_medida}: {CRITERIOS_REINGRESO_V1641[causal_medida][2]}.")
 
         if remitido_comite:
             fin = None
@@ -9217,7 +9211,9 @@ def gestion_usuarios_movil():
             type="primary",
             key=f"movil_guardar_medida_{documento}"
         ):
-            if not motivo.strip():
+            if causal_medida in CAUSALES_SIN_SUSPENSION_V2026:
+                st.error("El PDF establece acta o estudio de caso para esta causal, no suspensión automática. Use el procedimiento institucional correspondiente.")
+            elif not motivo.strip():
                 st.error("Debe registrar el motivo.")
             elif not conf:
                 st.error("Debe confirmar la medida.")
@@ -11874,7 +11870,7 @@ def _semaforo_integral_usuario_v16(documento):
                 SELECT COUNT(*) AS total
                 FROM sanciones_usuarios
                 WHERE TRIM(CAST(numero_identificacion AS TEXT))=:doc
-                  AND UPPER(TRIM(COALESCE(estado,'')))='ACTIVA'
+                  AND UPPER(TRIM(COALESCE(estado_medida,'')))='ACTIVA'
             """),
             engine,
             params={"doc": str(documento)}
