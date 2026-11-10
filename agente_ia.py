@@ -3724,7 +3724,9 @@ def gestion_usuarios():
                 )
 
             if guardar_medida:
-                if causal_medida_gestion in CAUSALES_SIN_SUSPENSION_V2026:
+                if tipo_medida == "EXPULSIÓN" and causal_medida_gestion not in CAUSALES_SIN_SUSPENSION_V2026:
+                    st.error("Esta causal establece un plazo de suspensión, no expulsión. Seleccione SUSPENSIÓN.")
+                elif causal_medida_gestion in CAUSALES_SIN_SUSPENSION_V2026:
                     st.error("El PDF establece acta o estudio de caso para esta causal, no días de suspensión. Registre el caso por el procedimiento institucional correspondiente.")
                 elif not motivo_medida.strip():
                     st.error("Debe registrar el motivo de la medida.")
@@ -6213,18 +6215,19 @@ CRITERIOS_REINGRESO_V1641 = {
     "AGRESIÓN FÍSICA": ("noches", 3, "3 noches fuera"),
     "AGRESIÓN VERBAL A FUNCIONARIO": ("acta", 0, "Acta; sin suspensión automática"),
     "FUGA": ("dias", 0, "Puede solicitar reingreso al día siguiente"),
+    "SALIDA VOLUNTARIA": ("dias", 0, "Puede solicitar reingreso al día siguiente"),
     "USO DE SPA": ("dias", 0, "Puede solicitar reingreso al día siguiente"),
     "PORTE DE SPA": ("dias", 0, "Puede solicitar reingreso al día siguiente"),
     "HURTO MENOR": ("noches", 3, "3 noches fuera"),
     "HURTO GRAVE": ("meses", 3, "3 meses"),
     "ACOSO SEXUAL": ("revision", 0, "Revisión institucional y articulación con Alcaldía; sin plazo automático"),
-    "VENTA DE SPA": ("revision", 0, "Estudio de caso con Alcaldía; sin plazo automático"),
+    "VENTA DE SPA": ("revision", 0, "Veto sujeto a estudio de caso con Alcaldía; sin plazo automático"),
     "RECIBIR O TIRAR ELEMENTOS POR LA VENTANA": ("dias", 15, "15 días"),
     "RELACIONES SEXUALES": ("revision", 0, "Estudio de caso y posible cambio de albergue"),
     "VENTAS Y NEGOCIOS": ("acta", 0, "Acta de compromiso y ejercicio restaurativo"),
 }
 
-CAUSALES_MEDIDAS_V2026 = list(CRITERIOS_REINGRESO_V1641)
+CAUSALES_MEDIDAS_V2026 = [c for c in CRITERIOS_REINGRESO_V1641 if c != "SALIDA VOLUNTARIA"]
 CAUSALES_SIN_SUSPENSION_V2026 = {
     causal for causal, (unidad, _, _) in CRITERIOS_REINGRESO_V1641.items()
     if unidad in ("acta", "revision")
@@ -9211,7 +9214,9 @@ def gestion_usuarios_movil():
             type="primary",
             key=f"movil_guardar_medida_{documento}"
         ):
-            if causal_medida in CAUSALES_SIN_SUSPENSION_V2026:
+            if tipo == "EXPULSIÓN" and causal_medida not in CAUSALES_SIN_SUSPENSION_V2026:
+                st.error("Esta causal establece un plazo de suspensión, no expulsión. Seleccione SUSPENSIÓN.")
+            elif causal_medida in CAUSALES_SIN_SUSPENSION_V2026:
                 st.error("El PDF establece acta o estudio de caso para esta causal, no suspensión automática. Use el procedimiento institucional correspondiente.")
             elif not motivo.strip():
                 st.error("Debe registrar el motivo.")
