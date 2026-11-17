@@ -1260,6 +1260,105 @@ def detectar_y_registrar_posibles_duplicados_v16214(
     return hallados[:5]
 
 
+def _revision_grupo_duplicados_v16236(alertas, documentos_iniciales):
+    """Comparador de solo lectura: conexiones, fichas e inventario de historiales.
+
+    No equipara una coincidencia a una identidad confirmada ni cambia estados.
+    """
+    docs = {limpiar_documento(x) for x in documentos_iniciales if limpiar_documento(x)}
+    relacionadas = alertas[alertas['estado'].isin(['PENDIENTE', 'CONFIRMADO'])].copy()
+    # Cierre transitivo: A-B y B-C implican que los tres deben revisarse juntos.
+    cambio = True
+    while cambio:
+        antes = len(docs)
+        for _, a in relacionadas.iterrows():
+            d1, d2 = limpiar_documento(a['documento_nuevo']), limpiar_documento(a['documento_existente'])
+            if d1 in docs or d2 in docs:
+                docs.update(x for x in (d1, d2) if x)
+        cambio = len(docs) != antes
+    grupo = relacionadas[relacionadas.apply(
+        lambda a: limpiar_documento(a['documento_nuevo']) in docs
+        or limpiar_documento(a['documento_existente']) in docs, axis=1)]
+    st.markdown('#### 🔎 Comparación integral de expedientes (solo lectura)')
+    st.info('Estas son identificaciones relacionadas por alertas, no personas cuya identidad se haya demostrado. '
+            'La comparación NO modifica registros, no genera egresos y no consolida fichas.')
+    st.caption(f'{len(docs)} identificaciones vinculadas · {len(grupo)} alertas abiertas en el grupo')
+    if not grupo.empty:
+        st.dataframe(grupo[['id', 'estado', 'nivel', 'documento_nuevo', 'nombre_nuevo',
+                            'documento_existente', 'nombre_existente', 'motivo']],
+                     use_container_width=True, hide_index=True)
+    with engine.connect() as conn:
+        # Consultar fichas completas únicamente de los documentos del grupo.
+        fichas = pd.read_sql(text("""SELECT * FROM public.habitante_de_calle
+            WHERE TRIM(numero_identificacion::text) = ANY(:docs)
+            ORDER BY numero_identificacion"""), conn, params={'docs': sorted(docs)})
+        if fichas.empty:
+            st.warning('No se encontraron fichas principales para este grupo.')
+            return
+        # Transponer los campos facilita comparar todas las fichas sin perder columnas.
+        vista = fichas.set_index('numero_identificacion').T.reset_index().rename(columns={'index': 'Campo'})
+        st.markdown('**Comparación campo por campo de las fichas**')
+        st.dataframe(vista, use_container_width=True, hide_index=True, height=440)
+        st.download_button('Descargar comparación de fichas (CSV)',
+            vista.to_csv(index=False).encode('utf-8-sig'),
+            file_name='comparacion_fichas_duplicados.csv', mime='text/csv',
+            key='dup_descarga_fichas_v16236')
+        # Inventariar columnas de identificación reales, sin asumir esquemas.
+        esquema = pd.read_sql(text("""SELECT table_name, column_name FROM information_schema.columns
+            WHERE table_schema='public' AND column_name IN
+            ('numero_identificacion', 'documento_usuario', 'numero_identidad')
+            ORDER BY table_name, column_name"""), conn)
+        # Evitar tablas de control y auditoría que no son historiales del beneficiario.
+        excluidas = {'habitante_de_calle', 'posibles_duplicados', 'funcionarios_sistema',
+                     'auditoria_sistema', 'sesiones_sistema'}
+        conteos = []
+        detalles = {}
+        for tabla, columnas in esquema.groupby('table_name'):
+            if tabla in excluidas or tabla.startswith('backup_') or tabla.startswith('respaldo_'):
+                continue
+            # Nombres provienen de information_schema, y se citan con comillas seguras.
+            t = '"' + str(tabla).replace('"', '""') + '"'
+            condiciones = []
+            for col in columnas['column_name']:
+                c = '"' + str(col).replace('"', '""') + '"'
+                condiciones.append(f'TRIM({c}::text) = ANY(:docs)')
+            filtro = ' OR '.join(condiciones)
+            try:
+                cantidad = pd.read_sql(text(f'SELECT COUNT(*) AS n FROM public.{t} WHERE {filtro}'),
+                                       conn, params={'docs': sorted(docs)})['n'].iloc[0]
+                if int(cantidad) == 0:
+                    continue
+                conteos.append({'Tabla': tabla, 'Registros vinculados': int(cantidad)})
+                # Muestra limitada: nunca descargar miles de registros por accidente.
+                detalles[tabla] = (t, filtro)
+            except Exception:
+                continue
+        st.markdown('**Inventario de historiales asociados al grupo**')
+        if conteos:
+            st.dataframe(pd.DataFrame(conteos), use_container_width=True, hide_index=True)
+            st.caption('Los conteos representan registros, no personas. Algunas tablas pueden usar '
+                       'otras columnas de vínculo; este inventario no certifica cobertura total.')
+            tabla_elegida = st.selectbox('Explorar registros históricos de una tabla',
+                                        [x['Tabla'] for x in conteos], key='dup_tabla_hist_v16236')
+            t, filtro = detalles[tabla_elegida]
+            try:
+                registros = pd.read_sql(text(f'SELECT * FROM public.{t} WHERE {filtro} LIMIT 100'),
+                                        conn, params={'docs': sorted(docs)})
+                st.dataframe(registros, use_container_width=True, hide_index=True, height=350)
+                st.caption('Vista de hasta 100 registros. Se conservan las fechas y datos originales.')
+                st.download_button('Descargar estos registros (CSV)',
+                    registros.to_csv(index=False).encode('utf-8-sig'),
+                    file_name='historial_grupo_' + tabla_elegida + '.csv',
+                    mime='text/csv', key='dup_descarga_hist_v16236')
+            except Exception as exc:
+                st.warning(f'No fue posible visualizar esta tabla: {exc}')
+        else:
+            st.info('No se encontraron historiales con las columnas de identificación examinadas.')
+    st.warning('Antes de decidir, contraste documentos de identidad, fecha de nacimiento, '
+               'entrevistas y registros originales. No seleccione una ficha para retirar '
+               'hasta confirmar si las identificaciones corresponden a una o varias personas.')
+
+
 def panel_posibles_duplicados_v16214():
     """Revisión administrativa y consolidación supervisada de expedientes.
 
@@ -1321,6 +1420,11 @@ def panel_posibles_duplicados_v16214():
         return
     st.markdown('**Fichas encontradas en la base principal**')
     st.dataframe(fichas, use_container_width=True, hide_index=True)
+    with st.expander('🔎 Abrir comparación de fichas e historiales del grupo', expanded=True):
+        try:
+            _revision_grupo_duplicados_v16236(alertas, docs)
+        except Exception as exc:
+            st.error(f'No fue posible completar la comparación: {exc}')
     if estado in ('RESUELTO', 'DESCARTADO'):
         st.info('Esta alerta ya fue cerrada. Se muestra para consulta histórica; no se modificará.')
         return
@@ -1376,7 +1480,7 @@ def panel_posibles_duplicados_v16214():
         return
     if not relaciones.empty:
         st.error('Consolidación bloqueada: una o ambas identificaciones aparecen en otras alertas abiertas. '
-                 'Revise el grupo completo antes de consolidar expedientes.')
+                 'Utilice la comparación integral anterior y verifique la identidad de cada ficha antes de decidir.')
         st.dataframe(relaciones, use_container_width=True, hide_index=True)
         return
 
