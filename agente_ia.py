@@ -1440,6 +1440,103 @@ def _revision_grupo_duplicados_v16236(alertas, documentos_iniciales):
             else:
                 st.caption('No hay alertas directas entre las fichas clasificadas como diferentes '
                            'y las fichas clasificadas como la misma persona.')
+    # V16.238: Consolidación supervisada del grupo verificado.
+    # Nunca ejecutar por simple coincidencia ni al elegir una ficha de referencia.
+    if (referencia == 'SD112' and set(disponibles) ==
+            {'SD112', 'IND-2026-6160DAF7', 'IND-2026-67D204A6'} and
+            decisiones.get('IND-2026-6160DAF7') == 'Es la misma persona (verificado)' and
+            decisiones.get('IND-2026-67D204A6') == 'Es la misma persona (verificado)'):
+        st.markdown('#### 🔐 Consolidación supervisada — ficha definitiva SD112')
+        st.info('Se conservará SD112 — BRAYAN ESTEVEN ARCILA HERRERA. '
+                'Los dos identificadores IND serán retirados únicamente si toda la transacción concluye.')
+        st.warning('Esta operación es irreversible desde la interfaz. Requiere respaldo reciente de '
+                   'Supabase y revisión documental. Las alertas #4, #8 y #9 deben estar CONFIRMADAS.')
+        fundamento = st.text_area('Acta o fundamento documental de identidad',
+                                  key='dup_fundamento_sd112_v16238')
+        respaldo = st.checkbox('Confirmo que existe respaldo verificable y reciente de Supabase.',
+                               key='dup_respaldo_sd112_v16238')
+        cotejo = st.checkbox('Cotejé los documentos y los historiales de las tres fichas.',
+                             key='dup_cotejo_sd112_v16238')
+        frase = st.text_input('Para autorizar escriba exactamente: CONSOLIDAR GRUPO SD112',
+                              key='dup_frase_sd112_v16238')
+        habilitar = (respaldo and cotejo and len(fundamento.strip()) >= 30 and
+                     frase.strip() == 'CONSOLIDAR GRUPO SD112')
+        if st.button('Consolidar las tres fichas en SD112', type='primary',
+                     disabled=not habilitar, key='dup_ejecutar_sd112_v16238'):
+            try:
+                usuario = st.session_state.get('usuario_actual', 'sistema')
+                with engine.begin() as tx:
+                    # Serializa operaciones concurrentes sobre este grupo.
+                    tx.execute(text('SELECT pg_advisory_xact_lock(hashtext(:clave))'),
+                               {'clave': 'consolidacion-grupo-SD112'})
+                    alertas_actuales = tx.execute(text('''
+                        SELECT id, estado, TRIM(documento_nuevo) AS nuevo,
+                               TRIM(documento_existente) AS existente
+                        FROM public.posibles_duplicados
+                        WHERE id IN (4,8,9) FOR UPDATE
+                    ''')).mappings().all()
+                    a = {int(r['id']): r for r in alertas_actuales}
+                    pares = {4: {'SD112', 'IND-2026-6160DAF7'},
+                             8: {'SD112', 'IND-2026-67D204A6'},
+                             9: {'IND-2026-6160DAF7', 'IND-2026-67D204A6'}}
+                    if (set(a) != {4,8,9} or any(
+                            a[i]['estado'] != 'CONFIRMADO' or
+                            {a[i]['nuevo'], a[i]['existente']} != pares[i]
+                            for i in pares)):
+                        raise ValueError('Las alertas cambiaron o no corresponden al grupo verificado.')
+                    otros = tx.execute(text('''
+                        SELECT COUNT(*) FROM public.posibles_duplicados
+                        WHERE estado IN ('PENDIENTE','CONFIRMADO')
+                          AND id NOT IN (4,8,9)
+                          AND (TRIM(documento_nuevo) IN (:d1,:d2,:d3)
+                            OR TRIM(documento_existente) IN (:d1,:d2,:d3))
+                    '''), {'d1': 'SD112', 'd2': 'IND-2026-6160DAF7',
+                           'd3': 'IND-2026-67D204A6'}).scalar()
+                    if otros:
+                        raise ValueError('Existen alertas adicionales relacionadas: revise el grupo antes de consolidar.')
+                    presentes = tx.execute(text('''
+                        SELECT TRIM(numero_identificacion::text) AS doc
+                        FROM public.habitante_de_calle
+                        WHERE TRIM(numero_identificacion::text) IN (:d1,:d2,:d3)
+                        FOR UPDATE
+                    '''), {'d1': 'SD112', 'd2': 'IND-2026-6160DAF7',
+                           'd3': 'IND-2026-67D204A6'}).scalars().all()
+                    if set(presentes) != set(['SD112','IND-2026-6160DAF7','IND-2026-67D204A6']):
+                        raise ValueError('No se encontraron exactamente las tres fichas esperadas.')
+                    # Dos operaciones del procedimiento SQL existente, dentro de UNA
+                    # transacción: si falla una, PostgreSQL revierte ambas.
+                    for alerta_id, retirado in [(8, 'IND-2026-67D204A6'),
+                                                (4, 'IND-2026-6160DAF7')]:
+                        tx.execute(text('''
+                            SELECT public.consolidar_duplicado_seguro_v1(
+                                :id, :principal, :retirado, :usuario)
+                        '''), {'id': alerta_id, 'principal': 'SD112',
+                               'retirado': retirado, 'usuario': usuario}).scalar()
+                    restantes = tx.execute(text('''
+                        SELECT TRIM(numero_identificacion::text)
+                        FROM public.habitante_de_calle
+                        WHERE TRIM(numero_identificacion::text) IN (:d1,:d2,:d3)
+                    '''), {'d1': 'SD112', 'd2': 'IND-2026-6160DAF7',
+                           'd3': 'IND-2026-67D204A6'}).scalars().all()
+                    if restantes != ['SD112']:
+                        raise ValueError('La verificación final de fichas falló. Se revierte toda la operación.')
+                    tx.execute(text('''
+                        UPDATE public.posibles_duplicados
+                        SET estado='RESUELTO', revisado_en=NOW(), revisado_por=:usuario,
+                            observacion_revision=:nota
+                        WHERE id=9 AND estado='CONFIRMADO'
+                    '''), {'usuario': usuario,
+                           'nota': 'Consolidación de grupo en SD112. ' + fundamento.strip()})
+                registrar_auditoria('CONSOLIDACION_GRUPO_SD112', documento='SD112',
+                    modulo='Control de duplicidades',
+                    valor_anterior='IND-2026-6160DAF7; IND-2026-67D204A6',
+                    valor_nuevo='SD112', observacion=fundamento.strip())
+                invalidar_cache_datos()
+                st.success('Las tres fichas quedaron consolidadas en SD112; alertas 4, 8 y 9 resueltas.')
+                st.rerun()
+            except Exception as exc:
+                st.error(f'No se completó la consolidación del grupo; se revirtió la transacción: {exc}')
+                st.info('No intente eliminar fichas manualmente. Revise la función SQL y los respaldos.')
     st.warning('No elimine expedientes por coincidencias de nombres. '
                'Las decisiones de identidad requieren evidencia documental.')
 
