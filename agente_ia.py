@@ -1354,9 +1354,95 @@ def _revision_grupo_duplicados_v16236(alertas, documentos_iniciales):
                 st.warning(f'No fue posible visualizar esta tabla: {exc}')
         else:
             st.info('No se encontraron historiales con las columnas de identificación examinadas.')
-    st.warning('Antes de decidir, contraste documentos de identidad, fecha de nacimiento, '
-               'entrevistas y registros originales. No seleccione una ficha para retirar '
-               'hasta confirmar si las identificaciones corresponden a una o varias personas.')
+    st.markdown('#### 🧭 Seleccionar y clasificar fichas del grupo')
+    st.caption('Seleccione una ficha de referencia para la revisión. Esto NO retira ni modifica ninguna ficha.')
+    disponibles = sorted(fichas['numero_identificacion'].astype(str).str.strip().unique().tolist())
+    referencia = st.selectbox('Ficha de referencia (no necesariamente definitiva)', 
+                              ['— Sin seleccionar —'] + disponibles,
+                              key='dup_referencia_grupo_v16237')
+    if referencia != '— Sin seleccionar —':
+        base = fichas[fichas['numero_identificacion'].astype(str).str.strip() == referencia].iloc[0]
+        st.info(f"Ficha de referencia: {referencia} · {base.get('nombres', '')} {base.get('apellidos', '')}. "
+                "Seleccionarla no significa confirmar identidad ni autorizar consolidación.")
+        st.markdown('**Clasificación individual de las demás fichas**')
+        decisiones = {}
+        for otro in disponibles:
+            if otro == referencia:
+                continue
+            datos = fichas[fichas['numero_identificacion'].astype(str).str.strip() == otro].iloc[0]
+            st.markdown(f"**{otro} — {datos.get('nombres', '')} {datos.get('apellidos', '')}**")
+            decisiones[otro] = st.radio(
+                f'¿Qué relación tiene {otro} con {referencia}?',
+                ['Sin verificar', 'Es la misma persona (verificado)', 'Es una persona diferente (verificado)'],
+                key=f'dup_relacion_grupo_v16237_{referencia}_{otro}',
+                horizontal=False)
+        sin_verificar = [d for d, v in decisiones.items() if v == 'Sin verificar']
+        if sin_verificar:
+            st.warning('Falta verificar: ' + ', '.join(sin_verificar) +
+                       '. No se permite consolidar ni retirar fichas.')
+        elif all(v == 'Es la misma persona (verificado)' for v in decisiones.values()):
+            st.success('Todas las fichas han sido clasificadas como la misma persona en esta sesión.')
+            st.warning('La consolidación de tres o más fichas continúa bloqueada: '
+                       'requiere una operación transaccional de grupo en Supabase, '
+                       'con respaldo, control de referencias y auditoría. '
+                       'No se ejecutará una fusión parcial por parejas.')
+        else:
+            st.info('El grupo contiene al menos una ficha clasificada como persona diferente. '
+                    'Puede cerrar exclusivamente las alertas que vinculen personas verificadas como diferentes.')
+            diferentes = {d for d, v in decisiones.items()
+                          if v == 'Es una persona diferente (verificado)'}
+            mismas = {referencia} | {d for d, v in decisiones.items()
+                                    if v == 'Es la misma persona (verificado)'}
+            candidatos = grupo[grupo.apply(
+                lambda a: ((limpiar_documento(a['documento_nuevo']) in diferentes
+                            and limpiar_documento(a['documento_existente']) in mismas)
+                           or (limpiar_documento(a['documento_existente']) in diferentes
+                               and limpiar_documento(a['documento_nuevo']) in mismas)), axis=1)]
+            if not candidatos.empty:
+                st.dataframe(candidatos[['id', 'documento_nuevo', 'documento_existente', 'estado']],
+                             use_container_width=True, hide_index=True)
+                st.caption('Solo se muestran las alertas entre fichas clasificadas explícitamente '
+                           'como diferentes. No se cambian las demás alertas.')
+                ids_cerrar = st.multiselect('Alertas a descartar por identidad diferente',
+                                            candidatos['id'].astype(int).tolist(),
+                                            key='dup_descartes_grupo_v16237')
+                razon = st.text_area('Evidencia que demuestra que son personas diferentes',
+                                     key='dup_razon_grupo_v16237')
+                confirmacion = st.checkbox('Confirmo que contrasté documentos y registros originales; '
+                                           'solo se descartarán las alertas seleccionadas.',
+                                           key='dup_confirmar_descartes_v16237')
+                if st.button('Descartar únicamente estas alertas', 
+                             disabled=not (ids_cerrar and len(razon.strip()) >= 20 and confirmacion),
+                             key='dup_guardar_descartes_v16237'):
+                    operador = st.session_state.get('usuario_actual', 'sistema')
+                    try:
+                        with engine.begin() as conexion:
+                            resultado = conexion.execute(text("""
+                                UPDATE public.posibles_duplicados
+                                SET estado='DESCARTADO', revisado_por=:operador,
+                                    revisado_en=NOW(), observacion_revision=:razon
+                                WHERE id = ANY(:ids)
+                                  AND estado IN ('PENDIENTE', 'CONFIRMADO')
+                                RETURNING id
+                            """), {'operador': operador, 'razon': razon.strip(),
+                                   'ids': ids_cerrar}).fetchall()
+                        if len(resultado) != len(ids_cerrar):
+                            st.warning('Algunas alertas cambiaron de estado durante la revisión. '
+                                       'Verifique el resultado antes de continuar.')
+                        registrar_auditoria('DESCARTE_ALERTAS_GRUPO', documento=referencia,
+                            modulo='Control de duplicidades',
+                            valor_anterior=str(ids_cerrar), valor_nuevo='DESCARTADO',
+                            observacion=razon.strip())
+                        st.success(f'Se descartaron {len(resultado)} alertas. No se modificaron fichas.')
+                        st.rerun()
+                    except Exception as exc:
+                        st.error(f'No fue posible actualizar las alertas: {exc}')
+            else:
+                st.caption('No hay alertas directas entre las fichas clasificadas como diferentes '
+                           'y las fichas clasificadas como la misma persona.')
+    st.warning('No elimine expedientes por coincidencias de nombres. '
+               'Las decisiones de identidad requieren evidencia documental.')
+
 
 
 def panel_posibles_duplicados_v16214():
