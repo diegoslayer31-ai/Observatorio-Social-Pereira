@@ -1261,43 +1261,159 @@ def detectar_y_registrar_posibles_duplicados_v16214(
 
 
 def panel_posibles_duplicados_v16214():
-    """Panel exclusivo de Coordinación/Manager para revisar alertas pendientes."""
+    """Revisión administrativa y consolidación supervisada de expedientes.
+
+    No se modifica la base salvo por decisiones explícitas del funcionario.
+    La consolidación de historiales se delega a la función transaccional de Supabase.
+    """
     _asegurar_control_posibles_duplicados_v16214()
+    st.markdown('### ⚠️ Control de duplicidades')
     try:
-        df = pd.read_sql(text("""
-            SELECT id, nivel, documento_nuevo, nombre_nuevo,
+        alertas = pd.read_sql(text("""
+            SELECT id, nivel, estado, documento_nuevo, nombre_nuevo,
                    documento_existente, nombre_existente,
                    fecha_nacimiento_nuevo, fecha_nacimiento_existente,
-                   similitud_nombre, similitud_documento, motivo,
-                   detectado_por, detectado_en
-            FROM posibles_duplicados
-            WHERE estado='PENDIENTE'
-            ORDER BY CASE WHEN nivel='ALTA' THEN 0 ELSE 1 END, detectado_en DESC
+                   similitud_nombre, motivo, detectado_por, detectado_en,
+                   revisado_por, revisado_en, observacion_revision
+            FROM public.posibles_duplicados
+            ORDER BY detectado_en DESC, id DESC
         """), engine)
-    except Exception:
-        df = pd.DataFrame()
-    st.markdown('### ⚠️ Posibles duplicados')
-    if df.empty:
-        st.success('No hay posibles duplicados pendientes de revisión.')
+    except Exception as exc:
+        st.error(f'No fue posible consultar las alertas: {exc}')
         return
-    st.warning(f'Hay {len(df)} posible(s) duplicado(s) pendiente(s). Estas alertas no dependen del cuidador.')
-    vista = df.copy()
-    if 'similitud_nombre' in vista:
-        vista['Similitud nombre'] = (pd.to_numeric(vista['similitud_nombre'], errors='coerce').fillna(0)*100).round(1).astype(str)+'%'
-    st.dataframe(vista[[c for c in ['nivel','documento_nuevo','nombre_nuevo','documento_existente','nombre_existente','fecha_nacimiento_nuevo','fecha_nacimiento_existente','Similitud nombre','motivo','detectado_por','detectado_en'] if c in vista.columns]], use_container_width=True, hide_index=True)
-    ids = df['id'].astype(int).tolist()
-    elegido = st.selectbox('Alerta a revisar', ids, format_func=lambda i: f"#{i} · {df.loc[df['id']==i, 'nombre_nuevo'].iloc[0]} ↔ {df.loc[df['id']==i, 'nombre_existente'].iloc[0]}", key='dup_alerta_v16214')
-    c1, c2 = st.columns(2)
-    usuario = st.session_state.get('usuario_actual','sistema')
-    if c1.button('✅ Son personas diferentes', use_container_width=True, key='dup_diferentes_v16214'):
-        with engine.begin() as conn:
-            conn.execute(text("""UPDATE posibles_duplicados SET estado='DESCARTADO', revisado_por=:u, revisado_en=NOW(), observacion_revision='Verificado: personas diferentes' WHERE id=:id"""), {'u':usuario,'id':int(elegido)})
-        st.rerun()
-    if c2.button('🔴 Confirmar posible duplicado', use_container_width=True, key='dup_confirmar_v16214'):
-        with engine.begin() as conn:
-            conn.execute(text("""UPDATE posibles_duplicados SET estado='CONFIRMADO', revisado_por=:u, revisado_en=NOW(), observacion_revision='Confirmado para depuración administrativa' WHERE id=:id"""), {'u':usuario,'id':int(elegido)})
-        st.success('Caso confirmado. No se fusionó ni eliminó automáticamente ningún registro.')
-        st.rerun()
+
+    estados = ['PENDIENTE', 'CONFIRMADO', 'RESUELTO', 'DESCARTADO']
+    columnas = st.columns(4)
+    for columna, estado in zip(columnas, estados):
+        columna.metric(estado.title(), int((alertas['estado'] == estado).sum()) if not alertas.empty else 0)
+    filtro = st.selectbox('Mostrar alertas', ['POR RESOLVER', 'TODAS'] + estados,
+                          key='dup_filtro_v3')
+    if filtro == 'POR RESOLVER':
+        vista = alertas[alertas['estado'].isin(['PENDIENTE', 'CONFIRMADO'])].copy()
+    elif filtro == 'TODAS':
+        vista = alertas.copy()
+    else:
+        vista = alertas[alertas['estado'] == filtro].copy()
+    if vista.empty:
+        st.info('No hay alertas en el filtro seleccionado.')
+        return
+    st.dataframe(vista, use_container_width=True, hide_index=True)
+    opciones = vista['id'].astype(int).tolist()
+    elegido = st.selectbox('Seleccione una alerta', opciones,
+        format_func=lambda i: '#{} · {}'.format(i, str(vista.loc[vista['id'] == i, 'nombre_nuevo'].iloc[0])),
+        key='dup_alerta_v16214')
+    fila = vista.loc[vista['id'] == elegido].iloc[0]
+    estado = str(fila['estado'])
+    docs = [limpiar_documento(fila['documento_nuevo']),
+            limpiar_documento(fila['documento_existente'])]
+    if not all(docs) or docs[0] == docs[1]:
+        st.error('La alerta no contiene dos documentos diferentes válidos.')
+        return
+    try:
+        fichas = pd.read_sql(text("""
+            SELECT numero_identificacion, nombres, apellidos, estado_caso, modalidad,
+                   fecha_nacimiento
+            FROM public.habitante_de_calle
+            WHERE TRIM(numero_identificacion::text) IN (:a, :b)
+        """), engine, params={'a': docs[0], 'b': docs[1]})
+    except Exception as exc:
+        st.error(f'No se pudieron consultar las fichas: {exc}')
+        return
+    st.markdown('**Fichas encontradas en la base principal**')
+    st.dataframe(fichas, use_container_width=True, hide_index=True)
+    if estado in ('RESUELTO', 'DESCARTADO'):
+        st.info('Esta alerta ya fue cerrada. Se muestra para consulta histórica; no se modificará.')
+        return
+
+    usuario = st.session_state.get('usuario_actual', 'sistema')
+    if estado == 'PENDIENTE':
+        st.caption('Confirmar una alerta no fusiona ni elimina ningún registro.')
+        motivo = st.text_area('Justificación de la revisión', key='dup_motivo_v3')
+        c1, c2 = st.columns(2)
+        if c1.button('Son personas diferentes · Descartar', key='dup_descartar_v3',
+                     use_container_width=True, disabled=len(motivo.strip()) < 10):
+            try:
+                with engine.begin() as conn:
+                    conn.execute(text("""UPDATE public.posibles_duplicados
+                        SET estado='DESCARTADO', revisado_por=:u, revisado_en=NOW(),
+                            observacion_revision=:motivo
+                        WHERE id=:id AND estado='PENDIENTE'"""),
+                        {'u': usuario, 'motivo': motivo.strip(), 'id': int(elegido)})
+                st.rerun()
+            except Exception as exc:
+                st.error(f'No se pudo descartar: {exc}')
+        if c2.button('Confirmar duplicidad · Sin fusionar', key='dup_confirmar_v3',
+                     use_container_width=True, disabled=len(motivo.strip()) < 10):
+            try:
+                with engine.begin() as conn:
+                    conn.execute(text("""UPDATE public.posibles_duplicados
+                        SET estado='CONFIRMADO', revisado_por=:u, revisado_en=NOW(),
+                            observacion_revision=:motivo
+                        WHERE id=:id AND estado='PENDIENTE'"""),
+                        {'u': usuario, 'motivo': motivo.strip(), 'id': int(elegido)})
+                st.rerun()
+            except Exception as exc:
+                st.error(f'No se pudo confirmar: {exc}')
+        return
+
+    if len(fichas) != 2 or len(set(fichas['numero_identificacion'].astype(str).str.strip())) != 2:
+        st.error('No hay exactamente dos fichas vigentes para este par. Consolidación bloqueada.')
+        return
+
+    # Un documento puede formar parte de un grupo de tres o más identificaciones.
+    # La consolidación por parejas sería ambigua y exige revisión especial.
+    try:
+        relaciones = pd.read_sql(text("""
+            SELECT id, documento_nuevo, documento_existente, estado
+            FROM public.posibles_duplicados
+            WHERE estado IN ('PENDIENTE', 'CONFIRMADO')
+              AND id <> :id
+              AND (TRIM(documento_nuevo) IN (:a, :b)
+                OR TRIM(documento_existente) IN (:a, :b))
+        """), engine, params={'id': int(elegido), 'a': docs[0], 'b': docs[1]})
+    except Exception as exc:
+        st.error(f'No se pudo verificar si existen alertas relacionadas: {exc}')
+        return
+    if not relaciones.empty:
+        st.error('Consolidación bloqueada: una o ambas identificaciones aparecen en otras alertas abiertas. '
+                 'Revise el grupo completo antes de consolidar expedientes.')
+        st.dataframe(relaciones, use_container_width=True, hide_index=True)
+        return
+
+    st.warning('La consolidación puede cambiar referencias históricas y retirar una ficha. '
+               'Verifique documentos, identidad y respaldos antes de continuar.')
+    principal = st.selectbox('Documento verificado que debe CONSERVARSE', docs,
+                             key='dup_principal_v3')
+    retirado = docs[1] if principal == docs[0] else docs[0]
+    st.write(f'**Conservar:** {principal} · **Retirar después de consolidar:** {retirado}')
+    justificacion = st.text_area('Fundamento documental de la consolidación',
+                                  key='dup_justificacion_v3')
+    verificado = st.checkbox('Verifiqué que se trata de la misma persona y que existe respaldo reciente de Supabase.',
+                             key='dup_verificado_v3')
+    frase = st.text_input(f'Escriba exactamente CONSOLIDAR {retirado}', key='dup_frase_v3')
+    habilitado = (verificado and len(justificacion.strip()) >= 15
+                  and frase.strip() == f'CONSOLIDAR {retirado}')
+    if st.button('Consolidar historiales y retirar ficha duplicada', type='primary',
+                 disabled=not habilitado, key='dup_ejecutar_v3'):
+        try:
+            with engine.begin() as conn:
+                # La función SQL es responsable de validar y realizar toda la operación
+                # de forma atómica; no se ejecutan DELETE directos desde Streamlit.
+                resultado = conn.execute(text("""
+                    SELECT public.consolidar_duplicado_seguro_v1(
+                        :alerta, :principal, :retirado, :operador)
+                """), {'alerta': int(elegido), 'principal': principal,
+                        'retirado': retirado, 'operador': usuario}).scalar()
+            registrar_auditoria('CONSOLIDACION_DUPLICADO', documento=principal,
+                modulo='Control de duplicidades', valor_anterior=retirado,
+                valor_nuevo=principal, observacion=justificacion.strip())
+            invalidar_cache_datos()
+            st.success(f'Operación finalizada. Resultado: {resultado}')
+            st.rerun()
+        except Exception as exc:
+            st.error(f'No se consolidó el expediente: {exc}')
+            st.info('La consolidación requiere la función SQL instalada en Supabase. '
+                    'Revise el error antes de volver a intentar.')
 
 
 def validar_posible_persona_duplicada_v1672(
