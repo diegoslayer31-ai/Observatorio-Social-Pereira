@@ -20751,7 +20751,22 @@ def modulo_reportes_institucionales_v169():
             df_f[col_doc].astype(str).str.strip().tolist()
         )
 
-    if docs_filtrados_rep:
+    # Conciliación contra la base completa, antes de aplicar filtros.
+    _conciliacion = []
+    def _docs_validos(serie):
+        d = serie.fillna("").astype(str).str.strip()
+        return d.where(~d.str.upper().isin(["", "NONE", "NAN", "NULL"]), "")
+    if col_doc and col_doc in df_reporte.columns:
+        _base_docs = _docs_validos(df_reporte[col_doc])
+        _base_set = set(_base_docs) - {""}
+        for _nombre, _df, _col in [("Enfermería", df_enf_rep, "documento_usuario"), ("Valoraciones iniciales", df_enf_val_rep, "documento_usuario"), ("Caracterización especializada", df_hab_rep, "numero_identificacion"), ("Género y diversidad", df_gen_rep, "numero_identificacion")]:
+            if _col not in _df.columns:
+                _conciliacion.append([_nombre, "No disponible", "—", "—", "—"])
+                continue
+            _d = _docs_validos(_df[_col])
+            _sin = (_d != "") & (~_d.isin(_base_set))
+            _conciliacion.append([_nombre, str(len(_df)), str(int(_sin.sum())), str(_d[_sin].nunique()), str(int((_d == "").sum()))])
+    if col_doc and col_doc in df_f.columns:
         if not df_enf_rep.empty and "documento_usuario" in df_enf_rep.columns:
             df_enf_rep = df_enf_rep[
                 df_enf_rep["documento_usuario"].astype(str).str.strip().isin(
@@ -20770,7 +20785,7 @@ def modulo_reportes_institucionales_v169():
         df_hab_rep["__doc"] = (
             df_hab_rep["numero_identificacion"].astype(str).str.strip()
         )
-        if docs_filtrados_rep:
+        if col_doc and col_doc in df_f.columns:
             df_hab_rep = df_hab_rep[
                 df_hab_rep["__doc"].isin(docs_filtrados_rep)
             ].copy()
@@ -20779,7 +20794,7 @@ def modulo_reportes_institucionales_v169():
         df_gen_rep["__doc"] = (
             df_gen_rep["numero_identificacion"].astype(str).str.strip()
         )
-        if docs_filtrados_rep:
+        if col_doc and col_doc in df_f.columns:
             df_gen_rep = df_gen_rep[
                 df_gen_rep["__doc"].isin(docs_filtrados_rep)
             ].copy()
@@ -20858,17 +20873,21 @@ def modulo_reportes_institucionales_v169():
                 """,
                 engine
             )
-            total_egresados = len(df_egresados)
+            total_cierres_salida = len(df_egresados)
+            total_egresados = len(_filtrar_egresos_impacto_v16154(df_egresados))
+            total_fallecimientos = total_cierres_salida - total_egresados
         except Exception:
             df_egresados = pd.DataFrame()
             total_egresados = 0
+            total_fallecimientos = 0
+            total_cierres_salida = 0
 
         # Tasa institucional de referencia:
         # egresos registrados / población total de la base general.
         total_base_general = len(df_reporte)
 
         tasa_egreso = round(
-            total_egresados / total_base_general * 100, 1
+            total_egresados / total_base_general * 100, 2
         ) if total_base_general else 0.0
 
         urbano_activos = 0
@@ -20910,7 +20929,7 @@ def modulo_reportes_institucionales_v169():
         )
         k3.metric("🟢 Activos", total_activos)
         k4.metric("🏆 Egresos registrados", total_egresados)
-        k5.metric("📈 Tasa de egreso", f"{tasa_egreso:.1f}%")
+        k5.metric("📈 Tasa de egreso", f"{tasa_egreso:.2f}%")
 
         k6, k7, k8 = st.columns(3)
         k6.metric(
@@ -21343,7 +21362,7 @@ def modulo_reportes_institucionales_v169():
 
         if total_egresados > 0 and tasa_egreso < 10:
             hallazgos.append(
-                f"La tasa de egreso es de {tasa_egreso:.1f}%."
+                f"La tasa de egreso es de {tasa_egreso:.2f}%."
             )
 
         if col_salud and cobertura_salud < 80:
@@ -21380,7 +21399,7 @@ def modulo_reportes_institucionales_v169():
             ),
             (
                 f"Se identifican {total_egresados} egresos registrados en personas_caracterizacion, "
-                f"equivalentes al {tasa_egreso:.1f}% de la población total registrada en habitante_de_calle."
+                f"equivalentes al {tasa_egreso:.2f}% de la población total registrada en habitante_de_calle."
             )
         ]
 
@@ -21876,7 +21895,7 @@ def modulo_reportes_institucionales_v169():
 
         with ex2:
             if st.button(
-                "📄 Generar informe institucional completo · V16.241",
+                "📄 Generar informe institucional completo · V16.242",
                 use_container_width=True,
                 key="generar_pdf_reportes"
             ):
@@ -22096,7 +22115,7 @@ def modulo_reportes_institucionales_v169():
                         if tabla_cat.empty:
                             return False
 
-                        contenido.append(PageBreak())
+                        contenido.append(Spacer(1, 10))
                         contenido.append(
                             Paragraph(
                                 f"{numero_seccion}. {_texto_pdf(titulo_seccion)}",
@@ -22198,7 +22217,7 @@ def modulo_reportes_institucionales_v169():
                         if tabla_cat.empty:
                             return False
 
-                        contenido.append(PageBreak())
+                        contenido.append(Spacer(1, 10))
                         contenido.append(
                             Paragraph(
                                 f"{numero_seccion}. {_texto_pdf(titulo_seccion)}",
@@ -22527,12 +22546,12 @@ def modulo_reportes_institucionales_v169():
                             datetime.now().strftime("%d/%m/%Y %H:%M")
                         ],
                         [
-                            "Base general",
-                            "habitante_de_calle"
+                            "Ámbito",
+                            "Habitabilidad en calle · Pereira"
                         ],
                         [
-                            "Base de egresos",
-                            "personas_caracterizacion"
+                            "Enfoque",
+                            "Caracterización, gestión y resultados"
                         ],
                         [
                             "Población caracterizada",
@@ -22615,10 +22634,10 @@ def modulo_reportes_institucionales_v169():
                             (
                                 f"De manera complementaria, la base "
                                 f"<b>personas_caracterizacion</b> registra "
-                                f"<b>{_fmt_num(total_egresados)}</b> registros históricos de salida. "
+                                f"<b>{_fmt_num(total_egresados)}</b> registros de egreso sin fallecimiento y {total_fallecimientos} cierres por fallecimiento. "
                                 f"Como indicador institucional de referencia, "
                                 f"estos registros equivalen al "
-                                f"<b>{tasa_egreso:.1f}%</b> de la población "
+                                f"<b>{tasa_egreso:.2f}%</b> de la población "
                                 f"registrada en la base general."
                             ),
                             estilo_cuerpo
@@ -22653,12 +22672,14 @@ def modulo_reportes_institucionales_v169():
                             _fmt_num(total_activos)
                         ],
                         [
-                            "Registros históricos de salida",
+                            "Egresos sin fallecimiento",
                             _fmt_num(total_egresados)
                         ],
+                        ["Cierres por fallecimiento", _fmt_num(total_fallecimientos)
+                        ],
                         [
-                            "Relación registros históricos / base general",
-                            f"{tasa_egreso:.1f}%"
+                            "Relación egresos sin fallecimiento / base general",
+                            f"{tasa_egreso:.2f}%"
                         ],
                         [
                             "Edad promedio",
@@ -22875,7 +22896,7 @@ def modulo_reportes_institucionales_v169():
                     # Integra la caracterización especializada al informe institucional
                     # sin modificar datos ni la lógica de los demás módulos.
                     if not df_hab_rep.empty:
-                        contenido.append(PageBreak())
+                        contenido.append(Spacer(1, 10))
                         contenido.append(
                             Paragraph(
                                 f"{seccion}. Caracterización especializada de Habitabilidad en Calle",
@@ -23134,7 +23155,7 @@ def modulo_reportes_institucionales_v169():
                     # ESTADO Y MODALIDAD
                     # ------------------------------------------------
                     if col_estado or col_modalidad:
-                        contenido.append(PageBreak())
+                        contenido.append(Spacer(1, 10))
                         contenido.append(
                             Paragraph(
                                 f"{seccion}. Seguimiento institucional",
@@ -23236,7 +23257,7 @@ def modulo_reportes_institucionales_v169():
                     # CALIDAD DE LA INFORMACIÓN
                     # ------------------------------------------------
                     if not df_calidad.empty:
-                        contenido.append(PageBreak())
+                        contenido.append(Spacer(1, 10))
                         contenido.append(
                             Paragraph(
                                 f"{seccion}. Calidad y completitud de la información",
@@ -23342,7 +23363,7 @@ def modulo_reportes_institucionales_v169():
                     # V16.91 - GESTIÓN DE SALUD Y ENFERMERÍA
                     # ==================================================
                     if not df_enf_rep.empty or not df_enf_val_rep.empty:
-                        contenido.append(PageBreak())
+                        contenido.append(Spacer(1, 10))
                         contenido.append(
                             Paragraph(
                                 f"{seccion}. Gestión de Salud y Enfermería",
@@ -23649,6 +23670,7 @@ def modulo_reportes_institucionales_v169():
                             ]
                             if _s.empty:
                                 continue
+                            _s = _normalizar_categoria_informe(_s, _col)
                             _vc = _s.value_counts().head(8)
                             _datos = [["Categoría", "n", "% válido"]]
                             for _cat, _cant in _vc.items():
@@ -23719,12 +23741,13 @@ def modulo_reportes_institucionales_v169():
                             )
                             if True in _sin_red.index and False in _sin_red.index:
                                 inferencias_pdf_hab.append(
-                                    "Se observa una asociación exploratoria entre mayor tiempo "
-                                    "de habitabilidad en calle y ausencia de red de apoyo: "
+                                    "Comparación descriptiva de ausencia de red de apoyo por tiempo en calle: "
                                     f"{_sin_red.loc[True]:.1f}% sin red entre quienes reportan "
                                     "10 años o más, frente a "
                                     f"{_sin_red.loc[False]:.1f}% en quienes reportan menos de 10 años. "
-                                    "Esta comparación no establece causalidad."
+                                    f"Bases: {int(_tmp['cronica'].sum())} y {int((~_tmp['cronica']).sum())}, respectivamente. "
+                                    f"Diferencia (10 años o más menos grupo de menor duración): {_sin_red.loc[True]-_sin_red.loc[False]:+.1f} puntos porcentuales. "
+                                    "No se ha evaluado significación estadística ni causalidad."
                                 )
 
                     if not inferencias_pdf_hab:
@@ -23761,6 +23784,7 @@ def modulo_reportes_institucionales_v169():
                         sa = _normalizar_categoria_informe(_serie_limpia(df_f, ca), ca)
                         sb = _normalizar_categoria_informe(_serie_limpia(df_f, cb), cb)
                         pares = pd.concat([sa.rename("a"), sb.rename("b")], axis=1).dropna()
+                        pares = pares[(pares["a"] != "Sin información") & (pares["b"] != "Sin información")]
                         if pares.empty:
                             continue
                         for c in ("a", "b"):
@@ -23769,11 +23793,18 @@ def modulo_reportes_institucionales_v169():
                         cruz = pares.groupby(["a", "b"]).size().sort_values(ascending=False)
                         contenido.append(Paragraph(titulo, estilo_h2))
                         contenido.append(Paragraph(f"Base válida: {len(pares)} registros de {total}. Se presentan las diez combinaciones más frecuentes.", estilo_cuerpo))
-                        filas = [["Categoría 1", "Categoría 2", "Registros", "% base"]]
+                        filas = [["Categoría 1", "Categoría 2", "n", "% base", "% fila"]]
+                        denominadores = pares.groupby("a").size()
                         for (x,y), n in cruz.head(10).items():
-                            filas.append([Paragraph(_texto_pdf(x), estilo_nota), Paragraph(_texto_pdf(y), estilo_nota), str(n), f"{100*n/len(pares):.1f}%"])
-                        contenido.append(_tabla_pdf(filas, anchos=[6*cm, 6*cm, 2.5*cm, 2*cm], fontsize=8))
+                            filas.append([Paragraph(_texto_pdf(x), estilo_nota), Paragraph(_texto_pdf(y), estilo_nota), str(n), f"{100*n/len(pares):.1f}%", f"{100*n/denominadores.loc[x]:.1f}%"])
+                        contenido.append(_tabla_pdf(filas, anchos=[5.2*cm, 5.2*cm, 1.6*cm, 2.2*cm, 2.3*cm], fontsize=8))
 
+                    contenido.append(Paragraph("Conciliación y calidad de identidad", estilo_h1))
+                    contenido.append(Paragraph("Comparación contra la base general completa, independiente de filtros. Una falta de correspondencia no prueba duplicidad. No se modifican registros.", estilo_cuerpo))
+                    if _conciliacion:
+                        contenido.append(_tabla_pdf([["Módulo", "Registros", "Sin ficha", "Docs. distintos sin ficha", "Sin documento"]] + _conciliacion, anchos=[5*cm, 2.6*cm, 2.4*cm, 3.8*cm, 2.7*cm], fontsize=7))
+                        _provisional = _base_docs.str.upper().str.match(r"^(?:0+|SD[- ]?\d+|IND[-_].*)$")
+                        contenido.append(Paragraph(f"Identificadores con patrón provisional conocido: {int(_provisional.sum())}. Filas con documento repetido no vacío: {int((_base_docs.duplicated(keep=False) & (_base_docs != '')).sum())}. Son alertas de revisión, no identidades verificadas.", estilo_cuerpo))
                     contenido.append(Paragraph(f"{seccion}. Hallazgos principales", estilo_h1))
                     hallazgos_pdf = []
 
@@ -23809,7 +23840,7 @@ def modulo_reportes_institucionales_v169():
 
                     hallazgos_pdf.append(
                         f"La base de egresos registra {total_egresados} "
-                        f"registros históricos de salida, equivalentes al {tasa_egreso:.1f}% "
+                        f"registros de egreso sin fallecimiento, equivalentes al {tasa_egreso:.2f}% "
                         f"de la población total registrada en la base general."
                     )
 
@@ -23899,7 +23930,7 @@ def modulo_reportes_institucionales_v169():
                             f"La información de egresos se administra en una "
                             f"base diferenciada, personas_caracterizacion, "
                             f"en la cual se identifican "
-                            f"{_fmt_num(total_egresados)} egresos."
+                            f"{_fmt_num(total_egresados)} egresos sin fallecimiento y {total_fallecimientos} cierres por fallecimiento."
                         ),
                         (
                             "Las distribuciones presentadas permiten orientar "
@@ -23968,7 +23999,7 @@ def modulo_reportes_institucionales_v169():
                             "subconjunto resultante."
                         ),
                         (
-                            "<b>Relación registros históricos / base general:</b> se presenta "
+                            "<b>Relación egresos sin fallecimiento / base general:</b> se presenta "
                             "como relación de referencia entre los egresos "
                             "registrados en personas_caracterizacion y la "
                             "población total de habitante_de_calle."
@@ -24005,14 +24036,14 @@ def modulo_reportes_institucionales_v169():
                         canvas.saveState()
                         canvas.setFont("Helvetica", 8)
                         canvas.setFillColor(colors.HexColor("#44546A"))
-                        canvas.drawString(1.35*cm, 0.65*cm, "Asociación Ciudad Futuro | Observatorio Social | V16.241")
+                        canvas.drawString(1.35*cm, 0.65*cm, "Asociación Ciudad Futuro | Observatorio Social | V16.242")
                         canvas.drawRightString(letter[0]-1.35*cm, 0.65*cm, f"Página {doc.page}")
                         canvas.restoreState()
                     doc_pdf.build(contenido, onFirstPage=_pie_institucional, onLaterPages=_pie_institucional)
                     buffer_pdf.seek(0)
 
                     st.session_state[
-                        "pdf_reporte_institucional_v16241"
+                        "pdf_reporte_institucional_v16242"
                     ] = buffer_pdf.getvalue()
 
                     for archivo_tmp in temporales:
@@ -24031,15 +24062,15 @@ def modulo_reportes_institucionales_v169():
                     )
 
             if st.session_state.get(
-                "pdf_reporte_institucional_v16241"
+                "pdf_reporte_institucional_v16242"
             ):
                 st.download_button(
                     "⬇️ Descargar informe institucional PDF",
                     data=st.session_state[
-                        "pdf_reporte_institucional_v16241"
+                        "pdf_reporte_institucional_v16242"
                     ],
                     file_name=(
-                        "Informe_Institucional_Observatorio_Social_V16_241_"
+                        "Informe_Institucional_Observatorio_Social_V16_242_"
                         + datetime.now().strftime("%Y%m%d_%H%M")
                         + ".pdf"
                     ),
