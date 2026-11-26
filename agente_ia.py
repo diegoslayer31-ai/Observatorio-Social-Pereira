@@ -63,9 +63,18 @@ def _agregar_capitulo_auditoria_institucional(contenido, engine, Paragraph, Page
     contenido.append(PageBreak())
     contenido.append(Paragraph('BALANCE SOCIAL INSTITUCIONAL', estilo_h1))
     par('Asociación Ciudad Futuro | Observatorio Social | Pereira, 2026. '
-        'Este balance articula la gestión de atención, las trayectorias del Plan de Atención '
+        'Indicadores históricos globales, independientes de los filtros de caracterización. Este balance articula la gestión de atención, las trayectorias del Plan de Atención '
         'Integral, la participación en acciones de política pública y los resultados de salida. '
         'Se distinguen personas, intervenciones y resultados para evitar duplicidades.')
+
+    for titulo, sql in [
+        ('Atenciones de enfermería', 'SELECT COUNT(*) total FROM public.enfermeria_registros'),
+        ('Documentos distintos en enfermería', "SELECT COUNT(DISTINCT NULLIF(TRIM(documento_usuario::text), '')) total FROM public.enfermeria_registros"),
+        ('Caracterizaciones especializadas', 'SELECT COUNT(*) total FROM public.caracterizacion_habitabilidad_calle')]:
+        try:
+            par(f'{titulo}: {cifra(consultar(sql).iloc[0].total)}.')
+        except Exception:
+            par(f'{titulo}: fuente no disponible en esta generación.')
 
     acciones = None
     try:
@@ -195,11 +204,14 @@ def _agregar_capitulo_auditoria_institucional(contenido, engine, Paragraph, Page
             FROM public.personas_caracterizacion WHERE fecha_egreso IS NOT NULL
             GROUP BY 1 ORDER BY 2 DESC
         """)
-        par(f'Entre {eg.inicio} y {eg.fin}, el sistema documenta {cifra(eg.registros)} '
-            f'registros de egreso correspondientes a {cifra(eg.personas)} personas únicas. '
+        fallecimientos = int(motivos.loc[motivos.motivo.eq('Fallecimiento'), 'registros'].sum())
+        par(f'Entre {eg.inicio} y {eg.fin}, el sistema documenta {cifra(eg.registros - fallecimientos)} '
+            f'registros de salida distintos de fallecimiento y {cifra(fallecimientos)} cierres por fallecimiento. '
+            f'En conjunto, corresponden a {cifra(eg.personas)} documentos distintos. '
             'Las rutas de salida incluyen retorno, vínculos familiares, inclusión laboral, '
             'autonomía, continuidad de protección mediante traslado y otras circunstancias.')
-        tabla(motivos, ['Ruta de salida documentada', 'Registros'])
+        tabla(motivos[motivos.motivo.ne('Fallecimiento')], ['Ruta de salida documentada', 'Registros'])
+        par(f'Cierres por fallecimiento (categoría independiente): {cifra(fallecimientos)}.')
         positivos = motivos.loc[motivos.motivo.isin(['Vinculación laboral', 'Vinculación familiar',
             'Caso exitoso consignado', 'Emprendimiento', 'Independencia habitacional']), 'registros'].sum()
         par(f'{cifra(positivos)} registros contienen expresamente rutas de vinculación '
@@ -35159,7 +35171,7 @@ with tab4:
                 if "TECNICA PROFESIONAL" in sin_codigo: return "Técnica profesional"
                 if "PREESCOLAR" in sin_codigo: return "Preescolar"
                 if sin_codigo in ("NINGUNO", "NINGUNA"): return "Ninguno"
-            if any(x in nombre for x in ("SEGURIDAD_SOCIAL", "REGIMEN", "AFILIACION", "ASEGURAMIENTO")):
+            if any(x in nombre for x in ("SEGURIDAD_SOCIAL", "SEGURIDAD_SALUD", "REGIMEN", "AFILIACION", "ASEGURAMIENTO")):
                 if "SUBSIDIADO" in v: return "Régimen subsidiado"
                 if "CONTRIBUTIVO" in v: return "Régimen contributivo"
                 if "NO AFILIADO" in v or "NO ASEGURADO" in v: return "No afiliado"
@@ -35171,12 +35183,14 @@ with tab4:
                 if v == "CHOCO": return "CHOCÓ"
                 if v == "BOLIVAR": return "BOLÍVAR"
             if any(x in nombre for x in ("ETNIA", "ETNICO", "GRUPO_ETN")):
-                if "MESTIZO" in sin_codigo: return "Mestizo"
+                if sin_codigo in ("MESTIZO", "MESTIZA"): return "Mestizo"
                 if any(x in sin_codigo for x in ("AFRO", "MULATO", "NEGRO")):
                     return "Negro(a), afrocolombiano(a) o afrodescendiente"
                 if "INDIGENA" in sin_codigo: return "Indígena"
             if "EPS" in nombre or "ASEGURADORA" in nombre:
                 return v
+            if v in ("TRUE", "FALSE"): return "Sí" if v == "TRUE" else "No"
+            if "SEXO_AL_NACER" in nombre: return normalizar_sexo_institucional(valor)
             return str(valor).strip()
         return serie.map(convertir)
 
@@ -35249,6 +35263,7 @@ with tab4:
             df_reporte[col_edad],
             errors="coerce"
         )
+        df_reporte[col_edad] = df_reporte[col_edad].where(df_reporte[col_edad].between(0, 120))
 
     # ------------------------------------------------------------
     # FILTROS
@@ -35422,7 +35437,7 @@ with tab4:
             df_egresados = pd.DataFrame()
             total_egresados = 0
 
-        # Tasa institucional de referencia:
+        # Relación histórica de referencia:
         # egresos registrados / población total de la base general.
         total_base_general = len(df_reporte)
 
@@ -35651,13 +35666,21 @@ with tab4:
                 else:
                     completos = len(_serie_limpia(df_f, columna))
 
+                universo_calidad = total
+                if columna == col_modalidad and col_estado:
+                    activos_calidad = df_f[df_f[col_estado].astype(str).str.strip().str.upper().eq("ACTIVO")]
+                    universo_calidad = len(activos_calidad)
+                    completos = len(_serie_limpia(activos_calidad, columna))
+                    etiqueta = "Modalidad (solo activos)"
+                    if not universo_calidad:
+                        continue
                 calidad.append({
                     "Campo": etiqueta,
                     "Completos": completos,
-                    "Faltantes": total - completos,
+                    "Faltantes": universo_calidad - completos,
                     "Completitud %": round(
-                        completos / total * 100, 1
-                    ) if total else 0
+                        completos / universo_calidad * 100, 1
+                    ) if universo_calidad else 0
                 })
 
         df_calidad = pd.DataFrame(calidad)
@@ -36024,7 +36047,7 @@ with tab4:
                             graf["cantidad"]
                         )
                         ax.set_title(titulo_seccion)
-                        ax.set_xlabel("Número de personas")
+                        ax.set_xlabel("Número de registros")
                         ax.set_ylabel("")
                         ax.grid(
                             axis="x",
@@ -36253,7 +36276,7 @@ with tab4:
                             _fmt_num(total_egresados)
                         ],
                         [
-                            "Tasa institucional de egreso",
+                            "Relación de registros históricos / base general",
                             f"{tasa_egreso:.1f}%"
                         ],
                         [
@@ -36280,6 +36303,11 @@ with tab4:
                             anchos=[10.5 * cm, 6 * cm],
                             fontsize=9
                         )
+                    )
+
+                    _agregar_capitulo_auditoria_institucional(
+                        contenido, engine, Paragraph, PageBreak,
+                        estilo_h1, estilo_h2, estilo_cuerpo, _tabla_pdf, cm
                     )
 
                     # ------------------------------------------------
@@ -36659,6 +36687,28 @@ with tab4:
 
                         seccion += 1
 
+                    contenido.append(PageBreak())
+                    contenido.append(Paragraph("Análisis cruzado de necesidades sociales", estilo_h1))
+                    contenido.append(Paragraph("Cruces descriptivos del universo filtrado. Se excluyen pares sin dato; no se infiere causalidad. Se muestran hasta ocho categorías por dimensión; las restantes se agrupan.", estilo_cuerpo))
+                    for titulo, ca, cb in [("Escolaridad y ocupación", col_educacion, col_ocupacion), ("Sexo al nacer y seguridad en salud", col_sexo, col_salud), ("Modalidad y estado del caso", col_modalidad, col_estado)]:
+                        if not ca or not cb or ca == cb:
+                            continue
+                        sa = _normalizar_categoria_informe(_serie_limpia(df_f, ca), ca)
+                        sb = _normalizar_categoria_informe(_serie_limpia(df_f, cb), cb)
+                        pares = pd.concat([sa.rename("a"), sb.rename("b")], axis=1).dropna()
+                        if pares.empty:
+                            continue
+                        for c in ("a", "b"):
+                            top = pares[c].value_counts().head(8).index
+                            pares[c] = pares[c].where(pares[c].isin(top), "Otras categorías")
+                        cruz = pares.groupby(["a", "b"]).size().sort_values(ascending=False)
+                        contenido.append(Paragraph(titulo, estilo_h2))
+                        contenido.append(Paragraph(f"Base válida: {len(pares)} registros de {total}. Se presentan las diez combinaciones más frecuentes.", estilo_cuerpo))
+                        filas = [["Categoría 1", "Categoría 2", "Registros", "% base"]]
+                        for (x,y), n in cruz.head(10).items():
+                            filas.append([Paragraph(_texto_pdf(x), estilo_nota), Paragraph(_texto_pdf(y), estilo_nota), str(n), f"{100*n/len(pares):.1f}%"])
+                        contenido.append(_tabla_pdf(filas, anchos=[6*cm, 6*cm, 2.5*cm, 2*cm], fontsize=8))
+
                     # ------------------------------------------------
                     # HALLAZGOS Y CONCLUSIONES
                     # ------------------------------------------------
@@ -36687,7 +36737,7 @@ with tab4:
                         (col_consumo, "tipo de consumo"),
                         (col_etnia, "grupo étnico")
                     ]:
-                        serie = _serie_limpia(df_f, columna)
+                        serie = _normalizar_categoria_informe(_serie_limpia(df_f, columna), columna)
                         if not serie.empty:
                             conteo = serie.value_counts()
                             cat = str(conteo.index[0])
@@ -36747,49 +36797,7 @@ with tab4:
                         "contiene una columna identificable. Las actividades y los resultados "
                         "se presentan como indicadores diferentes.", estilo_cuerpo
                     ))
-                    if not df_egresados.empty:
-                        posibles_motivos = [
-                            "motivo_egreso", "motivo_impacto", "tipo_egreso",
-                            "causa_egreso", "motivo_salida", "categoria_egreso"
-                        ]
-                        campo_motivo = next(
-                            (c for c in posibles_motivos if c in df_egresados.columns), None
-                        )
-                        if campo_motivo:
-                            motivo_serie = df_egresados[campo_motivo].fillna(
-                                "SIN INFORMACIÓN"
-                            ).astype(str).str.strip().str.upper().replace(
-                                {"": "SIN INFORMACIÓN", "NAN": "SIN INFORMACIÓN"}
-                            )
-                            resumen_motivos = motivo_serie.value_counts()
-                            contenido.append(Paragraph(
-                                "Egresos discriminados por motivo registrado", estilo_h2
-                            ))
-                            filas = [["Motivo registrado", "Registros"]]
-                            filas.extend([
-                                [_texto_pdf(k), _fmt_num(v)]
-                                for k, v in resumen_motivos.items()
-                            ])
-                            tabla_egresos = Table(filas, colWidths=[13.8 * cm, 3.5 * cm], repeatRows=1)
-                            tabla_egresos.setStyle(TableStyle([
-                                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#17365D")),
-                                ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-                                ("GRID", (0, 0), (-1, -1), 0.3, colors.lightgrey),
-                                ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                            ]))
-                            contenido.append(tabla_egresos)
-                            contenido.append(Paragraph(
-                                "Los fallecimientos y las salidas voluntarias no se "
-                                "clasifican automáticamente como egresos exitosos. "
-                                "La condición de éxito exige validación del motivo "
-                                "y evidencia de resultados.", estilo_nota
-                            ))
-                        else:
-                            contenido.append(Paragraph(
-                                "La fuente de egresos no dispone de una columna de motivo "
-                                "reconocida por este reporte; el desglose está pendiente "
-                                "de homologación de esquema.", estilo_nota
-                            ))
+                    contenido.append(Paragraph("La clasificación de motivos y los fallecimientos se presentan en el balance social inicial, a partir de las observaciones históricas de egreso.", estilo_cuerpo))
                     contenido.append(Paragraph("Plan de Atención Integral (PAI)", estilo_h2))
                     contenido.append(Paragraph(
                         "El análisis institucional del PAI debe diferenciar personas "
@@ -36898,7 +36906,7 @@ with tab4:
                             "subconjunto resultante."
                         ),
                         (
-                            "<b>Tasa institucional de egreso:</b> se presenta "
+                            "<b>Relación de registros históricos / base general:</b> se presenta "
                             "como relación de referencia entre los egresos "
                             "registrados en personas_caracterizacion y la "
                             "población total de habitante_de_calle."
@@ -36923,7 +36931,7 @@ with tab4:
                     contenido.append(Spacer(1, 0.6 * cm))
                     contenido.append(
                         Paragraph(
-                            "Balance social institucional: anexos e indicadores integrados a continuación.",
+                            "Balance social institucional: indicadores históricos globales presentados al inicio.",
                             estilo_destacado
                         )
                     )
@@ -36931,11 +36939,15 @@ with tab4:
                     # ------------------------------------------------
                     # CREAR DOCUMENTO
                     # ------------------------------------------------
-                    _agregar_capitulo_auditoria_institucional(
-                        contenido, engine, Paragraph, PageBreak,
-                        estilo_h1, estilo_h2, estilo_cuerpo, _tabla_pdf, cm
-                    )
-                    doc_pdf.build(contenido)
+
+                    def _pie_institucional(canvas, doc):
+                        canvas.saveState()
+                        canvas.setFont("Helvetica", 8)
+                        canvas.setFillColor(colors.HexColor("#44546A"))
+                        canvas.drawString(1.35*cm, 0.65*cm, "Asociación Ciudad Futuro | Observatorio Social")
+                        canvas.drawRightString(letter[0]-1.35*cm, 0.65*cm, f"Página {doc.page}")
+                        canvas.restoreState()
+                    doc_pdf.build(contenido, onFirstPage=_pie_institucional, onLaterPages=_pie_institucional)
                     buffer_pdf.seek(0)
 
                     st.session_state[
