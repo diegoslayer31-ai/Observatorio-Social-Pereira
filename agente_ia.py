@@ -133,7 +133,6 @@ def _agregar_capitulo_auditoria_institucional(contenido, engine, Paragraph, Page
             '2.1.11': 'Mitigación de riesgos asociados al consumo de SPA',
         }
         etiquetas = {'2.1.1':'Apoyo psicológico y sociofamiliar','2.1.2':'Tratamiento de adicciones','2.1.3':'Prevención de violencias','2.1.4':'Inclusión y diversidad','2.1.5':'Reintegración familiar','2.1.6':'Desarrollo personal y deporte','2.1.7':'Acceso a salud','2.1.8':'Empleabilidad','2.1.9':'Convivencia y habilidades sociales','2.1.11':'Reducción de riesgos SPA'}
-        visual_barras('Participaciones por línea de intervención', [f'{c} {etiquetas.get(str(c), str(c))}' for c in acciones.codigo_accion], acciones.participaciones)
         detalle = acciones.copy()
         detalle['codigo_accion'] = detalle.codigo_accion.astype(str).map(lambda c: c+' · '+descripciones.get(c,'Intervención social'))
         contenido.append(_tabla_pdf([['Línea de intervención','Actividades','Participaciones','Personas únicas']]+[[escape(str(v)) for v in fila] for fila in detalle.itertuples(index=False,name=None)], anchos=[8.4*cm,2.5*cm,2.8*cm,2.8*cm], fontsize=8))
@@ -167,7 +166,6 @@ def _agregar_capitulo_auditoria_institucional(contenido, engine, Paragraph, Page
             f'{cifra(pai.activos)} activos y {cifra(pai.historicos)} históricos, además de '
             f'{cifra(seguimientos)} registros de seguimiento histórico y {cifra(total_cierres)} '
             'cierres documentados.')
-        visual_barras('Estado de los objetivos PAI', ['Cumplidos','Activos','Históricos'], [pai.cumplidos,pai.activos,pai.historicos])
         tabla(pd.DataFrame([['Personas con objetivos', cifra(pai.personas)],
                             ['Objetivos formulados', cifra(pai.objetivos)],
                             ['Objetivos cumplidos', cifra(pai.cumplidos)],
@@ -233,7 +231,6 @@ def _agregar_capitulo_auditoria_institucional(contenido, engine, Paragraph, Page
             'Las rutas de salida incluyen retorno, vínculos familiares, inclusión laboral, '
             'autonomía, continuidad de protección mediante traslado y otras circunstancias.')
         rutas_vis = motivos[motivos.motivo.ne('Fallecimiento')]
-        visual_barras('Rutas de egreso documentadas', rutas_vis.motivo, rutas_vis.registros)
         tabla(motivos[motivos.motivo.ne('Fallecimiento')], ['Ruta de salida documentada', 'Registros'])
         par(f'Cierres por fallecimiento (categoría independiente): {cifra(fallecimientos)}.')
         positivos = motivos.loc[motivos.motivo.isin(['Vinculación laboral', 'Vinculación familiar',
@@ -295,10 +292,10 @@ def _agregar_capitulo_auditoria_institucional(contenido, engine, Paragraph, Page
                 vc=serie.value_counts(); problema += f" En el universo filtrado: {vc.index[0]}, {vc.iloc[0]}/{len(serie)} ({vc.iloc[0]/len(serie):.1%})."
         icono = None
         try:
-            import requests
-            url=f"https://www.un.org/sustainabledevelopment/wp-content/uploads/2019/08/E-Goal-{numero:02d}-1024x1024.png"
-            r=requests.get(url,timeout=3); r.raise_for_status()
-            icono=Image(BytesIO(r.content),width=1.6*cm,height=1.6*cm)
+            from pathlib import Path
+            ruta_icono = Path(__file__).resolve().parent / 'ods_icons' / f'E-Goal-{numero:02d}-1024x1024.png'
+            if ruta_icono.is_file():
+                icono=Image(str(ruta_icono),width=1.6*cm,height=1.6*cm)
         except Exception: pass
         if icono:
             cab=Table([[icono,Paragraph(escape(f"ODS {numero} | {nombre}"),blanco)]],colWidths=[2*cm,14.5*cm]); cab.setStyle(TableStyle([("BACKGROUND",(0,0),(-1,-1),colors.HexColor(color)),("VALIGN",(0,0),(-1,-1),"MIDDLE")]))
@@ -22012,7 +22009,7 @@ def modulo_reportes_institucionales_v169():
 
         with ex2:
             if st.button(
-                "📄 Generar informe institucional completo · V16.249",
+                "📄 Generar informe institucional completo · V16.250",
                 use_container_width=True,
                 key="generar_pdf_reportes"
             ):
@@ -22147,7 +22144,28 @@ def modulo_reportes_institucionales_v169():
                         return tmp.name
 
                     anexos_247 = []
+                    def _eps_250(valor):
+                        import re, unicodedata
+                        v = ''.join(c for c in unicodedata.normalize('NFKD', str(valor).upper()) if not unicodedata.combining(c))
+                        k = re.sub(r'[^A-Z0-9]', '', v)
+                        grupos = {'ASMET SALUD': ['ASMETSALUD','ASMET'], 'NUEVA EPS':['NUEVAEPS','MUVAEPS','MUVAEPS','MUEVAEPS','NUEVARPS'], 'SALUD TOTAL':['SALUDTOTAL','SALIDTOTAL','SALIRTOTAL','ESALUDTOTAL','SALUSTOTAL','SALUTTOAL'], 'EMSSANAR':['EMSSANAR','EMSANAR','ENSANAR','EMMSANAR'], 'SOS':['SOS']}
+                        for nombre, alias in grupos.items():
+                            if k in alias: return nombre
+                        if 'CEDULA' in v or 'ADRES' in v or 'RETIRADO' in v: return 'Novedad administrativa por verificar'
+                        return v.strip()
+                    def _hab_dist_250(col):
+                        raw = _hab_serie(col)
+                        norm = raw.map(_eps_250) if col == 'eps_nombre' else _normalizar_categoria_informe(raw,col)
+                        return norm[norm.notna() & norm.ne('Sin información') & norm.ne('')]
+                    def _hallazgo_250(col, categorias, titulo, lectura):
+                        serie = _hab_dist_250(col)
+                        if len(serie):
+                            n = int(serie.astype(str).str.upper().isin(categorias).sum())
+                            contenido.append(Paragraph(titulo, estilo_h2))
+                            contenido.append(Paragraph(f'<b>{n} de {len(serie)} ({100*n/len(serie):.1f}%)</b>. {lectura}', estilo_cuerpo))
+
                     cruces_249 = {}
+                    mapas_250 = []
                     def _validos_249(dataframe, columna):
                         serie = _normalizar_categoria_informe(_serie_limpia(dataframe, columna), columna)
                         return serie[serie.notna() & serie.ne("Sin información")]
@@ -22660,37 +22678,10 @@ def modulo_reportes_institucionales_v169():
                     contenido.append(portada_cifras)
                     contenido.append(Spacer(1, 0.6*cm))
 
-                    portada_datos = [
-                        ["Entidad / Operador", "Asociación Ciudad Futuro"],
-                        [
-                            "Fecha de generación",
-                            datetime.now().strftime("%d/%m/%Y %H:%M")
-                        ],
-                        [
-                            "Ámbito",
-                            "Habitabilidad en calle · Pereira"
-                        ],
-                        [
-                            "Enfoque",
-                            "Caracterización, gestión y resultados"
-                        ],
-                        [
-                            "Población registrada",
-                            _fmt_num(total_base_general)
-                        ],
-                        [
-                            "Registros incluidos en el análisis",
-                            _fmt_num(total)
-                        ]
-                    ]
-
-                    contenido.append(
-                        _tabla_pdf(
-                            portada_datos,
-                            anchos=[6.3 * cm, 10.2 * cm],
-                            fontsize=9
-                        )
-                    )
+                    contenido.append(Paragraph("<b>Investigación social · Pereira, Risaralda</b>", estilo_h1))
+                    contenido.append(Paragraph("Perfil poblacional / Trayectorias de calle / Derechos / Atención integral / Resultados", estilo_cuerpo))
+                    contenido.append(Paragraph("Corte de información: " + datetime.now().strftime("%d/%m/%Y %H:%M"), estilo_nota))
+                    contenido.append(Paragraph(f"Universo del análisis: {_fmt_num(total)} registros", estilo_cuerpo))
 
                     if filtros_texto:
                         contenido.append(Spacer(1, 0.5 * cm))
@@ -23158,6 +23149,8 @@ def modulo_reportes_institucionales_v169():
                                     r["sector"], r.get("municipio_pernocta_calle", "")
                                 ), axis=1
                             )
+                            _territorial_total = len(territorial_pdf)
+                            _territorial_raw = int(territorial_pdf['sector_original'].ne('').sum())
                             territorial_pdf = territorial_pdf[
                                 ~territorial_pdf["sector"].isin(
                                     ["", "NAN", "NONE", "SIN DATO", "NO SABE", "NO APLICA"]
@@ -23171,6 +23164,8 @@ def modulo_reportes_institucionales_v169():
                                     .sort_values("Personas", ascending=False)
                                 )
                                 total_sector_pdf = int(conteo_sector_pdf["Personas"].sum())
+                                assert total_sector_pdf == len(territorial_pdf)
+                                contenido.append(Paragraph(f"Conciliación territorial: {_territorial_total} caracterizaciones; {_territorial_raw} con texto original; {total_sector_pdf} sectores válidos; {_territorial_total-total_sector_pdf} excluidos por ausencia o respuesta no válida. La normalización no elimina filas de la base original.", estilo_nota))
                                 conteo_sector_pdf["% con sector informado"] = (
                                     conteo_sector_pdf["Personas"] / total_sector_pdf * 100
                                 ).round(1)
@@ -23712,19 +23707,28 @@ def modulo_reportes_institucionales_v169():
                     )
 
                     def _agregar_tabla_hab_pdf(titulo, columna, n=8):
-                        top = _hab_top(columna, None)
+                        serie = _hab_dist_250(columna)
+                        top = [(str(k),int(v),100*v/len(serie)) for k,v in serie.value_counts().items()] if len(serie) else []
                         if not top:
                             return
                         contenido.append(Paragraph(titulo, estilo_h2))
-                        base_valida = len(_hab_serie(columna))
+                        base_valida = len(serie)
                         contenido.append(Paragraph(f"Base válida: {base_valida} de {len(df_hab_rep)} caracterizaciones.", estilo_nota))
+                        datos_completos = [["Categoría", "n", "% válido"]] + [[Paragraph(_texto_pdf(k),estilo_nota),str(v),f"{pct:.1f}%"] for k,v,pct in top]
+                        datos_completos.append(["Sin información",str(len(df_hab_rep)-base_valida),"—"])
+                        anexos_247.append((titulo,datos_completos,[10.5*cm,2.3*cm,3.4*cm]))
+                        if columna == 'eps_nombre':
+                            anexos_247.append(('EPS original · auditoría', [['Registro original','n']]+[[Paragraph(_texto_pdf(k),estilo_nota),str(v)] for k,v in _hab_serie(columna).value_counts().items()],[14*cm,3*cm]))
                         if base_valida < 5:
-                            contenido.append(Paragraph("Información insuficiente para interpretar porcentajes poblacionales.", estilo_nota))
+                            contenido.append(Paragraph("Cobertura insuficiente para interpretar porcentajes.", estilo_nota))
                             return
                         datos = [["Categoría", "n", "% válido"]]
-                        for categoria, cantidad, pct in top:
+                        visibles = top[:n]
+                        if len(top)>n:
+                            otros = sum(v for _,v,_ in top[n:]); visibles += [('Otras categorías',otros,100*otros/base_valida)]
+                        for categoria, cantidad, pct in visibles:
                             datos.append([
-                                _texto_pdf(categoria),
+                                Paragraph(_texto_pdf(categoria), estilo_nota),
                                 str(cantidad),
                                 f"{pct:.1f}%"
                             ])
@@ -23758,7 +23762,11 @@ def modulo_reportes_institucionales_v169():
                     ]:
                         _agregar_tabla_hab_pdf(_titulo, _col)
 
-                    contenido.append(Paragraph("Restablecimiento de derechos y salud", estilo_h2))
+                    _hallazgo_250('frecuencia_consumo', {'DIARIO','VARIAS VECES AL DIA','VARIAS VECES AL DÍA'}, 'Intensidad del consumo', 'Priorizar valoración individual y estrategias de reducción de daños según frecuencia reportada.')
+                    _hallazgo_250('via_administracion_consumo', {'INYECTADA / INTRAVENOSA'}, 'Riesgos asociados a la vía de administración', 'Orientar prevención de infecciones y acceso a atención sanitaria según valoración profesional.')
+                    contenido.append(Paragraph("Restablecimiento de derechos y salud", estilo_h1))
+                    _hallazgo_250('cedulado', {'SÍ','SI'}, 'Acceso a la identidad', 'La cedulación reportada debe distinguirse de la disponibilidad efectiva del documento.')
+                    _hallazgo_250('documento_fisico', {'NO'}, 'Disponibilidad del documento físico', 'Priorizar gestión documental y seguimiento de trámites de identificación.')
                     for _titulo, _col in [
                         ("Régimen de aseguramiento en salud", "regimen_salud"),
                         ("EPS / entidad aseguradora", "eps_nombre"),
@@ -23926,7 +23934,7 @@ def modulo_reportes_institucionales_v169():
                             pares[c] = pares[c].where(pares[c].isin(top), "Otras categorías")
                         cruz = pares.groupby(["a", "b"]).size().sort_values(ascending=False)
                         contenido.append(Paragraph(titulo, estilo_h2))
-                        contenido.append(Paragraph(f"Base válida: {len(pares)} registros de {total}. Se presentan las diez combinaciones más frecuentes.", estilo_cuerpo))
+                        contenido.append(Paragraph(f"Base válida: {len(pares)} registros de {total}. Los porcentajes se calculan dentro de cada grupo; el detalle completo está en el anexo.", estilo_cuerpo))
                         frecuencias = pd.crosstab(pares.a, pares.b)
                         assert int(frecuencias.to_numpy().sum()) == len(pares)
                         matriz = frecuencias.div(frecuencias.sum(axis=1), axis=0)*100
@@ -23947,7 +23955,7 @@ def modulo_reportes_institucionales_v169():
                         ax.set_yticks(range(len(orden)), [f"{k} (n={int(frecuencias.loc[k].sum())})" for k in orden]); ax.set_xlim(0,100)
                         ax.set_xlabel("Porcentaje dentro del nivel o grupo"); ax.legend(loc="upper center",bbox_to_anchor=(.5,-.17),ncol=3,fontsize=8,frameon=False)
                         fig.tight_layout()
-                        contenido.append(Image(_guardar_fig_mpl(fig),width=17*cm,height=9*cm))
+                        contenido.append(Image(_guardar_fig_mpl(fig),width=18*cm,height=11*cm))
                         fig, ax = plt.subplots(figsize=(9,max(3.5,.55*len(matriz)+1.8)))
                         im=ax.imshow(matriz.to_numpy(), cmap="Blues", vmin=0,vmax=100,aspect="auto")
                         ax.set_xticks(range(len(matriz.columns)), [str(x) for x in matriz.columns], rotation=30,ha="right")
@@ -23957,8 +23965,7 @@ def modulo_reportes_institucionales_v169():
                                 pct=matriz.iloc[i,j]; n=frecuencias.iloc[i,j]
                                 ax.text(j,i,f"{int(n)}\n{pct:.1f}%",ha="center",va="center",fontsize=8,color="white" if pct>55 else "#142D4E")
                         fig.colorbar(im,ax=ax,label="% del grupo"); fig.tight_layout()
-                        contenido.append(Paragraph("Mapa de calor · cantidad y porcentaje por grupo", estilo_h2))
-                        contenido.append(Image(_guardar_fig_mpl(fig),width=17*cm,height=9*cm))
+                        mapas_250.append((titulo, _guardar_fig_mpl(fig)))
                         completas = pares_completos.groupby(["a","b"]).size().sort_values(ascending=False)
                         bases = pares_completos.groupby("a").size()
                         anexos_247.append((titulo, [["Categoría 1","Categoría 2","n","% base","% fila"]]+[[Paragraph(_texto_pdf(i),estilo_nota),Paragraph(_texto_pdf(j),estilo_nota),str(n),f"{100*n/len(pares_completos):.1f}%",f"{100*n/bases.loc[i]:.1f}%"] for (i,j),n in completas.items()], [5.2*cm,5.2*cm,1.6*cm,2.2*cm,2.3*cm]))
@@ -23966,7 +23973,7 @@ def modulo_reportes_institucionales_v169():
                         denominadores = pares.groupby("a").size()
                         for (x,y), n in cruz.head(10).items():
                             filas.append([Paragraph(_texto_pdf(x), estilo_nota), Paragraph(_texto_pdf(y), estilo_nota), str(n), f"{100*n/len(pares):.1f}%", f"{100*n/denominadores.loc[x]:.1f}%"])
-                        contenido.append(_tabla_pdf(filas, anchos=[5.2*cm, 5.2*cm, 1.6*cm, 2.2*cm, 2.3*cm], fontsize=8))
+                        # El detalle íntegro del cruce se conserva en anexos_247.
 
                     contenido.append(Paragraph("Conciliación y calidad de identidad", estilo_h1))
                     contenido.append(Paragraph("Comparación contra la base general completa, independiente de filtros. Una falta de correspondencia no prueba duplicidad. No se modifican registros.", estilo_cuerpo))
@@ -24056,6 +24063,8 @@ def modulo_reportes_institucionales_v169():
                             conteo = serie.value_counts()
                             contenido.append(Paragraph(nombre, estilo_h2))
                             contenido.append(Paragraph(f"{_texto_pdf(str(conteo.index[0]))}: {_fmt_num(conteo.iloc[0])} de {_fmt_num(len(serie))} registros ({conteo.iloc[0]/len(serie):.1%}). {lectura}", estilo_cuerpo))
+                    _hallazgo_250('documento_fisico', {'NO'}, 'Derechos e inclusión administrativa', 'Priorizar recuperación documental y verificar acceso efectivo a servicios.')
+                    _hallazgo_250('frecuencia_consumo', {'DIARIO','VARIAS VECES AL DIA','VARIAS VECES AL DÍA'}, 'Salud y reducción de daños', 'Diferenciar acompañamiento según intensidad de consumo y necesidades clínicas; medir continuidad de atención.')
                     contenido.append(Paragraph("Cobertura y continuidad institucional", estilo_h2))
                     contenido.append(Paragraph(f"La base general reúne {_fmt_num(total_base_general)} personas; el universo filtrado incluye {_fmt_num(total_activos)} casos activos. Se documentan {_fmt_num(total_egresados)} eventos de egreso sin fallecimiento. Las rutas específicas se presentan en el balance social.", estilo_cuerpo))
                     if not df_calidad.empty:
@@ -24152,6 +24161,9 @@ def modulo_reportes_institucionales_v169():
                         original = _serie_limpia(df_f,col).value_counts()
                         contenido.append(Paragraph(nombre,estilo_h2))
                         contenido.append(_tabla_pdf([["Registro original","n"]]+[[Paragraph(_texto_pdf(k),estilo_nota),str(int(v))] for k,v in original.items()],anchos=[14*cm,3*cm]))
+                    for titulo,ruta in mapas_250:
+                        contenido.append(Paragraph("Mapa de calor · " + _texto_pdf(titulo),estilo_h2))
+                        contenido.append(Image(ruta,width=18*cm,height=11*cm))
                     for nombre,filas,anchos in anexos_247:
                         contenido.append(Paragraph(nombre,estilo_h2)); contenido.append(_tabla_pdf(filas,anchos=anchos,fontsize=8))
                     def _pie_institucional(canvas, doc):
@@ -24165,7 +24177,7 @@ def modulo_reportes_institucionales_v169():
                             canvas.drawString(1.35*cm, letter[1]-0.9*cm, "OBSERVATORIO SOCIAL  /  PEREIRA 2026")
                         canvas.setFont("Helvetica", 8)
                         canvas.setFillColor(colors.HexColor("#44546A"))
-                        canvas.drawString(1.35*cm, 0.65*cm, "Asociación Ciudad Futuro | Observatorio Social | V16.249")
+                        canvas.drawString(1.35*cm, 0.65*cm, "Asociación Ciudad Futuro | Observatorio Social | V16.250")
                         canvas.drawRightString(letter[0]-1.35*cm, 0.65*cm, f"Página {doc.page}")
                         canvas.restoreState()
                     for elemento in contenido:
@@ -24178,6 +24190,9 @@ def modulo_reportes_institucionales_v169():
                     for elemento in contenido:
                         if isinstance(elemento, Paragraph) and elemento.style.name in ("H1Reporte", "H2Reporte"):
                             elemento.keepWithNext = True
+                    for i,e in enumerate(contenido[:-1]):
+                        if isinstance(e,Paragraph) and e.style.name in (estilo_nota.name,estilo_cuerpo.name) and i>0 and isinstance(contenido[i-1],Paragraph) and getattr(contenido[i-1],'keepWithNext',False):
+                            e.keepWithNext = True
                     saltos = 0
                     editorial = []
                     for e in contenido:
@@ -24186,7 +24201,7 @@ def modulo_reportes_institucionales_v169():
                             editorial.append(e if saltos <= 2 else CondPageBreak(8*cm))
                         elif isinstance(e, Table) and 2 <= len(e._cellvalues) <= 16:
                             _, altura = e.wrap(doc_pdf.width-12, doc_pdf.height-12)
-                            editorial.append(KeepTogether([e]) if altura < doc_pdf.height*0.65 else e)
+                            editorial.append(e)
                         else:
                             editorial.append(e)
                     contenido = editorial
@@ -24194,7 +24209,7 @@ def modulo_reportes_institucionales_v169():
                     buffer_pdf.seek(0)
 
                     st.session_state[
-                        "pdf_reporte_institucional_v16249"
+                        "pdf_reporte_institucional_v16250"
                     ] = buffer_pdf.getvalue()
 
                     for archivo_tmp in temporales:
@@ -24213,15 +24228,15 @@ def modulo_reportes_institucionales_v169():
                     )
 
             if st.session_state.get(
-                "pdf_reporte_institucional_v16249"
+                "pdf_reporte_institucional_v16250"
             ):
                 st.download_button(
                     "⬇️ Descargar informe institucional PDF",
                     data=st.session_state[
-                        "pdf_reporte_institucional_v16249"
+                        "pdf_reporte_institucional_v16250"
                     ],
                     file_name=(
-                        "Informe_Institucional_Observatorio_Social_V16_249_"
+                        "Informe_Institucional_Observatorio_Social_V16_250_"
                         + datetime.now().strftime("%Y%m%d_%H%M")
                         + ".pdf"
                     ),
