@@ -20532,13 +20532,40 @@ def modulo_reportes_institucionales_v169():
                 if "VINCULAD" in v: return "Población vinculada"
                 if "NO AFILIADO" in v or "NO ASEGURADO" in v: return "No afiliado"
             if any(x in nombre for x in ("PROCEDENCIA", "DEPARTAMENTO")):
-                if v in {"PEREIRA", "PEREIRA RISARALDA", "RISARALDA PEREIRA", "RISARALDA"}:
-                    return "RISARALDA"
-                if v in {"BOGOTA", "BOGOTA D.C.", "BOGOTA DC"}: return "BOGOTÁ D.C."
-                if v == "QUINDIO": return "QUINDÍO"
-                if v == "CHOCO": return "CHOCÓ"
-                if v == "BOLIVAR": return "BOLÍVAR"
-                if v == "VENEZUELA": return "VENEZUELA (PAÍS)"
+                clave = re.sub(r"[^A-Z0-9]+", " ", v).strip()
+                grupos = {
+                    "RISARALDA": "PEREIRA;DOSQUEBRADAS;SANTA ROSA;BALBOA;LA CELIA;LA VIRGINIA;MISTRATO;PUEBLO RICO;GUATICA;RISARLADA;RISALLDA;RISALDA",
+                    "ANTIOQUIA": "MEDELLIN;BELLO;APARTADO;JERICO;LLARUMAL",
+                    "VALLE DEL CAUCA": "VALLE;CALI;CARTAGO;TORO;TRUJILLO;TULUA;SEVILLA;YUMBO;JUMBO;BUGA;ANSERMA NUEVO",
+                    "CALDAS": "MANIZALES;SALAMINA;CHINCHINA;CHINCHANA;SUPIA;VITERBO;SAN JOSE DE CALDAD;MANIPULES;VELARCASAS",
+                    "QUINDÍO": "QUINDIO;ARMENIA;CIRCASIA;CALARCA;MONTENEGRO",
+                    "BOGOTÁ D.C.": "BOGOTA;BOGOTA DC;BOGOTA CUNDINAMARCA;CUNDINAMARCA BOGOTA",
+                    "TOLIMA": "IBAGUE;ATACO", "CUNDINAMARCA": "MEZA CUNDINAMARCA",
+                    "BOLÍVAR": "BOLIVAR;CARTAGENA;ARJONA", "CHOCÓ": "CHOCO",
+                    "ATLÁNTICO": "ATLANTICO;BARRANQUILLA", "SANTANDER": "BUCARAMANGA;BARRANCABERMEJA;SAN GIL",
+                    "NORTE DE SANTANDER": "CUCUTA;N DE SANTANDER", "CAUCA": "POPAYAN;PUERTO TEJADA",
+                    "NARIÑO": "NARINO;TUMACO", "CAQUETÁ": "CAQUETA;FLORENCIA;SAN VICENTE DEL CAGUAN",
+                    "MAGDALENA": "SANTA MARTA;SANTAMARTA", "HUILA": "NEIVA", "CÓRDOBA": "CORDOBA;MONTELIBANO",
+                    "BOYACÁ": "BOYACA;PUERTO BOYACA", "VENEZUELA (PAÍS)": "VENEZUELA;VENEZUELA PAIS;TACHIRA",
+                    "SENEGAL (PAÍS)": "SENEGAL", "PUTUMAYO":"", "CESAR":"", "ARAUCA":"", "SUCRE":"", "LA GUAJIRA":"", "AMAZONAS":"", "META":"", "SAN ANDRÉS":"SAN ANDRES", "VAUPÉS":"VAUPES", "CASANARE":"", "GUAINÍA":"", "GUAVIARE":"", "VICHADA":""
+                }
+                if clave in {"ARAUCA CALDAS", "CUNDINAMARCA GIRALDO", "SANTANDER PLAN RETORNO EL MARTES"}: return "Por verificar"
+                if "BOGOTA" in clave: return "BOGOTÁ D.C."
+                for dep, alias in grupos.items():
+                    if clave in {limpio(dep), *alias.split(";")}: return dep
+                candidatos = set()
+                for dep, alias in grupos.items():
+                    for token in [limpio(dep), *alias.split(";")]:
+                        if token and re.search(r"(?:^| )"+re.escape(token)+r"(?:$| )", clave): candidatos.add(dep)
+                if "NORTE DE SANTANDER" in candidatos: candidatos.discard("SANTANDER")
+                if "VALLE DEL CAUCA" in candidatos: candidatos.discard("CAUCA")
+                return next(iter(candidatos)) if len(candidatos)==1 else "Por verificar"
+            if "CONSUMO" in nombre:
+                tokens = {re.sub(r"\s+", " ", x.strip()) for x in v.split("|") if x.strip()}
+                tokens = {"NO REFIERE CONSUMO" if x in {"NINGUNA", "NINGUNO", "NO REFIERE CONSUMO"} else "OTRA DROGA" if x == "OTRO" else x for x in tokens}
+                if "NO REFIERE CONSUMO" in tokens and len(tokens)>1: return "Por verificar (contradicción)"
+                if len(tokens)>1 or any(x.startswith("POLICONSUMO") for x in tokens): return "POLICONSUMO"
+                return {"COCAINA":"COCAÍNA", "HEROINA":"HEROÍNA"}.get(v, next(iter(tokens), "Sin información"))
             if any(x in nombre for x in ("ETNIA", "ETNICO", "GRUPO_ETN")):
                 return normalizar_etnia_institucional(valor)
             if "EPS" in nombre or "ASEGURADORA" in nombre:
@@ -21985,7 +22012,7 @@ def modulo_reportes_institucionales_v169():
 
         with ex2:
             if st.button(
-                "📄 Generar informe institucional completo · V16.247",
+                "📄 Generar informe institucional completo · V16.248",
                 use_container_width=True,
                 key="generar_pdf_reportes"
             ):
@@ -22288,7 +22315,7 @@ def modulo_reportes_institucionales_v169():
                             "%"
                         ]]
 
-                        for _, fila in tabla_cat.iterrows():
+                        for _, fila in tabla_cat.head(top_n).iterrows():
                             datos.append([
                                 Paragraph(
                                     _texto_pdf(fila["categoria"]),
@@ -22601,7 +22628,7 @@ def modulo_reportes_institucionales_v169():
                         )
 
                         datos = [["Departamento", "Cantidad", "%"]]
-                        for _, fila in tabla_cat.iterrows():
+                        for _, fila in tabla_cat.head(10).iterrows():
                             datos.append([
                                 Paragraph(
                                     _texto_pdf(fila["categoria"]),
@@ -23957,6 +23984,7 @@ def modulo_reportes_institucionales_v169():
                         (col_etnia, "grupo étnico")
                     ]:
                         serie = _normalizar_categoria_informe(_serie_limpia(df_f, columna), columna)
+                        serie = serie[serie != "Sin información"]
                         if not serie.empty:
                             conteo = serie.value_counts()
                             cat = str(conteo.index[0])
@@ -24006,6 +24034,7 @@ def modulo_reportes_institucionales_v169():
 
                     for columna, nombre, lectura in [(col_educacion, "Escolaridad", "Orientar procesos de formación según las necesidades educativas."), (col_ocupacion, "Inclusión productiva", "Priorizar rutas de orientación laboral y generación de ingresos."), (col_consumo, "Reducción de riesgos", "Ajustar la intervención a los patrones de consumo registrados.")]:
                         serie = _normalizar_categoria_informe(_serie_limpia(df_f, columna), columna)
+                        serie = serie[serie != "Sin información"]
                         if not serie.empty:
                             conteo = serie.value_counts()
                             contenido.append(Paragraph(nombre, estilo_h2))
@@ -24096,11 +24125,16 @@ def modulo_reportes_institucionales_v169():
                     # ------------------------------------------------
                     contenido.append(PageBreak())
                     contenido.append(Paragraph("Anexo estadístico · distribuciones completas", estilo_h1))
-                    for nombre,col in [("Escolaridad",col_educacion),("Ocupación",col_ocupacion),("Procedencia",col_procedencia),("Consumo",col_consumo),("Salud",col_salud),("Estado",col_estado),("Modalidad",col_modalidad),("Sexo",col_sexo),("Etnia",col_etnia)]:
+                    for nombre,col in [("Escolaridad",col_educacion),("Ocupación",col_ocupacion),("Procedencia",col_procedencia),("Consumo",col_consumo),("Salud",col_salud),("Estado",col_estado),("Modalidad",col_modalidad),("Sexo",col_sexo),("Etnia",col_etnia),("Orientación sexual",col_orientacion),("Salud mental registrada",col_enfermedad)]:
                         if not col: continue
                         dist = _distribucion_247(df_f,col)
                         contenido.append(Paragraph(nombre,estilo_h2))
                         contenido.append(_tabla_pdf([["Categoría","n","% válido"]]+[[Paragraph(_texto_pdf(r.categoria),estilo_nota),str(int(r.cantidad)),f"{r.porcentaje:.1f}%" if pd.notna(r.porcentaje) else "—"] for r in dist.itertuples()]+[["Total universo",str(len(df_f)),"—"]],anchos=[11*cm,3*cm,3*cm]))
+                    for nombre,col in [("Procedencia original (auditoría)",col_procedencia),("Consumo original (auditoría)",col_consumo)]:
+                        if not col: continue
+                        original = _serie_limpia(df_f,col).value_counts()
+                        contenido.append(Paragraph(nombre,estilo_h2))
+                        contenido.append(_tabla_pdf([["Registro original","n"]]+[[Paragraph(_texto_pdf(k),estilo_nota),str(int(v))] for k,v in original.items()],anchos=[14*cm,3*cm]))
                     for nombre,filas,anchos in anexos_247:
                         contenido.append(Paragraph(nombre,estilo_h2)); contenido.append(_tabla_pdf(filas,anchos=anchos,fontsize=8))
                     def _pie_institucional(canvas, doc):
@@ -24114,7 +24148,7 @@ def modulo_reportes_institucionales_v169():
                             canvas.drawString(1.35*cm, letter[1]-0.9*cm, "OBSERVATORIO SOCIAL  /  PEREIRA 2026")
                         canvas.setFont("Helvetica", 8)
                         canvas.setFillColor(colors.HexColor("#44546A"))
-                        canvas.drawString(1.35*cm, 0.65*cm, "Asociación Ciudad Futuro | Observatorio Social | V16.247")
+                        canvas.drawString(1.35*cm, 0.65*cm, "Asociación Ciudad Futuro | Observatorio Social | V16.248")
                         canvas.drawRightString(letter[0]-1.35*cm, 0.65*cm, f"Página {doc.page}")
                         canvas.restoreState()
                     for elemento in contenido:
@@ -24170,7 +24204,7 @@ def modulo_reportes_institucionales_v169():
                         "pdf_reporte_institucional_v16247"
                     ],
                     file_name=(
-                        "Informe_Institucional_Observatorio_Social_V16_247_"
+                        "Informe_Institucional_Observatorio_Social_V16_248_"
                         + datetime.now().strftime("%Y%m%d_%H%M")
                         + ".pdf"
                     ),
