@@ -60,6 +60,26 @@ def _agregar_capitulo_auditoria_institucional(contenido, engine, Paragraph, Page
     def cifra(valor):
         return f'{int(valor):,}'.replace(',', '.')
 
+    from reportlab.graphics.shapes import Drawing, Rect, String
+    from reportlab.platypus import KeepTogether, Spacer
+    def visual_barras(titulo, etiquetas, valores):
+        pares = [(str(k), int(v)) for k,v in zip(etiquetas, valores)]
+        if not pares:
+            return
+        ancho = 16.5 * cm
+        alto = 28 + 23 * len(pares)
+        d = Drawing(ancho, alto)
+        d.add(String(0, alto-12, titulo, fontName='Helvetica-Bold', fontSize=10, fillColor=colors.HexColor('#142D4E')))
+        maximo = max(1, max(v for _,v in pares))
+        for i,(k,v) in enumerate(pares):
+            y = alto-35-i*23
+            d.add(String(0,y+3,k[:48],fontSize=8,fillColor=colors.HexColor('#142D4E')))
+            d.add(Rect(190,y,ancho-235,12,fillColor=colors.HexColor('#E9EEF3'),strokeColor=None))
+            d.add(Rect(190,y,(ancho-235)*v/maximo,12,fillColor=colors.HexColor('#198578' if i==0 else '#2878A5'),strokeColor=None))
+            d.add(String(ancho-5,y+3,cifra(v),textAnchor='end',fontSize=9,fontName='Helvetica-Bold'))
+        contenido.append(KeepTogether([d, Spacer(1,8)]))
+
+
     contenido.append(PageBreak())
     contenido.append(Paragraph('BALANCE SOCIAL INSTITUCIONAL', estilo_h1))
     par('Asociación Ciudad Futuro | Observatorio Social | Pereira, 2026. '
@@ -100,6 +120,7 @@ def _agregar_capitulo_auditoria_institucional(contenido, engine, Paragraph, Page
             f'pública, con {cifra(t.participaciones)} participaciones y {cifra(t.personas)} '
             'personas identificadas sin repetir documentos. La participación acumulada refleja '
             'continuidad de contacto con el programa; no equivale a personas diferentes.')
+        visual_barras('Participaciones por acción', acciones.codigo_accion, acciones.participaciones)
         tabla(acciones, ['Acción', 'Actividades', 'Participaciones', 'Personas únicas'])
         descripciones = {
             '2.1.1': 'Acompañamiento psicológico y sociofamiliar',
@@ -146,6 +167,7 @@ def _agregar_capitulo_auditoria_institucional(contenido, engine, Paragraph, Page
             f'{cifra(pai.activos)} activos y {cifra(pai.historicos)} históricos, además de '
             f'{cifra(seguimientos)} registros de seguimiento histórico y {cifra(total_cierres)} '
             'cierres documentados.')
+        visual_barras('Estado de los objetivos PAI', ['Cumplidos','Activos','Históricos'], [pai.cumplidos,pai.activos,pai.historicos])
         tabla(pd.DataFrame([['Personas con objetivos', cifra(pai.personas)],
                             ['Objetivos formulados', cifra(pai.objetivos)],
                             ['Objetivos cumplidos', cifra(pai.cumplidos)],
@@ -210,6 +232,8 @@ def _agregar_capitulo_auditoria_institucional(contenido, engine, Paragraph, Page
             f'En conjunto, corresponden a {cifra(eg.personas)} documentos distintos. '
             'Las rutas de salida incluyen retorno, vínculos familiares, inclusión laboral, '
             'autonomía, continuidad de protección mediante traslado y otras circunstancias.')
+        rutas_vis = motivos[motivos.motivo.ne('Fallecimiento')]
+        visual_barras('Rutas de egreso documentadas', rutas_vis.motivo, rutas_vis.registros)
         tabla(motivos[motivos.motivo.ne('Fallecimiento')], ['Ruta de salida documentada', 'Registros'])
         par(f'Cierres por fallecimiento (categoría independiente): {cifra(fallecimientos)}.')
         positivos = motivos.loc[motivos.motivo.isin(['Vinculación laboral', 'Vinculación familiar',
@@ -21895,7 +21919,7 @@ def modulo_reportes_institucionales_v169():
 
         with ex2:
             if st.button(
-                "📄 Generar informe institucional completo · V16.243",
+                "📄 Generar informe institucional completo · V16.244",
                 use_container_width=True,
                 key="generar_pdf_reportes"
             ):
@@ -21903,10 +21927,15 @@ def modulo_reportes_institucionales_v169():
                     import textwrap
                     from reportlab.lib.enums import TA_LEFT, TA_CENTER
                     from reportlab.platypus import KeepTogether
+                    from reportlab.platypus.tableofcontents import TableOfContents
+                    class DocumentoEditorial(SimpleDocTemplate):
+                        def afterFlowable(self, flowable):
+                            if isinstance(flowable, Paragraph) and flowable.style.name == "H1Reporte":
+                                self.notify("TOCEntry", (0, flowable.getPlainText(), self.page))
 
                     buffer_pdf = BytesIO()
 
-                    doc_pdf = SimpleDocTemplate(
+                    doc_pdf = DocumentoEditorial(
                         buffer_pdf,
                         pagesize=letter,
                         rightMargin=1.35 * cm,
@@ -22188,7 +22217,7 @@ def modulo_reportes_institucionales_v169():
                             "%"
                         ]]
 
-                        for _, fila in tabla_cat.head(8).iterrows():
+                        for _, fila in tabla_cat.iterrows():
                             datos.append([
                                 Paragraph(
                                     _texto_pdf(fila["categoria"]),
@@ -22610,6 +22639,11 @@ def modulo_reportes_institucionales_v169():
                     # ------------------------------------------------
                     # 1. RESUMEN EJECUTIVO
                     # ------------------------------------------------
+                    contenido.append(PageBreak())
+                    contenido.append(Paragraph("Contenido", estilo_subportada))
+                    indice = TableOfContents()
+                    indice.levelStyles = [ParagraphStyle("Indice244", parent=estilo_cuerpo, fontSize=11, leading=17, spaceAfter=4)]
+                    contenido.append(indice)
                     contenido.append(PageBreak())
                     contenido.append(
                         Paragraph(
@@ -24058,7 +24092,7 @@ def modulo_reportes_institucionales_v169():
                             canvas.drawString(1.35*cm, letter[1]-0.9*cm, "OBSERVATORIO SOCIAL  /  PEREIRA 2026")
                         canvas.setFont("Helvetica", 8)
                         canvas.setFillColor(colors.HexColor("#44546A"))
-                        canvas.drawString(1.35*cm, 0.65*cm, "Asociación Ciudad Futuro | Observatorio Social | V16.243")
+                        canvas.drawString(1.35*cm, 0.65*cm, "Asociación Ciudad Futuro | Observatorio Social | V16.244")
                         canvas.drawRightString(letter[0]-1.35*cm, 0.65*cm, f"Página {doc.page}")
                         canvas.restoreState()
                     for elemento in contenido:
@@ -24071,12 +24105,23 @@ def modulo_reportes_institucionales_v169():
                     for elemento in contenido:
                         if isinstance(elemento, Paragraph) and elemento.style.name in ("H1Reporte", "H2Reporte"):
                             elemento.keepWithNext = True
-                    contenido = [CondPageBreak(4*cm) if isinstance(e, PageBreak) and i > 0 and i != next((j for j,x in enumerate(contenido) if isinstance(x, PageBreak)), -1) else e for i,e in enumerate(contenido)]
-                    doc_pdf.build(contenido, onFirstPage=_pie_institucional, onLaterPages=_pie_institucional)
+                    saltos = 0
+                    editorial = []
+                    for e in contenido:
+                        if isinstance(e, PageBreak):
+                            saltos += 1
+                            editorial.append(e if saltos <= 2 else CondPageBreak(5*cm))
+                        elif isinstance(e, Table) and 2 <= len(e._cellvalues) <= 16:
+                            _, altura = e.wrap(doc_pdf.width-12, doc_pdf.height-12)
+                            editorial.append(KeepTogether([e]) if altura < doc_pdf.height*0.65 else e)
+                        else:
+                            editorial.append(e)
+                    contenido = editorial
+                    doc_pdf.multiBuild(contenido, onFirstPage=_pie_institucional, onLaterPages=_pie_institucional)
                     buffer_pdf.seek(0)
 
                     st.session_state[
-                        "pdf_reporte_institucional_v16243"
+                        "pdf_reporte_institucional_v16244"
                     ] = buffer_pdf.getvalue()
 
                     for archivo_tmp in temporales:
@@ -24095,15 +24140,15 @@ def modulo_reportes_institucionales_v169():
                     )
 
             if st.session_state.get(
-                "pdf_reporte_institucional_v16243"
+                "pdf_reporte_institucional_v16244"
             ):
                 st.download_button(
                     "⬇️ Descargar informe institucional PDF",
                     data=st.session_state[
-                        "pdf_reporte_institucional_v16243"
+                        "pdf_reporte_institucional_v16244"
                     ],
                     file_name=(
-                        "Informe_Institucional_Observatorio_Social_V16_243_"
+                        "Informe_Institucional_Observatorio_Social_V16_244_"
                         + datetime.now().strftime("%Y%m%d_%H%M")
                         + ".pdf"
                     ),
