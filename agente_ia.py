@@ -68,7 +68,7 @@ def _agregar_capitulo_auditoria_institucional(contenido, engine, Paragraph, Page
         'Se distinguen personas, intervenciones y resultados para evitar duplicidades.')
 
     for titulo, sql in [
-        ('Atenciones de enfermería', 'SELECT COUNT(*) total FROM public.enfermeria_registros'),
+        ('Registros de enfermería', 'SELECT COUNT(*) total FROM public.enfermeria_registros'),
         ('Documentos distintos en enfermería', "SELECT COUNT(DISTINCT NULLIF(TRIM(documento_usuario::text), '')) total FROM public.enfermeria_registros"),
         ('Caracterizaciones especializadas', 'SELECT COUNT(*) total FROM public.caracterizacion_habitabilidad_calle')]:
         try:
@@ -20453,6 +20453,8 @@ def modulo_reportes_institucionales_v169():
                 return normalizar_etnia_institucional(valor)
             if "EPS" in nombre or "ASEGURADORA" in nombre:
                 return v
+            if v in {"TRUE", "FALSE"}: return "Sí" if v == "TRUE" else "No"
+            if "MENTAL" in nombre: return str(valor).strip().replace("sustacias", "sustancias")
             return str(valor).strip()
         return serie.map(convertir)
 
@@ -20542,6 +20544,7 @@ def modulo_reportes_institucionales_v169():
             df_reporte[col_edad],
             errors="coerce"
         )
+        df_reporte[col_edad] = df_reporte[col_edad].where(df_reporte[col_edad].between(0, 120))
 
     # ------------------------------------------------------------
     # FILTROS
@@ -20793,7 +20796,7 @@ def modulo_reportes_institucionales_v169():
         ]
 
     def _hab_top(columna, n=5):
-        s = _hab_serie(columna)
+        s = _normalizar_categoria_informe(_hab_serie(columna), columna)
         if s.empty:
             return []
         vc = s.value_counts().head(n)
@@ -21290,13 +21293,21 @@ def modulo_reportes_institucionales_v169():
                 else:
                     completos = len(_serie_limpia(df_f, columna))
 
+                universo_calidad = total
+                if columna == col_modalidad and col_estado:
+                    activos_calidad = df_f[df_f[col_estado].astype(str).str.strip().str.upper().eq("ACTIVO")]
+                    universo_calidad = len(activos_calidad)
+                    if not universo_calidad:
+                        continue
+                    completos = len(_serie_limpia(activos_calidad, columna))
+                    etiqueta = "Modalidad (solo activos)"
                 calidad.append({
                     "Campo": etiqueta,
                     "Completos": completos,
-                    "Faltantes": total - completos,
+                    "Faltantes": universo_calidad - completos,
                     "Completitud %": round(
-                        completos / total * 100, 1
-                    ) if total else 0
+                        completos / universo_calidad * 100, 1
+                    ) if universo_calidad else 0
                 })
 
         df_calidad = pd.DataFrame(calidad)
@@ -21865,7 +21876,7 @@ def modulo_reportes_institucionales_v169():
 
         with ex2:
             if st.button(
-                "📄 Generar informe institucional completo",
+                "📄 Generar informe institucional completo · V16.241",
                 use_container_width=True,
                 key="generar_pdf_reportes"
             ):
@@ -22604,9 +22615,9 @@ def modulo_reportes_institucionales_v169():
                             (
                                 f"De manera complementaria, la base "
                                 f"<b>personas_caracterizacion</b> registra "
-                                f"<b>{_fmt_num(total_egresados)}</b> egresos. "
+                                f"<b>{_fmt_num(total_egresados)}</b> registros históricos de salida. "
                                 f"Como indicador institucional de referencia, "
-                                f"estos egresos equivalen al "
+                                f"estos registros equivalen al "
                                 f"<b>{tasa_egreso:.1f}%</b> de la población "
                                 f"registrada en la base general."
                             ),
@@ -22642,11 +22653,11 @@ def modulo_reportes_institucionales_v169():
                             _fmt_num(total_activos)
                         ],
                         [
-                            "Egresos registrados",
+                            "Registros históricos de salida",
                             _fmt_num(total_egresados)
                         ],
                         [
-                            "Tasa institucional de egreso",
+                            "Relación registros históricos / base general",
                             f"{tasa_egreso:.1f}%"
                         ],
                         [
@@ -22673,6 +22684,11 @@ def modulo_reportes_institucionales_v169():
                             anchos=[10.5 * cm, 6 * cm],
                             fontsize=9
                         )
+                    )
+
+                    _agregar_capitulo_auditoria_institucional(
+                        contenido, engine, Paragraph, PageBreak,
+                        estilo_h1, estilo_h2, estilo_cuerpo, _tabla_pdf, cm
                     )
 
                     # ------------------------------------------------
@@ -23437,12 +23453,11 @@ def modulo_reportes_institucionales_v169():
                                 .sort_values("atenciones", ascending=False)
                             )
                             _datos_aut = [[
-                                "Responsable", "CC", "Personas", "Registros", "Atenciones"
+                                "Responsable", "Personas", "Registros", "Atenciones"
                             ]]
                             for _, _r in _aut_enf.iterrows():
                                 _datos_aut.append([
                                     _texto_pdf(_r["enfermera_nombre"]),
-                                    _texto_pdf(_r["enfermera_documento"]),
                                     str(int(_r["personas"])),
                                     str(int(_r["registros"])),
                                     str(int(round(float(_r["atenciones"])))),
@@ -23457,7 +23472,7 @@ def modulo_reportes_institucionales_v169():
                                 _tabla_pdf(
                                     _datos_aut,
                                     anchos=[
-                                        6.1 * cm, 3.0 * cm, 2.3 * cm,
+                                        9.1 * cm, 2.3 * cm,
                                         2.3 * cm, 2.5 * cm
                                     ],
                                     fontsize=7.2
@@ -23478,13 +23493,6 @@ def modulo_reportes_institucionales_v169():
                     # ------------------------------------------------
                     # HALLAZGOS Y CONCLUSIONES
                     # ------------------------------------------------
-                    contenido.append(PageBreak())
-                    contenido.append(
-                        Paragraph(
-                            f"{seccion}. Hallazgos principales",
-                            estilo_h1
-                        )
-                    )
 
                     # ==================================================
                     # HABITABILIDAD EN CALLE - ANÁLISIS ESPECIALIZADO
@@ -23554,6 +23562,11 @@ def modulo_reportes_institucionales_v169():
                         if not top:
                             return
                         contenido.append(Paragraph(titulo, estilo_h2))
+                        base_valida = len(_hab_serie(columna))
+                        contenido.append(Paragraph(f"Base válida: {base_valida} de {len(df_hab_rep)} caracterizaciones.", estilo_nota))
+                        if base_valida < 5:
+                            contenido.append(Paragraph("Información insuficiente para interpretar porcentajes poblacionales.", estilo_nota))
+                            return
                         datos = [["Categoría", "n", "% válido"]]
                         for categoria, cantidad, pct in top:
                             datos.append([
@@ -23739,6 +23752,29 @@ def modulo_reportes_institucionales_v169():
                         )
                     )
 
+                    contenido.append(PageBreak())
+                    contenido.append(Paragraph("Análisis cruzado de necesidades sociales", estilo_h1))
+                    contenido.append(Paragraph("Cruces descriptivos del universo filtrado. Se excluyen pares sin dato; no se infiere causalidad. Se muestran hasta ocho categorías por dimensión; las restantes se agrupan.", estilo_cuerpo))
+                    for titulo, ca, cb in [("Escolaridad y ocupación", col_educacion, col_ocupacion), ("Sexo al nacer y seguridad en salud", col_sexo, col_salud), ("Modalidad y estado del caso", col_modalidad, col_estado)]:
+                        if not ca or not cb or ca == cb:
+                            continue
+                        sa = _normalizar_categoria_informe(_serie_limpia(df_f, ca), ca)
+                        sb = _normalizar_categoria_informe(_serie_limpia(df_f, cb), cb)
+                        pares = pd.concat([sa.rename("a"), sb.rename("b")], axis=1).dropna()
+                        if pares.empty:
+                            continue
+                        for c in ("a", "b"):
+                            top = pares[c].value_counts().head(8).index
+                            pares[c] = pares[c].where(pares[c].isin(top), "Otras categorías")
+                        cruz = pares.groupby(["a", "b"]).size().sort_values(ascending=False)
+                        contenido.append(Paragraph(titulo, estilo_h2))
+                        contenido.append(Paragraph(f"Base válida: {len(pares)} registros de {total}. Se presentan las diez combinaciones más frecuentes.", estilo_cuerpo))
+                        filas = [["Categoría 1", "Categoría 2", "Registros", "% base"]]
+                        for (x,y), n in cruz.head(10).items():
+                            filas.append([Paragraph(_texto_pdf(x), estilo_nota), Paragraph(_texto_pdf(y), estilo_nota), str(n), f"{100*n/len(pares):.1f}%"])
+                        contenido.append(_tabla_pdf(filas, anchos=[6*cm, 6*cm, 2.5*cm, 2*cm], fontsize=8))
+
+                    contenido.append(Paragraph(f"{seccion}. Hallazgos principales", estilo_h1))
                     hallazgos_pdf = []
 
                     if edad_promedio:
@@ -23756,7 +23792,7 @@ def modulo_reportes_institucionales_v169():
                         (col_consumo, "tipo de consumo"),
                         (col_etnia, "grupo étnico")
                     ]:
-                        serie = _serie_limpia(df_f, columna)
+                        serie = _normalizar_categoria_informe(_serie_limpia(df_f, columna), columna)
                         if not serie.empty:
                             conteo = serie.value_counts()
                             cat = str(conteo.index[0])
@@ -23773,7 +23809,7 @@ def modulo_reportes_institucionales_v169():
 
                     hallazgos_pdf.append(
                         f"La base de egresos registra {total_egresados} "
-                        f"egresos, equivalentes al {tasa_egreso:.1f}% "
+                        f"registros históricos de salida, equivalentes al {tasa_egreso:.1f}% "
                         f"de la población total registrada en la base general."
                     )
 
@@ -23797,6 +23833,7 @@ def modulo_reportes_institucionales_v169():
                             )
                         )
 
+                    contenido.append(PageBreak())
                     contenido.append(
                         Paragraph(
                             f"{seccion + 1}. Conclusiones institucionales",
@@ -23806,7 +23843,6 @@ def modulo_reportes_institucionales_v169():
 
                     # CAPÍTULO DE RESULTADOS: clasificación descriptiva verificable.
                     # Se usan exclusivamente registros ya cargados en el informe.
-                    contenido.append(PageBreak())
                     contenido.append(Paragraph(
                         "Resultados institucionales, egresos e impacto verificable", estilo_h1
                     ))
@@ -23816,49 +23852,7 @@ def modulo_reportes_institucionales_v169():
                         "contiene una columna identificable. Las actividades y los resultados "
                         "se presentan como indicadores diferentes.", estilo_cuerpo
                     ))
-                    if not df_egresados.empty:
-                        posibles_motivos = [
-                            "motivo_egreso", "motivo_impacto", "tipo_egreso",
-                            "causa_egreso", "motivo_salida", "categoria_egreso"
-                        ]
-                        campo_motivo = next(
-                            (c for c in posibles_motivos if c in df_egresados.columns), None
-                        )
-                        if campo_motivo:
-                            motivo_serie = df_egresados[campo_motivo].fillna(
-                                "SIN INFORMACIÓN"
-                            ).astype(str).str.strip().str.upper().replace(
-                                {"": "SIN INFORMACIÓN", "NAN": "SIN INFORMACIÓN"}
-                            )
-                            resumen_motivos = motivo_serie.value_counts()
-                            contenido.append(Paragraph(
-                                "Egresos discriminados por motivo registrado", estilo_h2
-                            ))
-                            filas = [["Motivo registrado", "Registros"]]
-                            filas.extend([
-                                [_texto_pdf(k), _fmt_num(v)]
-                                for k, v in resumen_motivos.items()
-                            ])
-                            tabla_egresos = Table(filas, colWidths=[13.8 * cm, 3.5 * cm], repeatRows=1)
-                            tabla_egresos.setStyle(TableStyle([
-                                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#17365D")),
-                                ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-                                ("GRID", (0, 0), (-1, -1), 0.3, colors.lightgrey),
-                                ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                            ]))
-                            contenido.append(tabla_egresos)
-                            contenido.append(Paragraph(
-                                "Los fallecimientos y las salidas voluntarias no se "
-                                "clasifican automáticamente como egresos exitosos. "
-                                "La condición de éxito exige validación del motivo "
-                                "y evidencia de resultados.", estilo_nota
-                            ))
-                        else:
-                            contenido.append(Paragraph(
-                                "La fuente de egresos no dispone de una columna de motivo "
-                                "reconocida por este reporte; el desglose está pendiente "
-                                "de homologación de esquema.", estilo_nota
-                            ))
+                    contenido.append(Paragraph("Los motivos históricos de salida y los fallecimientos se presentan por separado en el balance social inicial, según las observaciones disponibles.", estilo_cuerpo))
                     contenido.append(Paragraph("Plan de Atención Integral (PAI)", estilo_h2))
                     contenido.append(Paragraph(
                         "El análisis institucional del PAI debe diferenciar personas "
@@ -23974,7 +23968,7 @@ def modulo_reportes_institucionales_v169():
                             "subconjunto resultante."
                         ),
                         (
-                            "<b>Tasa institucional de egreso:</b> se presenta "
+                            "<b>Relación registros históricos / base general:</b> se presenta "
                             "como relación de referencia entre los egresos "
                             "registrados en personas_caracterizacion y la "
                             "población total de habitante_de_calle."
@@ -23999,7 +23993,7 @@ def modulo_reportes_institucionales_v169():
                     contenido.append(Spacer(1, 0.6 * cm))
                     contenido.append(
                         Paragraph(
-                            "Balance social institucional: anexos e indicadores integrados a continuación.",
+                            "Balance social institucional: indicadores históricos globales presentados al inicio.",
                             estilo_destacado
                         )
                     )
@@ -24007,15 +24001,18 @@ def modulo_reportes_institucionales_v169():
                     # ------------------------------------------------
                     # CREAR DOCUMENTO
                     # ------------------------------------------------
-                    _agregar_capitulo_auditoria_institucional(
-                        contenido, engine, Paragraph, PageBreak,
-                        estilo_h1, estilo_h2, estilo_cuerpo, _tabla_pdf, cm
-                    )
-                    doc_pdf.build(contenido)
+                    def _pie_institucional(canvas, doc):
+                        canvas.saveState()
+                        canvas.setFont("Helvetica", 8)
+                        canvas.setFillColor(colors.HexColor("#44546A"))
+                        canvas.drawString(1.35*cm, 0.65*cm, "Asociación Ciudad Futuro | Observatorio Social | V16.241")
+                        canvas.drawRightString(letter[0]-1.35*cm, 0.65*cm, f"Página {doc.page}")
+                        canvas.restoreState()
+                    doc_pdf.build(contenido, onFirstPage=_pie_institucional, onLaterPages=_pie_institucional)
                     buffer_pdf.seek(0)
 
                     st.session_state[
-                        "pdf_reporte_institucional"
+                        "pdf_reporte_institucional_v16241"
                     ] = buffer_pdf.getvalue()
 
                     for archivo_tmp in temporales:
@@ -24034,15 +24031,15 @@ def modulo_reportes_institucionales_v169():
                     )
 
             if st.session_state.get(
-                "pdf_reporte_institucional"
+                "pdf_reporte_institucional_v16241"
             ):
                 st.download_button(
                     "⬇️ Descargar informe institucional PDF",
                     data=st.session_state[
-                        "pdf_reporte_institucional"
+                        "pdf_reporte_institucional_v16241"
                     ],
                     file_name=(
-                        "Informe_Institucional_Observatorio_Social_"
+                        "Informe_Institucional_Observatorio_Social_V16_241_"
                         + datetime.now().strftime("%Y%m%d_%H%M")
                         + ".pdf"
                     ),
