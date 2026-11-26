@@ -120,8 +120,6 @@ def _agregar_capitulo_auditoria_institucional(contenido, engine, Paragraph, Page
             f'pública, con {cifra(t.participaciones)} participaciones y {cifra(t.personas)} '
             'personas identificadas sin repetir documentos. La participación acumulada refleja '
             'continuidad de contacto con el programa; no equivale a personas diferentes.')
-        visual_barras('Participaciones por acción', acciones.codigo_accion, acciones.participaciones)
-        tabla(acciones, ['Acción', 'Actividades', 'Participaciones', 'Personas únicas'])
         descripciones = {
             '2.1.1': 'Acompañamiento psicológico y sociofamiliar',
             '2.1.2': 'Remisión y seguimiento para tratamiento de adicciones',
@@ -134,12 +132,14 @@ def _agregar_capitulo_auditoria_institucional(contenido, engine, Paragraph, Page
             '2.1.9': 'Convivencia y habilidades sociales',
             '2.1.11': 'Mitigación de riesgos asociados al consumo de SPA',
         }
-        contenido.append(Paragraph('Lectura de las líneas de intervención', estilo_h2))
-        for row in acciones.itertuples(index=False):
-            cod = str(row.codigo_accion)
-            par(f'Acción {cod} — {descripciones.get(cod, "Intervención social")}: '
-                f'{cifra(row.actividades)} actividades, {cifra(row.participaciones)} participaciones '
-                f'y {cifra(row.personas_unicas)} personas identificadas en esta acción.')
+        etiquetas = {'2.1.1':'Apoyo psicológico y sociofamiliar','2.1.2':'Tratamiento de adicciones','2.1.3':'Prevención de violencias','2.1.4':'Inclusión y diversidad','2.1.5':'Reintegración familiar','2.1.6':'Desarrollo personal y deporte','2.1.7':'Acceso a salud','2.1.8':'Empleabilidad','2.1.9':'Convivencia y habilidades sociales','2.1.11':'Reducción de riesgos SPA'}
+        visual_barras('Participaciones por línea de intervención', [f'{c} {etiquetas.get(str(c), str(c))}' for c in acciones.codigo_accion], acciones.participaciones)
+        detalle = acciones.copy()
+        detalle['codigo_accion'] = detalle.codigo_accion.astype(str).map(lambda c: c+' · '+descripciones.get(c,'Intervención social'))
+        contenido.append(_tabla_pdf([['Línea de intervención','Actividades','Participaciones','Personas únicas']]+[[escape(str(v)) for v in fila] for fila in detalle.itertuples(index=False,name=None)], anchos=[8.4*cm,2.5*cm,2.8*cm,2.8*cm], fontsize=8))
+        if int(t.participaciones)>0 and not acciones.empty:
+            principal = acciones.sort_values('participaciones',ascending=False).iloc[0]
+            par(f"La línea de {descripciones.get(str(principal.codigo_accion),str(principal.codigo_accion)).lower()} concentra {principal.participaciones/int(t.participaciones):.1%} de las participaciones. Su alcance documentado comprende {cifra(principal.personas_unicas)} personas.")
     except Exception as exc:
         par('No fue posible obtener los indicadores de Política Pública en esta generación: '
             + str(exc)[:160])
@@ -248,23 +248,72 @@ def _agregar_capitulo_auditoria_institucional(contenido, engine, Paragraph, Page
     except Exception as exc:
         par('No fue posible consolidar las rutas de egreso: ' + str(exc)[:160])
 
+    contenido.append(PageBreak())
     contenido.append(Paragraph('4. Contribución a los Objetivos de Desarrollo Sostenible', estilo_h2))
-    ods = [
-        ('ODS 1 · Fin de la pobreza', 'Rutas de autonomía, retorno y acceso a protección social.'),
-        ('ODS 2 · Hambre cero', 'Acceso a alimentación y atención integral en el programa.'),
-        ('ODS 3 · Salud y bienestar', 'Enfermería, remisiones, adherencia y reducción de riesgos.'),
-        ('ODS 4 · Educación de calidad', 'Desarrollo de habilidades y actividades formativas.'),
-        ('ODS 5 · Igualdad de género', 'Prevención de violencias y atención diferencial.'),
-        ('ODS 8 · Trabajo decente', 'Orientación para empleabilidad y vinculación laboral.'),
-        ('ODS 10 · Reducción de desigualdades', 'Inclusión social y acceso a derechos.'),
-        ('ODS 11 · Ciudades sostenibles', 'Atención a habitabilidad en calle y redes de protección.'),
-        ('ODS 16 · Instituciones sólidas', 'Trazabilidad de casos y acceso a rutas institucionales.'),
-        ('ODS 17 · Alianzas', 'Articulación con servicios de salud, entidades y redes de apoyo.'),
-    ]
-    tabla(pd.DataFrame(ods, columns=['Objetivo', 'Contribución institucional']),
-          ['ODS', 'Ámbito de contribución'])
-    par('La contribución a los ODS se describe mediante las acciones y resultados registrados; '
-        'no implica atribuir el cumplimiento de las metas globales a una sola entidad.')
+    par('Agenda 2030 | Evidencias de gestión y resultados sociales acumulados. '
+        'Indicadores institucionales vinculados temáticamente a las metas ODS.')
+
+    def accion(codigo, campo):
+        if acciones is None or acciones.empty:
+            return None
+        return int(acciones.loc[acciones.codigo_accion.astype(str).eq(codigo), campo].sum())
+
+    def ruta(nombre):
+        if 'motivos' not in locals_externos:
+            return None
+        m = locals_externos['motivos']
+        return int(m.loc[m.motivo.eq(nombre), 'registros'].sum())
+
+    def dato(valor):
+        return cifra(valor) if valor is not None else 'Sin dato'
+
+    locals_externos = locals().copy()
+    def campo_pai(campo):
+        return int(locals_externos['pai'][campo]) if 'pai' in locals_externos else None
+
+    try:
+        registros_salud = int(consultar('SELECT COUNT(*) total FROM public.enfermeria_registros').iloc[0].total)
+    except Exception:
+        registros_salud = None
+
+    def ficha_ods(numero, nombre, meta, color, indicadores, lectura):
+        from reportlab.lib.styles import ParagraphStyle
+        from reportlab.lib.enums import TA_LEFT
+        base = ParagraphStyle('ods_base', parent=estilo_cuerpo, fontSize=9, leading=12, spaceAfter=0)
+        grande = ParagraphStyle('ods_num', parent=base, fontName='Helvetica-Bold', fontSize=19, leading=23, textColor=colors.HexColor(color))
+        blanco = ParagraphStyle('ods_header', parent=base, fontName='Helvetica-Bold', textColor=colors.white, fontSize=11, leading=15)
+        ancho = 16.5*cm
+        cab = Table([[Paragraph(escape(f'ODS {numero} | {nombre}'), blanco)]], colWidths=[ancho])
+        cab.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,-1),colors.HexColor(color)),('TOPPADDING',(0,0),(-1,-1),8),('BOTTOMPADDING',(0,0),(-1,-1),8)]))
+        celdas = [[Paragraph(escape(dato(v)), grande), Paragraph(escape(et), base)] for v,et in indicadores]
+        cuerpo = Table(celdas, colWidths=[3.2*cm,13.3*cm])
+        cuerpo.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,-1),colors.HexColor('#F1F5F8')),('VALIGN',(0,0),(-1,-1),'MIDDLE'),('TOPPADDING',(0,0),(-1,-1),5),('BOTTOMPADDING',(0,0),(-1,-1),5)]))
+        contenido.append(KeepTogether([cab, Paragraph(escape(meta),base), Spacer(1,5), cuerpo, Spacer(1,5), Paragraph(escape(lectura),base), Spacer(1,13)]))
+
+    ficha_ods(1,'Fin de la pobreza','Meta 1.3 | Protección social','#E5243B',
+        [(ruta('Plan de retorno'),'Registros de egreso por plan de retorno'),(ruta('Traslado institucional'),'Registros de traslado institucional')],
+        'Evidencia de activación de rutas de apoyo y continuidad de protección; no mide ingresos ni cobertura de prestaciones sociales.')
+    ficha_ods(3,'Salud y bienestar','Metas 3.5 y 3.8 | Consumo de sustancias y acceso a salud','#4C9F38',
+        [(registros_salud,'Registros de enfermería'),(accion('2.1.2','actividades'),'Actividades de remisión y seguimiento para tratamiento de adicciones'),(accion('2.1.7','actividades'),'Actividades de acceso y seguimiento a salud'),(accion('2.1.11','participaciones'),'Participaciones en mitigación de riesgos SPA')],
+        'La intervención combina atención sanitaria, gestión de acceso y reducción de riesgos.')
+    ficha_ods(8,'Trabajo decente y crecimiento económico','Meta 8.5 | Empleo productivo y trabajo decente','#A21942',
+        [(accion('2.1.8','participaciones'),'Participaciones en emprendimiento y empleabilidad'),(ruta('Vinculación laboral'),'Registros de egreso por vinculación laboral'),(ruta('Emprendimiento'),'Registros de egreso por emprendimiento')],
+        'Se documentan acciones de preparación laboral y rutas de salida vinculadas al trabajo; falta seguimiento de permanencia laboral.')
+    ficha_ods(10,'Reducción de las desigualdades','Meta 10.2 | Inclusión social, económica y política','#DD1367',
+        [(campo_pai('personas'),'Personas con objetivos PAI'),(campo_pai('cumplidos'),'Objetivos PAI cumplidos'),(ruta('Vinculación familiar'),'Registros de egreso por vinculación familiar'),(accion('2.1.4','participaciones'),'Participaciones en inclusión social y diversidad')],
+        'Los registros evidencian acompañamiento individual y fortalecimiento de vínculos sociales.')
+    ficha_ods(11,'Ciudades y comunidades sostenibles','Meta 11.1 | Acceso a vivienda y servicios básicos','#BF7800',
+        [(ruta('Independencia habitacional'),'Registros de egreso por independencia habitacional')],
+        'Resultado habitacional documentado. Se requiere seguimiento de estabilidad residencial.')
+    ficha_ods(16,'Paz, justicia e instituciones sólidas','Meta 16.1 | Reducción de las violencias','#00689D',
+        [(accion('2.1.3','actividades'),'Actividades de prevención de violencias'),(accion('2.1.3','personas_unicas'),'Personas identificadas en prevención de violencias')],
+        'Evidencia de prevención; no se dispone de medición de reducción de incidentes atribuible a estas actividades.')
+    contenido.append(Paragraph('Indicadores por incorporar', estilo_h2))
+    par('ODS 2: raciones efectivamente entregadas y cobertura alimentaria. ODS 4: formación y competencias adquiridas. '
+        'ODS 5: intervenciones y resultados específicos de igualdad de género. ODS 17: alianzas formalizadas y resultados conjuntos. '
+        'Estas métricas requieren fuentes específicas y no se estiman a partir de actividades genéricas.')
+    par('Fuentes: enfermeria_registros, politica_publica_registros, politica_publica_participantes, pai_objetivos y personas_caracterizacion. '
+        'Los indicadores de distintos ODS pueden compartir registros; no se suman como cobertura total.')
 
     contenido.append(Paragraph('5. Conclusiones del balance social', estilo_h2))
     par('El Observatorio permite seguir una trayectoria de atención: caracterización, '
@@ -21919,7 +21968,7 @@ def modulo_reportes_institucionales_v169():
 
         with ex2:
             if st.button(
-                "📄 Generar informe institucional completo · V16.244",
+                "📄 Generar informe institucional completo · V16.246",
                 use_container_width=True,
                 key="generar_pdf_reportes"
             ):
@@ -22127,13 +22176,9 @@ def modulo_reportes_institucionales_v169():
                             1
                         )
 
-                        return (
-                            f"La categoría con mayor frecuencia en "
-                            f"{nombre_variable.lower()} es "
-                            f"<b>{_texto_pdf(categoria)}</b>, con "
-                            f"<b>{cantidad}</b> registros "
-                            f"({porcentaje}% de los registros con dato)."
-                        )
+                        return (f"<b>{_texto_pdf(categoria)}: {porcentaje}%</b> "
+                                f"({cantidad} de {len(serie)} registros disponibles). "
+                                f"Cobertura de la variable: {len(serie)}/{len(dataframe)}.")
 
                     def _agregar_barras_categoria(
                         titulo_seccion,
@@ -22642,7 +22687,7 @@ def modulo_reportes_institucionales_v169():
                     contenido.append(PageBreak())
                     contenido.append(Paragraph("Contenido", estilo_subportada))
                     indice = TableOfContents()
-                    indice.levelStyles = [ParagraphStyle("Indice244", parent=estilo_cuerpo, fontSize=11, leading=17, spaceAfter=4)]
+                    indice.levelStyles = [ParagraphStyle("Indice244", parent=estilo_cuerpo, fontSize=9, leading=12, spaceAfter=1)]
                     contenido.append(indice)
                     contenido.append(PageBreak())
                     contenido.append(
@@ -22748,13 +22793,7 @@ def modulo_reportes_institucionales_v169():
                         ("TOPPADDING",(0,0),(-1,-1),12),("BOTTOMPADDING",(0,0),(-1,-1),12)]))
                     contenido.append(tarjetas)
                     contenido.append(Spacer(1, 8))
-                    contenido.append(
-                        _tabla_pdf(
-                            resumen_kpis,
-                            anchos=[10.5 * cm, 6 * cm],
-                            fontsize=9
-                        )
-                    )
+                    contenido.append(Paragraph(f"Universo filtrado: {_fmt_num(total)} registros. Relación de eventos de egreso con base general: {tasa_egreso:.2f}%.", estilo_cuerpo))
 
                     _agregar_capitulo_auditoria_institucional(
                         contenido, engine, Paragraph, PageBreak,
@@ -23454,20 +23493,11 @@ def modulo_reportes_institucionales_v169():
                             if len(df_f) else 0
                         )
 
-                        contenido.append(
-                            _tabla_pdf(
-                                [
-                                    ["Indicador", "Resultado"],
-                                    ["Personas atendidas únicas", str(_pers_enf)],
-                                    ["Registros de Enfermería", str(_reg_enf)],
-                                    ["Atenciones realizadas", str(_at_enf)],
-                                    ["Personas con valoración inicial", str(_val_enf)],
-                                    ["Cobertura de valoración inicial", f"{_cob_enf:.1f}%"],
-                                ],
-                                anchos=[11 * cm, 5.5 * cm],
-                                fontsize=8.5
-                            )
-                        )
+                        salud_kpis = [(_pers_enf,"Personas atendidas"),(_at_enf,"Atenciones realizadas"),(_reg_enf,"Registros de enfermería"),(_val_enf,"Personas con valoración inicial")]
+                        salud_tab = Table([[[Paragraph(_fmt_num(v), estilo_cifra), Paragraph(e, estilo_etiqueta)] for v,e in salud_kpis[i:i+2]] for i in (0,2)], colWidths=[8.25*cm]*2)
+                        salud_tab.setStyle(TableStyle([("BACKGROUND",(0,0),(-1,-1),colors.HexColor("#E9EEF3")),("GRID",(0,0),(-1,-1),4,colors.white),("VALIGN",(0,0),(-1,-1),"TOP")]))
+                        contenido.append(salud_tab)
+                        contenido.append(Paragraph(f"Cobertura de valoración inicial: {_cob_enf:.1f}% del universo filtrado.", estilo_cuerpo))
 
                         if not _enf_pdf.empty:
                             _res_enf = (
@@ -23479,6 +23509,11 @@ def modulo_reportes_institucionales_v169():
                                 )
                                 .sort_values("atenciones", ascending=False)
                             )
+                            _seguimiento = _res_enf[_res_enf.tipo_atencion.astype(str).str.contains('ADHERENCIA',case=False,na=False)]
+                            if not _seguimiento.empty:
+                                contenido.append(Paragraph("Continuidad terapéutica documentada", estilo_h2))
+                                for _, rr in _seguimiento.iterrows():
+                                    contenido.append(Paragraph(f"<b>{_texto_pdf(rr['tipo_atencion'])}</b>: {_fmt_num(rr['personas'])} personas · {_fmt_num(rr['atenciones'])} atenciones.", estilo_cuerpo))
                             _datos_enf = [[
                                 "Atención realizada",
                                 "Personas únicas",
@@ -23549,15 +23584,6 @@ def modulo_reportes_institucionales_v169():
                                 )
                             )
 
-                        contenido.append(
-                            Paragraph(
-                                "Los registros de Enfermería constituyen evidencia "
-                                "operativa de contribución al ODS 3 · Salud y bienestar. "
-                                "Esta relación no debe interpretarse como cumplimiento "
-                                "total del ODS.",
-                                estilo_nota
-                            )
-                        )
                         seccion += 1
 
                     # ------------------------------------------------
@@ -23921,88 +23947,17 @@ def modulo_reportes_institucionales_v169():
                         )
                     )
 
-                    # CAPÍTULO DE RESULTADOS: clasificación descriptiva verificable.
-                    # Se usan exclusivamente registros ya cargados en el informe.
-                    contenido.append(Paragraph(
-                        "Resultados institucionales, egresos e impacto verificable", estilo_h1
-                    ))
-                    contenido.append(Paragraph(
-                        "Los egresos registrados no equivalen automáticamente a egresos "
-                        "exitosos. Se discriminan los motivos únicamente cuando la fuente "
-                        "contiene una columna identificable. Las actividades y los resultados "
-                        "se presentan como indicadores diferentes.", estilo_cuerpo
-                    ))
-                    contenido.append(Paragraph("Los motivos históricos de salida y los fallecimientos se presentan por separado en el balance social inicial, según las observaciones disponibles.", estilo_cuerpo))
-                    contenido.append(Paragraph("Plan de Atención Integral (PAI)", estilo_h2))
-                    contenido.append(Paragraph(
-                        "El análisis institucional del PAI debe diferenciar personas "
-                        "únicas con plan, planes abiertos y cerrados, objetivos formulados "
-                        "y cumplidos, seguimientos y cierres por egreso. No se reportan "
-                        "cifras sin verificar la relación entre personas, planes y objetivos.",
-                        estilo_cuerpo
-                    ))
-                    contenido.append(Paragraph(
-                        "Acciones de política pública y contribución a los ODS", estilo_h2
-                    ))
-                    contenido.append(Paragraph(
-                        "Las acciones 2.1.2, 2.1.5, 2.1.7, 2.1.9 y 2.1.11 requieren "
-                        "consolidación de actividades, participantes únicos y resultados "
-                        "por acción. Su contribución a ODS 1, 3, 4, 5, 8, 10, 11, 16 y 17 "
-                        "debe sustentarse con intervenciones verificadas; una actividad "
-                        "no prueba por sí sola un cambio de bienestar.", estilo_cuerpo
-                    ))
-                    contenido.append(Paragraph(
-                        "Criterio de evaluación de impacto", estilo_h2
-                    ))
-                    contenido.append(Paragraph(
-                        "Distinguir cobertura (personas únicas), producción (atenciones "
-                        "y actividades), resultados (derechos restablecidos, objetivos "
-                        "cumplidos y egresos verificados) e impacto sostenido (seguimiento "
-                        "posterior y permanencia de los cambios). Sin mediciones de "
-                        "seguimiento comparables no se atribuye causalidad.", estilo_cuerpo
-                    ))
-
-                    conclusiones_pdf = [
-                        (
-                            f"El sistema consolida una base general de "
-                            f"{_fmt_num(total_base_general)} personas, "
-                            "permitiendo analizar características "
-                            "sociodemográficas, sociales y de seguimiento."
-                        ),
-                        (
-                            f"El análisis actual comprende "
-                            f"{_fmt_num(total)} registros según los filtros "
-                            "seleccionados, por lo que los resultados de "
-                            "caracterización deben leerse sobre ese universo."
-                        ),
-                        (
-                            f"La información de egresos se administra en una "
-                            f"base diferenciada, personas_caracterizacion, "
-                            f"en la cual se identifican "
-                            f"{_fmt_num(total_egresados)} egresos sin fallecimiento y {total_fallecimientos} cierres por fallecimiento."
-                        ),
-                        (
-                            "Las distribuciones presentadas permiten orientar "
-                            "la planeación de acciones de salud, inclusión "
-                            "social, educación, reducción de riesgos, "
-                            "acompañamiento psicosocial y seguimiento a "
-                            "trayectorias de superación de vida en calle."
-                        ),
-                        (
-                            "La calidad del dato debe mantenerse como un "
-                            "componente transversal del Observatorio, dado "
-                            "que las variables incompletas limitan la "
-                            "interpretación de los indicadores."
-                        )
-                    ]
-
-                    for c in conclusiones_pdf:
-                        contenido.append(
-                            Paragraph(
-                                "• " + _texto_pdf(c),
-                                estilo_cuerpo
-                            )
-                        )
+                    for columna, nombre, lectura in [(col_educacion, "Escolaridad", "Orientar procesos de formación según las necesidades educativas."), (col_ocupacion, "Inclusión productiva", "Priorizar rutas de orientación laboral y generación de ingresos."), (col_consumo, "Reducción de riesgos", "Ajustar la intervención a los patrones de consumo registrados.")]:
+                        serie = _normalizar_categoria_informe(_serie_limpia(df_f, columna), columna)
+                        if not serie.empty:
+                            conteo = serie.value_counts()
+                            contenido.append(Paragraph(nombre, estilo_h2))
+                            contenido.append(Paragraph(f"{_texto_pdf(str(conteo.index[0]))}: {_fmt_num(conteo.iloc[0])} de {_fmt_num(len(serie))} registros ({conteo.iloc[0]/len(serie):.1%}). {lectura}", estilo_cuerpo))
+                    contenido.append(Paragraph("Cobertura y continuidad institucional", estilo_h2))
+                    contenido.append(Paragraph(f"La base general reúne {_fmt_num(total_base_general)} personas; el universo filtrado incluye {_fmt_num(total_activos)} casos activos. Se documentan {_fmt_num(total_egresados)} eventos de egreso sin fallecimiento. Las rutas específicas se presentan en el balance social.", estilo_cuerpo))
+                    if not df_calidad.empty:
+                        contenido.append(Paragraph("Prioridades de información", estilo_h2))
+                        contenido.append(Paragraph(f"La completitud promedio de las variables clave es {promedio_calidad:.1f}%. Priorizar los campos incompletos identificados en el capítulo de calidad.", estilo_cuerpo))
 
                     # ------------------------------------------------
                     # METODOLOGÍA Y FUENTES
@@ -24092,7 +24047,7 @@ def modulo_reportes_institucionales_v169():
                             canvas.drawString(1.35*cm, letter[1]-0.9*cm, "OBSERVATORIO SOCIAL  /  PEREIRA 2026")
                         canvas.setFont("Helvetica", 8)
                         canvas.setFillColor(colors.HexColor("#44546A"))
-                        canvas.drawString(1.35*cm, 0.65*cm, "Asociación Ciudad Futuro | Observatorio Social | V16.244")
+                        canvas.drawString(1.35*cm, 0.65*cm, "Asociación Ciudad Futuro | Observatorio Social | V16.246")
                         canvas.drawRightString(letter[0]-1.35*cm, 0.65*cm, f"Página {doc.page}")
                         canvas.restoreState()
                     for elemento in contenido:
@@ -24113,7 +24068,7 @@ def modulo_reportes_institucionales_v169():
                             editorial.append(e if saltos <= 2 else CondPageBreak(5*cm))
                         elif isinstance(e, Table) and 2 <= len(e._cellvalues) <= 16:
                             _, altura = e.wrap(doc_pdf.width-12, doc_pdf.height-12)
-                            editorial.append(KeepTogether([e]) if altura < doc_pdf.height*0.65 else e)
+                            editorial.append(KeepTogether([e]) if altura < doc_pdf.height*0.28 else e)
                         else:
                             editorial.append(e)
                     contenido = editorial
@@ -24121,7 +24076,7 @@ def modulo_reportes_institucionales_v169():
                     buffer_pdf.seek(0)
 
                     st.session_state[
-                        "pdf_reporte_institucional_v16244"
+                        "pdf_reporte_institucional_v16246"
                     ] = buffer_pdf.getvalue()
 
                     for archivo_tmp in temporales:
@@ -24140,15 +24095,15 @@ def modulo_reportes_institucionales_v169():
                     )
 
             if st.session_state.get(
-                "pdf_reporte_institucional_v16244"
+                "pdf_reporte_institucional_v16246"
             ):
                 st.download_button(
                     "⬇️ Descargar informe institucional PDF",
                     data=st.session_state[
-                        "pdf_reporte_institucional_v16244"
+                        "pdf_reporte_institucional_v16246"
                     ],
                     file_name=(
-                        "Informe_Institucional_Observatorio_Social_V16_244_"
+                        "Informe_Institucional_Observatorio_Social_V16_246_"
                         + datetime.now().strftime("%Y%m%d_%H%M")
                         + ".pdf"
                     ),
@@ -24451,7 +24406,7 @@ def caracterizacion_habitabilidad_v1611():
 
         st.markdown("#### 📍 Trayectoria territorial")
 
-        # V16.245: opciones estructuradas; los valores antiguos se preservan para revisión.
+        # V16.246: opciones estructuradas; los valores antiguos se preservan para revisión.
         departamentos_hab = ["", "AMAZONAS", "ANTIOQUIA", "ARAUCA", "ATLÁNTICO", "BOGOTÁ D.C.", "BOLÍVAR", "BOYACÁ", "CALDAS", "CAQUETÁ", "CASANARE", "CAUCA", "CESAR", "CHOCÓ", "CÓRDOBA", "CUNDINAMARCA", "GUAINÍA", "GUAVIARE", "HUILA", "LA GUAJIRA", "MAGDALENA", "META", "NARIÑO", "NORTE DE SANTANDER", "PUTUMAYO", "QUINDÍO", "RISARALDA", "SAN ANDRÉS Y PROVIDENCIA", "SANTANDER", "SUCRE", "TOLIMA", "VALLE DEL CAUCA", "VAUPÉS", "VICHADA", "OTRO / EXTERIOR", "NO SABE", "NO INFORMA"]
         municipios_hab = {
             "BOGOTÁ D.C.": ["BOGOTÁ D.C."],
