@@ -284,7 +284,7 @@ def _agregar_capitulo_auditoria_institucional(contenido, engine, Paragraph, Page
         grande = ParagraphStyle('ods_num', parent=base, fontName='Helvetica-Bold', fontSize=19, leading=23, textColor=colors.HexColor(color))
         blanco = ParagraphStyle('ods_header', parent=base, fontName='Helvetica-Bold', textColor=colors.white, fontSize=11, leading=15)
         ancho = 16.5*cm
-        cab = Table([[Paragraph(escape(f'ODS {numero} | {nombre}'), blanco)]], colWidths=[ancho])
+        cab = Table([[Paragraph(f'{numero:02d}', ParagraphStyle('ods_badge',parent=blanco,fontSize=23,leading=26)), Paragraph(escape(nombre), blanco)]], colWidths=[2*cm,14.5*cm])
         cab.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,-1),colors.HexColor(color)),('TOPPADDING',(0,0),(-1,-1),8),('BOTTOMPADDING',(0,0),(-1,-1),8)]))
         contexto = contexto_ods
         problema = {1:"Exclusión económica y necesidad de protección social.",3:"Necesidades de atención sanitaria y reducción de riesgos.",8:"Barreras de acceso al empleo.",10:"Exclusión social y debilitamiento de redes de apoyo.",11:"Necesidad de alojamiento y autonomía residencial.",16:"Exposición a violencias y necesidad de protección."}.get(numero,"")
@@ -22012,7 +22012,7 @@ def modulo_reportes_institucionales_v169():
 
         with ex2:
             if st.button(
-                "📄 Generar informe institucional completo · V16.248",
+                "📄 Generar informe institucional completo · V16.249",
                 use_container_width=True,
                 key="generar_pdf_reportes"
             ):
@@ -22071,7 +22071,7 @@ def modulo_reportes_institucionales_v169():
                         leading=21,
                         textColor=colors.HexColor("#142D4E"),
                         spaceBefore=8,
-                        spaceAfter=8
+                        spaceAfter=8, keepWithNext=True
                     )
 
                     estilo_h2 = ParagraphStyle(
@@ -22082,7 +22082,7 @@ def modulo_reportes_institucionales_v169():
                         leading=14,
                         textColor=colors.HexColor("#198578"),
                         spaceBefore=8,
-                        spaceAfter=6
+                        spaceAfter=6, keepWithNext=True
                     )
 
                     estilo_cuerpo = ParagraphStyle(
@@ -22132,9 +22132,6 @@ def modulo_reportes_institucionales_v169():
                             ax.spines[["top", "right"]].set_visible(False)
                             ax.title.set_color("#142D4E")
                             ax.tick_params(colors="#44546A", labelsize=9)
-                            for patch in ax.patches:
-                                if hasattr(patch, "get_width"):
-                                    patch.set_facecolor("#2878A5")
                         tmp = tempfile.NamedTemporaryFile(
                             delete=False,
                             suffix=".png"
@@ -22150,9 +22147,24 @@ def modulo_reportes_institucionales_v169():
                         return tmp.name
 
                     anexos_247 = []
-                    def _distribucion_247(dataframe, columna):
+                    cruces_249 = {}
+                    def _validos_249(dataframe, columna):
                         serie = _normalizar_categoria_informe(_serie_limpia(dataframe, columna), columna)
-                        serie = serie[serie != "Sin información"]
+                        return serie[serie.notna() & serie.ne("Sin información")]
+                    df_calidad = df_calidad.copy()
+                    for columna, campo in campos_calidad:
+                        if columna == col_edad or not columna or columna not in df_f.columns:
+                            continue
+                        base = df_f
+                        if columna == col_modalidad and col_estado:
+                            base = df_f[df_f[col_estado].astype(str).str.strip().str.upper().eq("ACTIVO")]
+                            campo = "Modalidad (solo activos)"
+                        if len(base):
+                            n = len(_validos_249(base, columna))
+                            df_calidad.loc[df_calidad["Campo"].eq(campo), ["Completos", "Faltantes", "Completitud %"]] = [n, len(base)-n, round(100*n/len(base),1)]
+
+                    def _distribucion_247(dataframe, columna):
+                        serie = _validos_249(dataframe, columna)
                         conteo = serie.value_counts()
                         salida = conteo.rename_axis("categoria").reset_index(name="cantidad")
                         salida["porcentaje"] = salida["cantidad"] / max(1,len(serie))*100
@@ -22283,11 +22295,12 @@ def modulo_reportes_institucionales_v169():
                             ax.text(
                                 valor,
                                 i,
-                                f" {int(valor)}",
+                                f" {int(valor)}" + (f" ({graf.iloc[i].porcentaje:.1f}%)" if pd.notna(graf.iloc[i].porcentaje) else ""),
                                 va="center",
                                 fontsize=8
                             )
 
+                        ax.set_xlim(0,max(1,graf["cantidad"].max())*1.28)
                         ruta = _guardar_fig_mpl(fig)
                         contenido.append(
                             Image(
@@ -22309,33 +22322,6 @@ def modulo_reportes_institucionales_v169():
                             )
                         )
 
-                        datos = [[
-                            "Categoría",
-                            "Cantidad",
-                            "%"
-                        ]]
-
-                        for _, fila in tabla_cat.head(top_n).iterrows():
-                            datos.append([
-                                Paragraph(
-                                    _texto_pdf(fila["categoria"]),
-                                    estilo_cuerpo
-                                ),
-                                str(int(fila["cantidad"])),
-                                (f'{float(fila["porcentaje"]):.1f}%' if pd.notna(fila["porcentaje"]) else "—")
-                            ])
-
-                        contenido.append(
-                            _tabla_pdf(
-                                datos,
-                                anchos=[
-                                    11.3 * cm,
-                                    2.7 * cm,
-                                    2.5 * cm
-                                ],
-                                fontsize=8
-                            )
-                        )
                         return True
 
 
@@ -22668,6 +22654,7 @@ def modulo_reportes_institucionales_v169():
                         ("LEFTPADDING",(0,0),(-1,-1),22),("RIGHTPADDING",(0,0),(-1,-1),22),
                         ("TOPPADDING",(0,0),(-1,-1),10),("BOTTOMPADDING",(0,0),(-1,-1),10)]))
                     contenido.append(portada)
+                    franja = Table([["", "", ""]],colWidths=[6*cm]*3,rowHeights=[.22*cm]); franja.setStyle(TableStyle([("BACKGROUND",(0,0),(0,0),colors.HexColor("#198578")),("BACKGROUND",(1,0),(1,0),colors.HexColor("#2878A5")),("BACKGROUND",(2,0),(2,0),colors.HexColor("#A8D7E7"))])); contenido.append(franja)
                     portada_cifras = Table([[Paragraph(f"<b>{_fmt_num(v)}</b><br/>{e}", estilo_subportada) for v,e in [(total_base_general,"Registros generales"),(total_activos,"Casos activos"),(len(df_hab_rep),"Caracterizaciones vinculadas")]]], colWidths=[6*cm]*3)
                     portada_cifras.setStyle(TableStyle([("BACKGROUND",(0,0),(-1,-1),colors.HexColor("#E9EEF3")),("TOPPADDING",(0,0),(-1,-1),16),("BOTTOMPADDING",(0,0),(-1,-1),16)]))
                     contenido.append(portada_cifras)
@@ -23160,7 +23147,8 @@ def modulo_reportes_institucionales_v169():
                             )
 
                             def _normalizar_sector_pdf_v16183(valor):
-                                return normalizar_sector_pernocta_v16223(valor)
+                                sector = normalizar_sector_pernocta_v16223(valor)
+                                return {"CUBA-PARQUE":"CUBA", "PARQUE DE CUBA":"CUBA", "BARRIO CUBA":"CUBA", "NO INFORMA":"SIN DATO", "NO REPORTA":"SIN DATO"}.get(sector,sector)
 
                             territorial_pdf["sector"] = territorial_pdf["sector_original"].apply(
                                 _normalizar_sector_pdf_v16183
@@ -23228,13 +23216,8 @@ def modulo_reportes_institucionales_v169():
                                         str(int(r["Personas"])),
                                         f'{float(r["% con sector informado"]):.1f}%'
                                     ])
-                                contenido.append(
-                                    _tabla_pdf(
-                                        terr_datos,
-                                        anchos=[10.5 * cm, 3 * cm, 3 * cm],
-                                        fontsize=7.8
-                                    )
-                                )
+                                anexos_247.append(("Sectores de pernoctación",terr_datos,[10.5*cm,3*cm,3*cm]))
+                                contenido.append(Paragraph(f"Base territorial válida: {total_sector_pdf} registros. Los tres sectores principales reúnen {int(conteo_sector_pdf.head(3).Personas.sum())} registros ({100*conteo_sector_pdf.head(3).Personas.sum()/total_sector_pdf:.1f}%).", estilo_cuerpo))
 
                                 # Mapa esquemático: solo puntos con coordenadas validadas en Pereira.
                                 coords_sector_pdf = COORDENADAS_SECTORES_PERNOCTA
@@ -23254,12 +23237,9 @@ def modulo_reportes_institucionales_v169():
                                         mapa_pdf["lon"], mapa_pdf["lat"],
                                         s=tamanos, alpha=0.62, edgecolors="black", linewidths=0.6
                                     )
-                                    for _, r in mapa_pdf.iterrows():
-                                        ax.annotate(
-                                            f"{r['sector']} ({int(r['Personas'])})",
-                                            (r["lon"], r["lat"]),
-                                            xytext=(5, 5), textcoords="offset points", fontsize=7
-                                        )
+                                    mapa_pdf = mapa_pdf.reset_index(drop=True)
+                                    for i, r in mapa_pdf.iterrows():
+                                        ax.annotate(str(i+1),(r["lon"],r["lat"]),ha="center",va="center",fontsize=8,fontweight="bold",color="#142D4E",bbox=dict(facecolor="white",edgecolor="none",alpha=.8,pad=1))
                                     fondo_real = False
                                     try:
                                         import requests, math
@@ -23286,8 +23266,10 @@ def modulo_reportes_institucionales_v169():
                                     ax.set_ylim(4.792, 4.824)
                                     ax.grid(alpha=0.18)
                                     ruta = _guardar_fig_mpl(fig)
-                                    contenido.append(Spacer(1, 8))
+                                    contenido.append(Paragraph("Mapa territorial · sectores georreferenciados", estilo_h2))
                                     contenido.append(Image(ruta, width=17 * cm, height=10.2 * cm))
+                                    contenido.append(Paragraph(" · ".join(f"{i+1}. {_texto_pdf(r.sector)} ({int(r.Personas)})" for i,r in mapa_pdf.iterrows()),estilo_nota))
+                                    contenido.append(Paragraph("El área de los círculos aumenta con el número de registros; los números remiten a la leyenda.",estilo_nota))
                                     contenido.append(
                                         Paragraph(
                                             ("Cartografía base: OpenStreetMap. " if fondo_real else "Cartografía base no disponible; representación de coordenadas. ") + "Solo se representan sectores con "
@@ -23945,11 +23927,38 @@ def modulo_reportes_institucionales_v169():
                         cruz = pares.groupby(["a", "b"]).size().sort_values(ascending=False)
                         contenido.append(Paragraph(titulo, estilo_h2))
                         contenido.append(Paragraph(f"Base válida: {len(pares)} registros de {total}. Se presentan las diez combinaciones más frecuentes.", estilo_cuerpo))
-                        matriz = pd.crosstab(pares.a, pares.b, normalize="index")*100
-                        fig, ax = plt.subplots(figsize=(8.5, max(2.8, .5*len(matriz)+1.5)))
-                        matriz.plot.barh(stacked=True, ax=ax, colormap="tab20c", width=.75)
-                        ax.set_xlabel("Porcentaje dentro de cada categoría"); ax.set_ylabel(""); ax.legend(loc="upper center",bbox_to_anchor=(.5,-.23),ncol=2,fontsize=7)
-                        contenido.append(Image(_guardar_fig_mpl(fig),width=16.5*cm,height=8*cm))
+                        frecuencias = pd.crosstab(pares.a, pares.b)
+                        assert int(frecuencias.to_numpy().sum()) == len(pares)
+                        matriz = frecuencias.div(frecuencias.sum(axis=1), axis=0)*100
+                        assert ((matriz.sum(axis=1)-100).abs()<1e-8).all()
+                        cruces_249[titulo] = pd.crosstab(pares_completos.a, pares_completos.b)
+                        orden = frecuencias.sum(axis=1).sort_values().index
+                        frecuencias = frecuencias.loc[orden]; matriz = matriz.loc[orden]
+                        fig, ax = plt.subplots(figsize=(9, max(3.6,.55*len(matriz)+1.7)))
+                        paleta = ["#2878A5","#D97706","#198578","#7851A9","#B84C66","#64748B","#A58A38","#555555","#9AB9CC"]
+                        izquierda = pd.Series(0., index=orden)
+                        for j, categoria in enumerate(matriz.columns):
+                            valores = matriz[categoria]
+                            ax.barh(range(len(orden)), valores, left=izquierda, color=paleta[j%len(paleta)], label=str(categoria), height=.7)
+                            for i, (pct,n) in enumerate(zip(valores,frecuencias[categoria])):
+                                if pct >= 13:
+                                    ax.text(izquierda.iloc[i]+pct/2,i,f"{int(n)} | {pct:.1f}%",ha="center",va="center",fontsize=8,color="white")
+                            izquierda += valores
+                        ax.set_yticks(range(len(orden)), [f"{k} (n={int(frecuencias.loc[k].sum())})" for k in orden]); ax.set_xlim(0,100)
+                        ax.set_xlabel("Porcentaje dentro del nivel o grupo"); ax.legend(loc="upper center",bbox_to_anchor=(.5,-.17),ncol=3,fontsize=8,frameon=False)
+                        fig.tight_layout()
+                        contenido.append(Image(_guardar_fig_mpl(fig),width=17*cm,height=9*cm))
+                        fig, ax = plt.subplots(figsize=(9,max(3.5,.55*len(matriz)+1.8)))
+                        im=ax.imshow(matriz.to_numpy(), cmap="Blues", vmin=0,vmax=100,aspect="auto")
+                        ax.set_xticks(range(len(matriz.columns)), [str(x) for x in matriz.columns], rotation=30,ha="right")
+                        ax.set_yticks(range(len(orden)), [str(x) for x in orden])
+                        for i in range(len(orden)):
+                            for j in range(len(matriz.columns)):
+                                pct=matriz.iloc[i,j]; n=frecuencias.iloc[i,j]
+                                ax.text(j,i,f"{int(n)}\n{pct:.1f}%",ha="center",va="center",fontsize=8,color="white" if pct>55 else "#142D4E")
+                        fig.colorbar(im,ax=ax,label="% del grupo"); fig.tight_layout()
+                        contenido.append(Paragraph("Mapa de calor · cantidad y porcentaje por grupo", estilo_h2))
+                        contenido.append(Image(_guardar_fig_mpl(fig),width=17*cm,height=9*cm))
                         completas = pares_completos.groupby(["a","b"]).size().sort_values(ascending=False)
                         bases = pares_completos.groupby("a").size()
                         anexos_247.append((titulo, [["Categoría 1","Categoría 2","n","% base","% fila"]]+[[Paragraph(_texto_pdf(i),estilo_nota),Paragraph(_texto_pdf(j),estilo_nota),str(n),f"{100*n/len(pares_completos):.1f}%",f"{100*n/bases.loc[i]:.1f}%"] for (i,j),n in completas.items()], [5.2*cm,5.2*cm,1.6*cm,2.2*cm,2.3*cm]))
@@ -23983,8 +23992,7 @@ def modulo_reportes_institucionales_v169():
                         (col_consumo, "tipo de consumo"),
                         (col_etnia, "grupo étnico")
                     ]:
-                        serie = _normalizar_categoria_informe(_serie_limpia(df_f, columna), columna)
-                        serie = serie[serie != "Sin información"]
+                        serie = _validos_249(df_f, columna)
                         if not serie.empty:
                             conteo = serie.value_counts()
                             cat = str(conteo.index[0])
@@ -24032,9 +24040,18 @@ def modulo_reportes_institucionales_v169():
                         )
                     )
 
+                    if "Escolaridad y ocupación" in cruces_249:
+                        m = cruces_249["Escolaridad y ocupación"]
+                        if "Básica primaria" in m.index and "DESEMPLEADO" in m.columns:
+                            n = int(m.loc["Básica primaria","DESEMPLEADO"]); base = int(m.to_numpy().sum()); grupo = int(m.loc["Básica primaria"].sum())
+                            contenido.append(Paragraph("Exclusión educativa y laboral acumulada",estilo_h2))
+                            contenido.append(Paragraph(f"{n} de {base} registros con ambas variables ({100*n/base:.1f}%) reúnen escolaridad primaria y desempleo. Dentro de primaria, {100*n/grupo:.1f}% registra desempleo. Priorizar formación flexible y acompañamiento laboral; evaluar continuidad de la vinculación.",estilo_cuerpo))
+                    if 'total_sector_pdf' in locals() and total_sector_pdf:
+                        n = int(conteo_sector_pdf.head(3).Personas.sum())
+                        contenido.append(Paragraph("Concentración territorial",estilo_h2))
+                        contenido.append(Paragraph(f"Los tres sectores más frecuentes reúnen {n} de {total_sector_pdf} registros ({100*n/total_sector_pdf:.1f}%). Orientar jornadas extramurales según esta concentración y actualizar periódicamente la distribución.",estilo_cuerpo))
                     for columna, nombre, lectura in [(col_educacion, "Escolaridad", "Orientar procesos de formación según las necesidades educativas."), (col_ocupacion, "Inclusión productiva", "Priorizar rutas de orientación laboral y generación de ingresos."), (col_consumo, "Reducción de riesgos", "Ajustar la intervención a los patrones de consumo registrados.")]:
-                        serie = _normalizar_categoria_informe(_serie_limpia(df_f, columna), columna)
-                        serie = serie[serie != "Sin información"]
+                        serie = _validos_249(df_f, columna)
                         if not serie.empty:
                             conteo = serie.value_counts()
                             contenido.append(Paragraph(nombre, estilo_h2))
@@ -24148,7 +24165,7 @@ def modulo_reportes_institucionales_v169():
                             canvas.drawString(1.35*cm, letter[1]-0.9*cm, "OBSERVATORIO SOCIAL  /  PEREIRA 2026")
                         canvas.setFont("Helvetica", 8)
                         canvas.setFillColor(colors.HexColor("#44546A"))
-                        canvas.drawString(1.35*cm, 0.65*cm, "Asociación Ciudad Futuro | Observatorio Social | V16.248")
+                        canvas.drawString(1.35*cm, 0.65*cm, "Asociación Ciudad Futuro | Observatorio Social | V16.249")
                         canvas.drawRightString(letter[0]-1.35*cm, 0.65*cm, f"Página {doc.page}")
                         canvas.restoreState()
                     for elemento in contenido:
@@ -24177,7 +24194,7 @@ def modulo_reportes_institucionales_v169():
                     buffer_pdf.seek(0)
 
                     st.session_state[
-                        "pdf_reporte_institucional_v16247"
+                        "pdf_reporte_institucional_v16249"
                     ] = buffer_pdf.getvalue()
 
                     for archivo_tmp in temporales:
@@ -24196,15 +24213,15 @@ def modulo_reportes_institucionales_v169():
                     )
 
             if st.session_state.get(
-                "pdf_reporte_institucional_v16247"
+                "pdf_reporte_institucional_v16249"
             ):
                 st.download_button(
                     "⬇️ Descargar informe institucional PDF",
                     data=st.session_state[
-                        "pdf_reporte_institucional_v16247"
+                        "pdf_reporte_institucional_v16249"
                     ],
                     file_name=(
-                        "Informe_Institucional_Observatorio_Social_V16_248_"
+                        "Informe_Institucional_Observatorio_Social_V16_249_"
                         + datetime.now().strftime("%Y%m%d_%H%M")
                         + ".pdf"
                     ),
