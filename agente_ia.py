@@ -278,7 +278,7 @@ def _agregar_capitulo_auditoria_institucional(contenido, engine, Paragraph, Page
         from reportlab.lib.styles import ParagraphStyle
         from reportlab.lib.enums import TA_LEFT
         base = ParagraphStyle('ods_base', parent=estilo_cuerpo, fontSize=9, leading=12, spaceAfter=0)
-        grande = ParagraphStyle('ods_num', parent=base, fontName='Helvetica-Bold', fontSize=19, leading=23, textColor=colors.HexColor(color))
+        grande = ParagraphStyle('ods_num', parent=base, fontName='Helvetica-Bold', fontSize=21, leading=25, textColor=colors.HexColor(color))
         blanco = ParagraphStyle('ods_header', parent=base, fontName='Helvetica-Bold', textColor=colors.white, fontSize=11, leading=15)
         ancho = 16.5*cm
         cab = Table([[Paragraph(f'{numero:02d}', ParagraphStyle('ods_badge',parent=blanco,fontSize=23,leading=26)), Paragraph(escape(nombre), blanco)]], colWidths=[2*cm,14.5*cm])
@@ -22008,8 +22008,9 @@ def modulo_reportes_institucionales_v169():
             )
 
         with ex2:
+            modalidad_pdf = st.selectbox("Modalidad del informe", ["Institucional", "Ejecutivo", "Técnico completo"], key="modalidad_pdf_251")
             if st.button(
-                "📄 Generar informe institucional completo · V16.250",
+                "📄 Generar informe · V16.251",
                 use_container_width=True,
                 key="generar_pdf_reportes"
             ):
@@ -22667,7 +22668,7 @@ def modulo_reportes_institucionales_v169():
                         [Paragraph("Habitabilidad en calle en Pereira", estilo_titulo_blanco)],
                         [Paragraph("Caracterización, atención integral y resultados sociales", estilo_sub_blanco)],
                         [Spacer(1, 1.0*cm)],
-                        [Paragraph("INFORME INSTITUCIONAL", estilo_marca)]], colWidths=[18*cm])
+                        [Paragraph("INFORME " + modalidad_pdf.upper(), estilo_marca)]], colWidths=[18*cm])
                     portada.setStyle(TableStyle([("BACKGROUND",(0,0),(-1,-1),colors.HexColor("#142D4E")),
                         ("LEFTPADDING",(0,0),(-1,-1),22),("RIGHTPADDING",(0,0),(-1,-1),22),
                         ("TOPPADDING",(0,0),(-1,-1),10),("BOTTOMPADDING",(0,0),(-1,-1),10)]))
@@ -22678,7 +22679,7 @@ def modulo_reportes_institucionales_v169():
                     contenido.append(portada_cifras)
                     contenido.append(Spacer(1, 0.6*cm))
 
-                    contenido.append(Paragraph("<b>Investigación social · Pereira, Risaralda</b>", estilo_h1))
+                    contenido.append(Paragraph("<b>Investigación social · Pereira, Risaralda</b>", estilo_subportada))
                     contenido.append(Paragraph("Perfil poblacional / Trayectorias de calle / Derechos / Atención integral / Resultados", estilo_cuerpo))
                     contenido.append(Paragraph("Corte de información: " + datetime.now().strftime("%d/%m/%Y %H:%M"), estilo_nota))
                     contenido.append(Paragraph(f"Universo del análisis: {_fmt_num(total)} registros", estilo_cuerpo))
@@ -22721,7 +22722,7 @@ def modulo_reportes_institucionales_v169():
                     contenido.append(PageBreak())
                     contenido.append(Paragraph("Contenido", estilo_subportada))
                     indice = TableOfContents()
-                    indice.levelStyles = [ParagraphStyle("Indice244", parent=estilo_cuerpo, fontSize=9, leading=12, spaceAfter=1)]
+                    indice.levelStyles = [ParagraphStyle("Indice244", parent=estilo_cuerpo, fontSize=8, leading=9.5, spaceAfter=0)]
                     contenido.append(indice)
                     contenido.append(PageBreak())
                     contenido.append(
@@ -22831,6 +22832,7 @@ def modulo_reportes_institucionales_v169():
                         estilo_h1, estilo_h2, estilo_cuerpo, _tabla_pdf, cm, contexto={"ocupacion": _normalizar_categoria_informe(_serie_limpia(df_f,col_ocupacion),col_ocupacion), "consumo": _normalizar_categoria_informe(_serie_limpia(df_f,col_consumo),col_consumo)}
                     )
 
+                    corte_ejecutivo = len(contenido)
                     # ------------------------------------------------
                     # 2. PERFIL POR EDAD Y SEXO
                     # ------------------------------------------------
@@ -23212,7 +23214,7 @@ def modulo_reportes_institucionales_v169():
                                         f'{float(r["% con sector informado"]):.1f}%'
                                     ])
                                 anexos_247.append(("Sectores de pernoctación",terr_datos,[10.5*cm,3*cm,3*cm]))
-                                contenido.append(Paragraph(f"Base territorial válida: {total_sector_pdf} registros. Los tres sectores principales reúnen {int(conteo_sector_pdf.head(3).Personas.sum())} registros ({100*conteo_sector_pdf.head(3).Personas.sum()/total_sector_pdf:.1f}%).", estilo_cuerpo))
+                                contenido.append(Paragraph(f"Base territorial válida: {total_sector_pdf} de {_territorial_total} caracterizaciones ({100*total_sector_pdf/max(1,_territorial_total):.1f}%). Los tres sectores principales reúnen {int(conteo_sector_pdf.head(3).Personas.sum())} registros ({100*conteo_sector_pdf.head(3).Personas.sum()/total_sector_pdf:.1f}%).", estilo_cuerpo))
 
                                 # Mapa esquemático: solo puntos con coordenadas validadas en Pereira.
                                 coords_sector_pdf = COORDENADAS_SECTORES_PERNOCTA
@@ -23262,7 +23264,7 @@ def modulo_reportes_institucionales_v169():
                                     ax.grid(alpha=0.18)
                                     ruta = _guardar_fig_mpl(fig)
                                     contenido.append(Paragraph("Mapa territorial · sectores georreferenciados", estilo_h2))
-                                    contenido.append(Image(ruta, width=17 * cm, height=10.2 * cm))
+                                    contenido.append(Image(ruta, width=18 * cm, height=14 * cm))
                                     contenido.append(Paragraph(" · ".join(f"{i+1}. {_texto_pdf(r.sector)} ({int(r.Personas)})" for i,r in mapa_pdf.iterrows()),estilo_nota))
                                     contenido.append(Paragraph("El área de los círculos aumenta con el número de registros; los números remiten a la leyenda.",estilo_nota))
                                     contenido.append(
@@ -23280,7 +23282,7 @@ def modulo_reportes_institucionales_v169():
                                 if not pendientes_pdf.empty:
                                     contenido.append(
                                         Paragraph(
-                                            f"Sectores identificados sin ubicación precisa: <b>{len(pendientes_pdf)}</b>. "
+                                            f"Sectores sin coordenadas: <b>{len(pendientes_pdf)}</b>; registros asociados: {int(pendientes_pdf.Personas.sum())}. "
                                             "Estos registros sí se incluyen en las frecuencias territoriales.",
                                             estilo_cuerpo
                                         )
@@ -23548,6 +23550,10 @@ def modulo_reportes_institucionales_v169():
                         contenido.append(Paragraph(f"Cobertura de valoración inicial: {_cob_enf:.1f}% del universo filtrado.", estilo_cuerpo))
 
                         if not _enf_pdf.empty:
+                            _tipo = _enf_pdf["tipo_atencion"].astype(str).str.upper().str.normalize("NFKD").str.encode("ascii", errors="ignore").str.decode("ascii")
+                            _ing = set(_enf_pdf.loc[_tipo.str.contains(r"VALORACION.*INGRESO|INGRESO.*VALORACION", regex=True, na=False), "documento_usuario"].dropna().astype(str).str.strip()) - {""}
+                            _ini = set(df_enf_val_rep["documento_usuario"].dropna().astype(str).str.strip()) - {""} if not df_enf_val_rep.empty else set()
+                            contenido.append(Paragraph(f"Conciliación de personas únicas: {len(_ing)} con atención rotulada como valoración de ingreso; {len(_ini)} con ficha inicial; {len(_ing & _ini)} en ambas fuentes; {len(_ing-_ini)} solo ingreso y {len(_ini-_ing)} solo ficha inicial. Son fuentes distintas; revisar diferencias individualmente.", estilo_nota))
                             _res_enf = (
                                 _enf_pdf.groupby("tipo_atencion", as_index=False)
                                 .agg(
@@ -23766,7 +23772,7 @@ def modulo_reportes_institucionales_v169():
                     _hallazgo_250('via_administracion_consumo', {'INYECTADA / INTRAVENOSA'}, 'Riesgos asociados a la vía de administración', 'Orientar prevención de infecciones y acceso a atención sanitaria según valoración profesional.')
                     contenido.append(Paragraph("Restablecimiento de derechos y salud", estilo_h1))
                     _hallazgo_250('cedulado', {'SÍ','SI'}, 'Acceso a la identidad', 'La cedulación reportada debe distinguirse de la disponibilidad efectiva del documento.')
-                    _hallazgo_250('documento_fisico', {'NO'}, 'Disponibilidad del documento físico', 'Priorizar gestión documental y seguimiento de trámites de identificación.')
+                    _hallazgo_250('documento_fisico', {'NO'}, 'Personas sin documento de identidad físico', 'Priorizar gestión documental y seguimiento de trámites de identificación.')
                     for _titulo, _col in [
                         ("Régimen de aseguramiento en salud", "regimen_salud"),
                         ("EPS / entidad aseguradora", "eps_nombre"),
@@ -24063,7 +24069,7 @@ def modulo_reportes_institucionales_v169():
                             conteo = serie.value_counts()
                             contenido.append(Paragraph(nombre, estilo_h2))
                             contenido.append(Paragraph(f"{_texto_pdf(str(conteo.index[0]))}: {_fmt_num(conteo.iloc[0])} de {_fmt_num(len(serie))} registros ({conteo.iloc[0]/len(serie):.1%}). {lectura}", estilo_cuerpo))
-                    _hallazgo_250('documento_fisico', {'NO'}, 'Derechos e inclusión administrativa', 'Priorizar recuperación documental y verificar acceso efectivo a servicios.')
+                    _hallazgo_250('documento_fisico', {'NO'}, 'Personas sin documento físico', 'Priorizar recuperación documental y verificar acceso efectivo a servicios.')
                     _hallazgo_250('frecuencia_consumo', {'DIARIO','VARIAS VECES AL DIA','VARIAS VECES AL DÍA'}, 'Salud y reducción de daños', 'Diferenciar acompañamiento según intensidad de consumo y necesidades clínicas; medir continuidad de atención.')
                     contenido.append(Paragraph("Cobertura y continuidad institucional", estilo_h2))
                     contenido.append(Paragraph(f"La base general reúne {_fmt_num(total_base_general)} personas; el universo filtrado incluye {_fmt_num(total_activos)} casos activos. Se documentan {_fmt_num(total_egresados)} eventos de egreso sin fallecimiento. Las rutas específicas se presentan en el balance social.", estilo_cuerpo))
@@ -24149,6 +24155,7 @@ def modulo_reportes_institucionales_v169():
                     # Anexo estadístico completo de variables generales y cruces
                     # CREAR DOCUMENTO
                     # ------------------------------------------------
+                    corte_anexos = len(contenido)
                     contenido.append(PageBreak())
                     contenido.append(Paragraph("Anexo estadístico · distribuciones completas", estilo_h1))
                     for nombre,col in [("Escolaridad",col_educacion),("Ocupación",col_ocupacion),("Procedencia",col_procedencia),("Consumo",col_consumo),("Salud",col_salud),("Estado",col_estado),("Modalidad",col_modalidad),("Sexo",col_sexo),("Etnia",col_etnia),("Orientación sexual",col_orientacion),("Salud mental registrada",col_enfermedad)]:
@@ -24166,6 +24173,10 @@ def modulo_reportes_institucionales_v169():
                         contenido.append(Image(ruta,width=18*cm,height=11*cm))
                     for nombre,filas,anchos in anexos_247:
                         contenido.append(Paragraph(nombre,estilo_h2)); contenido.append(_tabla_pdf(filas,anchos=anchos,fontsize=8))
+                    if modalidad_pdf == "Ejecutivo":
+                        contenido = contenido[:corte_ejecutivo]
+                    elif modalidad_pdf == "Institucional":
+                        contenido = contenido[:corte_anexos]
                     def _pie_institucional(canvas, doc):
                         canvas.saveState()
                         canvas.setStrokeColor(colors.HexColor("#198578"))
@@ -24177,7 +24188,7 @@ def modulo_reportes_institucionales_v169():
                             canvas.drawString(1.35*cm, letter[1]-0.9*cm, "OBSERVATORIO SOCIAL  /  PEREIRA 2026")
                         canvas.setFont("Helvetica", 8)
                         canvas.setFillColor(colors.HexColor("#44546A"))
-                        canvas.drawString(1.35*cm, 0.65*cm, "Asociación Ciudad Futuro | Observatorio Social | V16.250")
+                        canvas.drawString(1.35*cm, 0.65*cm, "Asociación Ciudad Futuro | Observatorio Social | V16.251")
                         canvas.drawRightString(letter[0]-1.35*cm, 0.65*cm, f"Página {doc.page}")
                         canvas.restoreState()
                     for elemento in contenido:
@@ -24195,13 +24206,13 @@ def modulo_reportes_institucionales_v169():
                             e.keepWithNext = True
                     saltos = 0
                     editorial = []
-                    for e in contenido:
+                    for i_anexo, e in enumerate(contenido):
                         if isinstance(e, PageBreak):
                             saltos += 1
-                            editorial.append(e if saltos <= 2 else CondPageBreak(8*cm))
+                            editorial.append(e if saltos <= 2 or (modalidad_pdf == "Técnico completo" and i_anexo == corte_anexos) else CondPageBreak(4*cm))
                         elif isinstance(e, Table) and 2 <= len(e._cellvalues) <= 16:
                             _, altura = e.wrap(doc_pdf.width-12, doc_pdf.height-12)
-                            editorial.append(e)
+                            editorial.append(KeepTogether([e]) if altura < doc_pdf.height * .40 else e)
                         else:
                             editorial.append(e)
                     contenido = editorial
@@ -24209,7 +24220,7 @@ def modulo_reportes_institucionales_v169():
                     buffer_pdf.seek(0)
 
                     st.session_state[
-                        "pdf_reporte_institucional_v16250"
+                        "pdf_reporte_institucional_v16251_" + modalidad_pdf
                     ] = buffer_pdf.getvalue()
 
                     for archivo_tmp in temporales:
@@ -24228,15 +24239,15 @@ def modulo_reportes_institucionales_v169():
                     )
 
             if st.session_state.get(
-                "pdf_reporte_institucional_v16250"
+                "pdf_reporte_institucional_v16251_" + modalidad_pdf
             ):
                 st.download_button(
                     "⬇️ Descargar informe institucional PDF",
                     data=st.session_state[
-                        "pdf_reporte_institucional_v16250"
+                        "pdf_reporte_institucional_v16251_" + modalidad_pdf
                     ],
                     file_name=(
-                        "Informe_Institucional_Observatorio_Social_V16_250_"
+                        "Informe_" + modalidad_pdf + "_Observatorio_Social_V16_251_"
                         + datetime.now().strftime("%Y%m%d_%H%M")
                         + ".pdf"
                     ),
