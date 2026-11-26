@@ -21895,7 +21895,7 @@ def modulo_reportes_institucionales_v169():
 
         with ex2:
             if st.button(
-                "📄 Generar informe institucional completo · V16.242",
+                "📄 Generar informe institucional completo · V16.243",
                 use_container_width=True,
                 key="generar_pdf_reportes"
             ):
@@ -21911,8 +21911,8 @@ def modulo_reportes_institucionales_v169():
                         pagesize=letter,
                         rightMargin=1.35 * cm,
                         leftMargin=1.35 * cm,
-                        topMargin=1.25 * cm,
-                        bottomMargin=1.25 * cm,
+                        topMargin=1.65 * cm,
+                        bottomMargin=1.55 * cm,
                         title="Informe Institucional - Observatorio Social",
                         author="Asociación Ciudad Futuro"
                     )
@@ -21924,9 +21924,9 @@ def modulo_reportes_institucionales_v169():
                         parent=estilos["Title"],
                         alignment=TA_CENTER,
                         fontName="Helvetica-Bold",
-                        fontSize=22,
-                        leading=27,
-                        textColor=colors.HexColor("#17365D"),
+                        fontSize=29,
+                        leading=35,
+                        textColor=colors.HexColor("#142D4E"),
                         spaceAfter=12
                     )
 
@@ -21945,9 +21945,9 @@ def modulo_reportes_institucionales_v169():
                         "H1Reporte",
                         parent=estilos["Heading1"],
                         fontName="Helvetica-Bold",
-                        fontSize=15,
-                        leading=18,
-                        textColor=colors.HexColor("#17365D"),
+                        fontSize=17,
+                        leading=21,
+                        textColor=colors.HexColor("#142D4E"),
                         spaceBefore=8,
                         spaceAfter=8
                     )
@@ -21958,7 +21958,7 @@ def modulo_reportes_institucionales_v169():
                         fontName="Helvetica-Bold",
                         fontSize=11.5,
                         leading=14,
-                        textColor=colors.HexColor("#1F4E78"),
+                        textColor=colors.HexColor("#198578"),
                         spaceBefore=8,
                         spaceAfter=6
                     )
@@ -21967,8 +21967,8 @@ def modulo_reportes_institucionales_v169():
                         "CuerpoReporte",
                         parent=estilos["BodyText"],
                         fontName="Helvetica",
-                        fontSize=9,
-                        leading=12.5,
+                        fontSize=10,
+                        leading=14,
                         textColor=colors.HexColor("#333333"),
                         spaceAfter=6
                     )
@@ -21989,7 +21989,7 @@ def modulo_reportes_institucionales_v169():
                         fontName="Helvetica-Bold",
                         fontSize=9.5,
                         leading=12.5,
-                        textColor=colors.HexColor("#17365D"),
+                        textColor=colors.HexColor("#142D4E"),
                         spaceAfter=6
                     )
 
@@ -22006,6 +22006,13 @@ def modulo_reportes_institucionales_v169():
                             return str(valor)
 
                     def _guardar_fig_mpl(fig):
+                        for ax in fig.axes:
+                            ax.spines[["top", "right"]].set_visible(False)
+                            ax.title.set_color("#142D4E")
+                            ax.tick_params(colors="#44546A", labelsize=9)
+                            for patch in ax.patches:
+                                if hasattr(patch, "get_width"):
+                                    patch.set_facecolor("#2878A5")
                         tmp = tempfile.NamedTemporaryFile(
                             delete=False,
                             suffix=".png"
@@ -22013,7 +22020,7 @@ def modulo_reportes_institucionales_v169():
                         tmp.close()
                         fig.savefig(
                             tmp.name,
-                            dpi=170,
+                            dpi=220,
                             bbox_inches="tight"
                         )
                         plt.close(fig)
@@ -22029,7 +22036,7 @@ def modulo_reportes_institucionales_v169():
                         tabla.setStyle(TableStyle([
                             (
                                 "BACKGROUND", (0, 0), (-1, 0),
-                                colors.HexColor("#17365D")
+                                colors.HexColor("#142D4E")
                             ),
                             (
                                 "TEXTCOLOR", (0, 0), (-1, 0),
@@ -22040,8 +22047,8 @@ def modulo_reportes_institucionales_v169():
                                 "Helvetica-Bold"
                             ),
                             (
-                                "GRID", (0, 0), (-1, -1),
-                                0.35, colors.HexColor("#B7C9DD")
+                                "LINEBELOW", (0, 0), (-1, -1),
+                                0.35, colors.HexColor("#DCE5EB")
                             ),
                             (
                                 "ROWBACKGROUNDS", (0, 1), (-1, -1),
@@ -22424,7 +22431,7 @@ def modulo_reportes_institucionales_v169():
                                 key=lambda x: x["cantidad"],
                                 reverse=True
                             )
-                            for item in centros[:10]:
+                            for item in centros[:3]:
                                 nombre_corto = item["nombre"]
                                 if len(nombre_corto) > 18:
                                     nombre_corto = nombre_corto[:18]
@@ -22435,7 +22442,7 @@ def modulo_reportes_institucionales_v169():
                                     ha="center",
                                     va="center",
                                     fontsize=6.5,
-                                    color="#17365D",
+                                    color="#142D4E",
                                     fontweight="bold"
                                 )
 
@@ -22456,7 +22463,7 @@ def modulo_reportes_institucionales_v169():
 
                             fig_pdf.savefig(
                                 tmp_map.name,
-                                dpi=180,
+                                dpi=220,
                                 bbox_inches="tight"
                             )
                             plt.close(fig_pdf)
@@ -22516,28 +22523,25 @@ def modulo_reportes_institucionales_v169():
                     # ------------------------------------------------
                     # PORTADA
                     # ------------------------------------------------
-                    contenido.append(Spacer(1, 1.6 * cm))
-                    contenido.append(
-                        Paragraph(
-                            "OBSERVATORIO SOCIAL",
-                            estilo_portada
-                        )
-                    )
-                    contenido.append(
-                        Paragraph(
-                            "Habitante de Calle - Pereira 2026",
-                            estilo_subportada
-                        )
-                    )
-                    contenido.append(Spacer(1, 0.45 * cm))
-                    contenido.append(
-                        Paragraph(
-                            "INFORME INSTITUCIONAL DE CARACTERIZACIÓN, "
-                            "SEGUIMIENTO E IMPACTO",
-                            estilo_portada
-                        )
-                    )
-                    contenido.append(Spacer(1, 0.8 * cm))
+                    estilo_marca = ParagraphStyle("Marca243", parent=estilo_cuerpo,
+                        fontName="Helvetica-Bold", fontSize=12, leading=16,
+                        textColor=colors.HexColor("#A8D7E7"))
+                    estilo_titulo_blanco = ParagraphStyle("Titulo243", parent=estilo_portada,
+                        alignment=TA_LEFT, textColor=colors.white, fontSize=32, leading=38)
+                    estilo_sub_blanco = ParagraphStyle("Sub243", parent=estilo_cuerpo,
+                        textColor=colors.white, fontSize=15, leading=21)
+                    portada = Table([[Paragraph("ASOCIACIÓN CIUDAD FUTURO · 2026", estilo_marca)],
+                        [Spacer(1, 1.2*cm)],
+                        [Paragraph("OBSERVATORIO SOCIAL", estilo_marca)],
+                        [Paragraph("Habitabilidad en calle en Pereira", estilo_titulo_blanco)],
+                        [Paragraph("Caracterización, atención integral y resultados sociales", estilo_sub_blanco)],
+                        [Spacer(1, 1.0*cm)],
+                        [Paragraph("INFORME INSTITUCIONAL", estilo_marca)]], colWidths=[18*cm])
+                    portada.setStyle(TableStyle([("BACKGROUND",(0,0),(-1,-1),colors.HexColor("#142D4E")),
+                        ("LEFTPADDING",(0,0),(-1,-1),22),("RIGHTPADDING",(0,0),(-1,-1),22),
+                        ("TOPPADDING",(0,0),(-1,-1),10),("BOTTOMPADDING",(0,0),(-1,-1),10)]))
+                    contenido.append(portada)
+                    contenido.append(Spacer(1, 0.6*cm))
 
                     portada_datos = [
                         ["Entidad / Operador", "Asociación Ciudad Futuro"],
@@ -22698,6 +22702,17 @@ def modulo_reportes_institucionales_v169():
                         ]
                     ]
 
+                    estilo_cifra = ParagraphStyle("Cifra243", parent=estilo_h1, fontSize=26, leading=31, spaceAfter=3)
+                    estilo_etiqueta = ParagraphStyle("Etiqueta243", parent=estilo_cuerpo, fontSize=9, leading=12)
+                    indicadores = [(total_base_general,"Personas en base general"),(total_activos,"Activos en universo filtrado"),
+                        (total_egresados,"Registros de egreso sin fallecimiento"),(urbano_activos,"Activos urbano"),
+                        (granja_activos,"Activos granja"),(total_fallecimientos,"Cierres por fallecimiento")]
+                    tarjetas = Table([[ [Paragraph(_fmt_num(v), estilo_cifra), Paragraph(e, estilo_etiqueta)]
+                        for v,e in indicadores[i:i+3]] for i in (0,3)], colWidths=[5.8*cm]*3)
+                    tarjetas.setStyle(TableStyle([("BACKGROUND",(0,0),(-1,-1),colors.HexColor("#E9EEF3")),
+                        ("GRID",(0,0),(-1,-1),5,colors.white),("VALIGN",(0,0),(-1,-1),"TOP"),
+                        ("TOPPADDING",(0,0),(-1,-1),12),("BOTTOMPADDING",(0,0),(-1,-1),12)]))
+                    contenido.append(tarjetas)
                     contenido.append(Spacer(1, 8))
                     contenido.append(
                         _tabla_pdf(
@@ -24034,16 +24049,34 @@ def modulo_reportes_institucionales_v169():
                     # ------------------------------------------------
                     def _pie_institucional(canvas, doc):
                         canvas.saveState()
+                        canvas.setStrokeColor(colors.HexColor("#198578"))
+                        canvas.setLineWidth(1.2)
+                        canvas.line(1.35*cm, 1.05*cm, letter[0]-1.35*cm, 1.05*cm)
+                        if doc.page > 1:
+                            canvas.setFont("Helvetica-Bold", 8)
+                            canvas.setFillColor(colors.HexColor("#142D4E"))
+                            canvas.drawString(1.35*cm, letter[1]-0.9*cm, "OBSERVATORIO SOCIAL  /  PEREIRA 2026")
                         canvas.setFont("Helvetica", 8)
                         canvas.setFillColor(colors.HexColor("#44546A"))
-                        canvas.drawString(1.35*cm, 0.65*cm, "Asociación Ciudad Futuro | Observatorio Social | V16.242")
+                        canvas.drawString(1.35*cm, 0.65*cm, "Asociación Ciudad Futuro | Observatorio Social | V16.243")
                         canvas.drawRightString(letter[0]-1.35*cm, 0.65*cm, f"Página {doc.page}")
                         canvas.restoreState()
+                    for elemento in contenido:
+                        if isinstance(elemento, Image) and elemento.imageWidth and elemento.imageHeight:
+                            escala = min(elemento.drawWidth/elemento.imageWidth, elemento.drawHeight/elemento.imageHeight)
+                            elemento.drawWidth = elemento.imageWidth*escala
+                            elemento.drawHeight = elemento.imageHeight*escala
+                    # Mantener encabezados con el siguiente elemento y evitar saltos redundantes.
+                    from reportlab.platypus import CondPageBreak
+                    for elemento in contenido:
+                        if isinstance(elemento, Paragraph) and elemento.style.name in ("H1Reporte", "H2Reporte"):
+                            elemento.keepWithNext = True
+                    contenido = [CondPageBreak(4*cm) if isinstance(e, PageBreak) and i > 0 and i != next((j for j,x in enumerate(contenido) if isinstance(x, PageBreak)), -1) else e for i,e in enumerate(contenido)]
                     doc_pdf.build(contenido, onFirstPage=_pie_institucional, onLaterPages=_pie_institucional)
                     buffer_pdf.seek(0)
 
                     st.session_state[
-                        "pdf_reporte_institucional_v16242"
+                        "pdf_reporte_institucional_v16243"
                     ] = buffer_pdf.getvalue()
 
                     for archivo_tmp in temporales:
@@ -24062,15 +24095,15 @@ def modulo_reportes_institucionales_v169():
                     )
 
             if st.session_state.get(
-                "pdf_reporte_institucional_v16242"
+                "pdf_reporte_institucional_v16243"
             ):
                 st.download_button(
                     "⬇️ Descargar informe institucional PDF",
                     data=st.session_state[
-                        "pdf_reporte_institucional_v16242"
+                        "pdf_reporte_institucional_v16243"
                     ],
                     file_name=(
-                        "Informe_Institucional_Observatorio_Social_V16_242_"
+                        "Informe_Institucional_Observatorio_Social_V16_243_"
                         + datetime.now().strftime("%Y%m%d_%H%M")
                         + ".pdf"
                     ),
